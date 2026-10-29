@@ -114,3 +114,21 @@ test("pengawatan drawer: Kelengkapan memakai klasifikasi server; pernyataan eksp
   assert.ok(panel.includes("<KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} />") && panel.includes('fokus !== "kelengkapan"'), "terpasang di drawer + fokus kelengkapan");
   assert.ok(panel.includes('data-testid="lompat-kelengkapan"'), "bilah lompat ke Kelengkapan");
 });
+
+test("Belum dinilai: hitungan dataOrder dibaca dari server; filter menampilkan jumlahnya; drawer tidak menyebut 'Lengkap' bila data order belum dinilai", () => {
+  const h = bacaHitungKelengkapan({ counts: {}, unik: 0, dataOrder: { lengkap: 2, kurang: 1, belumDinilai: 60 } });
+  assert.deepEqual(h.dataOrder, { lengkap: 2, kurang: 1, belumDinilai: 60 });
+  assert.deepEqual(bacaHitungKelengkapan(null).dataOrder, { lengkap: 0, kurang: 0, belumDinilai: 0 });
+  const f = src("features", "production", "KelengkapanFilter.jsx"); const k = src("features", "production", "KelengkapanBagian.jsx");
+  assert.ok(f.includes('data-testid="kel-belum-dinilai"') && /bukan lengkap, dan tidak dihitung sebagai kekurangan/.test(f), "jumlah belum dinilai terlihat di filter");
+  assert.ok(k.includes('kel.dataOrder?.status === "BELUM_DINILAI"') && k.includes('data-testid="data-order-belum-dinilai"'), "drawer: belum dinilai");
+  assert.ok(!/Lengkap menurut aturan saat ini/.test(k), "ringkasan dari server (kel.ringkas), tidak di-hardcode 'Lengkap'");
+  assert.match(KELENGKAPAN_FILTER.find((x) => x.key === "DATA_ORDER_KURANG").bantu, /Belum dinilai/);
+});
+
+test("pernyataan bertentangan dengan catatan bahan: peringatan jelas (bukan hijau), tombol cabut tetap tersedia; klasifikasi dari server", () => {
+  const k = src("features", "production", "KelengkapanBagian.jsx");
+  assert.ok(k.includes("bertentangan={!!kel.pernyataanBertentangan}") && k.includes('data-testid="pernyataan-bertentangan"'), "pernyataan bertentangan ditandai");
+  assert.ok(/bg-orangebg/.test(k) && /bertentangan dengan catatan bahan/.test(k), "bukan hijau 'dinyatakan' saat bertentangan");
+  assert.ok(!/adaCatatan|pemakaian\.baru|catatanBahan/.test(k), "klien tidak menurunkan pertentangan sendiri");
+});

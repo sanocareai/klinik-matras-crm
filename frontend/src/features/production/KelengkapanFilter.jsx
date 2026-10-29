@@ -9,6 +9,7 @@ import { DASAR_PERIODE_TEKS, KELENGKAPAN_BUKAN, KELENGKAPAN_FILTER, URUTAN_DAFTA
 // Satu unit boleh ada di beberapa kategori → jumlah per kategori boleh melebihi total unik; total gabungan menghitung unit unik.
 export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, onBersih, dari, sampai, onDari, onSampai, galatPeriode, urut, onUrut, scope, onLihatRiwayat }) {
   const info = useInfoToggle();
+  const belumDinilai = hitung?.dataOrder?.belumDinilai ?? 0;
   const adaRiwayat = scope !== "riwayat" && !!onLihatRiwayat && (hitung?.riwayat?.unik ?? 0) > 0;
   return (
     <div className="space-y-2" data-testid="kelengkapan-filter">
@@ -29,6 +30,7 @@ export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, 
           {hitung ? `${hitung.unik} unit berkekurangan` : memuat ? "Menghitung…" : ""}
         </span>
       </div>
+      {belumDinilai > 0 && <p className="m-0 text-[12.5px] text-ink3" data-testid="kel-belum-dinilai">Data order: {belumDinilai} unit belum dinilai (order biasa belum punya aturan wajib) — bukan lengkap, dan tidak dihitung sebagai kekurangan.</p>}
       <InfoToggleIsi info={info}>
         <p className="m-0">Jumlah dihitung server atas seluruh unit yang cocok dengan lingkup, pencarian, status kerja, dan periode yang aktif. Satu unit boleh masuk beberapa kategori; “unit berkekurangan” menghitung unit unik.</p>
         <p className="m-0">{KELENGKAPAN_BUKAN}</p>

@@ -62,7 +62,7 @@ export function kelengkapanBaris(baris, fakta) {
   const f = fakta ?? kosong();
   const p = baris.adopsi?.pemakaianBahan ?? {};
   return klasifikasiKelengkapan({
-    unitStatus: baris.status, kerjaKey: baris.adopsi?.kerja?.key,
+    unitStatus: baris.status, kerjaKey: baris.adopsi?.kerja?.key, orderStatus: baris.order?.status,
     pemakaian: { baru: p.baruCatatan, lama: p.komponenLamaDipakaiKembali, sementaraPerlu: p.sementaraPerluRekonsiliasi, sementaraSelesai: p.sementaraSudahDirekonsiliasi },
     sementara: f.sementara,
     catatan: { ada: f.catatan.ada, perluDicek: f.catatan.perluDicek, siapPosting: f.catatan.siapPosting, alasan: uraikanAlasanCatatan(f.catatan.flagsPerluDicek) },

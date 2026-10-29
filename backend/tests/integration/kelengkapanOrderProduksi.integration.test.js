@@ -209,3 +209,82 @@ test("C12. hitungan menghormati lingkup: Aktif vs Riwayat; unit Terkirim berkeku
   assert.equal(aktif.unik, 1); assert.equal(aktif.riwayat.unik, 2, "kekurangan historis tidak tersembunyi saat lingkup Aktif"); assert.equal(aktif.riwayat.totalUnit, 2);
   const riw = (await w.a.get("/api/production/work-orders/kelengkapan-hitung?displayStatus=TERKIRIM")).body; assert.equal(riw.unik, 2);
 });
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€ aturan 1 (kasus nyata): status resmi order/unit menang atas status kerja yang tertinggal â”€â”€â”€â”€â”€â”€â”€â”€â”€
+test("C13. unit RECEIVED pada order DELIVERED (kasus nyata di production) dengan status kerja tertinggal TIDAK lolos dari filter Bahan belum dicatat", async () => {
+  const w = await dunia();
+  const tertinggal = await unit("RECEIVED", 6, "RES-KL-120"); // order DELIVERED, unit masih RECEIVED, status kerja "Belum dijadwalkan"
+  await testPrisma.order.update({ where: { id: tertinggal.order.id }, data: { status: "DELIVERED" } });
+  const tertunda = await unit("RECEIVED", 7, "RES-KL-121"); // order READY + status kerja manual Tertunda
+  await testPrisma.order.update({ where: { id: tertunda.order.id }, data: { status: "READY" } });
+  assert.equal((await tandaiKerja(w, tertunda.u, "TERTUNDA")).status, 201);
+  const biasa = await unit("RECEIVED", 8, "RES-KL-122"); // order PROCESSING, belum dikerjakan → tidak dinilai
+  const d = await daftar(w, "&kelengkapan=BAHAN_BELUM_DICATAT"); const kode = d.units.map((x) => x.unitCode);
+  assert.ok(kode.includes(tertinggal.u.unitCode) && kode.includes(tertunda.u.unitCode), "unit selesai menurut status resmi order tidak lolos");
+  assert.ok(!kode.includes(biasa.u.unitCode));
+  const b = d.units.find((x) => x.unitCode === tertinggal.u.unitCode);
+  assert.equal(b.adopsi.kerja.key, "BELUM_DIJADWALKAN", "status kerja memang tertinggal"); assert.equal(kel(b).dasarBahan, "STATUS_RESMI_ORDER");
+  assert.match(kel(b).items.BAHAN_BELUM_DICATAT.alasan[0].teks, /Status order sudah Siap Kirim atau sesudahnya/);
+  const hit = (await w.a.get("/api/production/work-orders/kelengkapan-hitung")).body; assert.equal(hit.counts.BAHAN_BELUM_DICATAT, 2);
+  const mat = await createTestMaterial({ code: "KL-C13", name: "BAHAN C13", unit: "KG" }); await seedBalance(mat.id, 10);
+  assert.equal((await issue(w, tertinggal.u, mat, 1)).status, 201);
+  assert.ok(!kel((await daftar(w)).units.find((x) => x.unitCode === tertinggal.u.unitCode)).keys.includes("BAHAN_BELUM_DICATAT"));
+  const dr = (await w.a.get(`/api/production/units/${tertunda.u.id}/adopsi`)).body; assert.deepEqual(dr.adopsi.kelengkapan.keys, kel((await daftar(w)).units.find((x) => x.unitCode === tertunda.u.unitCode)).keys, "drawer = daftar");
+});
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€ aturan 2: "Belum dinilai" â”€â”€â”€â”€â”€â”€â”€â”€â”€
+test("C14. order biasa = data order 'Belum dinilai' (bukan lengkap, bukan kurang): di daftar, drawer, hitungan, dan ekspor; PKR dinilai", async () => {
+  const w = await dunia(); const { u } = await unit("IN_PRODUCTION", 3, "RES-KL-130"); await tandaiKerja(w, u); await issue(w, u, w.busa, 1);
+  const pkrLengkap = await testPrisma.finPenjualanKaryawan.create({ data: { nomor: "PKR-KL-130", date: new Date(), sellerId: w.sales.user.id, buyerName: "K", total: 1, status: "AKTIF", items: { create: [{ name: "Kasur", quantity: 1, unitPrice: 1, sortOrder: 0 }] } } });
+  const lengkap = await unit("RECEIVED", 2, "RES-KL-131"); await testPrisma.order.update({ where: { id: lengkap.order.id }, data: { penjualanKaryawanId: pkrLengkap.id, notes: JSON.stringify({ merkKasur: "Sano", ukuranKasur: "160x200" }), pkrPerluDikirim: false } });
+  const d = await daftar(w); const b = d.units.find((x) => x.unitCode === u.unitCode); const k = kel(b);
+  assert.deepEqual(k.keys, [], "bahan + HPP lengkap"); assert.equal(k.dataOrder.status, "BELUM_DINILAI"); assert.equal(k.ringkas, "Tidak ada kekurangan terdeteksi · Data order belum dinilai");
+  assert.equal(kel(d.units.find((x) => x.unitCode === lengkap.u.unitCode)).dataOrder.status, "LENGKAP");
+  const hit = (await w.a.get("/api/production/work-orders/kelengkapan-hitung")).body;
+  assert.deepEqual(hit.dataOrder, { lengkap: 1, kurang: 0, belumDinilai: 1 }); assert.equal(hit.counts.DATA_ORDER_KURANG, 0, "belum dinilai tidak dihitung kekurangan");
+  assert.equal((await daftar(w, "&kelengkapan=DATA_ORDER_KURANG")).total, 0);
+  const x = await fetch(`${server.baseUrl}/api/production/work-orders/export.xlsx`, { headers: { Authorization: `Bearer ${w.admin.token}` } }); const wb = new ExcelJS.Workbook(); await wb.xlsx.load(Buffer.from(await x.arrayBuffer()));
+  const ws = wb.getWorksheet("Ringkasan Unit"); const head = Array.from(ws.getRow(1).values, (v) => String(v ?? "")); const ci = head.findIndex((h) => h.startsWith("Status Data Order"));
+  const nilai = []; for (let r = 2; r <= ws.rowCount; r++) nilai.push(String(ws.getRow(r).getCell(ci).value)); assert.deepEqual(nilai.sort(), ["Belum dinilai", "Lengkap"]);
+});
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€ aturan 3: pernyataan tidak menyembunyikan masalah setelah catatan bahan ditambahkan â”€â”€â”€â”€â”€â”€â”€â”€â”€
+test("C15. pernyataan lalu catatan bahan ditambahkan kemudian: unit masuk Bahan perlu dicek (alasan konkret); filter, hitungan, drawer konsisten; dicabut → kembali normal", async () => {
+  const w = await dunia(); const { u } = await unit("READY_FOR_DELIVERY", 6, "RES-KL-140");
+  const url = `/api/production/units/${u.id}/pernyataan-tanpa-bahan`;
+  assert.equal((await w.a.post(url, { alasan: "Hanya servis jahitan" }, { "Idempotency-Key": kunci("p") })).status, 201);
+  const ambil = async () => kel((await daftar(w)).units.find((x) => x.unitCode === u.unitCode));
+  assert.deepEqual((await ambil()).keys, []);
+  const mat = await createTestMaterial({ code: "KL-C15", name: "BAHAN C15", unit: "KG" }); await seedBalance(mat.id, 10);
+  assert.equal((await issue(w, u, mat, 1)).status, 201);
+  let k = await ambil(); assert.ok(k.pernyataanBertentangan); assert.ok(k.keys.includes("BAHAN_PERLU_DICEK")); assert.equal(k.items.BAHAN_PERLU_DICEK.alasan[0].kode, "PERNYATAAN_BERTENTANGAN");
+  assert.equal((await daftar(w, "&kelengkapan=BAHAN_PERLU_DICEK")).total, 1);
+  assert.equal((await w.a.get("/api/production/work-orders/kelengkapan-hitung")).body.counts.BAHAN_PERLU_DICEK, 1);
+  const dr = (await w.a.get(`/api/production/units/${u.id}/adopsi`)).body; assert.ok(dr.adopsi.kelengkapan.pernyataanBertentangan); assert.equal(dr.pernyataanTanpaBahan.aktif.status, "ACTIVE");
+  const { u: u2 } = await unit("READY_FOR_DELIVERY", 7, "RES-KL-141"); await w.a.post(`/api/production/units/${u2.id}/pernyataan-tanpa-bahan`, { alasan: "Tanpa bahan, hanya servis" }, { "Idempotency-Key": kunci("p") });
+  assert.equal((await w.a.post(`/api/production/units/${u2.id}/provisional-usages`, { name: "BAHAN SEMENTARA", qty: 1, uom: "KG", originNote: "Beli sendiri", alasanPencatatan: "uji" }, { "Idempotency-Key": kunci("sem") })).status, 201);
+  assert.ok(kel((await daftar(w)).units.find((x) => x.unitCode === u2.unitCode)).keys.includes("BAHAN_PERLU_DICEK"));
+  assert.equal((await w.a.post(`${url}/cabut`, { alasan: "Ternyata dipakai bahan" })).status, 200);
+  k = await ambil(); assert.ok(!k.pernyataanBertentangan); assert.ok(!k.keys.includes("BAHAN_PERLU_DICEK")); assert.ok(!k.keys.includes("BAHAN_BELUM_DICATAT"));
+});
+
+test("C16. pencatatan bahan dan pernyataan BERJALAN BERSAMAAN: hasil akhir selalu konsisten (pernyataan ditolak 409 ATAU pertentangan terdeteksi) — tidak pernah lengkap diam-diam", async () => {
+  const w = await dunia(); const mat = await createTestMaterial({ code: "KL-C16", name: "BAHAN C16", unit: "KG" }); await seedBalance(mat.id, 100);
+  const hasil = [];
+  for (let i = 0; i < 8; i++) {
+    const { u } = await unit("READY_FOR_DELIVERY", 5 + i, `RES-KL-15${i}`);
+    const catat = i % 2 === 0
+      ? () => w.a.post(`/api/production/units/${u.id}/provisional-usages`, { name: `BAHAN BERSAMAAN ${i}`, qty: 1, uom: "KG", originNote: "Beli sendiri", alasanPencatatan: "uji" }, { "Idempotency-Key": kunci("sem") })
+      : () => w.a.post(`/api/units/${u.id}/materials`, { materialId: mat.id, qty: 1 }, { "Idempotency-Key": kunci("iss") });
+    const [p, c] = await Promise.all([w.a.post(`/api/production/units/${u.id}/pernyataan-tanpa-bahan`, { alasan: "Tanpa bahan baru, servis" }, { "Idempotency-Key": kunci("p") }), catat()]);
+    assert.equal(c.status, 201, `pencatatan selalu berhasil: ${JSON.stringify(c.body).slice(0, 120)}`); assert.ok([201, 409].includes(p.status), `pernyataan 201/409, dapat ${p.status}`);
+    const k = kel((await daftar(w)).units.find((x) => x.unitCode === u.unitCode)); const aktif = await testPrisma.unitMaterialDeclaration.count({ where: { unitId: u.id, status: "ACTIVE" } });
+    assert.ok(!k.keys.includes("BAHAN_BELUM_DICATAT"), "ada catatan bahan → tidak pernah 'belum dicatat'");
+    if (aktif === 1) { assert.equal(p.status, 201); assert.ok(k.keys.includes("BAHAN_PERLU_DICEK") && k.pernyataanBertentangan, "pernyataan lolos bersamaan → pertentangan WAJIB terlihat"); }
+    else { assert.equal(p.status, 409); assert.equal(p.body.code, "SUDAH_ADA_CATATAN_BAHAN"); assert.ok(!k.pernyataanBertentangan); }
+    hasil.push(p.status);
+    const dr = (await w.a.get(`/api/production/units/${u.id}/adopsi`)).body; assert.deepEqual(dr.adopsi.kelengkapan.keys, k.keys, "drawer = daftar");
+  }
+  console.log("C16 hasil pernyataan (201=lolos lalu bertentangan, 409=ditolak):", JSON.stringify(hasil));
+});
+

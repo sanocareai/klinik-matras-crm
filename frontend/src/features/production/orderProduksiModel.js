@@ -103,9 +103,10 @@ export const KELENGKAPAN_FILTER = Object.freeze([
   { key: "BAHAN_BELUM_DICATAT", label: "Bahan belum dicatat", pendek: "Bahan belum dicatat", bantu: "Unit sudah dikerjakan/selesai tetapi belum ada catatan pemakaian bahan (Gudang, sementara, komponen lama, atau historis) dan belum dinyatakan tanpa bahan baru. Unit yang belum tiba atau belum dikerjakan tidak dihitung." },
   { key: "BAHAN_PERLU_DICEK", label: "Bahan perlu dicek", pendek: "Bahan perlu dicek", bantu: "Ada alasan konkret: bahan belum terpetakan ke katalog, satuan bermasalah, atau pemakaian sementara belum direkonsiliasi Gudang." },
   { key: "HPP_BELUM_LENGKAP", label: "HPP belum lengkap", pendek: "HPP belum lengkap", bantu: "HPP operasional (harga berlaku Gudang; bukan nilai persediaan/biaya Finance): harga belum diketahui, belum dibekukan, pembekuan gagal, atau catatan tertahan." },
-  { key: "DATA_ORDER_KURANG", label: "Data order kurang", pendek: "Data order kurang", bantu: "Hanya kebutuhan wajib yang terbukti: kelengkapan order Penjualan Karyawan. Target, PIC, dan rencana bahan bersifat opsional dan tidak dihitung." },
+  { key: "DATA_ORDER_KURANG", label: "Data order kurang", pendek: "Data order kurang", bantu: "Hanya kebutuhan wajib yang terbukti: kelengkapan order Penjualan Karyawan. Order biasa belum punya aturan wajib sehingga tampil \"Belum dinilai\" (bukan lengkap, bukan kurang). Target, PIC, dan rencana bahan bersifat opsional dan tidak dihitung." },
 ]);
 export const KELENGKAPAN_KEYS = Object.freeze(KELENGKAPAN_FILTER.map((k) => k.key));
+export const DATA_ORDER_BELUM_DINILAI_TEKS = "Belum dinilai: order ini belum punya aturan kelengkapan wajib (hanya order Penjualan Karyawan yang dinilai). Bukan berarti lengkap.";
 export const KELENGKAPAN_BUKAN = "Target selesai, PIC, dan rencana bahan opsional — tidak dihitung sebagai kekurangan. Pekerjaan yang belum dilakukan juga bukan kekurangan data.";
 export const DASAR_PERIODE_TEKS = "Tanggal order masuk (unit dibuat)";
 export const URUTAN_DAFTAR = Object.freeze([{ key: "terbaru", label: "Terbaru dulu" }, { key: "terlama", label: "Paling lama belum ditangani" }]);
@@ -121,7 +122,7 @@ export function sasaranLengkapi(keys) {
 /** Hitungan per kategori + unik dari respons server; angka tidak diturunkan dari halaman yang dimuat. */
 export function bacaHitungKelengkapan(h) {
   const counts = h?.counts ?? {};
-  return { counts: Object.fromEntries(KELENGKAPAN_KEYS.map((k) => [k, counts[k] ?? 0])), unik: h?.unik ?? 0, totalUnit: h?.totalUnit ?? 0, riwayat: { unik: h?.riwayat?.unik ?? 0, totalUnit: h?.riwayat?.totalUnit ?? 0 } };
+  return { counts: Object.fromEntries(KELENGKAPAN_KEYS.map((k) => [k, counts[k] ?? 0])), unik: h?.unik ?? 0, totalUnit: h?.totalUnit ?? 0, dataOrder: { lengkap: h?.dataOrder?.lengkap ?? 0, kurang: h?.dataOrder?.kurang ?? 0, belumDinilai: h?.dataOrder?.belumDinilai ?? 0 }, riwayat: { unik: h?.riwayat?.unik ?? 0, totalUnit: h?.riwayat?.totalUnit ?? 0 } };
 }
 /** Toggle satu kategori dalam daftar terpilih (gabungan). */
 export const toggleKelengkapan = (terpilih, key) => (terpilih.includes(key) ? terpilih.filter((k) => k !== key) : KELENGKAPAN_KEYS.filter((k) => k === key || terpilih.includes(k)));

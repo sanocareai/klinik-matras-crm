@@ -79,7 +79,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     pemakaianBaru: u.adopsi.pemakaianBahan?.baruCatatan ?? 0, pemakaianLama: u.adopsi.pemakaianBahan?.komponenLamaDipakaiKembali ?? 0, pemakaianSementara: u.adopsi.pemakaianBahan?.sementaraPerluRekonsiliasi ?? 0,
     qc: ({ WAITING_QC: "Menunggu QC", REWORK: "Dikerjakan ulang (hasil QC: tidak lulus)", COMPLETED: "Tahap selesai (lihat hasil QC di Unit 360)" })[u.productionStatus] ?? "Belum ada catatan QC",
     catatanDicek: u.adopsi.catatanHistoris?.perluDicek ?? 0, catatanTotal: u.adopsi.catatanHistoris?.total ?? 0,
-    kelengkapan: u.adopsi.kelengkapan?.ringkas || "Lengkap menurut aturan saat ini", kelengkapanAlasan: (Object.values(u.adopsi.kelengkapan?.items ?? {})).map((it) => `${it.label}: ${it.alasan.map((a) => a.teks).join(" ")}`).join(" | "),
+    kelengkapan: u.adopsi.kelengkapan?.ringkas || "Tidak dinilai", dataOrder: u.adopsi.kelengkapan?.dataOrder ? (u.adopsi.kelengkapan.dataOrder.status === "KURANG" ? `Kurang: ${u.adopsi.kelengkapan.dataOrder.teks}` : u.adopsi.kelengkapan.dataOrder.label) : "", kelengkapanAlasan: (Object.values(u.adopsi.kelengkapan?.items ?? {})).map((it) => `${it.label}: ${it.alasan.map((a) => a.teks).join(" ")}`).join(" | "),
     pernyataanTanpaBahan: u.adopsi.kelengkapan?.pernyataan ? `Dinyatakan tanpa bahan baru${u.adopsi.kelengkapan.pernyataan.oleh ? ` oleh ${u.adopsi.kelengkapan.pernyataan.oleh}` : ""}: ${u.adopsi.kelengkapan.pernyataan.alasan ?? ""}` : "",
     tindakan: u.adopsi.tindakan?.label, aktor: u.adopsi.tindakan?.aktor, prioritas: u.priorityDisplay?.label, bahanRencana: jumlahBahanPerUnit.get(u.id) ?? 0, aktualAda: u.adopsi.aktualBahanAda ? "Ya" : "Belum", diperbarui: u.updatedAt,
   }));
@@ -92,7 +92,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     { key: "tindakan", header: "Tindakan Berikutnya", lebar: 40, bungkus: true }, { key: "aktor", header: "Pelaku Tindakan", lebar: 16 }, { key: "prioritas", header: "Prioritas", lebar: 12 },
     { key: "catatanTotal", header: "Catatan Pemakaian Historis (jumlah)", tipe: "angka", lebar: 18 }, { key: "catatanDicek", header: "Catatan Historis Perlu Dicek (jumlah)", tipe: "angka", lebar: 18 },
     { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 },
-    { key: "kelengkapan", header: "Kelengkapan (Bahan · HPP operasional · Data order)", lebar: 44, bungkus: true }, { key: "kelengkapanAlasan", header: "Alasan Kekurangan", lebar: 70, bungkus: true }, { key: "pernyataanTanpaBahan", header: "Pernyataan Tanpa Bahan Baru", lebar: 46, bungkus: true },
+    { key: "kelengkapan", header: "Kelengkapan (Bahan · HPP operasional · Data order)", lebar: 44, bungkus: true }, { key: "kelengkapanAlasan", header: "Alasan Kekurangan", lebar: 70, bungkus: true }, { key: "dataOrder", header: "Status Data Order (Lengkap / Kurang / Belum dinilai)", lebar: 36, bungkus: true }, { key: "pernyataanTanpaBahan", header: "Pernyataan Tanpa Bahan Baru", lebar: 46, bungkus: true },
     { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
   ], ringkas);
 
@@ -189,6 +189,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     ["Rencana vs Aktual", "Rencana Bahan TIDAK mengurangi stok. Pemakaian Aktual berisi transaksi stok resmi (Material Issue Gudang atau catat langsung)."],
     ["Kelengkapan", "Kolom Kelengkapan memakai klasifikasi yang SAMA dengan daftar dan drawer: Bahan belum dicatat (unit sudah dikerjakan/selesai tanpa catatan pemakaian dan tanpa pernyataan tanpa bahan baru) · Bahan perlu dicek (alasan konkret) · HPP belum lengkap (HPP OPERASIONAL; bukan biaya Finance) · Data order kurang (kelengkapan order Penjualan Karyawan). " + BUKAN_KEKURANGAN],
     ["HPP operasional", CATATAN_HPP],
+    ["Data order \"Belum dinilai\"", "Order yang belum punya aturan kelengkapan wajib (order biasa) ditandai Belum dinilai — bukan Lengkap dan bukan Kurang."],
   ];
   const wi = wb.addWorksheet("Info Ekspor"); wi.columns = [{ header: "Keterangan", key: "k", width: 34 }, { header: "Nilai", key: "v", width: 90 }];
   wi.getRow(1).eachCell((c) => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } }; });

@@ -117,3 +117,67 @@ test("lolosKelengkapan = gabungan (OR) dari kunci terpilih; kosong = tanpa penya
   assert.deepEqual(parseKelengkapan(undefined), []);
   assert.equal(KELENGKAPAN_KEYS.length, 4);
 });
+
+// ───────── aturan 1: status resmi unit/order menjadi dasar walau status kerja tertinggal ─────────
+import { dasarPenilaianBahan, hitungDataOrder, DATA_ORDER } from "../src/lib/domain/kelengkapanOrderProduksi.js";
+
+test("STATUS RESMI unit Siap Kirim/Terkirim menjadi dasar penilaian bahan walau status kerja tertinggal (Belum dijadwalkan / Tertunda / Dijadwalkan)", () => {
+  for (const kerjaKey of ["BELUM_DIJADWALKAN", "DIJADWALKAN", "TERTUNDA", undefined]) {
+    for (const unitStatus of ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"]) {
+      const k = klasifikasiKelengkapan({ unitStatus, kerjaKey });
+      assert.ok(k.keys.includes("BAHAN_BELUM_DICATAT"), `${unitStatus}/${kerjaKey} tidak boleh lolos`);
+      assert.equal(k.dasarBahan, "STATUS_RESMI_UNIT");
+    }
+  }
+});
+
+test("STATUS RESMI ORDER (Siap Kirim/Dikirim/Terkirim) menutup unit yang statusnya tertinggal — kasus nyata: unit RECEIVED pada order DELIVERED", () => {
+  for (const orderStatus of ["READY", "SHIPPING", "DELIVERED"]) {
+    const k = klasifikasiKelengkapan({ unitStatus: "RECEIVED", kerjaKey: "BELUM_DIJADWALKAN", orderStatus });
+    assert.deepEqual(k.keys, ["BAHAN_BELUM_DICATAT", "HPP_BELUM_LENGKAP"], orderStatus);
+    assert.equal(k.dasarBahan, "STATUS_RESMI_ORDER");
+    assert.match(k.items.BAHAN_BELUM_DICATAT.alasan[0].teks, /Status order sudah Siap Kirim atau sesudahnya \(status kerja unit tertinggal\)/);
+  }
+  // order belum selesai + belum dikerjakan: tetap tidak dinilai; status SEWA tidak dijadikan dasar (belum ada aturan)
+  for (const orderStatus of ["PENDING", "PICKUP", "PROCESSING", "SEWA_DIKIRIM", "SEWA_DIAMBIL"]) assert.deepEqual(kunci({ unitStatus: "RECEIVED", kerjaKey: "BELUM_DIJADWALKAN", orderStatus }), [], orderStatus);
+});
+
+test("status resmi TIDAK menarik unit yang secara fisik belum tiba atau dibatalkan; dasar bahan 'STATUS_KERJA' hanya bila status resmi belum ada", () => {
+  assert.deepEqual(kunci({ unitStatus: "AWAITING_PICKUP", kerjaKey: "SELESAI", orderStatus: "DELIVERED" }), []);
+  assert.deepEqual(kunci({ unitStatus: "IN_TRANSIT_IN", kerjaKey: "SELESAI", orderStatus: "READY" }), []);
+  assert.deepEqual(kunci({ unitStatus: "CANCELLED", kerjaKey: "DIBATALKAN", orderStatus: "DELIVERED" }), []);
+  assert.equal(dasarPenilaianBahan({ unitStatus: "IN_PRODUCTION", kerjaKey: "DIKERJAKAN", orderStatus: "PROCESSING" }).dasar, "STATUS_KERJA");
+  assert.deepEqual(dasarPenilaianBahan({ unitStatus: "RECEIVED", kerjaKey: "TERTUNDA", orderStatus: "PROCESSING" }), { dinilai: false, dasar: null });
+});
+
+// ───────── aturan 2: "Belum dinilai" ≠ lengkap ─────────
+test("data order tanpa aturan wajib = BELUM DINILAI (bukan lengkap, bukan kurang); PKR lengkap = LENGKAP; PKR kurang = KURANG; dibatalkan = tidak berlaku", () => {
+  const biasa = klasifikasiKelengkapan({ unitStatus: "RECEIVED", kerjaKey: "DIJADWALKAN", pkr: null });
+  assert.equal(biasa.dataOrder.status, "BELUM_DINILAI"); assert.match(biasa.dataOrder.teks, /belum punya aturan kelengkapan wajib/); assert.match(biasa.dataOrder.teks, /Bukan berarti lengkap/);
+  assert.deepEqual(biasa.keys, [], "tidak dihitung sebagai kekurangan");
+  assert.equal(biasa.ringkas, "Tidak ada kekurangan terdeteksi · Data order belum dinilai", "ringkasan TIDAK menyebut 'Lengkap'");
+  assert.equal(klasifikasiKelengkapan({ unitStatus: "RECEIVED", kerjaKey: "DIJADWALKAN", pkr: { lengkap: true, kurang: [] } }).dataOrder.status, "LENGKAP");
+  const kurang = klasifikasiKelengkapan({ unitStatus: "RECEIVED", kerjaKey: "DIJADWALKAN", pkr: { nomor: "P1", lengkap: false, kurang: ["ukuran"] } });
+  assert.equal(kurang.dataOrder.status, "KURANG"); assert.match(kurang.dataOrder.teks, /P1 belum lengkap: ukuran/);
+  assert.equal(klasifikasiKelengkapan({ unitStatus: "CANCELLED", kerjaKey: "DIBATALKAN" }).dataOrder.status, "TIDAK_BERLAKU");
+  assert.equal(klasifikasiKelengkapan({ unitStatus: "DELIVERED", kerjaKey: "SELESAI", pemakaian: { baru: 1 }, hpp: { gerak: 1 }, pkr: { lengkap: true, kurang: [] } }).ringkas, "Lengkap menurut aturan saat ini", "'Lengkap' hanya bila data order benar-benar dinilai lengkap");
+  assert.deepEqual(hitungDataOrder(["LENGKAP", "KURANG", "BELUM_DINILAI", "BELUM_DINILAI", "TIDAK_BERLAKU", undefined]), { lengkap: 1, kurang: 1, belumDinilai: 2 });
+  assert.equal(DATA_ORDER.BELUM_DINILAI.label, "Belum dinilai");
+});
+
+// ───────── aturan 3: pernyataan tidak menyembunyikan masalah setelah catatan bahan ditambahkan ─────────
+test("pernyataan 'tanpa bahan baru' + catatan bahan KEMUDIAN ada → BERTENTANGAN: Bahan perlu dicek (alasan konkret), tidak lengkap diam-diam, HPP dinilai dari catatan nyata", () => {
+  const pern = { alasan: "Hanya servis jahitan", oleh: "Admin", at: "2026-10-29T01:00:00Z" };
+  for (const sumber of [{ pemakaian: { baru: 1 }, hpp: { gerak: 1, hargaBelumDiketahui: 1 } }, { pemakaian: { sementaraPerlu: 1 }, sementara: { perluBelumTerpetakan: 1 } }, { pemakaian: { lama: 1 } }, { catatan: { ada: 2, siapPosting: 1 } }]) {
+    const k = klasifikasiKelengkapan({ unitStatus: "DELIVERED", kerjaKey: "SELESAI", pernyataan: pern, ...sumber });
+    assert.ok(k.pernyataanBertentangan); assert.ok(k.keys.includes("BAHAN_PERLU_DICEK"), JSON.stringify(sumber));
+    assert.equal(k.items.BAHAN_PERLU_DICEK.alasan[0].kode, "PERNYATAAN_BERTENTANGAN"); assert.match(k.items.BAHAN_PERLU_DICEK.alasan[0].teks, /dinyatakan tanpa bahan baru oleh Admin, tetapi sekarang ada catatan pemakaian bahan/);
+    assert.ok(!k.keys.includes("BAHAN_BELUM_DICATAT"));
+  }
+  const hpp = klasifikasiKelengkapan({ unitStatus: "DELIVERED", kerjaKey: "SELESAI", pernyataan: pern, pemakaian: { baru: 1 }, hpp: { gerak: 1, hargaBelumDiketahui: 1 } });
+  assert.deepEqual(hpp.keys, ["BAHAN_PERLU_DICEK", "HPP_BELUM_LENGKAP"], "HPP tetap dinilai dari catatan yang ada");
+  // pernyataan tanpa catatan = tidak bertentangan (menggantikan kekurangan); unit belum selesai pun bertentangan bila ada catatan
+  assert.deepEqual(kunci({ unitStatus: "DELIVERED", kerjaKey: "SELESAI", pernyataan: pern }), []);
+  assert.ok(kunci({ unitStatus: "RECEIVED", kerjaKey: "BELUM_DIJADWALKAN", pernyataan: pern, pemakaian: { baru: 1 }, hpp: { gerak: 1 } }).includes("BAHAN_PERLU_DICEK"));
+  assert.equal(klasifikasiKelengkapan({ unitStatus: "CANCELLED", pernyataan: pern, pemakaian: { baru: 1 } }).pernyataanBertentangan, false);
+});

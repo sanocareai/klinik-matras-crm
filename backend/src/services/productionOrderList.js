@@ -15,7 +15,7 @@ import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./p
 import { WORK_STATUS, effectiveWorkStatus, posisiUnitOf, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { loadAppEvidence, loadLatestManual } from "./productionAdoptionService.js";
 import { kelengkapanBaris, muatFaktaKelengkapan } from "./productionKelengkapan.js";
-import { hitungKelengkapan, lolosKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
+import { hitungDataOrder, hitungKelengkapan, lolosKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
 import { endOfDayExclusiveWIB, startOfDayWIB } from "../utils/wib.js";
 
 export const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus
@@ -217,5 +217,6 @@ export async function hitungKelengkapanDaftar(prisma, query = {}) {
   const { counts, unik } = hitungKelengkapan(lingkup.map((r) => r.adopsi.kelengkapan?.keys ?? []));
   const terkirim = rows.filter((r) => r.status === "DELIVERED");
   const riwayat = hitungKelengkapan(terkirim.map((r) => r.adopsi.kelengkapan?.keys ?? []));
-  return { counts, unik, totalUnit: lingkup.length, riwayat: { unik: riwayat.unik, counts: riwayat.counts, totalUnit: terkirim.length }, dasarPeriode: DASAR_PERIODE, periode: periodeDariQuery(query) };
+  const dataOrder = hitungDataOrder(lingkup.map((r) => r.adopsi.kelengkapan?.dataOrder?.status));
+  return { counts, unik, totalUnit: lingkup.length, dataOrder, riwayat: { unik: riwayat.unik, counts: riwayat.counts, totalUnit: terkirim.length }, dasarPeriode: DASAR_PERIODE, periode: periodeDariQuery(query) };
 }

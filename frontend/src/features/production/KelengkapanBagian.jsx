@@ -1,11 +1,11 @@
 import React, { useRef, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import { Link } from "react-router-dom";
-import { KELENGKAPAN_BUKAN, pesanGalatPernyataan, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { DATA_ORDER_BELUM_DINILAI_TEKS, KELENGKAPAN_BUKAN, pesanGalatPernyataan, waktuWib } from "@/features/production/orderProduksiModel.js";
 
 // KELENGKAPAN DATA unit (drawer Order Produksi) — klasifikasi yang SAMA dengan daftar/filter/ekspor (server: adopsi.kelengkapan). Membuka bagian ini TIDAK menulis apa pun.
 // Satu-satunya tulisan di sini: pernyataan eksplisit "unit ini tanpa bahan baru" (alasan wajib, tercatat atas nama pengguna) — hanya bila unit memang selesai tanpa bahan, bukan tebakan sistem.
@@ -28,15 +28,16 @@ function BarisKekurangan({ it }) {
   );
 }
 
-function PernyataanAktif({ p, bisa, unitId, onDone }) {
+function PernyataanAktif({ p, bisa, unitId, onDone, bertentangan }) {
   const [cabut, setCabut] = useState(false); const [alasan, setAlasan] = useState(""); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState("");
   async function kirim() {
     if (sibuk) return; setSibuk(true); setGalat("");
     try { await api.cabutTanpaBahan(unitId, alasan); setCabut(false); setAlasan(""); await onDone(); } catch (e) { setGalat(pesanGalatPernyataan(e)); } finally { setSibuk(false); }
   }
   return (
-    <div className="space-y-2 rounded-btn bg-greenbg px-3 py-3 text-[13px] text-ink2" data-testid="pernyataan-aktif">
-      <p className="m-0 flex flex-wrap items-center gap-1.5 font-medium text-ink"><CheckCircle2 size={15} className="text-green" aria-hidden /> Dinyatakan tanpa bahan baru</p>
+    <div className={bertentangan ? "space-y-2 rounded-btn bg-orangebg px-3 py-3 text-[13px] text-ink2" : "space-y-2 rounded-btn bg-greenbg px-3 py-3 text-[13px] text-ink2"} data-testid="pernyataan-aktif" data-bertentangan={bertentangan ? "1" : "0"}>
+      <p className="m-0 flex flex-wrap items-center gap-1.5 font-medium text-ink">{bertentangan ? <AlertTriangle size={15} className="text-orange" aria-hidden /> : <CheckCircle2 size={15} className="text-green" aria-hidden />} {bertentangan ? "Pernyataan tanpa bahan baru bertentangan dengan catatan bahan" : "Dinyatakan tanpa bahan baru"}</p>
+      {bertentangan && <p className="m-0 font-medium text-ink" data-testid="pernyataan-bertentangan">Sekarang ada catatan pemakaian bahan pada unit ini. Periksa catatannya di Pemakaian aktual; cabut pernyataan bila bahan memang dipakai.</p>}
       <p className="m-0">“{p.alasan}” — {p.oleh || "Admin"}, {waktuWib(p.at)}</p>
       <p className="m-0 text-[12px] text-ink3">Pernyataan ini hanya menandai bahwa unit memang tidak memakai bahan baru. Tidak membuat stok, Material Issue, atau biaya.</p>
       {bisa && !cabut && <Button variant="neutral" size="sm" className="min-h-[44px]" data-testid="pernyataan-cabut-buka" onClick={() => setCabut(true)}>Cabut pernyataan</Button>}
@@ -92,19 +93,30 @@ export default function KelengkapanBagian({ data, aktif, onDone }) {
   const items = kel.keys.map((k) => kel.items[k]).filter(Boolean);
   const aktifPernyataan = data?.pernyataanTanpaBahan?.aktif ?? null;
   const bisaNyatakan = !!izin.pernyataanTanpaBahan && aktif && kel.items.BAHAN_BELUM_DICATAT;
-  // Lengkap dan tanpa pernyataan: tidak ada yang perlu ditampilkan (tanpa bising)
-  if (!items.length && !aktifPernyataan) return null;
+  const belumDinilai = kel.dataOrder?.status === "BELUM_DINILAI";
+  // Lengkap, tanpa pernyataan, dan data order sudah dinilai: tidak ada yang perlu ditampilkan (tanpa bising)
+  if (!items.length && !aktifPernyataan && !belumDinilai) return null;
+  // Tidak ada kekurangan dan tanpa pernyataan, tetapi data order BELUM DINILAI: satu baris ringkas — ketiadaan aturan bukan "lengkap"
+  if (!items.length && !aktifPernyataan) {
+    return (
+      <section id="sec-kelengkapan" aria-label="Kelengkapan data" className="scroll-mt-4 border-t border-line pt-4" data-testid="kelengkapan-bagian" data-lengkap="0" data-belum-dinilai="1">
+        <p className="m-0 flex flex-wrap items-center gap-2 text-[13px] text-ink2"><span className="font-semibold text-ink">Kelengkapan data</span><Badge variant="neutral" className="normal-case tracking-normal" data-testid="kelengkapan-ringkas">{kel.ringkas}</Badge><InfoToggleButton info={info} label="Data order belum dinilai" /></p>
+        <InfoToggleIsi info={info}><p className="m-0" data-testid="data-order-belum-dinilai">{DATA_ORDER_BELUM_DINILAI_TEKS}</p><p className="m-0">{KELENGKAPAN_BUKAN}</p></InfoToggleIsi>
+      </section>
+    );
+  }
   const lengkap = !items.length;
   return (
     <section id="sec-kelengkapan" aria-labelledby="sec-kelengkapan-judul" className="scroll-mt-4 border-t border-line pt-5" data-testid="kelengkapan-bagian" data-lengkap={lengkap ? "1" : "0"}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h3 id="sec-kelengkapan-judul" className="m-0 text-[15px] font-semibold text-ink">Kelengkapan data</h3>
-        {lengkap ? <Badge variant="green" className="normal-case tracking-normal">Lengkap menurut aturan saat ini</Badge> : <Badge variant="orange" className="normal-case tracking-normal" data-testid="kelengkapan-ringkas">{kel.ringkas}</Badge>}
+        {lengkap ? <Badge variant={belumDinilai ? "neutral" : "green"} className="normal-case tracking-normal" data-testid="kelengkapan-ringkas">{kel.ringkas}</Badge> : <Badge variant="orange" className="normal-case tracking-normal" data-testid="kelengkapan-ringkas">{kel.ringkas}</Badge>}
         <InfoToggleButton info={info} label="Apa yang dihitung sebagai kekurangan" />
       </div>
       <InfoToggleIsi info={info}>
         <p className="m-0">{KELENGKAPAN_BUKAN}</p>
         <p className="m-0">HPP di sini adalah HPP operasional (harga berlaku Gudang pada waktu pemakaian). Bukan nilai persediaan dan bukan biaya/jurnal Finance.</p>
+        {belumDinilai && <p className="m-0" data-testid="data-order-belum-dinilai">{DATA_ORDER_BELUM_DINILAI_TEKS}</p>}
         <p className="m-0">Daftar ini memakai aturan yang sama dengan penyaring di Order Produksi dan Export Excel.</p>
       </InfoToggleIsi>
       {items.length > 0 && <ul className="m-0 mt-2 list-none space-y-3 p-0" data-testid="kelengkapan-daftar">{items.map((it) => <BarisKekurangan key={it.key} it={it} />)}</ul>}
@@ -114,7 +126,7 @@ export default function KelengkapanBagian({ data, aktif, onDone }) {
       {kel.keys.includes("DATA_ORDER_KURANG") && (
         <p className="m-0 mt-3 text-[12.5px] text-ink3" data-testid="kelengkapan-order-arah">Lengkapi di Finance › Penjualan Karyawan. Setelah dilengkapi, status ini hilang otomatis.</p>
       )}
-      {aktifPernyataan && <div className="mt-3"><PernyataanAktif p={aktifPernyataan} bisa={!!izin.pernyataanTanpaBahan && aktif} unitId={unit.id} onDone={onDone} /></div>}
+      {aktifPernyataan && <div className="mt-3"><PernyataanAktif p={aktifPernyataan} bisa={!!izin.pernyataanTanpaBahan && aktif} unitId={unit.id} onDone={onDone} bertentangan={!!kel.pernyataanBertentangan} /></div>}
       {bisaNyatakan && !aktifPernyataan && <div className="mt-3"><FormNyatakan unitId={unit.id} unitCode={unit.unitCode} onDone={onDone} /></div>}
       {kel.items.BAHAN_BELUM_DICATAT && !izin.pernyataanTanpaBahan && !aktifPernyataan && (
         <p className="m-0 mt-3 text-[12.5px] text-ink3" data-testid="pernyataan-tanpa-izin">Catat bahan lewat “Pemakaian aktual”. Menyatakan unit tanpa bahan baru hanya untuk Admin, Owner, atau Kepala Produksi.</p>
