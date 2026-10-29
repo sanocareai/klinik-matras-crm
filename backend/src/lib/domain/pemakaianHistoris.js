@@ -101,7 +101,23 @@ export function petakanBahan({ nama, spek }, katalog) {
   const kembar = cariKembar({ nama, bahan: katalog.filter((m) => m.active).map((m) => ({ id: m.id, kode: m.code, nama: m.name, satuan: m.unit, aktif: m.active })) }).slice(0, 3).map((k) => ({ kode: k.kode, nama: k.nama, satuan: k.satuan, tingkat: k.tingkat }));
   return { galat: "NAMA_TIDAK_DI_KATALOG", kandidat: kembar };
 }
-export const KOMPONEN_LAMA_RE = /\bLAMA\b|KILOAN|BUANG KASUR/i;
+// Komponen LAMA dikenali HANYA dari penanda ASAL yang eksplisit di nama: "LAMA" (kata utuh) atau "BUANG KASUR". "KILOAN" menandai CARA BELI (per kg), BUKAN asal bahan: bahan kiloan lazimnya
+// dibeli (mis. 'Memory foam kiloan' = pembelian PUR-23092026-035). Nama KILOAN yang belum ada di katalog TIDAK otomatis menjadi komponen lama: asalnya ditentukan bukti pembelian tertulis, atau ditandai perlu dicek.
+export const KOMPONEN_LAMA_RE = /\bLAMA\b|BUANG KASUR/i;
+export const KILOAN_RE = /KILOAN/i;
+const KATA_UMUM_KILOAN = new Set(["KILOAN", "KILO", "KG"]);
+/**
+ * Bukti PEMBELIAN TERTULIS bagi bahan bernama KILOAN: catatan pembelian (fin_purchases) yang deskripsinya memuat KILOAN dan SEMUA kata khas nama bahan (mis. 'MEMORY FOAM'), bertanggal pada/sebelum tanggal pakai.
+ * Ini bukti ASAL (dibeli), BUKAN penerimaan stok dan bukan saldo pembuka. Kosong = asal tidak terbukti.
+ */
+export function buktiPembelianKiloan({ rawName, usedAt }, pembelian = []) {
+  const token = normNama(rawName).split(" ").filter((t) => t.length > 1 && !KATA_UMUM_KILOAN.has(t));
+  if (!token.length) return [];
+  return pembelian.filter((p) => {
+    const d = normNama(p.description); if (!KILOAN_RE.test(d) || !token.every((t) => d.includes(t))) return false;
+    return !usedAt || !p.date || new Date(p.date).getTime() <= new Date(usedAt).getTime() + 86_400_000;
+  }).map((p) => ({ nomor: p.purchaseNumber, tanggal: new Date(p.date).toISOString().slice(0, 10), jumlah: Number(p.amount), deskripsi: p.description, status: String(p.status) }));
+}
 
 // ───────────────────────────── penanda "Perlu dicek" ─────────────────────────────
 export const TINGKAT = Object.freeze({ BLOK: "BLOK", INFO: "INFO" });
@@ -134,6 +150,10 @@ export const FLAG = Object.freeze({
   MENDAHULUI_GR: ({ tanggal, saldo, butuh }) => ({ kode: "MENDAHULUI_GR", tingkat: "BLOK", data: { tanggal, saldo, butuh }, teks: `Pemakaian ${tanggal} lebih awal dari penerimaan yang tercatat (saldo ${saldo}, butuh ${butuh}).`, aksi: "Tanggal penerimaan lebih awal berbukti, atau koreksi saldo bahan." }),
   SALDO_TIDAK_CUKUP: ({ butuh, saldoAkhir }) => ({ kode: "SALDO_TIDAK_CUKUP", tingkat: "BLOK", data: { butuh, saldoAkhir }, teks: `Saldo tidak mencukupi (butuh ${butuh}, saldo akhir ${saldoAkhir}).`, aksi: "Penerimaan/saldo pembuka berbukti, atau koreksi saldo bahan." }),
   KATEGORI_KOMPLAIN: () => ({ kode: "KATEGORI_KOMPLAIN", tingkat: "INFO", data: {}, teks: "Baris berkategori Bahan Komplain.", aksi: "Hanya penanda; tidak menahan." }),
+  ASAL_BAHAN_PERLU_DICEK: ({ rawName }) => ({ kode: "ASAL_BAHAN_PERLU_DICEK", tingkat: "BLOK", data: { rawName }, teks: `"${rawName}" memuat KILOAN (dibeli per kg), tetapi asalnya tidak terbukti: tidak ada catatan pembelian yang menyebutnya dan tidak ada penanda komponen lama.`,
+    aksi: "Pastikan asalnya: dibeli (buat master bahan KG tanpa stok + penerimaan berbukti) atau komponen lama pelanggan (catat lewat 'Komponen lama dari unit ini'). Tidak ditebak dari nama." }),
+  ASAL_PEMBELIAN_BERTULIS: ({ rawName, bukti }) => ({ kode: "ASAL_PEMBELIAN_BERTULIS", tingkat: "INFO", data: { rawName, bukti }, teks: `Pembelian tertulis menyebut bahan ini: ${bukti.map((b) => `${b.nomor} (${b.tanggal}, Rp${b.jumlah.toLocaleString("id-ID")}, "${b.deskripsi}")`).join("; ")}. Pembelian bukan penerimaan stok.`,
+    aksi: "Buat master bahan (satuan KG, tanpa stok), lalu catat penerimaan/saldo pembuka berbukti sebelum pemakaian diposting. Tidak dibuat otomatis." }),
   KOMPONEN_LAMA: () => ({ kode: "KOMPONEN_LAMA", tingkat: "INFO", data: {}, teks: "Komponen lama dari kasur pelanggan, bukan stok Gudang.", aksi: "Catat lewat 'Komponen lama dari unit ini' bila perlu." }),
   QTY_NOL: () => ({ kode: "QTY_NOL", tingkat: "INFO", data: {}, teks: "Jumlah 0 — bukan pemakaian.", aksi: "Tidak ada." }),
 });

@@ -8,7 +8,7 @@
 import crypto from "node:crypto";
 import {
   bacaCsvPemakaian, kunciSumber, sha256, angkaId, tanggalId, awalHariWIB, satuanBaku, petakanBahan, FLAG, STATE, SUMBER_EXCEL, flagMemblok, catatanSingkat,
-  KOMPONEN_LAMA_RE, petunjukKemasanKg, normNama, r4, labelState,
+  KOMPONEN_LAMA_RE, KILOAN_RE, buktiPembelianKiloan, petunjukKemasanKg, normNama, r4, labelState,
 } from "../lib/domain/pemakaianHistoris.js";
 
 export class CatatanError extends Error {
@@ -24,10 +24,12 @@ async function muatKonteks(db, { orderNumbers, unitIds = [], materialIds = [] })
   const orders = orderNumbers.length ? await db.order.findMany({ where: { orderNumber: { in: orderNumbers } }, select: { id: true, orderNumber: true, units: { select: { id: true, unitCode: true, status: true } } } }) : [];
   const orderBy = new Map(orders.map((o) => [o.orderNumber, o]));
   const katalog = await db.material.findMany({ select: { id: true, code: true, name: true, unit: true, active: true, kind: true } });
+  // bukti pembelian tertulis untuk bahan berkata KILOAN (baca-saja); dasar menentukan ASAL bahan, bukan penerimaan stok
+  const pembelian = db.finPurchase?.findMany ? await db.finPurchase.findMany({ where: { description: { contains: "kiloan", mode: "insensitive" } }, select: { purchaseNumber: true, date: true, amount: true, description: true, status: true } }) : [];
   const idUnit = [...new Set([...unitIds, ...orders.flatMap((o) => o.units.map((u) => u.id))])];
   const pakai = idUnit.length ? await db.stockMovement.findMany({ where: { unitId: { in: idUnit }, type: { in: ["ISSUE", "RETURN"] } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }) : [];
   const lama = await db.stockMovement.findMany({ where: { type: "ISSUE", note: { startsWith: NOTE_IMPOR_LAMA }, unitId: { not: null } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } } } });
-  return { orderBy, katalog, katalogById: new Map(katalog.map((m) => [m.id, m])), pakai, lama, materialIds };
+  return { orderBy, katalog, pembelian, katalogById: new Map(katalog.map((m) => [m.id, m])), pakai, lama, materialIds };
 }
 async function muatGarisWaktu(db, materialIds) {
   const ev = new Map();
@@ -61,7 +63,11 @@ function klasifikasi(items, ctx, garisWaktu, { sekarang = new Date() } = {}) {
     else if (i.units.find((u) => u.id === i.unitId)?.status === "CANCELLED") flags.push(FLAG.UNIT_DIBATALKAN({ unitCode: i.units.find((u) => u.id === i.unitId)?.unitCode }));
     if (i.qty === null || i.qty === undefined || !(Number(i.qty) > 0)) flags.push(FLAG.QTY_TIDAK_VALID({ rawQty: i.rawQty }));
     if (!i.usedAt) flags.push(FLAG.TANGGAL_TIDAK_VALID({ rawDate: i.rawDate }));
-    if (!m) { const g = i.pemetaan; flags.push(g?.galat === "BAHAN_GANDA" ? FLAG.BAHAN_GANDA({ rawName: i.rawName, kandidat: g.kandidat }) : FLAG.NAMA_TIDAK_DI_KATALOG({ rawName: i.rawName, kandidat: g?.kandidat ?? [] })); }
+    if (!m) {
+      const g = i.pemetaan; flags.push(g?.galat === "BAHAN_GANDA" ? FLAG.BAHAN_GANDA({ rawName: i.rawName, kandidat: g.kandidat }) : FLAG.NAMA_TIDAK_DI_KATALOG({ rawName: i.rawName, kandidat: g?.kandidat ?? [] }));
+      // KILOAN = cara beli, bukan asal: bukti pembelian tertulis → INFO (asal dibeli); tanpa bukti → BLOK "asal perlu dicek". Tidak pernah otomatis komponen lama.
+      if (KILOAN_RE.test(i.rawName ?? "")) { const bukti = buktiPembelianKiloan(i, ctx.pembelian ?? []); flags.push(bukti.length ? FLAG.ASAL_PEMBELIAN_BERTULIS({ rawName: i.rawName, bukti }) : FLAG.ASAL_BAHAN_PERLU_DICEK({ rawName: i.rawName })); }
+    }
     else {
       if (!m.active) flags.push(FLAG.BAHAN_NONAKTIF({ kode: m.code }));
       if (!i.uom) flags.push(FLAG.SATUAN_TAK_DIKENAL({ rawUom: i.rawUom }));
