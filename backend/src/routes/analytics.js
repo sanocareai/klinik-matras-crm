@@ -5,7 +5,7 @@ import { requireAuth } from "../middleware/auth.js";
 import {
   startOfDayWIB, endOfDayExclusiveWIB,
   startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB,
-  effectiveResponseMinutes,
+  effectiveResponseMinutes, parseTanggalKalender,
 } from "../utils/wib.js";
 
 // Rata-rata dari array pasangan {inboundAt, outboundAt} pakai
@@ -37,6 +37,7 @@ import { atribusiOrderWhere } from "../services/salesOwner.js";
 // pakai aggregateBersih/groupByBersih/NILAI_BERSIH_SQL/nilaiBersih (services/orderNilaiBersih.js). Dijaga tes nilaiBersihRegistry.test.js.
 import { aggregateBersih, groupByBersih, NILAI_BERSIH_SQL, PILIH_KREDIT, nilaiBersih } from "../services/orderNilaiBersih.js";
 import { cacheSingkat } from "../middleware/cacheSingkat.js";
+import { ringkasanAov, daftarOrderAov, METRIK as AOV_METRIK } from "../services/salesAov.js";
 
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
@@ -1477,6 +1478,41 @@ analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
   }
 });
 
+// GET /analytics/sales-aov?from=&to= ─────────────────────────────────────────
+// DUA metrik AOV Tim yang SENGAJA dipisah (Okt 2026): "AOV Order Masuk Tim" (order DIBUAT di periode) dan "AOV Order Lunas Tim" (order yang MENJADI LUNAS di periode,
+// basis paidAt — termasuk order yang dibuat bulan lalu). Pembilang dan penyebut tiap metrik dari SATU himpunan order (services/salesAov.js); jangan menghitung ulang di klien.
+// Aturan cakupan Tim (Team Lead, tanpa atribusi, PKR, batal, nota kredit, refund) ditulis di services/salesAov.js dan dikirim di respons (`catatan`, `diagnosa`).
+function bacaPeriodeAov(q) {
+  const dari = q.from ? parseTanggalKalender(q.from, "from") : null;
+  const sampai = q.to ? parseTanggalKalender(q.to, "to") : null;
+  if (Boolean(dari) !== Boolean(sampai)) throw Object.assign(new Error("from dan to harus diisi bersamaan (YYYY-MM-DD) atau dikosongkan untuk semua waktu"), { statusCode: 400 });
+  if (dari && sampai && dari > sampai) throw Object.assign(new Error("from tidak boleh setelah to"), { statusCode: 400 });
+  return { from: dari ? String(q.from).slice(0, 10) : undefined, to: sampai ? String(q.to).slice(0, 10) : undefined };
+}
+
+analyticsRouter.get("/sales-aov", cacheSingkat(30_000), async (req, res) => {
+  try {
+    res.json(await ringkasanAov(prisma, bacaPeriodeAov(req.query)));
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error("sales-aov error:", err);
+    res.status(500).json({ error: "Gagal memuat AOV Tim" });
+  }
+});
+
+// GET /analytics/sales-aov/orders?metrik=masuk|lunas&from=&to=&q=&limit=&offset= — daftar order di balik kartu (halaman dari himpunan YANG SAMA dengan kartu).
+analyticsRouter.get("/sales-aov/orders", async (req, res) => {
+  try {
+    const metrik = String(req.query.metrik ?? "");
+    if (!Object.values(AOV_METRIK).includes(metrik)) return res.status(400).json({ error: 'metrik harus "masuk" atau "lunas"' });
+    res.json(await daftarOrderAov(prisma, { metrik, ...bacaPeriodeAov(req.query), q: req.query.q, limit: req.query.limit, offset: req.query.offset }));
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error("sales-aov/orders error:", err);
+    res.status(500).json({ error: "Gagal memuat daftar order AOV" });
+  }
+});
+
 analyticsRouter.get("/performance", async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -1945,6 +1981,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
                  COALESCE(SUM(${NILAI_BERSIH_SQL}), 0)::bigint AS value
           FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
           WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
+            AND o.penjualan_karyawan_id IS NULL
             AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     } else if (win.granularity === "day") {
@@ -1953,6 +1990,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
                  COALESCE(SUM(${NILAI_BERSIH_SQL}), 0)::bigint AS value
           FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
           WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
+            AND o.penjualan_karyawan_id IS NULL
             AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     } else {
@@ -1961,10 +1999,12 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
                  COALESCE(SUM(${NILAI_BERSIH_SQL}), 0)::bigint AS value
           FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
           WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
+            AND o.penjualan_karyawan_id IS NULL
             AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     }
 
+    // Order operasional Penjualan Karyawan (PKR) dikecualikan dari NILAI juga (tanpaOrderSpam sudah mengecualikannya dari JUMLAH order di bawah): pembilang dan penyebut AOV harus dari populasi yang sama.
     const points = fillBuckets(win, Object.fromEntries(rows.map((r) => [r.bucket, Number(r.value)])));
     const total = points.reduce((s, p) => s + p.value, 0);
 

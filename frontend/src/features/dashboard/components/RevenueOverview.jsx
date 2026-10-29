@@ -105,7 +105,7 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
               <div className="text-right">
                 <p className="t-caption">AOV</p>
                 <p className="mt-1 text-[19px] font-bold tabular-nums text-ink">{formatRupiahShort(aov)}</p>
-                <p className="t-secondary mt-1 text-[11px]">{totalOrders} order</p>
+                <p className="t-secondary mt-1 text-[11px]" title="Seluruh perusahaan, order yang dibuat di periode, nilai bersih. AOV Tim Sales (masuk vs lunas) ada di Laporan > Sales.">{totalOrders} order dibuat</p>
               </div>
             )}
             {/* Repeat Order Rate — indikator loyalitas: Revenue/AOV bisa naik

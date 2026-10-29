@@ -1513,6 +1513,8 @@ export const api = {
   getBusinessSummary: (params) => request("/analytics/business-summary" + buildQuery(params)),
   getSalesReport: (params) => request("/analytics/sales-report" + buildQuery(params)),
   getSalesLunasDetail: (params) => request("/analytics/sales-report/lunas-detail" + buildQuery(params)),
+  getSalesAov: (params) => request("/analytics/sales-aov" + buildQuery(params)),
+  getSalesAovOrders: (params) => request("/analytics/sales-aov/orders" + buildQuery(params)),
   // Rekonsiliasi Sales–Finance (30 Sep 2026): bridge Uang Masuk Terverifikasi → Nilai Order yang Menjadi Lunas (angka dari server, satu helper dengan Finance).
   getPenjualanKaryawan: (params) => request("/orders/penjualan-karyawan/ringkasan" + buildQuery(params)),
   getRekonSalesFinance: (params) => request("/sales-finance/rekon" + buildQuery(params)),

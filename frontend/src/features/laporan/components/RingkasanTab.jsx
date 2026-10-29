@@ -251,8 +251,8 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           label="Rata-rata per Order"
           numericValue={uang?.aov || 0}
           format={(v) => formatRupiah(Math.round(v))}
-          sub="AOV — nilai penjualan / jumlah order"
-          tooltip="Nilai Penjualan dibagi jumlah order di periode yang dipilih — patokan cepat menilai order besar/kecil rata-rata."
+          sub="AOV perusahaan — order yang dibuat di periode"
+          tooltip="Nilai Penjualan (bersih) dibagi jumlah order yang DIBUAT di periode, seluruh perusahaan (tanpa order Penjualan Karyawan). Beda dari AOV Tim di Laporan > Sales, yang hanya Tim Sales dan dipisah menjadi AOV Order Masuk dan AOV Order Lunas."
         />
       </div>
 

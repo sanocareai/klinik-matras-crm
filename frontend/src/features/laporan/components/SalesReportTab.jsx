@@ -16,6 +16,7 @@ import { useRekonSalesFinance, KartuRekon, PanelRekon, DaftarRekonModal } from "
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import BarRow from "./BarRow.jsx";
 import KartuPenjualanKaryawan from "./KartuPenjualanKaryawan.jsx";
+import { KartuAovTim } from "./KartuAovTim.jsx";
 
 // ═══ LAPORAN SALES ════════════════════════════════════════════════════════
 // FOKUS PENJUALAN — siapa closing berapa, target, konversi. Metrik KECEPATAN
@@ -73,7 +74,7 @@ const KOLOM = [
   // (sebelum fitur paidAt ada) belum punya paidAt, jadi tidak terhitung di
   // sini sampai statusnya disentuh ulang — bukan berarti benar-benar Rp0.
   { k: "collectedValue", label: "Lunas", title: "Basis komisi: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini. Order dari bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus) — makanya beda populasi dari kolom Nilai (Reach, basisnya kapan order dibuat). ⚠️ Angka ini TERKUNCI ke periode yang dipilih (kalau lunasnya SETELAH tanggal terakhir periode, tidak ikut — geser ke periode berikutnya) — BEDA dari kartu \"Belum Lunas\" di halaman Order, yang LIVE ikut status sekarang. Dua-duanya benar, cuma menjawab pertanyaan beda (komisi terkunci vs status operasional saat ini)." },
-  { k: "aov",        label: "AOV",        title: "AOV (Average Order Value) = total Nilai ÷ jumlah Order di periode ini — rata-rata besar 1 order." },
+  { k: "aov",        label: "AOV",        title: "AOV per Sales = total Nilai ÷ jumlah Order yang DIBUAT di periode ini (basis order masuk, nilai bersih). AOV berbasis order yang menjadi LUNAS ada di kartu \"AOV Order Lunas Tim\" di atas." },
   { k: "percentToTarget", label: "% Target", title: "% Target = (nilai closing BULAN INI, bukan periode yang dipilih di atas) ÷ (target bulanan dari Pengaturan > Target Sales) × 100%." },
 ];
 
@@ -164,7 +165,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           numericValue={teamGrossAll}
           format={(v) => formatRupiah(Math.round(v))}
           growth={report?.growthTeamGrossValue} compareLabel={cmp}
-          sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
+          sub={`${teamOrdersAll} order dibuat di periode`}
           tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas — “reach”, belum tentu sudah lunas."
         />
         <KpiCard
@@ -195,20 +196,16 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           tooltip={`Progres closing tim terhadap target BULANAN — SELALU ${labelBulanTarget}, tidak ikut rentang tanggal yang dipilih di atas.`}
         />
         <KpiCard
-          index={4} label="AOV Tim"
-          numericValue={teamAovAll}
-          format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
-          sub="rata-rata nilai per order, seluruh tim"
-          tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
-        />
-        <KpiCard
-          index={5} label="Chat Spam"
+          index={4} label="Chat Spam"
           numericValue={total?.spamCount || 0}
           format={(v) => Math.round(v).toLocaleString("id-ID")}
           sub={total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani"}
           tooltip={`Spam % = (chat yang dipegang tim & ditandai SPAM) ÷ (chat SPAM + chat yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut) — scope sama dengan kartu lain di atas. Bukan penalti performa sales — ini pengawas KUALITAS LEAD masuk, layak ditinjau kalau jumlahnya tiba-tiba melonjak.`}
         />
       </div>
+
+      {/* ── AOV Tim: DUA metrik terpisah (order masuk vs order lunas), angka & daftar dari server ─────────────── */}
+      <KartuAovTim range={range} />
 
       {/* ── Rekonsiliasi Sales–Finance: kartu terpisah + bridge (angka dari server) ─────────────── */}
       <KartuRekon data={rekon.data} loading={rekon.loading} onBuka={setRekonBuka} />

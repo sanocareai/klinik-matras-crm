@@ -95,7 +95,7 @@ function sheetRingkasan({ periode, summary, perf }) {
     ["Belum lunas",                   rp(u.outstandingValue), "Nilai penjualan − sudah lunas"],
     ["% lunas",                       num(u.collectedRate, FMT.pct0), "Rendah bisa berarti status pembayaran belum dirawat"],
     ["Jumlah order",                  num(u.totalOrders), ""],
-    ["Rata-rata per order (AOV)",     rp(u.aov), "Nilai penjualan / jumlah order"],
+    ["Rata-rata per order (AOV)",     rp(u.aov), "Seluruh perusahaan: nilai bersih / jumlah order yang dibuat di periode (AOV Tim Sales: lihat Laporan > Sales)"],
   ]);
   sb.blank();
 
