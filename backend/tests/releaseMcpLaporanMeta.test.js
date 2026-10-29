@@ -8,7 +8,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const BASE_LIVE = "e7883bc6";
+const BASE_LIVE = "aed5d9c9";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const rel = "scripts/release-mcp-laporan-meta.sh";
 const scriptPath = path.join(root, rel);
