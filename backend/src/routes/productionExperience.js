@@ -28,6 +28,7 @@ import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
 import { productionDocumentationRouter } from "./productionDocumentation.js";
 import { productionComponentNotesRouter } from "./productionComponentNotes.js";
 import { productionReportsRouter } from "./productionReports.js";
+import { productionLaporanRouter } from "./productionLaporan.js";
 import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
@@ -631,5 +632,6 @@ productionExperienceRouter.get("/demo/access", requirePermission(P.PRODUCTION_DE
 // P11 — Reporting & KPI Production–Warehouse (baca-saja; izin & cohort diperiksa di router).
 productionExperienceRouter.use("/targets", productionTargetsRouter);
 productionExperienceRouter.use("/reports", productionReportsRouter);
+productionExperienceRouter.use("/laporan", productionLaporanRouter); // Laporan Produksi terpadu (4 tab; semua unit non-batal; baca-saja; nominal hanya finance:read)
 // P9B.1 — unggah foto identitas unit manual (multipart) — izin & cohort diperiksa di router media.
 productionExperienceRouter.use(productionUnitPhotoUploadRouter);
