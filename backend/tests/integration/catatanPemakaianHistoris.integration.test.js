@@ -74,8 +74,8 @@ test("C1. impor: nilai ASLI utuh; setiap baris punya keadaan + penanda; TIDAK me
   const f3 = n3.flags.find((f) => f.kode === "SATUAN_BEDA_MASTER"); assert.match(f3.teks, /1,5 KG/); assert.match(f3.aksi, /Tidak dikonversi otomatis/); assert.equal(f3.data.kemasanKg, 13);
   // 4) varian tertukar: Excel varian B tanpa ISSUE → bergantung pada ISSUE lama tanpa pasangan di unit yang sama
   assert.equal(n4.state, "PERLU_DICEK"); assert.ok(flagKode(n4).includes("BERGANTUNG_ISSUE_LAMA"));
-  // 5) komponen lama → bukan stok; 6) bahan tak dikenal → tidak ditebak
-  assert.equal(n5.state, "BUKAN_STOK"); assert.equal(n6.state, "PERLU_DICEK"); assert.deepEqual(flagKode(n6), ["NAMA_TIDAK_DI_KATALOG"]); assert.equal(n6.materialId, null);
+  // 5) KILOAN BUKAN komponen lama (cara beli): tanpa bukti asal → perlu dicek (BLOK); komponen lama eksplisit diuji di kiloanAsalBahan; 6) bahan tak dikenal → tidak ditebak
+  assert.equal(n5.state, "PERLU_DICEK"); assert.deepEqual(flagKode(n5), ["ASAL_BAHAN_PERLU_DICEK", "NAMA_TIDAK_DI_KATALOG"]); assert.equal(n6.state, "PERLU_DICEK"); assert.deepEqual(flagKode(n6), ["NAMA_TIDAK_DI_KATALOG"]); assert.equal(n6.materialId, null);
   // order 2: soft aman; kain tidak cukup (saldo 4, sudah dipakai 1,7 oleh ISSUE lama → 2,3 tersisa; butuh 10); bahan tanpa catatan; qty 0
   assert.equal(nomor(7).state, "SIAP_POSTING"); assert.equal(nomor(8).state, "PERLU_DICEK"); assert.ok(flagKode(nomor(8)).includes("SALDO_TIDAK_CUKUP"));
   assert.equal(nomor(9).state, "PERLU_DICEK"); assert.ok(flagKode(nomor(9)).includes("TANPA_SALDO_PEMBUKA")); assert.equal(nomor(10).state, "TIDAK_DIHITUNG");
@@ -119,7 +119,7 @@ test("C4. tampilan Produksi: ambilCatatanHistoris menampilkan nilai asli, label 
   const w = await dunia();
   await terapkanImpor(testPrisma, await rencanakanImpor(testPrisma, { csvText: CSV, namaBerkas: "uji.csv" }), { actorId: null });
   const v = await ambilCatatanHistoris(testPrisma, w.u1.id);
-  assert.equal(v.ringkas.total, 7, "6 baris Excel + 1 catatan LEDGER"); assert.equal(v.ringkas.tercatatDiStok, 1); assert.equal(v.ringkas.bukanStok, 1);
+  assert.equal(v.ringkas.total, 7, "6 baris Excel + 1 catatan LEDGER"); assert.equal(v.ringkas.tercatatDiStok, 1); assert.equal(v.ringkas.bukanStok, 0, "KILOAN bukan komponen lama (cara beli): tanpa bukti asal = perlu dicek");
   assert.equal(v.items[0].state, "PERLU_DICEK", "yang perlu dicek tampil paling atas");
   const lem = v.items.find((i) => i.nama === "LEM I-SR TES 13 KG");
   assert.equal(lem.label, "Perlu dicek"); assert.equal(lem.qtyAsli, "1,5"); assert.equal(lem.satuanAsli, "KG"); assert.match(lem.catatan, /Konfirmasi ke Admin Sales/);

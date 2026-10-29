@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MaterialUnit } from "@prisma/client";
-import { angkaId, tanggalId, awalHariWIB, satuanBaku, parseCsv, bacaCsvPemakaian, kunciSumber, petakanBahan, FLAG, flagMemblok, catatanSingkat, petunjukKemasanKg, uang, KOMPONEN_LAMA_RE } from "../src/lib/domain/pemakaianHistoris.js";
+import { angkaId, tanggalId, awalHariWIB, satuanBaku, parseCsv, bacaCsvPemakaian, kunciSumber, petakanBahan, FLAG, flagMemblok, catatanSingkat, petunjukKemasanKg, uang, KOMPONEN_LAMA_RE, KILOAN_RE, buktiPembelianKiloan } from "../src/lib/domain/pemakaianHistoris.js";
 
 test("angkaId: format Indonesia tanpa menebak; teks aneh tetap teks", () => {
   assert.deepEqual(angkaId("1,7"), { v: 1.7, jenis: "angka" });
@@ -73,6 +73,17 @@ test("penanda: LEM 1,5 KG pada bahan CAN = perlu konfirmasi, TIDAK dikonversi; t
   assert.match(catatanSingkat([FLAG.KATEGORI_KOMPLAIN(), f]), /Konfirmasi/); assert.equal(catatanSingkat([FLAG.KATEGORI_KOMPLAIN()]), null);
 });
 
-test("komponen lama dikenali dari nama (bukan stok Gudang)", () => {
-  assert.ok(KOMPONEN_LAMA_RE.test("MEMORY FOAM KILOAN")); assert.ok(KOMPONEN_LAMA_RE.test("BUSA LAMA")); assert.equal(KOMPONEN_LAMA_RE.test("BUSA LAMBAT"), false);
+test("komponen lama dikenali dari penanda ASAL eksplisit (LAMA / BUANG KASUR); KILOAN = cara beli, BUKAN penanda asal", () => {
+  assert.ok(KOMPONEN_LAMA_RE.test("BUSA LAMA")); assert.ok(KOMPONEN_LAMA_RE.test("BUANG KASUR")); assert.ok(KOMPONEN_LAMA_RE.test("KAIN KILOAN LAMA"), "KILOAN + LAMA: penanda asal eksplisit menang");
+  assert.equal(KOMPONEN_LAMA_RE.test("MEMORY FOAM KILOAN"), false); assert.equal(KOMPONEN_LAMA_RE.test("BUSA LAMBAT"), false);
+  assert.ok(KILOAN_RE.test("MEMORY FOAM KILOAN"));
+});
+
+test("buktiPembelianKiloan: semua kata khas nama + KILOAN harus ada di deskripsi pembelian, bertanggal pada/sebelum pemakaian; bahan lain bukan bukti", () => {
+  const P = [{ purchaseNumber: "PUR-A", date: new Date("2026-09-23"), amount: 1_680_000, description: "Memory foam kiloan", status: "DIBAYAR" }, { purchaseNumber: "PUR-B", date: new Date("2026-09-20"), amount: 5, description: "Kain kiloan Hikaron", status: "DIBAYAR" }, { purchaseNumber: "PUR-C", date: new Date("2026-10-30"), amount: 5, description: "Memory foam kiloan", status: "DIBAYAR" }, { purchaseNumber: "PUR-D", date: new Date("2026-09-01"), amount: 5, description: "Memory foam", status: "DIBAYAR" }];
+  const b = buktiPembelianKiloan({ rawName: "MEMORY FOAM KILOAN", usedAt: new Date("2026-09-24") }, P);
+  assert.deepEqual(b.map((x) => x.nomor), ["PUR-A"], "hanya pembelian KILOAN yang menyebut MEMORY FOAM dan bertanggal sebelum pakai");
+  assert.deepEqual(buktiPembelianKiloan({ rawName: "KARET BUSA KILOAN", usedAt: new Date("2026-09-24") }, P), []);
+  assert.deepEqual(buktiPembelianKiloan({ rawName: "KILOAN", usedAt: new Date("2026-09-24") }, P), [], "nama hanya KILOAN tidak punya kata khas");
+  assert.equal(FLAG.ASAL_BAHAN_PERLU_DICEK({ rawName: "X KILOAN" }).tingkat, "BLOK"); assert.equal(FLAG.ASAL_PEMBELIAN_BERTULIS({ rawName: "X", bukti: b }).tingkat, "INFO");
 });
