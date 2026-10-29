@@ -11,7 +11,7 @@ Halaman Laporan ──HTTP──▶ routes/attributionAds.js ──────�
 
 - Endpoint dan tool memanggil **fungsi yang sama** (`hitungLaporanIklan`, transaksi `READ ONLY` + `statement_timeout`). MCP tidak berisi SQL maupun rumus bisnis; `laporanMeta.js` hanya memilih kolom (daftar-putih), mengurutkan, dan menyusun per hari.
 - Penjaga satu-perhitungan-sekaligus dipindah ke `penjagaLaporan.js` dan dipakai bersama: endpoint tetap menjawab 429 `SEDANG_DIHITUNG` saat sibuk; tool MCP antre hingga 15 detik.
-- Auth MCP tidak berubah: token statis (Claude Code/Desktop) atau OAuth (hanya ADMIN bisa login+approve). Respons tidak memuat nama, nomor, email, percakapan, atau ID customer/order.
+- Auth MCP tidak berubah: token statis (Claude Code/Desktop) atau OAuth (hanya ADMIN bisa login+approve); fasad ChatGPT `/mcp-chatgpt` hanya OAuth ADMIN. Respons tidak memuat nama, nomor, email, percakapan, atau ID customer/order.
 - Perubahan di service lama (aditif): metrik `customerPernahMembayar` (customer unik dengan ≥1 pembayaran ledger sah) di baris `/iklan`, `jumlahTeratribusi`, dan dua pemeriksaan rekonsiliasi baru. Tidak ada kunci yang dihapus/diubah.
 
 ## Tool
@@ -44,11 +44,27 @@ Halaman Laporan ──HTTP──▶ routes/attributionAds.js ──────�
 
 ## Rilis & reconnect
 
-1. Kode saja: tanpa migrasi, tanpa perubahan env. Build image backend dari commit kandidat, ganti kontainer `backend`.
-2. Smoke: `tools/list` memuat 3 tool baru (readOnlyHint=true); panggil `kesehatan_atribusi_meta` (rekonsiliasi `ok`), `performa_campaign_meta` 7 hari bawaan.
-3. **Connector claude.ai** menyimpan daftar tool per koneksi. Setelah rilis: Pengaturan → Konektor → SANSS CRM → putuskan lalu sambungkan ulang (atau mulai percakapan baru). `serverInfo.version` kini `1.1.0` untuk memastikan klien melihat versi baru.
-4. **Jembatan ChatGPT Actions** (`/gpt-actions`) mengekspos semua tool server di belakang token yang sama: ambil ulang `/gpt-actions/openapi.json` dan tempel ke Custom GPT bila ingin operasi baru. Plugin `/mcp-chatgpt` memakai allowlist eksplisit, jadi tool baru **tidak** aktif di sana (fail-closed).
-5. Rollback: kembalikan image sebelumnya; tidak ada perubahan data.
+Konektor yang dipakai:
+
+| Klien | Jalur | Auth | Nama tool |
+|---|---|---|---|
+| ChatGPT (Mesa) | `/mcp-chatgpt` (fasad, `chatgptPlugin.js`) | OAuth 2.1 + PKCE, hanya ADMIN aktif, audience `/mcp-chatgpt` | `sales_performa_campaign_meta`, `sales_rekap_harian_meta`, `sales_kesehatan_atribusi_meta` (+6 lama; total 9) |
+| claude.ai (browser) | `/mcp` | OAuth (ADMIN), audience `/mcp` | `performa_campaign_meta`, `rekap_harian_meta`, `kesehatan_atribusi_meta` |
+| Claude Code / Desktop | `/mcp` | token statis `MCP_API_TOKEN` | sama dengan claude.ai |
+| Custom GPT Actions (bila dipakai) | `/gpt-actions` | token statis | semua tool server; ambil ulang `/gpt-actions/openapi.json` |
+
+Fasad ChatGPT adalah **allowlist eksplisit**: tool baru hanya terlihat di sana karena `CHATGPT_TOOL_CATALOG` diperluas (21 entri, 9 aktif) dan `registerAtribusiIklanTools` didaftarkan pada fasad. Ini perubahan paparan yang disengaja (agregat saja, ADMIN-OAuth saja).
+
+### Uji lokal ≠ discovery konektor
+- **Dibuktikan sebelum/saat rilis oleh skrip** (rehearsal pada salinan restore + smoke pasca-switch): server baru hidup, `tools/list` di `/mcp` dan `/mcp-chatgpt` memuat tool baru lewat OAuth ChatGPT, OAuth Claude, dan token statis; token salah/lintas-audience/non-ADMIN ditolak; hasil tool == endpoint; tidak ada baris berubah.
+- **Hanya bisa dibuktikan SESUDAH rilis, manual**: bahwa klien konektor sudah membaca ulang daftar tool. ChatGPT dan claude.ai menyimpan daftar tool per koneksi.
+  1. ChatGPT: Settings → Developer mode → app SANSS → **Refresh**; bila tool baru tidak muncul, hapus koneksi lalu buat ulang dengan URL `https://app.sanomatrassehat.com/mcp-chatgpt` dan login ADMIN.
+  2. claude.ai: Pengaturan → Konektor → SANSS CRM → putuskan lalu sambungkan ulang (atau percakapan baru).
+  3. Uji satu panggilan nyata dari klien (mis. `sales_kesehatan_atribusi_meta` dengan 7 hari terakhir) dan cocokkan dengan halaman Laporan sebelum menyatakan terhubung. Status koneksi ChatGPT sebelum rilis ini sendiri belum terbukti (lihat `docs/CHATGPT-MCP-PLUGIN.md`).
+
+### Langkah rilis
+1. Kode saja: tanpa migrasi, env, atau frontend. Skrip bergerbang: `scripts/release-mcp-laporan-meta.sh` (dibangkitkan oleh `scripts/gen-release-mcp-laporan-meta.cjs` terhadap baseline live). Urutan: `--preflight-only` → `--rehearsal-only` → rilis penuh (hanya setelah persetujuan).
+2. Rollback: image sebelumnya (`rollback-pre-mlm-<sha8>`); tidak ada perubahan data. Setelah rollback, klien perlu refresh lagi.
 
 ## Pengujian
 

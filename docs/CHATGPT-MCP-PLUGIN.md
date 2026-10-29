@@ -19,14 +19,19 @@ adalah callback stabil + issuer identification di bawah.
 Endpoint ini adalah facade dari registrasi dan handler `/mcp` yang sudah ada.
 Tidak ada query, tabel, atau implementasi bisnis kedua.
 
-## Enam tool aktif
+## Sembilan tool aktif
 
 1. `sales_ringkasan_penjualan`
 2. `sales_ringkasan_pipeline`
 3. `sales_ringkasan_sumber_lead`
 4. `sales_tren_traffic_lead`
-5. `sales_performa_iklan`
+5. `sales_performa_iklan` (ringkasan lama per sumber/URL kreatif — bukan atribusi campaign)
 6. `sales_daftar_produk`
+7. `sales_performa_campaign_meta` — campaign/ad set/ad Meta (atribusi CTWA kausal; customer ber-order, membayar, lunas ledger, spend, CPA, ROAS)
+8. `sales_rekap_harian_meta` — rekap harian kohort + akumulasi periode
+9. `sales_kesehatan_atribusi_meta` — kesehatan/cakupan atribusi dan spend
+
+Tool 7–9 (ditambahkan bersama rilis "MCP laporan Meta Ads") memakai service yang sama dengan `GET /api/atribusi/iklan`, hanya mengembalikan agregat dan ID/nama iklan (tanpa data customer), dan dibatasi OAuth ADMIN seperti tool lain di endpoint ini. Lihat `docs/MCP-LAPORAN-META-ADS.md`.
 
 Semua tool memiliki `readOnlyHint: true`, `destructiveHint: false`, dan
 `openWorldHint: false`. Parameter `unmask` tidak ada pada schema ChatGPT dan
@@ -103,9 +108,9 @@ Menurut dokumentasi resmi OpenAI:
 3. Buka **ChatGPT Plugins**, tekan tombol plus, dan buat koneksi baru.
 4. Masukkan URL `https://app.sanomatrassehat.com/mcp-chatgpt`.
 5. Pilih OAuth/DCR dan selesaikan login menggunakan akun ADMIN SANSS.
-6. Periksa bahwa hanya enam tool di atas yang ditemukan dan seluruhnya
+6. Periksa bahwa hanya sembilan tool di atas yang ditemukan dan seluruhnya
    ditandai read-only.
-7. Setelah perubahan metadata di-deploy, gunakan **Refresh** pada detail app.
+7. Setelah perubahan metadata/tool di-deploy (mis. tiga tool Meta Ads), gunakan **Refresh** pada detail app agar ChatGPT membaca ulang `tools/list`; bila tool baru tetap tidak muncul, hapus lalu buat ulang koneksi dengan URL yang sama (OAuth ADMIN diulang). Daftar tool disimpan per koneksi oleh ChatGPT.
 8. Uji satu panggilan nyata dari percakapan ChatGPT sebelum menyatakan plugin
    terhubung.
 
@@ -165,7 +170,7 @@ Referensi resmi:
    `https://app.sanomatrassehat.com/mcp-chatgpt`.
 2. Selesaikan OAuth menggunakan akun ADMIN aktif. Uji bahwa akun non-ADMIN
    ditolak dan token untuk `/mcp` tidak diterima pada `/mcp-chatgpt`.
-3. Pastikan `tools/list` hanya berisi enam tool aktif, seluruhnya read-only,
+3. Pastikan `tools/list` hanya berisi sembilan tool aktif, seluruhnya read-only,
    dan schema tidak memiliki `unmask`.
 4. Panggil `sales_daftar_produk` sebagai smoke test tanpa data pelanggan, lalu
    satu tool agregat dengan rentang tanggal aman. Cocokkan respons dengan SANSS.

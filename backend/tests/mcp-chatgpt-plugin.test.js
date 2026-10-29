@@ -51,8 +51,8 @@ function call(url, body, token) {
   });
 }
 
-test("catalog menyiapkan 18 mapping tetapi hanya enam tool tahap awal aktif", () => {
-  assert.equal(CHATGPT_TOOL_CATALOG.length, 18);
+test("catalog menyiapkan 21 mapping; enam tool tahap awal + tiga tool laporan Meta Ads (agregat) aktif", () => {
+  assert.equal(CHATGPT_TOOL_CATALOG.length, 21);
   assert.deepEqual(
     CHATGPT_TOOL_CATALOG.filter((tool) => tool.active).map((tool) => tool.name),
     [
@@ -62,11 +62,14 @@ test("catalog menyiapkan 18 mapping tetapi hanya enam tool tahap awal aktif", ()
       "sales_daftar_produk",
       "sales_tren_traffic_lead",
       "sales_performa_iklan",
+      "sales_performa_campaign_meta",
+      "sales_rekap_harian_meta",
+      "sales_kesehatan_atribusi_meta",
     ],
   );
 });
 
-test("tools/list hanya menawarkan enam tool read-only, OAuth, dan tanpa unmask", async (t) => {
+test("tools/list hanya menawarkan sembilan tool aktif read-only, OAuth, dan tanpa unmask", async (t) => {
   const authorize = (_req, _res, next) => next();
   const { url, close } = await start(createChatGptMcpRouter({ authorize }));
   t.after(close);

@@ -57,7 +57,7 @@ test.after(async () => {
   await testPrisma.$disconnect();
 });
 
-test("enam tool aktif berhasil dipanggil terhadap database tes tanpa data pelanggan nyata", async () => {
+test("sembilan tool aktif berhasil dipanggil terhadap database tes tanpa data pelanggan nyata", async () => {
   const calls = [
     ["sales_ringkasan_penjualan", { dari: "2026-09-01", sampai: "2026-09-30" }],
     ["sales_ringkasan_pipeline", {}],
@@ -65,6 +65,9 @@ test("enam tool aktif berhasil dipanggil terhadap database tes tanpa data pelang
     ["sales_daftar_produk", { limit: 5 }],
     ["sales_tren_traffic_lead", { dari: "2026-09-01", sampai: "2026-09-30" }],
     ["sales_performa_iklan", { dari: "2026-09-01", sampai: "2026-09-30" }],
+    ["sales_performa_campaign_meta", { dari: "2026-09-01", sampai: "2026-09-30" }],
+    ["sales_rekap_harian_meta", { dari: "2026-09-01", sampai: "2026-09-03" }],
+    ["sales_kesehatan_atribusi_meta", { dari: "2026-09-01", sampai: "2026-09-30" }],
   ];
 
   for (const [name, args] of calls) {

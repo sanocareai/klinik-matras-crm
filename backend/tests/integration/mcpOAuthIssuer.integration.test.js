@@ -142,7 +142,7 @@ test("DCR menerima callback stabil ChatGPT, menolak URI asing dan mirip-mirip (e
   assert.equal(campur.res.status, 400);
 });
 
-test("alur penuh ADMIN: redirect sukses memuat code, state yang sama, dan iss; token hanya untuk /mcp-chatgpt dengan enam tool", async () => {
+test("alur penuh ADMIN: redirect sukses memuat code, state yang sama, dan iss; token hanya untuk /mcp-chatgpt dengan sembilan tool", async () => {
   const { body: client } = await daftarClient([STABLE]);
   const verifier = randomToken(32);
   const challenge = computeCodeChallengeS256(verifier);
@@ -193,8 +193,8 @@ test("alur penuh ADMIN: redirect sukses memuat code, state yang sama, dan iss; t
   assert.equal(list.status, 200);
   const tools = parseMcp(await list.text()).result.tools;
   assert.deepEqual(tools.map((t) => t.name).sort(), [
-    "sales_daftar_produk", "sales_performa_iklan", "sales_ringkasan_penjualan",
-    "sales_ringkasan_pipeline", "sales_ringkasan_sumber_lead", "sales_tren_traffic_lead",
+    "sales_daftar_produk", "sales_kesehatan_atribusi_meta", "sales_performa_campaign_meta", "sales_performa_iklan", "sales_rekap_harian_meta",
+    "sales_ringkasan_penjualan", "sales_ringkasan_pipeline", "sales_ringkasan_sumber_lead", "sales_tren_traffic_lead",
   ]);
   for (const t of tools) {
     assert.equal(t.annotations.readOnlyHint, true, t.name);
