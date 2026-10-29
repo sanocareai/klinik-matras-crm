@@ -22,7 +22,8 @@ import { ambilKomponenLama } from "../services/productionComponentReuseService.j
 import { signEvidenceUrl } from "./productionEvidenceMedia.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
-import { listWorkOrders, perkayaBarisUnit } from "../services/productionOrderList.js";
+import { hitungKelengkapanDaftar, listWorkOrders, perkayaBarisUnit } from "../services/productionOrderList.js";
+import { ambilPernyataanUnit, cabutPernyataanTanpaBahan, nyatakanTanpaBahanBaru } from "../services/unitMaterialDeclarationService.js";
 import { AdopsiError, ambilPemakaianAktual, ambilRencanaBahan, catatStatusKerjaManual, katalogBahan, loadAppEvidence, riwayatKerjaUnit, simpanRencanaBahan } from "../services/productionAdoptionService.js";
 import { RencanaBahanError } from "../lib/domain/productionMaterialPlan.js";
 import { BahanUsulanError } from "../lib/domain/bahanUsulan.js";
@@ -59,6 +60,7 @@ const bolehUbah = (user) => ({
   target: hasPermission(user, P.UNIT_ROUTING_WRITE),
   rencanaBahan: hasPermission(user, P.UNIT_ROUTING_WRITE),
   pemakaianAktual: hasPermission(user, P.UNIT_MATERIAL_WRITE),
+  pernyataanTanpaBahan: hasPermission(user, P.UNIT_ROUTING_WRITE), // menyatakan unit tanpa bahan baru (eksplisit, dapat diaudit)
   usulBahan: hasPermission(user, P.UNIT_MATERIAL_WRITE), // tombol "Bahan belum ada?" — hanya mengajukan usulan (bukan stok)
   catatPemakaianSementara: hasPermission(user, P.UNIT_MATERIAL_WRITE),
   putuskanUsulan: hasPermission(user, P.INVENTORY_WRITE), // Gudang: setujui/gabung/tolak usulan + rekonsiliasi pemakaian sementara
@@ -152,9 +154,28 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
       penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, koreksiSaldo, koreksiMenunggu: koreksiMenunggu.map((k) => ({ ...k, milikSaya: k.pemohon?.id === req.user.id })), hppBahan, komponenLama, perbandingan, riwayat,
-      izin: bolehUbah(req.user),
+      izin: bolehUbah(req.user), pernyataanTanpaBahan: await ambilPernyataanUnit(prisma, unit.id),
     });
   } catch (err) { handleErr(err, res); }
+});
+
+// Hitungan penyaring kelengkapan (Bahan belum dicatat · Bahan perlu dicek · HPP belum lengkap · Data order kurang) untuk filter yang sedang aktif. Seluruh unit yang cocok, bukan halaman yang dimuat. BACA-SAJA.
+productionAdopsiRouter.get("/work-orders/kelengkapan-hitung", requirePermission(P.UNIT_READ), async (req, res) => {
+  try { res.json(await hitungKelengkapanDaftar(prisma, req.query)); } catch (err) { handleErr(err, res); }
+});
+
+// Pernyataan "tanpa bahan baru" per unit (eksplisit, dapat diaudit; bukan tebakan). Izin = UNIT_ROUTING_WRITE (Admin/Owner/Kepala Produksi): menyatakan ABSENNYA bahan adalah keputusan Admin.
+productionAdopsiRouter.get("/units/:id/pernyataan-tanpa-bahan", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {
+  try { res.json(await ambilPernyataanUnit(prisma, req.params.id)); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/units/:id/pernyataan-tanpa-bahan", requirePermission(P.UNIT_ROUTING_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const hasil = await nyatakanTanpaBahanBaru(prisma, { unitId: req.params.id, alasan: req.body?.alasan, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || null });
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/units/:id/pernyataan-tanpa-bahan/cabut", requirePermission(P.UNIT_ROUTING_WRITE), wajibUuid(), async (req, res) => {
+  try { res.json(await cabutPernyataanTanpaBahan(prisma, { unitId: req.params.id, alasan: req.body?.alasan, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
 });
 
 productionAdopsiRouter.post("/units/:id/work-progress", requirePermission(P.UNIT_ROUTING_WRITE), wajibUuid(), async (req, res) => {

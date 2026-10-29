@@ -425,7 +425,7 @@ export async function getAntrean(prisma, { query, config = BOARD_DEFAULTS, now =
   const MAX = 1500;
   const units = await prisma.unit.findMany({ where, include: UNIT_INCLUDE, take: MAX + 1, orderBy: { createdAt: "asc" } });
   const truncated = units.length > MAX; const cand = truncated ? units.slice(0, MAX) : units;
-  const rows = await perkayaBarisUnit(prisma, cand);
+  const rows = await perkayaBarisUnit(prisma, cand, { kelengkapan: false });
   const unitIds = rows.map((r) => r.id);
   const writerState = resolveProductionWriterState(await loadV2Flags(prisma));
   const [schedules, plans, bahan, activeRuns] = await Promise.all([

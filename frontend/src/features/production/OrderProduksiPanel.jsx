@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
 import PemakaianAktualBagian from "@/features/production/bahan/PemakaianAktualBagian.jsx";
+import KelengkapanBagian from "@/features/production/KelengkapanBagian.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
@@ -80,6 +81,12 @@ export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onCh
     const t = setTimeout(() => { const el = document.getElementById("sec-aktual"); if (el) { el.scrollIntoView({ behavior: "auto", block: "start" }); el.setAttribute("tabindex", "-1"); el.style.outline = "none"; el.focus({ preventScroll: true }); } }, 60);
     return () => clearTimeout(t);
   }, [fokusBahan, data?.unit?.id]);
+  useEffect(() => {
+    if (fokus !== "kelengkapan" || !data?.unit?.id || fokusSudahRef.current === `k:${data.unit.id}`) return undefined;
+    fokusSudahRef.current = `k:${data.unit.id}`;
+    const t = setTimeout(() => { const el = document.getElementById("sec-kelengkapan"); if (el) { el.scrollIntoView({ behavior: "auto", block: "start" }); el.setAttribute("tabindex", "-1"); el.style.outline = "none"; el.focus({ preventScroll: true }); } }, 80);
+    return () => clearTimeout(t);
+  }, [fokus, data?.unit?.id]);
   const lompat = (id, { buka = false } = {}) => { const el = document.getElementById(id); if (!el) return; if (el.tagName === "DETAILS" || buka) { const d = el.closest("details") || el; if (d.tagName === "DETAILS") d.open = true; } el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); };
 
   const izin = data?.izin || {};
@@ -114,9 +121,13 @@ export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onCh
             {/* Bilah lompat: semua bagian tetap terjangkau tanpa menggulir melewati bagian lain */}
             <nav aria-label="Bagian panel" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1" data-testid="panel-lompat">
               <Button variant={fokusBahan ? undefined : "secondary"} size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-bahan" aria-pressed={fokusBahan} onClick={() => { setFokusLokal(true); fokusSudahRef.current = ""; setTimeout(() => lompat("sec-aktual"), 60); }}><Package size={14} aria-hidden /> Pemakaian bahan</Button>
+              {(ad?.kelengkapan?.keys?.length > 0 || data.pernyataanTanpaBahan?.aktif) && <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-kelengkapan" onClick={() => lompat("sec-kelengkapan")}><AlertTriangle size={14} aria-hidden /> Kelengkapan{ad.kelengkapan.keys.length ? ` (${ad.kelengkapan.keys.length})` : ""}</Button>}
               <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-status" onClick={() => lompat("sec-status", { buka: true })}><SlidersHorizontal size={14} aria-hidden /> Status &amp; target</Button>
               <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-riwayat" onClick={() => lompat("sec-riwayat")}><ScrollText size={14} aria-hidden /> Riwayat</Button>
             </nav>
+
+            {/* 1b · Kelengkapan data — hanya bila ada kekurangan/pernyataan; klasifikasi server yang SAMA dengan daftar/filter/ekspor */}
+            <KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} />
 
             {/* 2 · Status & target — di atas Pemakaian aktual (urutan biasa); bila fokus bahan: terlipat di bawah Pemakaian aktual */}
             {!fokusBahan && <Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian>}

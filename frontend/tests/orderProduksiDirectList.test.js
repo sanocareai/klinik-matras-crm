@@ -34,7 +34,7 @@ test("filter ringan di baris saring halaman yang sama (satu tablist), bukan bila
 
 test("membaca order asli TIDAK butuh Production V2 / Mode Latihan: daftar hanya memakai getWorkOrders", () => {
   const calls = [...WO.matchAll(/\bapi\.(?!js\b)(\w+)/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(calls)], ["getWorkOrders", "eksporOrderProduksiXlsx"], "daftar memakai getWorkOrders; ekspor memakai parameter yang SAMA");
+  assert.deepEqual([...new Set(calls)], ["getKelengkapanHitung", "getWorkOrders", "eksporOrderProduksiXlsx"], "daftar memakai getWorkOrders; hitungan kelengkapan = pembaca baca-saja; ekspor memakai parameter yang SAMA");
   assert.doesNotMatch(WO + HUB, /readerMode|getDemoAccess|activateDemo|isDemoActive|production-v2/);
 });
 

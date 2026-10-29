@@ -14,9 +14,21 @@ import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { WORK_STATUS, effectiveWorkStatus, posisiUnitOf, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { loadAppEvidence, loadLatestManual } from "./productionAdoptionService.js";
+import { kelengkapanBaris, muatFaktaKelengkapan } from "./productionKelengkapan.js";
+import { hitungKelengkapan, lolosKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
+import { endOfDayExclusiveWIB, startOfDayWIB } from "../utils/wib.js";
 
 export const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus
 export const BATAS_EKSPOR = 5000;
+const TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
+function galatQuery(pesan, code) { const e = new Error(pesan); e.statusCode = 400; e.code = code; return e; }
+/** Periode berdasarkan TANGGAL ORDER MASUK (unit dibuat), per hari kalender WIB: dari (termasuk) … sampai (termasuk). Tanggal tidak valid atau dari > sampai ditolak (bukan diabaikan). */
+export function periodeDariQuery(query = {}) {
+  const dari = query.dari ? String(query.dari).trim() : ""; const sampai = query.sampai ? String(query.sampai).trim() : "";
+  for (const [k, v] of [["dari", dari], ["sampai", sampai]]) if (v && (!TGL_RE.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`)))) throw galatQuery(`Tanggal "${k}" tidak valid (format YYYY-MM-DD).`, "PERIODE_TIDAK_VALID");
+  if (dari && sampai && dari > sampai) throw galatQuery("Periode terbalik: tanggal \"dari\" lebih besar dari \"sampai\".", "PERIODE_TERBALIK");
+  return { dari: dari || null, sampai: sampai || null };
+}
 
 const csv = (v) => String(v || "").toUpperCase().split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -28,7 +40,9 @@ export function buildWorkOrderWhere(query = {}) {
   const globalKeys = csv(query.globalStatus).filter((k) => k in GLOBAL_STATUS);
   const globalWhere = globalKeys.length && !status ? unitWhereForGlobalStatuses(globalKeys) : null;
   const statusIn = csv(query.statusIn).filter((k) => UNIT_STATUS_VALUES.includes(k));
+  const { dari, sampai } = periodeDariQuery(query);
   return {
+    ...((dari || sampai) && { createdAt: { ...(dari && { gte: startOfDayWIB(dari) }), ...(sampai && { lt: endOfDayExclusiveWIB(sampai) }) } }),
     ...(status && { status }),
     ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),
     ...(statusIn.length && !status && !displayUnitStatuses ? { status: { in: statusIn } } : {}),
@@ -59,12 +73,13 @@ export const UNIT_INCLUDE = {
 };
 
 /** Pengayaan baris: status turunan, milestone, posisi, status kerja efektif, target, PIC, tindakan berikutnya. */
-export async function perkayaBarisUnit(prisma, units) {
+export async function perkayaBarisUnit(prisma, units, { kelengkapan = true } = {}) {
   const unitIds = units.map((u) => u.id);
   const [lastLogByUnitId, blockerByUnitId, assignmentByUnitId] = await Promise.all([loadLastCurrentStageLogs(units), loadOpenBlockersByUnit(unitIds), loadCurrentStageAssignments(units)]);
   const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
   const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
+  const faktaKelengkapan = kelengkapan ? await muatFaktaKelengkapan(prisma, unitIds) : null; // kelengkapan (Bahan/HPP/Data order): fakta bulk BACA-SAJA, klasifikasi murni di lib/domain/kelengkapanOrderProduksi.js
   const catatanHistorisByUnit = await ringkasCatatanUnits(prisma, unitIds); // catatan pemakaian historis (Excel): terpisah dari pemakaian aktual & status kerja
   const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows, komponenPakaiRows, sementaraRows] = await Promise.all([
     loadMilestoneEvidence(prisma, unitIds),
@@ -113,7 +128,7 @@ export async function perkayaBarisUnit(prisma, units) {
     const targetAt = u.productionDueAt ?? plan?.targetCompleteAt ?? null;
     const picNama = assignment?.operator?.user?.name ?? plan?.operator?.user?.name ?? null;
     const tindakan = tindakanBerikutnya({ unitStatus: u.status, posisi, kerja, adaTarget: !!targetAt, rencanaBahanAda: rencanaUnit.has(u.id), aktualAda: aktualUnit.has(u.id) || (pakai?.sementaraPerlu ?? 0) + (pakai?.sementaraSelesai ?? 0) > 0 });
-    return {
+    const baris = {
       ...u, inProductionV2: v2Units.has(u.id), productionStatus,
       penjualanKaryawan: rujukanPkrDariOrder(u.order, { unit: u }),
       orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
@@ -136,6 +151,9 @@ export async function perkayaBarisUnit(prisma, units) {
         pemakaianBahan: { baruCatatan: pakai?.baru ?? 0, komponenLamaDipakaiKembali: pakai?.lama.size ?? 0, sementaraPerluRekonsiliasi: pakai?.sementaraPerlu ?? 0, sementaraSudahDirekonsiliasi: pakai?.sementaraSelesai ?? 0, pertamaAt: pakai?.pertamaAt ?? null, terakhirAt: pakai?.terakhirAt ?? null }, // dua sumber terpisah (tidak dijumlahkan)
       },
     };
+    // SATU klasifikasi kelengkapan untuk daftar, drawer, filter/hitungan, dan ekspor (lihat productionKelengkapan.js)
+    if (faktaKelengkapan) baris.adopsi.kelengkapan = kelengkapanBaris(baris, faktaKelengkapan.get(u.id));
+    return baris;
   });
 }
 
@@ -148,8 +166,10 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const where = buildWorkOrderWhere(query);
   const kerjaFilter = csv(query.statusKerja).filter((k) => k in WORK_STATUS);
-  const penuh = semua || kerjaFilter.length > 0;
-  const orderBy = [{ createdAt: "desc" }, { id: "asc" }];
+  const kelFilter = parseKelengkapan(query.kelengkapan); // penyaring kelengkapan (gabungan/OR) — dihitung di SERVER atas SELURUH unit yang cocok, bukan halaman yang dimuat
+  const urutTerlama = String(query.urut || "").toLowerCase() === "terlama"; // "paling lama belum ditangani" = tanggal order masuk (unit dibuat) terlama dulu
+  const penuh = semua || kerjaFilter.length > 0 || kelFilter.length > 0;
+  const orderBy = [{ createdAt: urutTerlama ? "asc" : "desc" }, { id: "asc" }];
   let units; let total;
   if (penuh) {
     units = await prisma.unit.findMany({ where, include: UNIT_INCLUDE, orderBy, take: BATAS_EKSPOR + 1 });
@@ -160,6 +180,7 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
   }
   let rows = await perkayaBarisUnit(prisma, units);
   if (kerjaFilter.length) rows = rows.filter((r) => kerjaFilter.includes(r.adopsi.kerja.key));
+  if (kelFilter.length) rows = rows.filter((r) => lolosKelengkapan(r.adopsi.kelengkapan?.keys ?? [], kelFilter));
   if (penuh) total = rows.length;
   const hasil = semua ? rows : penuh ? rows.slice((page - 1) * pageSize, page * pageSize) : rows;
   const statusCounts = await prisma.unit.groupBy({ by: ["status"], _count: { _all: true } });
@@ -170,6 +191,31 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
     globalStatusCounts: await countByGlobalStatus(prisma, {}),
     globalStatusFlow: GLOBAL_STATUS_FLOW,
     page, pageSize, total, hasMore: !semua && (page - 1) * pageSize + hasil.length < total,
-    filterDipakai: { q: query.q?.trim() || null, displayStatus: csv(query.displayStatus), globalStatus: csv(query.globalStatus), statusKerja: kerjaFilter, scope: query.scope || null },
+    filterDipakai: { q: query.q?.trim() || null, displayStatus: csv(query.displayStatus), globalStatus: csv(query.globalStatus), statusKerja: kerjaFilter, kelengkapan: kelFilter, periode: periodeDariQuery(query), urut: urutTerlama ? "terlama" : "terbaru", dasarPeriode: DASAR_PERIODE, scope: query.scope || null },
   };
+}
+
+export const DASAR_PERIODE = "Tanggal order masuk (unit dibuat)";
+
+/**
+ * Hitungan penyaring kelengkapan untuk filter yang sedang aktif (q, displayStatus, statusKerja, periode) — SELURUH unit yang cocok, bukan halaman yang dimuat. Satu pengayaan penuh; hasil dibagi di memori.
+ *  counts   = unit per kategori (satu unit boleh di beberapa kategori) pada lingkup status order yang dipilih; unik = unit UNIK yang punya setidaknya satu kekurangan (total gabungan).
+ *  riwayat  = unit UNIK berkekurangan yang berstatus Terkirim pada q/periode/status kerja yang sama (agar kekurangan historis tidak tersembunyi saat lingkup "Aktif").
+ * BACA-SAJA.
+ */
+export async function hitungKelengkapanDaftar(prisma, query = {}) {
+  const kerjaFilter = csv(query.statusKerja).filter((k) => k in WORK_STATUS);
+  const displayFilter = csv(query.displayStatus).filter((k) => k in DISPLAY_STATUS_UNIT_FILTER);
+  const statusLingkup = displayFilter.length ? new Set(displayFilter.flatMap((k) => DISPLAY_STATUS_UNIT_FILTER[k])) : null;
+  // dasar: semua status order (lingkup dibagi di memori) dengan q + periode yang sama; status DIBATALKAN tetap masuk where tetapi tidak pernah punya kekurangan
+  const where = buildWorkOrderWhere({ q: query.q, dari: query.dari, sampai: query.sampai, real: query.real });
+  const units = await prisma.unit.findMany({ where, include: UNIT_INCLUDE, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take: BATAS_EKSPOR + 1 });
+  if (units.length > BATAS_EKSPOR) { const e = new Error(`Terlalu banyak unit (${BATAS_EKSPOR}+). Persempit filter atau pencarian.`); e.statusCode = 413; e.code = "TERLALU_BANYAK"; throw e; }
+  let rows = await perkayaBarisUnit(prisma, units);
+  if (kerjaFilter.length) rows = rows.filter((r) => kerjaFilter.includes(r.adopsi.kerja.key));
+  const lingkup = statusLingkup ? rows.filter((r) => statusLingkup.has(r.status)) : rows;
+  const { counts, unik } = hitungKelengkapan(lingkup.map((r) => r.adopsi.kelengkapan?.keys ?? []));
+  const terkirim = rows.filter((r) => r.status === "DELIVERED");
+  const riwayat = hitungKelengkapan(terkirim.map((r) => r.adopsi.kelengkapan?.keys ?? []));
+  return { counts, unik, totalUnit: lingkup.length, riwayat: { unik: riwayat.unik, counts: riwayat.counts, totalUnit: terkirim.length }, dasarPeriode: DASAR_PERIODE, periode: periodeDariQuery(query) };
 }

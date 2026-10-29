@@ -18,7 +18,9 @@ import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx
 import OrderProduksiPanel from "@/features/production/OrderProduksiPanel.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
-import { KERJA_FILTER, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText } from "@/features/production/orderProduksiModel.js";
+import { KERJA_FILTER, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, validasiPeriode, kunciKelengkapan } from "@/features/production/orderProduksiModel.js";
+import KelengkapanFilter from "@/features/production/KelengkapanFilter.jsx";
+import KelengkapanBaris from "@/features/production/KelengkapanBaris.jsx";
 
 // Order Produksi (daftar unit) — adopsi Admin. TIGA status yang dipisah jelas dan berlabel teks:
 //   Status order (sama dengan Sales/Delivery) · Posisi unit (fakta dokumen; tampil bila perlu perhatian) · Status kerja (pekerjaan Produksi).
@@ -38,6 +40,10 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   useEffect(() => { if (firstScope.current) { firstScope.current = false; return; } setTab(scope === "riwayat" ? "TERKIRIM" : ""); }, [scope]);
   const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? DISPLAY_STATUS_TABS.filter((t) => t.key !== "TERKIRIM") : DISPLAY_STATUS_TABS;
   const [kerja, setKerja] = useState("");
+  const [kelengkapan, setKelengkapan] = useState([]); // penyaring cepat (gabungan/OR) — dihitung server
+  const [dari, setDari] = useState(""); const [sampai, setSampai] = useState(""); // periode = tanggal order masuk (unit dibuat)
+  const [urut, setUrut] = useState("terbaru");
+  const [hitung, setHitung] = useState(null); const [hitungMemuat, setHitungMemuat] = useState(false); const [versiHitung, setVersiHitung] = useState(0); const hitungReq = useRef(0);
   const [cari, setCari] = useState("");
   const [qDebounced, setQDebounced] = useState("");
   const [rows, setRows] = useState(null);
@@ -52,6 +58,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const setDetailUnit = (u) => (onUnitChange ? onUnitChange(u?.id || null) : setLocalUnitId(u?.id || null));
   const bukaPanel = (u) => { setFokusPanel(null); setDetailUnit(u); };
   const bukaBahan = (u) => { setFokusPanel("bahan"); setDetailUnit(u); };
+  const bukaLengkapi = (u, sasaran) => { setFokusPanel(sasaran === "bahan" ? "bahan" : "kelengkapan"); setDetailUnit(u); }; // membuka drawer saja — tidak menulis apa pun
   const unitAktif = (u) => !["CANCELLED", "DELIVERED"].includes(u.status);
   // Akun hanya-lihat tidak boleh melihat tombol yang berbunyi "Catat bahan": labelnya "Lihat bahan" (isi panel tetap sama; server menolak tulis).
   const bisaCatat = bisaCatatBahan(bacaPengguna()); const labelBahan = bisaCatat ? "Catat bahan" : "Lihat bahan";
@@ -66,7 +73,14 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     if (scope === "aktif") return ACTIVE_KEYS.join(",");
     return undefined;
   }, [tab, scope]);
-  const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [] }), [qDebounced, kerja]);
+  const galatPeriode = useMemo(() => validasiPeriode(dari, sampai), [dari, sampai]); // periode tidak valid TIDAK dikirim diam-diam: galat ditampilkan
+  const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [], kelengkapan, urut, ...(galatPeriode ? {} : { dari: dari || undefined, sampai: sampai || undefined }) }), [qDebounced, kerja, kelengkapan, urut, dari, sampai, galatPeriode]);
+  // hitungan kelengkapan: lingkup + pencarian + status kerja + periode (TANPA pilihan kelengkapan itu sendiri), seluruh unit yang cocok di server
+  const paramHitung = useMemo(() => ({ displayStatus: displayParam, q: qDebounced || undefined, statusKerja: kerja || undefined, ...(galatPeriode ? {} : { dari: dari || undefined, sampai: sampai || undefined }) }), [displayParam, qDebounced, kerja, dari, sampai, galatPeriode]);
+  useEffect(() => {
+    const id = ++hitungReq.current; setHitungMemuat(true);
+    api.getKelengkapanHitung(paramHitung).then((h) => { if (id === hitungReq.current) setHitung(bacaHitungKelengkapan(h)); }).catch(() => { if (id === hitungReq.current) setHitung(null); }).finally(() => { if (id === hitungReq.current) setHitungMemuat(false); });
+  }, [paramHitung, versiHitung]);
   const queryServer = useCallback((page) => ({ displayStatus: displayParam, ...paramDaftar, page: String(page), pageSize: String(PAGE_SIZE) }), [displayParam, paramDaftar]);
 
   useEffect(() => { setEkspor({ sibuk: false, ok: "", galat: "" }); }, [displayParam, paramDaftar]); // pesan ekspor lama tidak boleh menempel setelah filter berubah
@@ -82,6 +96,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   }, [queryServer]);
   useEffect(() => { fetchPage(1, { append: false }); }, [fetchPage]); // filter/pencarian berubah -> halaman 1
   const reload = useCallback(() => {
+    setVersiHitung((v) => v + 1); // hasil dan hitungan ikut diperbarui setelah data dilengkapi
     // muat ulang semua halaman yang sudah terbuka (urut) supaya posisi pengguna tidak hilang setelah aksi
     const pages = Math.max(1, meta.page); const id = ++reqRef.current;
     setLoading(true);
@@ -108,7 +123,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   }
 
   const kosong = !loading && rows && rows.length === 0;
-  const adaFilter = !!(qDebounced || kerja || tab);
+  const adaFilter = !!(qDebounced || kerja || tab || kelengkapan.length || dari || sampai);
   const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : "Satu daftar untuk memantau status order, posisi, dan pekerjaan setiap unit. Klik baris untuk mengelola unit.";
 
   return (
@@ -180,6 +195,9 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
           )}
         </div>
 
+        <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])}
+          dari={dari} sampai={sampai} onDari={setDari} onSampai={setSampai} galatPeriode={galatPeriode} urut={urut} onUrut={setUrut} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
+
         {error && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-btn bg-redbg px-3 py-2.5 text-[13px] text-red">
             <span>{error}</span><Button variant="secondary" size="sm" className="min-h-[40px]" onClick={reload}>Coba lagi</Button>
@@ -190,7 +208,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
           {kosong ? (
             <EmptyState icon={ClipboardList} title="Tidak ada unit yang cocok"
               description={adaFilter ? "Tidak ada unit dengan filter ini. Ubah kata kunci, tab status order, atau status kerja." : "Belum ada unit di lingkup ini."}
-              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus filter</Button> : null} />
+              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setKelengkapan([]); setDari(""); setSampai(""); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus filter</Button> : null} />
           ) : (
             <>
               <TableWrap className="hidden lg:block">
@@ -229,7 +247,8 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <TD data-testid="tindakan-berikutnya">
                             <span className="flex items-center gap-1 font-medium text-ink">{a.tindakan?.label || "—"}<ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden /></span>
                             {a.tindakan?.aktor && a.tindakan.aktor !== "—" && <span className="block text-[12px] text-ink3">{a.tindakan.aktor}</span>}
-                            {unitAktif(u) && <Button variant="secondary" size="sm" className="mt-1.5 min-h-[36px]" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={(e) => { e.stopPropagation(); bukaBahan(u); }}>{labelBahan}</Button>}
+                            <KelengkapanBaris row={u} onLengkapi={bukaLengkapi} />
+                            {unitAktif(u) && sasaranLengkapi(kunciKelengkapan(u)) !== "bahan" && <Button variant="secondary" size="sm" className="mt-1.5 min-h-[36px]" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={(e) => { e.stopPropagation(); bukaBahan(u); }}>{labelBahan}</Button>}
                           </TD>
                         </TR>
                       );
@@ -272,7 +291,8 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <span className="text-ink3">Berikutnya:</span> <span className="min-w-0 flex-1 truncate">{a.tindakan?.label || "—"}</span><ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden />
                         </div>
                       </button>
-                      {unitAktif(u) && <div className="px-4 pb-3"><Button variant="secondary" size="sm" className="min-h-[44px] w-full" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={() => bukaBahan(u)}>{labelBahan}</Button></div>}
+                      <div className="px-4"><KelengkapanBaris row={u} onLengkapi={bukaLengkapi} /></div>
+                      {unitAktif(u) && sasaranLengkapi(kunciKelengkapan(u)) !== "bahan" && <div className="px-4 pb-3"><Button variant="secondary" size="sm" className="min-h-[44px] w-full" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={() => bukaBahan(u)}>{labelBahan}</Button></div>}
                     </li>
                   );
                 })}

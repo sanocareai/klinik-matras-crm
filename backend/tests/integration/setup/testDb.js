@@ -35,6 +35,7 @@ const TABLES_TO_TRUNCATE = [
   "materials",
   "storage_locations", "warehouses",
   "unit_usage_note_events", "unit_usage_notes", "usage_import_batches", // Catatan pemakaian historis: FK ke units/materials/stock_movements/Order (events append-only)
+  "unit_material_declarations", // Pernyataan tanpa bahan baru (FK ke units)
   "unit_provisional_usages", "material_proposals", // UX Bahan: pemakaian sementara + usulan bahan (FK ke units/materials/stock_movements)
   "production_unit_material_plan_revisions", "production_unit_material_plans", "production_unit_work_progress", // adopsi Admin: append-only/FK ke units; dikosongkan eksplisit antar tes
   "unit_component_entries_v2", // slice 3 — catatan komponen kanonis (append-only; FK ke units): kosongkan antar berkas tes

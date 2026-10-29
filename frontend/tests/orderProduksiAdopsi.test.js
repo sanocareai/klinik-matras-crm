@@ -94,7 +94,7 @@ const API = src("api.js");
 
 test("daftar: kolom Status order · Status kerja · Target · PIC · Tindakan; filter status kerja di server; ekspor memakai parameter yang SAMA; kosong/galat/loading ada", () => {
   for (const h of ["Status order", "Status kerja", "Target selesai", "PIC", "Tindakan berikutnya"]) assert.match(WO, new RegExp(`<TH>${h}</TH>`));
-  assert.match(WO, /parameterDaftar\(\{ q: qDebounced \|\| undefined, kerja: kerja \? \[kerja\] : \[\] \}\)/);
+  assert.match(WO, /parameterDaftar\(\{ q: qDebounced \|\| undefined, kerja: kerja \? \[kerja\] : \[\], kelengkapan, urut, /, "paramDaftar memuat q, status kerja, kelengkapan, urutan, periode — satu sumber untuk daftar DAN ekspor");
   assert.match(WO, /api\.eksporOrderProduksiXlsx\(\{ displayStatus: displayParam, \.\.\.paramDaftar,/, "ekspor = daftar yang sama");
   assert.match(WO, /\.\.\.paramDaftar, page: String\(page\)/, "daftar memakai paramDaftar yang sama");
   assert.match(WO, /data-testid="order-export-excel"/); assert.match(WO, /data-testid="order-filter-kerja"/);

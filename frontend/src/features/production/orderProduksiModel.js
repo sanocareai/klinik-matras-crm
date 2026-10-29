@@ -83,13 +83,73 @@ export function sumberKerjaPendek(kerja) {
 }
 
 /** Parameter ekspor/daftar dari state layar — SATU fungsi dipakai daftar dan ekspor supaya berkas persis sama dengan daftar yang difilter. */
-export function parameterDaftar({ globalStatus, q, kerja, scope } = {}) {
+export function parameterDaftar({ globalStatus, q, kerja, scope, kelengkapan, dari, sampai, urut } = {}) {
   const out = {};
   if (globalStatus) out.globalStatus = globalStatus;
   if (q) out.q = q;
   if (Array.isArray(kerja) && kerja.length) out.statusKerja = kerja.join(",");
   if (scope) out.scope = scope;
+  if (Array.isArray(kelengkapan) && kelengkapan.length) out.kelengkapan = kelengkapan.join(",");
+  if (dari) out.dari = dari;
+  if (sampai) out.sampai = sampai;
+  if (urut === "terlama") out.urut = "terlama";
   return out;
+}
+
+// ───────────────────────────── kelengkapan (penyaring cepat) ─────────────────────────────
+// Klasifikasi dikirim server di row.adopsi.kelengkapan ({ keys, items, ringkas, pernyataan }) dan hitungannya dari /work-orders/kelengkapan-hitung — klien TIDAK menurunkannya sendiri.
+// Aturan lengkap ada di backend/src/lib/domain/kelengkapanOrderProduksi.js.
+export const KELENGKAPAN_FILTER = Object.freeze([
+  { key: "BAHAN_BELUM_DICATAT", label: "Bahan belum dicatat", pendek: "Bahan belum dicatat", bantu: "Unit sudah dikerjakan/selesai tetapi belum ada catatan pemakaian bahan (Gudang, sementara, komponen lama, atau historis) dan belum dinyatakan tanpa bahan baru. Unit yang belum tiba atau belum dikerjakan tidak dihitung." },
+  { key: "BAHAN_PERLU_DICEK", label: "Bahan perlu dicek", pendek: "Bahan perlu dicek", bantu: "Ada alasan konkret: bahan belum terpetakan ke katalog, satuan bermasalah, atau pemakaian sementara belum direkonsiliasi Gudang." },
+  { key: "HPP_BELUM_LENGKAP", label: "HPP belum lengkap", pendek: "HPP belum lengkap", bantu: "HPP operasional (harga berlaku Gudang; bukan nilai persediaan/biaya Finance): harga belum diketahui, belum dibekukan, pembekuan gagal, atau catatan tertahan." },
+  { key: "DATA_ORDER_KURANG", label: "Data order kurang", pendek: "Data order kurang", bantu: "Hanya kebutuhan wajib yang terbukti: kelengkapan order Penjualan Karyawan. Target, PIC, dan rencana bahan bersifat opsional dan tidak dihitung." },
+]);
+export const KELENGKAPAN_KEYS = Object.freeze(KELENGKAPAN_FILTER.map((k) => k.key));
+export const KELENGKAPAN_BUKAN = "Target selesai, PIC, dan rencana bahan opsional — tidak dihitung sebagai kekurangan. Pekerjaan yang belum dilakukan juga bukan kekurangan data.";
+export const DASAR_PERIODE_TEKS = "Tanggal order masuk (unit dibuat)";
+export const URUTAN_DAFTAR = Object.freeze([{ key: "terbaru", label: "Terbaru dulu" }, { key: "terlama", label: "Paling lama belum ditangani" }]);
+
+/** Kunci kelengkapan satu baris (server). Payload lama tanpa kelengkapan → kosong (jujur, tidak menebak). */
+export const kunciKelengkapan = (row) => row?.adopsi?.kelengkapan?.keys ?? [];
+/** Satu tombol "Lengkapi": ke bagian mana drawer dibuka. Bahan (belum dicatat/perlu dicek) → Pemakaian aktual; HPP dan data order → bagian Kelengkapan. null bila lengkap. */
+export function sasaranLengkapi(keys) {
+  if (!keys?.length) return null;
+  if (keys.includes("BAHAN_BELUM_DICATAT") || keys.includes("BAHAN_PERLU_DICEK")) return "bahan";
+  return "kelengkapan";
+}
+/** Hitungan per kategori + unik dari respons server; angka tidak diturunkan dari halaman yang dimuat. */
+export function bacaHitungKelengkapan(h) {
+  const counts = h?.counts ?? {};
+  return { counts: Object.fromEntries(KELENGKAPAN_KEYS.map((k) => [k, counts[k] ?? 0])), unik: h?.unik ?? 0, totalUnit: h?.totalUnit ?? 0, riwayat: { unik: h?.riwayat?.unik ?? 0, totalUnit: h?.riwayat?.totalUnit ?? 0 } };
+}
+/** Toggle satu kategori dalam daftar terpilih (gabungan). */
+export const toggleKelengkapan = (terpilih, key) => (terpilih.includes(key) ? terpilih.filter((k) => k !== key) : KELENGKAPAN_KEYS.filter((k) => k === key || terpilih.includes(k)));
+/** Periode valid untuk dikirim: format tanggal dan dari ≤ sampai; selain itu galat yang dibaca pengguna (tidak diam-diam diabaikan). */
+export function validasiPeriode(dari, sampai) {
+  const re = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+  if (dari && !re.test(dari)) return "Tanggal awal tidak valid.";
+  if (sampai && !re.test(sampai)) return "Tanggal akhir tidak valid.";
+  if (dari && sampai && dari > sampai) return "Tanggal awal tidak boleh lebih besar dari tanggal akhir.";
+  return "";
+}
+/** Teks periode untuk label ("1 Okt 2026 – 15 Okt 2026" / "sejak …" / "sampai …"). */
+export function teksPeriode(dari, sampai, fmt = (x) => x) {
+  if (!dari && !sampai) return "Semua tanggal";
+  if (dari && sampai) return `${fmt(dari)} – ${fmt(sampai)}`;
+  return dari ? `sejak ${fmt(dari)}` : `sampai ${fmt(sampai)}`;
+}
+/** Pesan galat penyimpanan pernyataan tanpa bahan baru (kode server → kalimat). */
+export function pesanGalatPernyataan(e) {
+  const kode = e?.code || e?.body?.code;
+  const peta = {
+    ALASAN_WAJIB: "Isi alasannya (minimal 5 huruf) supaya pernyataan ini dapat diaudit.",
+    PERNYATAAN_SUDAH_ADA: "Unit ini sudah punya pernyataan yang aktif. Muat ulang unit.",
+    SUDAH_ADA_CATATAN_BAHAN: "Unit ini sudah punya catatan pemakaian bahan, jadi tidak bisa dinyatakan tanpa bahan baru. Muat ulang unit.",
+    UNIT_DIBATALKAN: "Unit dibatalkan; tidak perlu pernyataan bahan.",
+    PERNYATAAN_TIDAK_ADA: "Pernyataan ini sudah tidak aktif. Muat ulang unit.",
+  };
+  return peta[kode] || e?.message || "Gagal menyimpan. Coba lagi.";
 }
 
 /** Tanggal+jam WIB ringkas ("20 Okt 2026, 10.30") — tanpa bergantung zona perangkat. */

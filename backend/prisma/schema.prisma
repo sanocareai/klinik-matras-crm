@@ -1865,6 +1865,7 @@ model Unit {
   provisionalUsages UnitProvisionalUsage[]
   usageNotes        UnitUsageNote[]
   workshopReceiptCorrections UnitWorkshopReceiptCorrection[]
+  materialDeclarations UnitMaterialDeclaration[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -11833,4 +11834,25 @@ model KoreksiSaldoBahan {
 
   @@index([materialId, createdAt])
   @@map("koreksi_saldo_bahan")
+}
+
+// PERNYATAAN "TANPA BAHAN BARU" per unit (Okt 2026) — pernyataan EKSPLISIT dan dapat diaudit bahwa unit ini memang selesai/dikerjakan tanpa pemakaian bahan baru. Dipakai HANYA oleh penyaring kelengkapan
+// Order Produksi ("Bahan belum dicatat"): unit tanpa catatan pemakaian apa pun TIDAK ditebak "tidak butuh bahan". Tidak membuat stok, Material Issue, Run, tahap, QC, biaya, atau jurnal, dan tidak mengubah status kerja.
+// Satu pernyataan AKTIF per unit (indeks unik parsial); pencabutan mengubah status + mencatat pelaku/alasan (baris tidak dihapus). Pelaku/waktu juga masuk log aktivitas unit.
+model UnitMaterialDeclaration {
+  id             String    @id @default(uuid()) @db.Uuid
+  unitId         String    @map("unit_id") @db.Uuid
+  unit           Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  kind           String    @default("TANPA_BAHAN_BARU") @db.VarChar(24)
+  reason         String
+  declaredById   String    @map("declared_by")
+  declaredAt     DateTime  @default(now()) @map("declared_at")
+  status         String    @default("ACTIVE") @db.VarChar(10) // ACTIVE | REVOKED
+  revokedById    String?   @map("revoked_by")
+  revokedAt      DateTime? @map("revoked_at")
+  revokeReason   String?   @map("revoke_reason")
+  idempotencyKey String    @unique @map("idempotency_key")
+
+  @@index([unitId, status])
+  @@map("unit_material_declarations")
 }

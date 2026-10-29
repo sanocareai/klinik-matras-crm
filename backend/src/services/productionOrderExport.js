@@ -1,6 +1,7 @@
 // EXPORT EXCEL ORDER PRODUKSI (.xlsx sungguhan, bukan CSV berekstensi .xlsx). Baris-baris berasal dari listWorkOrders({semua:true}) = daftar yang SAMA dengan layar, jadi hasil ekspor persis mengikuti filter.
 // Sheet: Ringkasan Unit · Rencana Bahan · Pemakaian Aktual · Komponen Lama · Info Ekspor. Di sheet data: header baris 1 (dibekukan, AutoFilter), tanpa sel digabung, angka tetap numerik, tanggal/waktu WIB,
 // warna status mengikuti nada UI (hijau/biru/oranye/abu) DAN selalu disertai teks (tidak mengandalkan warna). Teks pengguna dinetralkan dari rumus Excel (netralkanRumus).
+import { BUKAN_KEKURANGAN, CATATAN_HPP, KELENGKAPAN_LABEL } from "../lib/domain/kelengkapanOrderProduksi.js";
 import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import ExcelJS from "exceljs";
 import { WIB_OFFSET_MS } from "../utils/wib.js";
@@ -78,6 +79,8 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     pemakaianBaru: u.adopsi.pemakaianBahan?.baruCatatan ?? 0, pemakaianLama: u.adopsi.pemakaianBahan?.komponenLamaDipakaiKembali ?? 0, pemakaianSementara: u.adopsi.pemakaianBahan?.sementaraPerluRekonsiliasi ?? 0,
     qc: ({ WAITING_QC: "Menunggu QC", REWORK: "Dikerjakan ulang (hasil QC: tidak lulus)", COMPLETED: "Tahap selesai (lihat hasil QC di Unit 360)" })[u.productionStatus] ?? "Belum ada catatan QC",
     catatanDicek: u.adopsi.catatanHistoris?.perluDicek ?? 0, catatanTotal: u.adopsi.catatanHistoris?.total ?? 0,
+    kelengkapan: u.adopsi.kelengkapan?.ringkas || "Lengkap menurut aturan saat ini", kelengkapanAlasan: (Object.values(u.adopsi.kelengkapan?.items ?? {})).map((it) => `${it.label}: ${it.alasan.map((a) => a.teks).join(" ")}`).join(" | "),
+    pernyataanTanpaBahan: u.adopsi.kelengkapan?.pernyataan ? `Dinyatakan tanpa bahan baru${u.adopsi.kelengkapan.pernyataan.oleh ? ` oleh ${u.adopsi.kelengkapan.pernyataan.oleh}` : ""}: ${u.adopsi.kelengkapan.pernyataan.alasan ?? ""}` : "",
     tindakan: u.adopsi.tindakan?.label, aktor: u.adopsi.tindakan?.aktor, prioritas: u.priorityDisplay?.label, bahanRencana: jumlahBahanPerUnit.get(u.id) ?? 0, aktualAda: u.adopsi.aktualBahanAda ? "Ya" : "Belum", diperbarui: u.updatedAt,
   }));
   sheetData(wb, "Ringkasan Unit", [
@@ -88,7 +91,9 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     { key: "pemakaianBaru", header: "Pemakaian Bahan Baru (jumlah catatan)", tipe: "angka", lebar: 18 }, { key: "pemakaianLama", header: "Komponen Lama Dipakai Kembali (jumlah)", tipe: "angka", lebar: 20 }, { key: "pemakaianSementara", header: "Pemakaian Sementara — Perlu Rekonsiliasi Gudang (jumlah)", tipe: "angka", lebar: 24 }, { key: "qc", header: "Status QC (aplikasi)", lebar: 34 },
     { key: "tindakan", header: "Tindakan Berikutnya", lebar: 40, bungkus: true }, { key: "aktor", header: "Pelaku Tindakan", lebar: 16 }, { key: "prioritas", header: "Prioritas", lebar: 12 },
     { key: "catatanTotal", header: "Catatan Pemakaian Historis (jumlah)", tipe: "angka", lebar: 18 }, { key: "catatanDicek", header: "Catatan Historis Perlu Dicek (jumlah)", tipe: "angka", lebar: 18 },
-    { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 }, { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
+    { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 },
+    { key: "kelengkapan", header: "Kelengkapan (Bahan · HPP operasional · Data order)", lebar: 44, bungkus: true }, { key: "kelengkapanAlasan", header: "Alasan Kekurangan", lebar: 70, bungkus: true }, { key: "pernyataanTanpaBahan", header: "Pernyataan Tanpa Bahan Baru", lebar: 46, bungkus: true },
+    { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
   ], ringkas);
 
   // ── Sheet 2: Rencana Bahan
@@ -172,7 +177,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
   const info = [
     ["Judul", "Order Produksi — ekspor Excel"], ["Diekspor (WIB)", `${s.tanggal} ${s.jam} WIB`], ["Diekspor oleh", pengguna || "—"], ["Zona waktu", "WIB (UTC+7)"],
     ["Filter: pencarian", f.q || "Tanpa pencarian"], ["Filter: status order", (f.displayStatus || []).join(", ") || "Semua"], ["Filter: posisi/milestone", (f.globalStatus || []).join(", ") || "Semua"],
-    ["Filter: status kerja", (f.statusKerja || []).join(", ") || "Semua"], ["Filter: lingkup", f.scope || "Sesuai tab yang dipilih"],
+    ["Filter: status kerja", (f.statusKerja || []).join(", ") || "Semua"], ["Filter: kelengkapan", (f.kelengkapan || []).map((k) => KELENGKAPAN_LABEL[k] ?? k).join(" ATAU ") || "Semua"], ["Filter: periode", f.periode?.dari || f.periode?.sampai ? `${f.periode.dari || "…"} s.d. ${f.periode.sampai || "…"} (dasar: ${f.dasarPeriode || "tanggal order masuk (unit dibuat)"})` : "Semua tanggal"], ["Urutan", f.urut === "terlama" ? "Paling lama belum ditangani (tanggal order masuk terlama dulu)" : "Terbaru dulu"], ["Filter: lingkup", f.scope || "Sesuai tab yang dipilih"],
     ["Jumlah unit (Ringkasan Unit)", rows.length], ["Jumlah baris Rencana Bahan", barisRencana.length], ["Jumlah baris Pemakaian Aktual", barisAktual.length], ["Jumlah baris Komponen Lama", barisKomponen.length], ["Jumlah baris Pemakaian Sementara", barisSementara.length],
     ["Arti Status Order", "Status yang dilihat Sales/Delivery (Pengambilan · Diproses · Siap Kirim · Terkirim · Dibatalkan)."],
     ["Arti Posisi Unit", "Fakta fisik dari dokumen penjemputan, penerimaan workshop, dan pengiriman."],
@@ -182,6 +187,8 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     ["Catatan historis", "Sheet Catatan Historis = catatan pemakaian bahan dari Excel Admin Sales, tampil apa adanya (jumlah/satuan asli). BUKAN transaksi stok: tidak mengurangi saldo, tidak ada biaya/jurnal. Yang sudah sama dengan pengeluaran stok ditautkan (tidak digandakan); yang janggal diberi label Perlu Dicek + catatan singkat."],
     ["Pemakaian sementara", "Sheet Pemakaian Sementara = fakta bahan yang sudah dipakai tetapi belum punya sumber stok resmi (bahan belum di katalog). BUKAN Material Issue: tidak mengurangi saldo, tidak ada biaya bahan, tidak ada jurnal. Tetap dihitung sebagai bukti \"Sudah dikerjakan\" dengan sumber \"Pemakaian sementara — perlu rekonsiliasi Gudang\" sampai Gudang menautkannya ke pengeluaran stok resmi atau menyatakannya bukan stok Gudang. Tidak dijumlahkan dengan Pemakaian Aktual."],
     ["Rencana vs Aktual", "Rencana Bahan TIDAK mengurangi stok. Pemakaian Aktual berisi transaksi stok resmi (Material Issue Gudang atau catat langsung)."],
+    ["Kelengkapan", "Kolom Kelengkapan memakai klasifikasi yang SAMA dengan daftar dan drawer: Bahan belum dicatat (unit sudah dikerjakan/selesai tanpa catatan pemakaian dan tanpa pernyataan tanpa bahan baru) · Bahan perlu dicek (alasan konkret) · HPP belum lengkap (HPP OPERASIONAL; bukan biaya Finance) · Data order kurang (kelengkapan order Penjualan Karyawan). " + BUKAN_KEKURANGAN],
+    ["HPP operasional", CATATAN_HPP],
   ];
   const wi = wb.addWorksheet("Info Ekspor"); wi.columns = [{ header: "Keterangan", key: "k", width: 34 }, { header: "Nilai", key: "v", width: 90 }];
   wi.getRow(1).eachCell((c) => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } }; });

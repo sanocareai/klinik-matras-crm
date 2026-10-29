@@ -181,6 +181,7 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_USULAN_BAHAN_DIAJUKAN: "PRODUCTION_USULAN_BAHAN_DIAJUKAN", // bahan belum ada di katalog: usulan ke Gudang (tanpa saldo/stok/biaya/jurnal)
   PRODUCTION_USULAN_BAHAN_DIPUTUSKAN: "PRODUCTION_USULAN_BAHAN_DIPUTUSKAN", // Gudang menyetujui (bahan dibuat), menggabung, atau menolak usulan
   PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT: "PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT", // fakta pemakaian bahan yang belum punya sumber stok resmi (bukan Material Issue)
+  PRODUCTION_PERNYATAAN_TANPA_BAHAN: "PRODUCTION_PERNYATAAN_TANPA_BAHAN", // pernyataan eksplisit "unit ini tanpa bahan baru" (kind DINYATAKAN | DICABUT); tanpa stok/biaya/jurnal
   PRODUCTION_PEMAKAIAN_SEMENTARA_DISELESAIKAN: "PRODUCTION_PEMAKAIAN_SEMENTARA_DISELESAIKAN", // Gudang menautkan ke pengeluaran resmi / menyatakan bukan stok / catatan dibatalkan
   PRODUCTION_PLAN_BOM_SET: "PRODUCTION_PLAN_BOM_SET",
   PRODUCTION_PLAN_MATERIAL_RESERVED: "PRODUCTION_PLAN_MATERIAL_RESERVED",
@@ -482,6 +483,8 @@ export function formatActivitySentence(event) {
       return `Pemakaian sementara ${metadata.name || "—"} ${metadata.qty ?? ""} ${metadata.uom || ""} ${metadata.koreksiDari ? `(hasil koreksi: ${metadata.alasanKoreksi || "—"}) ` : ""}dicatat pada unit ${metadata.unitCode || "—"} oleh ${metadata.deciderName || "Admin"} — perlu rekonsiliasi Gudang (bukan Material Issue; saldo tidak berubah)`;
     case EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DISELESAIKAN:
       return metadata.status === "DIBATALKAN" ? `Pemakaian sementara ${metadata.name || "—"} pada unit ${metadata.unitCode || "—"} dibatalkan oleh ${metadata.deciderName || "Admin"}: ${metadata.alasan || "—"}` : metadata.resolusi === "TAUTKAN_ISSUE" ? `Pemakaian sementara ${metadata.name || "—"} pada unit ${metadata.unitCode || "—"} ditautkan ke pengeluaran stok resmi ${metadata.movementRef || "—"} oleh ${metadata.deciderName || "Gudang"} (tidak membuat pergerakan baru)` : `Pemakaian sementara ${metadata.name || "—"} pada unit ${metadata.unitCode || "—"} dinyatakan bukan stok Gudang oleh ${metadata.deciderName || "Gudang"}: ${metadata.catatan || "—"} (tanpa pergerakan stok, biaya, atau jurnal)`;
+    case EVENT_TYPES.PRODUCTION_PERNYATAAN_TANPA_BAHAN:
+      return metadata.kind === "DICABUT" ? `Pernyataan "tanpa bahan baru" unit ${metadata.unitCode || "—"} dicabut: ${metadata.alasan || "—"}` : `Unit ${metadata.unitCode || "—"} dinyatakan tanpa bahan baru: ${metadata.alasan || "—"}`;
     case EVENT_TYPES.PRODUCTION_ADMIN_SCHEDULE_SET:
       return metadata.kind === "UNSCHEDULED" ? `Jadwal unit ${metadata.unitCode || "—"} dikeluarkan dari Rencana Produksi` : metadata.kind === "ADOPTED" ? `Jadwal Admin unit ${metadata.unitCode || "—"} diambil alih rencana V2` : `Unit ${metadata.unitCode || "—"} dijadwalkan (Rencana Admin)${metadata.toDate ? ` ${metadata.toDate}` : ""}${metadata.toStation ? ` · ${metadata.toStation}` : ""}`;
     case EVENT_TYPES.PRODUCTION_PLAN_ASSIGNED:

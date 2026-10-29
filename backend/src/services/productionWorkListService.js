@@ -102,7 +102,7 @@ export async function listWorkList(prisma, query = {}, { now = new Date() } = {}
       prisma.order.findMany({ where, select: ORDER_SELECT, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], skip: (page - 1) * pageSize, take: pageSize }),
     ]);
     const units = await prisma.unit.findMany({ where: { orderId: { in: orders.map((o) => o.id) } }, include: UNIT_INCLUDE, orderBy: [{ seq: "asc" }, { id: "asc" }] });
-    const rows = await perkayaBarisUnit(prisma, units);
+    const rows = await perkayaBarisUnit(prisma, units, { kelengkapan: false });
     const alur = await muatAlurMeja(prisma, units.map((u) => u.id)); // hanya untuk mendeteksi pekerjaan Meja yang belum ditutup
     const byOrder = new Map(); for (const r of rows) { if (!byOrder.has(r.orderId)) byOrder.set(r.orderId, []); byOrder.get(r.orderId).push(r); }
     return {
@@ -119,7 +119,7 @@ export async function listWorkList(prisma, query = {}, { now = new Date() } = {}
     prisma.order.findMany({ where: { id: { in: ids } }, select: ORDER_SELECT }),
     prisma.unit.findMany({ where: { orderId: { in: ids } }, include: UNIT_INCLUDE, orderBy: [{ seq: "asc" }, { id: "asc" }] }),
   ]);
-  const rows = await perkayaBarisUnit(prisma, units);
+  const rows = await perkayaBarisUnit(prisma, units, { kelengkapan: false });
   const alurByUnit = await muatAlurMeja(prisma, rows.map((r) => r.id));
   const byOrder = new Map(); for (const r of rows) { if (!byOrder.has(r.orderId)) byOrder.set(r.orderId, []); byOrder.get(r.orderId).push(r); }
   const semua = orders.map((o) => bentukOrder(o, byOrder.get(o.id) || [], alurByUnit, now));

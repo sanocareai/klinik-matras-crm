@@ -245,6 +245,15 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/work-orders${qs ? `?${qs}` : ""}`);
   },
+  // Hitungan penyaring kelengkapan (server, seluruh unit yang cocok): { counts, unik, totalUnit, riwayat }. BACA-SAJA.
+  getKelengkapanHitung: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/work-orders/kelengkapan-hitung${qs ? `?${qs}` : ""}`);
+  },
+  // Pernyataan "tanpa bahan baru" (eksplisit, dapat diaudit; alasan wajib). Tidak membuat stok/Material Issue/jurnal.
+  getPernyataanTanpaBahan: (unitId) => request(`/production/units/${unitId}/pernyataan-tanpa-bahan`),
+  nyatakanTanpaBahan: (unitId, alasan, idempotencyKey = mutationKey("tanpa-bahan")) => request(`/production/units/${unitId}/pernyataan-tanpa-bahan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ alasan }) }),
+  cabutTanpaBahan: (unitId, alasan) => request(`/production/units/${unitId}/pernyataan-tanpa-bahan/cabut`, { method: "POST", body: JSON.stringify({ alasan }) }),
   // Antrean QC (Production Tahap 3) — unit yang currentStage-nya gerbang QC.
   getQcQueue: () => request("/production/qc-queue"),
   // Bahan Produksi (Tahap 5) — daftar lintas order seluruh pemakaian bahan.
