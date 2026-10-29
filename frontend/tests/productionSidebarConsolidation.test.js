@@ -149,12 +149,11 @@ test("tab hub sesuai keputusan: Order Produksi, Biaya Produksi, Komplain & Revis
   assert.deepEqual(tabsFor({ summary: true, stations: true, operators: true, units: true, warehouse: true }).map((t) => t.label), KPI_TABS.map((t) => t.label));
 });
 
-test("KPI & Laporan: Ringkasan KPI dan Produksi memakai SATU dokumen ringkasan; Export tidak memuat data baru", () => {
-  const kpi = strip(src("pages", "bengkel", "ProductionKpi.jsx"));
-  assert.match(kpi, /part="kpi"/); assert.match(kpi, /part="produksi"/);
-  assert.match(kpi, /kind === "export"\) \{ setDoc\(null\)/, "tab Export tidak memanggil endpoint");
-  assert.equal(KPI_TABS.find((t) => t.key === "produksi").kind, KPI_TABS.find((t) => t.key === "ringkasan").kind);
-  assert.match(kpi, /\}, \[kind, qs\]\);/, "pindah antar tab ringkasan tidak memuat ulang");
+test("KPI & Laporan → Laporan Produksi: empat tab; tab Export lama diganti tombol Export yang mengikuti tab, periode, dan filter aktif", () => {
+  const shell = strip(src("features", "production", "laporan", "LaporanProduksi.jsx"));
+  assert.match(shell, /data-testid="btn-export"/); assert.match(shell, /queryEkspor\(tab\.key, range, filters\)/);
+  assert.doesNotMatch(shell, /tab-export|ExportPanel/, "tidak ada tab Export");
+  assert.match(src("pages", "bengkel", "ProductionKpi.jsx"), /LaporanProduksi/);
 });
 
 test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkirim, semua tanpa penyaringan; default lama tidak berubah", () => {
