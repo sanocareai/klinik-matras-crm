@@ -78,5 +78,6 @@ const sesudah = await fp(); const beda = Object.keys(sebelum).filter((t) => sebe
 rec("tidak ada jejak tulis: stok, Material Issue, jurnal, harga, biaya operasional, jadwal/Run, pemakaian sementara, pernyataan, unit, order IDENTIK", beda.length === 0, beda.join(","));
 rec("tidak ada peristiwa audit baru dari smoke", (await hitung("select count(*) as n from activity_events")) === evt0);
 console.log(`\nSMOKE: gagal=${fail} dilewati=${dilewati}`);
+console.log("SMOKE_HASIL fail=" + fail + " skip=" + dilewati); // format yang dibaca skrip rilis (^SMOKE_HASIL fail=0 skip=N$)
 await prisma.$disconnect();
 process.exit(fail ? 1 : 0);

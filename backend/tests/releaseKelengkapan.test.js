@@ -147,6 +147,11 @@ test("ISI TABEL: pembaca isi_n/isi_aktif/isi_fp/isi_ids mem-parse keluaran isi_t
   assert.ok(script.includes('SMOKE_DECL_N="$(isi_n "$ISI_SEBELUM_SWITCH")"') && script.includes("-e SMOKE_DECL_IDS=") && script.includes('-e REH_DECL_AWAL='), "isi tabel diteruskan ke smoke dan rehearsal");
 });
 
+test("SMOKE: pustaka mencetak baris SMOKE_HASIL yang diparse skrip rilis (kontrak ringkasan)", () => {
+  assert.ok(smoke.includes('console.log("SMOKE_HASIL fail=" + fail + " skip=" + dilewati)'));
+  assert.ok(script.includes("^SMOKE_HASIL fail=0 skip="), "skrip rilis membaca format yang sama");
+});
+
 test("UJI KUNCI: tidak ada 'wait' tanpa argumen (macet karena proses latar tee di skrip rilis)", () => {
   const blokUji = script.slice(script.indexOf("uji_gerbang_kunci() {"), script.indexOf("uji_baseline_bergeser() {"));
   assert.ok(blokUji.length > 500);
