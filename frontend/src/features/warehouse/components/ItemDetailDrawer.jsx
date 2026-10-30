@@ -13,6 +13,7 @@ import { tampilHargaDaftar } from "../stok/koreksiSaldoLogic.js";
 import { riwayatLokasi } from "../stok/stokLogic.js";
 import HargaBerlakuPanel from "../stok/HargaBerlakuPanel.jsx";
 import KoreksiSaldoPanel from "../stok/KoreksiSaldoPanel.jsx";
+import FotoBahan from "../stok/FotoBahan.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import {
@@ -55,6 +56,9 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
   const [keadaan, setKeadaan] = useState(null); // keadaanSaldo dari panel Koreksi saldo → label status header yang membedakan belum diketahui / nol / minus
 
   const materialId = item?.materialId || item?.id;
+  // Foto bahan: awalnya dari baris Stok & Lokasi; setelah unggah/putar/hapus diperbarui langsung dari respons server (daftar di belakang ikut dimuat ulang lewat onChanged).
+  const [foto, setFoto] = useState({ url: baris?.fotoUrl ?? null, thumb: baris?.fotoThumbUrl ?? null });
+  useEffect(() => { setFoto({ url: baris?.fotoUrl ?? null, thumb: baris?.fotoThumbUrl ?? null }); }, [materialId, baris?.fotoUrl, baris?.fotoThumbUrl]);
 
   useEffect(() => {
     if (!materialId) return;
@@ -109,7 +113,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
         >
           {/* Awal (transparansi halus): ikon kelompok, nama + kode/satuan, status, harga ringkas, tutup */}
           <div className="flex shrink-0 items-start gap-3 rounded-t-3xl bg-surface/85 px-4 pb-3 pt-4 backdrop-blur-xl sm:rounded-tl-3xl sm:rounded-tr-none">
-            <IkonBahan kode={baris?.kelompok?.kode} ukuran="lg" />
+            <IkonBahan kode={baris?.kelompok?.kode} ukuran="lg" fotoUrl={foto.thumb} />
             <div className="min-w-0 flex-1">
               <Dialog.Title className="m-0 text-[18px] font-bold leading-snug text-ink" data-testid="drawer-nama">{item.name}</Dialog.Title>
               <p className="m-0 mt-0.5 truncate text-[12.5px] stok-t2" data-testid="drawer-kode-satuan">{item.code} · satuan {satuanTeks}</p>
@@ -141,6 +145,8 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
               <InfoToggleIsi info={infoStok}><p className="m-0" data-testid="rumus-stok">{ISTILAH.rumusStok}</p></InfoToggleIsi>
               <KoreksiSaldoPanel materialId={materialId} onChanged={onChanged} onKeadaan={setKeadaan} />
             </section>
+
+            <FotoBahan materialId={materialId} nama={item.name} fotoUrl={foto.url} onUbah={(f) => { setFoto({ url: f.fotoUrl, thumb: f.fotoThumbUrl }); onChanged?.(); }} />
 
             <HargaBerlakuPanel materialId={materialId} />
 

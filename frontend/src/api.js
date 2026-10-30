@@ -579,6 +579,10 @@ export const api = {
   },
   createMaterial: (data) => request("/inventory/materials", { method: "POST", body: JSON.stringify(data) }),
   updateMaterial: (id, data) => request(`/inventory/materials/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Foto bahan: unggah/ganti (multipart, kolom `foto`), putar (derajat 90|180|270), hapus. Izin sama dengan mengubah bahan (inventory:write); tidak menyentuh stok/harga.
+  unggahFotoBahan: (id, berkas) => { const fd = new FormData(); fd.append("foto", berkas, berkas.name || "foto.jpg"); return requestFormData(`/inventory/materials/${id}/photo`, fd, "PUT"); },
+  putarFotoBahan: (id, derajat) => request(`/inventory/materials/${id}/photo/rotate`, { method: "POST", body: JSON.stringify({ derajat }) }),
+  hapusFotoBahan: (id) => request(`/inventory/materials/${id}/photo`, { method: "DELETE" }),
   getStock: () => request("/inventory/stock"),
   getStockMovements: (params = {}) => {
     const qs = new URLSearchParams(params).toString();

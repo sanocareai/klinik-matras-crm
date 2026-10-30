@@ -41,7 +41,7 @@ function Baris({ r, peta, dipilih, onPilih }) {
       <button type="button" onClick={() => onPilih(r)} aria-label={`Buka detail ${r.nama}`} data-testid="baris-stok" data-kode={r.kode} data-status={st.kode} aria-current={dipilih ? "true" : undefined}
         title={r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok untuk bahan ini"}
         className={cn("w-full items-center px-4 py-3 text-left outline-none transition-colors hover:bg-hovertint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 max-sm:min-h-11", GRID[k], dipilih && "bg-accentbg shadow-[inset_3px_0_0_var(--accent)]")}>
-        <IkonBahan kode={r.kelompok?.kode} className="row-span-2 row-start-1 md:row-span-1 md:col-start-1" />
+        <IkonBahan kode={r.kelompok?.kode} fotoUrl={r.fotoThumbUrl} className="row-span-2 row-start-1 md:row-span-1 md:col-start-1" />
         <span className="col-start-2 row-start-1 min-w-0 md:col-start-2">
           <span className="block truncate text-[14px] font-semibold text-ink" data-testid="nama-bahan">{r.nama}</span>
           <span className="block truncate text-[12px] stok-t2 [overflow-wrap:anywhere]" data-testid="kode-bahan">{r.kode}</span>

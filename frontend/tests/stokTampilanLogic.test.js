@@ -84,7 +84,7 @@ test("drawer: nama/stok/harga jadi fokus; Koreksi saldo dan Ubah harga dipertaha
   assert.match(d, /Belum diketahui|teksAngkaStok\(item\.available, keadaan,/);
   const kp = baca("features", "warehouse", "stok", "KoreksiSaldoPanel.jsx"); assert.match(kp, /d\.izin\.bolehMengajukan &&/); assert.match(kp, /disabled=\{!!aktif\}/);
   const hp = baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"); assert.match(hp, /d\.bolehUbah && <Button/);
-  const pe = (name) => baca("features", "warehouse", "stok", name); assert.ok(pe("IkonBahan.jsx").includes("bukan foto") || /Ikon KELOMPOK/.test(pe("IkonBahan.jsx")), "ikon kelompok, bukan foto");
+  const pe = (name) => baca("features", "warehouse", "stok", name); assert.ok(pe("IkonBahan.jsx").includes("IKON_KELOMPOK[kode]") && /fotoUrl/.test(pe("IkonBahan.jsx")), "foto bila ada (thumbnail server), ikon kelompok sebagai cadangan");
 });
 
 test("ringkasHasil menghitung SELURUH hasil saringan (bukan 25 baris halaman) dan membedakan minus / belum diketahui / nol terverifikasi / nol menurut pergerakan", async () => {
