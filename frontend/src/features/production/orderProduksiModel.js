@@ -154,20 +154,39 @@ export function masalahKeUrl(params, terpilih) {
   if (!t.length) n.delete("masalah"); else n.set("masalah", t.length === KELENGKAPAN_KEYS.length ? "semua" : KELENGKAPAN_KEYS.filter((k) => t.includes(k)).map((k) => SLUG_MASALAH[k]).join(","));
   return n;
 }
+// Alasan "Biaya bahan belum lengkap" yang HANYA akibat masalah bahan (dibaca dari KODE + JUMLAH alasan di data server, bukan dari teks label):
+//  · HPP_BAHAN_BELUM_DICATAT  -> akibat BAHAN_BELUM_DICATAT (selalu: alasan ini hanya muncul bersama kategori itu)
+//  · HPP_SEMENTARA / HPP_CATATAN_TERTAHAN -> akibat BAHAN_PERLU_DICEK HANYA bila jumlahnya sepenuhnya tertutup oleh alasan bahan yang berpasangan (jumlah biaya <= jumlah alasan bahan);
+//    bila lebih besar (mis. catatan Siap Posting yang tertahan), sisanya masalah harga/posting yang berdiri sendiri -> tetap tampil.
+//  · HPP_HARGA_BELUM_DIKETAHUI / HPP_BELUM_DITERAPKAN / HPP_GAGAL_PEMBEKUAN dan kode yang tak dikenal -> SELALU berdiri sendiri (tidak pernah dilipat).
+const AKIBAT_BIAYA = Object.freeze({
+  HPP_BAHAN_BELUM_DICATAT: { dari: "BAHAN_BELUM_DICATAT", pasangan: null },
+  HPP_SEMENTARA: { dari: "BAHAN_PERLU_DICEK", pasangan: (kode) => kode === "SEMENTARA_BELUM_TERPETAKAN" || kode === "SEMENTARA_BELUM_DIREKONSILIASI" },
+  HPP_CATATAN_TERTAHAN: { dari: "BAHAN_PERLU_DICEK", pasangan: (kode) => String(kode).startsWith("CATATAN_") },
+});
+/** Satu alasan biaya -> kunci kategori bahan yang menjadi penyebabnya (null = berdiri sendiri). Murni; tidak menebak. */
+export function penyebabAlasanBiaya(alasan, kel) {
+  const aturan = AKIBAT_BIAYA[alasan?.kode]; if (!aturan || !(kel?.keys ?? []).includes(aturan.dari)) return null;
+  if (!aturan.pasangan) return aturan.dari;
+  const jumlah = Number(alasan.jumlah); if (!Number.isFinite(jumlah)) return null;
+  const tertutup = (kel?.items?.[aturan.dari]?.alasan ?? []).filter((a) => aturan.pasangan(a.kode)).reduce((s, a) => s + (Number(a.jumlah) || 0), 0);
+  return tertutup > 0 && jumlah <= tertutup ? aturan.dari : null;
+}
 /**
  * Ringkasan SATU BARIS: utamakan SATU alasan yang paling bisa ditindaklanjuti (urutan tetap: catatan bahan → bahan perlu diperiksa → biaya bahan → data order).
- * Biaya bahan yang HANYA berarti "bahan belum dicatat" tidak ditumpuk (penyebab sama; hilang sendiri setelah bahan dicatat). Masalah harga yang berdiri sendiri (harga belum diketahui, belum dibekukan, gagal, tertahan, sementara)
- * TIDAK pernah disembunyikan: tampil sebagai label kedua. Sisanya masuk "+N masalah". Klasifikasi tidak diubah — hanya cara menampilkannya.
+ * Biaya bahan yang SEMUA alasannya hanyalah akibat masalah bahan di atas (lihat penyebabAlasanBiaya) tidak ditumpuk sebagai label kedua; penjelasannya ada di info ("+N masalah"/ikon info).
+ * Masalah harga yang berdiri sendiri (harga belum diketahui, belum dibekukan, gagal pembekuan, atau kelebihan jumlah yang tak tertutup alasan bahan) TIDAK pernah disembunyikan: tampil sebagai label kedua. Klasifikasi tidak diubah — hanya cara menampilkannya.
  */
 export function ringkasBaris(row) {
   const kel = row?.adopsi?.kelengkapan; const keys = KELENGKAPAN_KEYS.filter((k) => (kel?.keys ?? []).includes(k));
-  if (!keys.length) return { semua: [], utama: null, terlihat: [], lain: [], terlipat: [], sasaran: null };
+  if (!keys.length) return { semua: [], utama: null, terlihat: [], lain: [], terlipat: [], lipatDari: {}, sasaran: null };
   const alasanHpp = kel?.items?.HPP_BELUM_LENGKAP?.alasan ?? [];
-  const hppMengulang = keys.includes("BAHAN_BELUM_DICATAT") && keys.includes("HPP_BELUM_LENGKAP") && alasanHpp.length > 0 && alasanHpp.every((a) => a.kode === "HPP_BAHAN_BELUM_DICATAT");
-  const terlipat = hppMengulang ? ["HPP_BELUM_LENGKAP"] : [];
+  const penyebab = keys.includes("HPP_BELUM_LENGKAP") && alasanHpp.length > 0 ? alasanHpp.map((a) => penyebabAlasanBiaya(a, kel)) : [];
+  const hppAkibat = penyebab.length > 0 && penyebab.every(Boolean);
+  const terlipat = hppAkibat ? ["HPP_BELUM_LENGKAP"] : []; const lipatDari = hppAkibat ? { HPP_BELUM_LENGKAP: KELENGKAPAN_KEYS.filter((k) => penyebab.includes(k)) } : {};
   const tampil = keys.filter((k) => !terlipat.includes(k)); const utama = tampil[0];
   const terlihat = tampil.slice(1).filter((k) => k === "HPP_BELUM_LENGKAP"); const lain = tampil.slice(1).filter((k) => !terlihat.includes(k));
-  return { semua: keys, utama, terlihat, lain, terlipat, sasaran: sasaranLengkapi([utama]) };
+  return { semua: keys, utama, terlihat, lain, terlipat, lipatDari, sasaran: sasaranLengkapi([utama]) };
 }
 /** Periode valid untuk dikirim: format tanggal dan dari ≤ sampai; selain itu galat yang dibaca pengguna (tidak diam-diam diabaikan). */
 export function validasiPeriode(dari, sampai) {

@@ -106,3 +106,47 @@ test("useHubMasalah: penulisan URL beruntun dalam satu tick saling menumpuk (Hap
   assert.ok((h.match(/basisSearch\(location\)/g) || []).length === 2, "useHubRange dan useHubMasalah sama-sama memakai basis tertunda");
   assert.ok(/Promise\.resolve\(\)\.then\(\(\) => \{ tertunda\.dari = null/.test(h), "catatan tertunda dibuang di microtask berikutnya (tidak bocor antar interaksi)");
 });
+
+// ── biaya bahan sebagai AKIBAT masalah bahan: dibaca dari KODE + JUMLAH alasan server (bukan dari teks label) ──
+const barisJ = (items) => ({ unitCode: "RES-9-U1", adopsi: { kelengkapan: { keys: Object.keys(items), items: Object.fromEntries(Object.entries(items).map(([k, al]) => [k, { key: k, label: "TEKS-TIDAK-DIPAKAI", alasan: al.map(([kode, jumlah]) => ({ kode, teks: "teks bebas tidak dibaca", ...(jumlah === undefined ? {} : { jumlah }) })) }])) } } });
+
+test("biaya bahan hanya akibat 'bahan perlu diperiksa': tidak jadi label kedua, tetap ada di info (alasan dari kode+jumlah)", () => {
+  const a = ringkasBaris(barisJ({ BAHAN_PERLU_DICEK: [["CATATAN_BELUM_TERPETAKAN", 2], ["CATATAN_PERLU_DICEK_LAIN", 1]], HPP_BELUM_LENGKAP: [["HPP_CATATAN_TERTAHAN", 3]] }));
+  assert.equal(a.utama, "BAHAN_PERLU_DICEK"); assert.deepEqual(a.terlipat, ["HPP_BELUM_LENGKAP"]); assert.deepEqual(a.terlihat, []); assert.deepEqual(a.lain, []);
+  assert.deepEqual(a.lipatDari, { HPP_BELUM_LENGKAP: ["BAHAN_PERLU_DICEK"] }); assert.deepEqual(a.semua, ["BAHAN_PERLU_DICEK", "HPP_BELUM_LENGKAP"], "klasifikasi server utuh");
+  const s = ringkasBaris(barisJ({ BAHAN_PERLU_DICEK: [["SEMENTARA_BELUM_TERPETAKAN", 1], ["SEMENTARA_BELUM_DIREKONSILIASI", 1]], HPP_BELUM_LENGKAP: [["HPP_SEMENTARA", 2]] }));
+  assert.deepEqual(s.terlipat, ["HPP_BELUM_LENGKAP"]);
+  const k = ringkasBaris(barisJ({ BAHAN_BELUM_DICATAT: [["BAHAN_TIDAK_ADA_CATATAN"]], HPP_BELUM_LENGKAP: [["HPP_BAHAN_BELUM_DICATAT"]] }));
+  assert.deepEqual(k.lipatDari, { HPP_BELUM_LENGKAP: ["BAHAN_BELUM_DICATAT"] });
+});
+
+test("biaya bahan MANDIRI tetap tampil sebagai label kedua: harga belum diketahui / belum diterapkan / gagal, kelebihan jumlah tertahan, atau jumlah tak diketahui", () => {
+  for (const [nama, hpp] of [
+    ["harga belum diketahui", [["HPP_CATATAN_TERTAHAN", 1], ["HPP_HARGA_BELUM_DIKETAHUI", 2]]],
+    ["belum diterapkan", [["HPP_BELUM_DITERAPKAN", 1]]],
+    ["gagal pembekuan", [["HPP_GAGAL_PEMBEKUAN", 1]]],
+    ["tertahan lebih banyak daripada catatan perlu dicek (sisanya Siap Posting)", [["HPP_CATATAN_TERTAHAN", 5]]],
+    ["jumlah tidak ada di payload", [["HPP_CATATAN_TERTAHAN"]]],
+    ["kode tak dikenal", [["HPP_KODE_BARU", 1]]],
+  ]) {
+    const r = ringkasBaris(barisJ({ BAHAN_PERLU_DICEK: [["CATATAN_BELUM_TERPETAKAN", 3]], HPP_BELUM_LENGKAP: hpp }));
+    assert.deepEqual(r.terlihat, ["HPP_BELUM_LENGKAP"], nama); assert.deepEqual(r.terlipat, [], nama);
+  }
+  // 'tertahan' tanpa kategori bahan perlu diperiksa (sepenuhnya Siap Posting) = masalah posting yang berdiri sendiri
+  const siap = ringkasBaris(barisJ({ HPP_BELUM_LENGKAP: [["HPP_CATATAN_TERTAHAN", 2]] })); assert.deepEqual(siap.terlipat, []); assert.equal(siap.utama, "HPP_BELUM_LENGKAP");
+});
+
+test("keputusan tidak bergantung pada teks label: label/teks diganti apa pun, hasil sama", () => {
+  const dasar = barisJ({ BAHAN_PERLU_DICEK: [["CATATAN_BELUM_TERPETAKAN", 1]], HPP_BELUM_LENGKAP: [["HPP_CATATAN_TERTAHAN", 1]] });
+  const ubah = JSON.parse(JSON.stringify(dasar)); for (const it of Object.values(ubah.adopsi.kelengkapan.items)) { it.label = "xxx"; for (const a of it.alasan) a.teks = "yyy"; }
+  assert.deepEqual(ringkasBaris(ubah), ringkasBaris(dasar));
+});
+
+test("'Semua unit' hanya menghapus jenis masalah (periode, pencarian, tab dipertahankan); 'Hapus semua filter' mereset semuanya", () => {
+  const url = masalahKeUrl(new URLSearchParams("masalah=catatan,periksa&preset=last_7_days&q=RES-9&tab=aktif&dari=2026-10-01&sampai=2026-10-15"), pilihanDariJenisMasalah(""));
+  assert.equal(url.has("masalah"), false); for (const [k, v] of [["preset", "last_7_days"], ["q", "RES-9"], ["tab", "aktif"], ["dari", "2026-10-01"], ["sampai", "2026-10-15"]]) assert.equal(url.get(k), v, k);
+  const f = src("features", "production", "KelengkapanFilter.jsx"); const p = src("pages", "bengkel", "ProductionWorkOrders.jsx");
+  assert.ok(f.includes('<option value="">Semua unit</option>') && f.includes("onPilih(pilihanDariJenisMasalah(e.target.value))"), "dropdown 'Semua unit' -> pilihan kosong, bukan reset lain");
+  assert.ok(f.includes("onBersih={onBersih}") === false && p.includes("onBersih={() => setKelengkapan([])}"), "'Hapus pilihan' hanya jenis masalah");
+  assert.ok(p.includes("setCari(\"\"); setKerja(\"\"); setKelengkapan([]); setPeriode(periodeSemuaWaktu())") && p.includes(">Hapus semua filter</Button>"), "'Hapus semua filter' mereset pencarian, status, jenis masalah, dan periode");
+});

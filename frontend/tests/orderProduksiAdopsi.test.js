@@ -98,7 +98,7 @@ test("daftar: kolom Status order · Status kerja · Target · PIC · Tindakan; f
   assert.match(WO, /api\.eksporOrderProduksiXlsx\(\{ displayStatus: displayParam, \.\.\.paramDaftar,/, "ekspor = daftar yang sama");
   assert.match(WO, /\.\.\.paramDaftar, page: String\(page\)/, "daftar memakai paramDaftar yang sama");
   assert.match(WO, /data-testid="order-export-excel"/); assert.match(WO, /data-testid="order-filter-kerja"/);
-  assert.match(WO, /TableSkeletonRows/); assert.match(WO, /Tidak ada unit yang cocok/); assert.match(WO, /Hapus filter/);
+  assert.match(WO, /TableSkeletonRows/); assert.match(WO, /Tidak ada unit yang cocok/); assert.match(WO, /Hapus semua filter/);
   assert.match(WO, /data-testid="posisi-perhatian"/, "posisi yang perlu perhatian tampil terpisah dari status order");
   assert.match(WO, /className="hidden lg:block"/); assert.match(WO, /ul className="m-0 list-none divide-y divide-line p-0 lg:hidden"/, "tabel desktop, kartu kerja di HP");
   assert.match(WO, /Berikutnya:/, "kartu HP memuat tindakan berikutnya");
