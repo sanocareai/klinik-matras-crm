@@ -401,3 +401,88 @@ export async function riwayatCatatanUnit(db, unitId) {
   }
   return out;
 }
+
+// ───────────────────────────── D1: koreksi 16 catatan KILOAN yang salah berstatus BUKAN_STOK ─────────────────────────────
+// Catatan hasil impor yang di-BUKAN_STOK-kan HANYA karena pola nama KILOAN (aturan lama) dipulihkan ke PERLU_DICEK dengan penanda yang sama persis seperti klasifikasi baru.
+// TIDAK dijalankan oleh deploy kode (hanya lewat POST bermanifest dengan izin persetujuan). Menulis HANYA: keadaan catatan (state/flags/evaluatedAt) + SATU peristiwa DIKOREKSI per catatan.
+// TIDAK membuat master, stok, penerimaan, harga, valuasi, jurnal, dan tidak menyentuh catatan lain. Nilai asli (raw_*) dikunci trigger. Catatan yang sudah punya keputusan/perubahan sejak audit DITAHAN.
+const D1_SUMBER = "D1 koreksi klasifikasi KILOAN (BUKAN_STOK karena pola nama)";
+const D1_KUNCI_MIN = 8;
+const idemD1 = (k) => { const t = String(k ?? ""); if (t.length < D1_KUNCI_MIN || t.length > 100) throw new CatatanError("Idempotency-Key wajib (8–100 karakter)", 428, "IDEMPOTENCY_KEY_REQUIRED"); return t; };
+const alasanD1 = (a) => { const t = String(a ?? "").trim(); if (t.length < 10 || t.length > 500) throw new CatatanError("Alasan wajib diisi (10–500 karakter)", 400, "ALASAN_WAJIB"); return t; };
+const sidikCatatan = (n, events) => crypto.createHash("sha256").update(stabil({ id: n.id, sourceKey: n.sourceKey, state: n.state, flags: n.flags ?? [], materialId: n.materialId ?? null, stockMovementId: n.stockMovementId ?? null, linkKind: n.linkKind ?? null,
+  qty: n.qty === null || n.qty === undefined ? null : String(n.qty), uom: n.uom ?? null, usedAt: n.usedAt ? new Date(n.usedAt).toISOString() : null, confirmedFlags: n.confirmedFlags ?? [], evaluatedAt: n.evaluatedAt ? new Date(n.evaluatedAt).toISOString() : null,
+  updatedAt: n.updatedAt ? new Date(n.updatedAt).toISOString() : null, events: events.map((e) => [e.id, e.kind]) })).digest("hex");
+const kandidatD1 = (n) => n.origin === "EXCEL" && n.state === STATE.BUKAN_STOK && KILOAN_RE.test(n.rawName ?? "") && !KOMPONEN_LAMA_RE.test(n.rawName ?? "");
+async function bacaKandidatD1(db, ids = null) {
+  const where = ids ? { id: { in: ids } } : { origin: "EXCEL", state: STATE.BUKAN_STOK, rawName: { contains: "kiloan", mode: "insensitive" } };
+  const notes = await db.unitUsageNote.findMany({ where, orderBy: [{ sourceRow: "asc" }, { id: "asc" }], include: { unit: { select: { unitCode: true, status: true } } } });
+  const ev = notes.length ? await db.unitUsageNoteEvent.findMany({ where: { noteId: { in: notes.map((n) => n.id) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, noteId: true, kind: true } }) : [];
+  const per = new Map(); for (const e of ev) (per.get(e.noteId) ?? per.set(e.noteId, []).get(e.noteId)).push(e);
+  return notes.map((n) => ({ n, events: per.get(n.id) ?? [] }));
+}
+/** Penahan: alasan mengapa catatan TIDAK boleh dikoreksi D1 (null = layak). Dipakai pratinjau dan penerapan dengan aturan yang sama. */
+function penahanD1({ n, events }) {
+  if (!kandidatD1(n)) return n.state !== STATE.BUKAN_STOK ? { kode: "BUKAN_LAGI_BUKAN_STOK", teks: `Catatan sudah berstatus ${n.state}` } : { kode: "BUKAN_KANDIDAT", teks: "Bukan catatan Excel bernama KILOAN tanpa penanda komponen lama" };
+  if (n.materialId || n.stockMovementId || n.linkKind) return { kode: "SUDAH_TERHUBUNG", teks: "Catatan sudah terhubung ke bahan atau pergerakan stok" };
+  if (!(events.length === 1 && events[0].kind === "IMPOR")) return { kode: "ADA_KEPUTUSAN_ATAU_PERUBAHAN", teks: `Riwayat bukan hanya IMPOR (${events.map((e) => e.kind).join(", ") || "kosong"}) — ada keputusan/perubahan` };
+  return null;
+}
+/** Pratinjau BACA-SAJA: manifest 16 catatan dengan keadaan awal + sidik, dan keadaan usulan. Tidak menulis apa pun. */
+export async function pratinjauKoreksiKiloan(db) {
+  const baris = (await bacaKandidatD1(db)).filter((b) => kandidatD1(b.n)); // komponen lama eksplisit (LAMA/BUANG KASUR) tidak ikut
+  const manifest = baris.map((b) => { const h = penahanD1(b); return { id: b.n.id, baris: b.n.sourceRow, order: b.n.orderNumber, unit: b.n.unit?.unitCode ?? null, statusUnit: b.n.unit?.status ?? null, nama: b.n.rawName, qty: b.n.qty === null ? null : Number(b.n.qty), satuan: b.n.uom, tanggalPakai: b.n.usedAt,
+    keadaanAwal: { state: b.n.state, flags: (b.n.flags ?? []).map((f) => f.kode), peristiwa: b.events.map((e) => e.kind), materialId: b.n.materialId, stockMovementId: b.n.stockMovementId }, sidik: sidikCatatan(b.n, b.events), layak: !h, penahan: h }; });
+  const layak = manifest.filter((m) => m.layak);
+  return { sumber: D1_SUMBER, jumlah: manifest.length, layak: layak.length, tertahan: manifest.length - layak.length, totalQty: Math.round(layak.reduce((s, m) => s + (m.qty ?? 0), 0) * 10000) / 10000,
+    digest: crypto.createHash("sha256").update(stabil(layak.map((m) => [m.id, m.sidik]))).digest("hex"), manifest,
+    catatan: "Koreksi D1 hanya mengubah keadaan catatan (BUKAN_STOK → PERLU_DICEK). Tidak membuat master, stok, penerimaan, harga, valuasi, atau jurnal. D2–D5 keputusan terpisah." };
+}
+/**
+ * Terapkan D1 untuk catatan di `manifest` ([{id, sidik}], dari pratinjau). Idempoten (kunci per catatan = `${kunci}:${id}`; jalan ulang = tidak ada peristiwa baru). Catatan yang sidiknya berubah / punya keputusan baru / bukan lagi BUKAN_STOK DITAHAN.
+ * Satu transaksi: kunci evaluasi lebih dulu (urutan kunci seragam). TIDAK memanggil evaluasi global (catatan lain tidak disentuh).
+ */
+export async function terapkanKoreksiKiloan(prisma, { manifest, alasan, kunci, aktor, sekarang = new Date() }) {
+  const reason = alasanD1(alasan); const idem = idemD1(kunci);
+  if (!aktor?.id) throw new CatatanError("Pelaku wajib ada", 400, "PELAKU_WAJIB");
+  if (!Array.isArray(manifest) || !manifest.length || manifest.length > 100 || !manifest.every((m) => m && typeof m.id === "string" && typeof m.sidik === "string")) throw new CatatanError("manifest wajib: daftar {id, sidik} dari pratinjau (1–100 catatan)", 400, "MANIFEST_TIDAK_VALID");
+  if (new Set(manifest.map((m) => m.id)).size !== manifest.length) throw new CatatanError("manifest memuat id ganda", 400, "MANIFEST_GANDA");
+  return prisma.$transaction(async (tx) => {
+    await kunciEvaluasiCatatan(tx);
+    const baris = await bacaKandidatD1(tx, manifest.map((m) => m.id)); const peta = new Map(baris.map((b) => [b.n.id, b]));
+    const dikoreksi = [], ulang = [], ditahan = [];
+    const butuh = []; // lolos penahan + sidik → dihitung klasifikasinya
+    for (const m of manifest) {
+      const b = peta.get(m.id);
+      if (!b) { ditahan.push({ id: m.id, kode: "TIDAK_ADA", teks: "Catatan tidak ditemukan" }); continue; }
+      const sudah = await tx.unitUsageNoteEvent.findFirst({ where: { noteId: m.id, idempotencyKey: `${idem}:${m.id}` }, select: { id: true } });
+      if (sudah) { ulang.push({ id: m.id, peristiwaId: sudah.id }); continue; }
+      const h = penahanD1(b); if (h) { ditahan.push({ id: m.id, ...h }); continue; }
+      if (sidikCatatan(b.n, b.events) !== m.sidik) { ditahan.push({ id: m.id, kode: "BERUBAH_SEJAK_AUDIT", teks: "Isi/riwayat catatan berbeda dari yang diaudit (sidik tidak cocok)" }); continue; }
+      butuh.push(b);
+    }
+    if (butuh.length) {
+      const ids = new Set(butuh.map((b) => b.n.id));
+      const notes = await tx.unitUsageNote.findMany({ where: { origin: "EXCEL" }, select: KOLOM_EVALUASI, orderBy: { sourceRow: "asc" } });
+      const ledgerNotes = await tx.unitUsageNote.findMany({ where: { origin: "LEDGER", state: STATE.PERLU_DICEK } });
+      const ctx = await muatKonteks(tx, { orderNumbers: [...new Set(notes.map((n) => n.orderNumber))], unitIds: ledgerNotes.map((l) => l.unitId).filter(Boolean) });
+      const dk = (n) => [n.orderNumber, normNama(n.rawName), normNama(n.rawSpec), n.rawQty, normNama(n.rawUom)].join("|");
+      const hit = new Map(); for (const n of notes) { if (n.state === STATE.TIDAK_DIHITUNG) continue; hit.set(dk(n), (hit.get(dk(n)) ?? 0) + 1); }
+      const sig = tandaKatalog(ctx.katalog);
+      const items = notes.map((n) => { const it = noteKeItem(n, ctx.orderBy.get(n.orderNumber)?.units ?? []); if (ids.has(n.id)) it.tetap = null; if ((hit.get(dk(n)) ?? 0) > 1) it.dupKey = dk(n); if (!n.materialId && n.rawName) it.pemetaan = petakanBahanBerCache(ctx.katalog, sig, n.rawName, n.rawSpec); return it; });
+      const idMat = [...new Set([...items.map((i) => i.materialId), ...ctx.lama.map((m) => m.materialId)].filter(Boolean))];
+      const klas = klasifikasi(items, ctx, await muatGarisWaktu(tx, idMat), { sekarang });
+      for (const b of butuh) {
+        const baru = klas.get(b.n.sourceKey);
+        if (!baru || baru.state === STATE.BUKAN_STOK || FIXED.has(baru.state)) { ditahan.push({ id: b.n.id, kode: "HASIL_TETAP_FINAL", teks: `Klasifikasi baru tidak membuka catatan (${baru?.state ?? "tanpa hasil"})` }); continue; }
+        const bukti = (baru.flags.find((f) => f.kode === "ASAL_PEMBELIAN_BERTULIS")?.data?.bukti) ?? [];
+        await tx.unitUsageNote.update({ where: { id: b.n.id }, data: { state: baru.state, flags: baru.flags, evaluatedAt: sekarang } });
+        const ev = await tx.unitUsageNoteEvent.create({ data: { noteId: b.n.id, kind: "DIKOREKSI", reason, actorId: aktor.id, idempotencyKey: `${idem}:${b.n.id}`,
+          before: { state: b.n.state, flags: (b.n.flags ?? []).map((f) => f.kode), sidik: sidikCatatan(b.n, b.events) },
+          after: { state: baru.state, flags: baru.flags.map((f) => f.kode), sumber: D1_SUMBER, buktiAsal: bukti, catatanBukti: "Bukti pembelian bukan penerimaan stok dan bukan bukti berat; tidak ada stok/penerimaan/harga/jurnal dibuat" } } });
+        dikoreksi.push({ id: b.n.id, baris: b.n.sourceRow, state: baru.state, peristiwaId: ev.id });
+      }
+    }
+    return { sumber: D1_SUMBER, dikoreksi, ulang, ditahan, ringkas: { diminta: manifest.length, dikoreksi: dikoreksi.length, ulang: ulang.length, ditahan: ditahan.length } };
+  }, { timeout: 120_000, maxWait: 60_000 });
+}

@@ -13,7 +13,7 @@ import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../mi
 import { prisma } from "../db.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
-import { ambilCatatanHistoris, evaluasiUlang } from "../services/catatanPemakaianHistoris.js";
+import { ambilCatatanHistoris, evaluasiUlang, pratinjauKoreksiKiloan, terapkanKoreksiKiloan } from "../services/catatanPemakaianHistoris.js";
 import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiPemakaian, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian, tolakKoreksiPemakaian, batalkanKoreksiPemakaian, daftarKoreksiPemakaian } from "../services/koreksiPemakaian.js";
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
 import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
@@ -92,6 +92,13 @@ function bacaUnitIds(raw) {
   if (!ids.length || ids.length > 500 || !ids.every((x) => UUID_RE.test(x))) throw Object.assign(new Error("unitIds harus berisi 1–500 UUID unit"), { statusCode: 400, code: "UNIT_IDS_TIDAK_VALID" });
   return ids;
 }
+// D1: koreksi 16 catatan KILOAN yang salah BUKAN_STOK → PERLU_DICEK. Pratinjau baca-saja; terapkan = izin persetujuan + Idempotency-Key + manifest {id,sidik}; TIDAK otomatis saat deploy; tidak menyentuh master/stok/harga/valuasi/jurnal.
+pemakaianKoreksiRouter.get("/catatan-historis/koreksi-kiloan/pratinjau", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (_req, res) => {
+  try { res.json(await pratinjauKoreksiKiloan(prisma)); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/catatan-historis/koreksi-kiloan/terapkan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { const h = await terapkanKoreksiKiloan(prisma, { manifest: req.body?.manifest, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user }); res.status(h.dikoreksi.length ? 201 : 200).json(h); } catch (e) { handleErr(e, res); }
+});
 pemakaianKoreksiRouter.get("/posting-historis/rencana", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
   try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi }); } catch (e) { handleErr(e, res); }
 });
