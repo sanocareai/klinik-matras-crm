@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FILTER_KOSONG, TABS, angka, filterUntukTab, rupiahDiketahui, daftarMasalah, durasiTeks, jumlahFilterLanjut, jumlahSeri, normalisasiTab, paramsDariRange, queryEkspor, queryLaporan, rangeDariParams, rupiah, rupiahRingkas, skalaBatang, tabAktif, tabsUntuk } from "../src/features/production/laporan/laporanModel.js";
+import { FILTER_KOSONG, TABS, angka, filterUntukTab, rupiahDiketahui, tautanLengkapi, daftarMasalah, durasiTeks, jumlahFilterLanjut, jumlahSeri, normalisasiTab, paramsDariRange, queryEkspor, queryLaporan, rangeDariParams, rupiah, rupiahRingkas, skalaBatang, tabAktif, tabsUntuk } from "../src/features/production/laporan/laporanModel.js";
 import { makeCustomRange, makeRange } from "../src/lib/dateRange.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,12 +35,12 @@ test("periode <-> URL: preset, kustom, dan tidak valid; kunci lain dipertahankan
 test("kueri API: periode + filter; ekspor mengikuti tab, periode, dan filter aktif (parameter SAMA dengan layar)", () => {
   const r = makeCustomRange("2026-10-01", "2026-10-15");
   assert.equal(queryLaporan(r, FILTER_KOSONG), "from=2026-10-01&to=2026-10-15");
-  const f = { ...FILTER_KOSONG, q: " RES-1 ", status: "PARSIAL", masalah: "TANPA_HARGA", urut: "nilai", termasukMasuk: true };
+  const f = { ...FILTER_KOSONG, q: " RES-1 ", status: "PARSIAL", masalah: "TANPA_HARGA", alasan: "TANPA_PEMAKAIAN", urut: "nilai", hanyaPemakaian: true };
   const qs = queryLaporan(r, f); const sp = new URLSearchParams(qs);
-  assert.equal(sp.get("q"), "RES-1"); assert.equal(sp.get("status"), "PARSIAL"); assert.equal(sp.get("masalah"), "TANPA_HARGA"); assert.equal(sp.get("urut"), "nilai"); assert.equal(sp.get("termasukMasuk"), "1");
-  assert.equal(queryEkspor("biaya", r, { ...FILTER_KOSONG, qOrder: " RES-1 ", status: "PARSIAL", masalah: "TANPA_HARGA", urut: "nilai", termasukMasuk: true }), `tab=biaya-order&${qs}`); assert.equal(queryEkspor("bahan", r, FILTER_KOSONG), "tab=bahan-gudang&from=2026-10-01&to=2026-10-15");
+  assert.equal(sp.get("q"), "RES-1"); assert.equal(sp.get("status"), "PARSIAL"); assert.equal(sp.get("masalah"), "TANPA_HARGA"); assert.equal(sp.get("urut"), "nilai"); assert.equal(sp.get("hanyaPemakaian"), "1"); assert.equal(sp.get("alasan"), "TANPA_PEMAKAIAN"); assert.equal(new URLSearchParams(queryLaporan(r, FILTER_KOSONG)).get("hanyaPemakaian"), null, "lingkup bawaan = PENUH (tanpa parameter)");
+  assert.equal(queryEkspor("biaya", r, { ...FILTER_KOSONG, qOrder: " RES-1 ", status: "PARSIAL", masalah: "TANPA_HARGA", alasan: "TANPA_PEMAKAIAN", urut: "nilai", hanyaPemakaian: true }), `tab=biaya-order&${qs}`); assert.equal(queryEkspor("bahan", r, FILTER_KOSONG), "tab=bahan-gudang&from=2026-10-01&to=2026-10-15");
   assert.equal(new URLSearchParams(queryLaporan(r, { ...FILTER_KOSONG, peran: "CORNER" })).get("peran"), "CORNER");
-  assert.equal(jumlahFilterLanjut(FILTER_KOSONG), 0); assert.equal(jumlahFilterLanjut(f), 4);
+  assert.equal(jumlahFilterLanjut(FILTER_KOSONG), 0); assert.equal(jumlahFilterLanjut(f), 5);
 });
 
 test("format: nilai tidak diketahui = '—' (bukan Rp 0); rupiah/angka/durasi", () => {
@@ -90,4 +90,13 @@ test("nilai yang belum diketahui tidak tampil sebagai Rp 0", () => {
   assert.equal(rupiahDiketahui(0, false), "Belum diketahui"); assert.match(rupiahDiketahui(0, true), /^Rp\s0$/); assert.match(rupiahDiketahui(215000, true), /215\.000/);
   const biaya = fs.readFileSync(path.join(root, "src/features/production/laporan/TabBiaya.jsx"), "utf8");
   assert.ok(biaya.includes('d.status === "BELUM_DIKETAHUI" ? "Belum diketahui" : rupiah(d.total.nilaiDiketahui)')); assert.ok(biaya.includes("rupiahDiketahui(u.ringkas.nilaiDiketahui, unitAdaNilai(u))"));
+});
+
+test("aturan tampilan baru: Lengkapi → Order Produksi?q=; selesai = posisi/bertanggal/tanpa tanggal (bukan 0); PIC berlabel penugasan + cakupan; SANO GUARD tidak disembunyikan; lingkup order bawaan penuh", () => {
+  assert.equal(tautanLengkapi("RES-1 A/B"), "/bengkel/order-produksi?q=RES-1%20A%2FB");
+  const wo = read("src/pages/bengkel/ProductionWorkOrders.jsx"); assert.ok(wo.includes('new URLSearchParams(window.location.search).get("q")'), "Order Produksi menerima ?q= dari tautan Lengkapi");
+  const biaya = read("src/features/production/laporan/TabBiaya.jsx"); assert.ok(biaya.includes("data-testid={`lengkapi-${o.orderNumber}`}")); assert.ok(biaya.includes("filter-hanya-pemakaian")); assert.ok(!/filter-masuk|termasukMasuk/.test(biaya), "tidak ada lagi opsi yang menyembunyikan order tanpa pemakaian secara bawaan");
+  assert.ok(biaya.includes("tanda-guard") && biaya.includes("termasuk SANO GUARD")); assert.ok(!/SANO GUARD[^.<]{0,60}tidak dihitung/.test(biaya + read("src/features/production/laporan/TabBahan.jsx")), "SANO GUARD tidak diberi label tidak dihitung");
+  const kin = read("src/features/production/laporan/TabKinerja.jsx"); for (const k of ["tanpa tanggal tercatat", "posisi saat ini", "label-penugasan", "cakupan-pic", "bukan berarti tidak ada produksi"]) assert.ok(kin.includes(k), k);
+  const rg = read("src/features/production/laporan/TabRingkasan.jsx"); for (const k of ["tanpa tanggal tercatat", "catatan-tanpa-tanggal", "dasar-lingkup"]) assert.ok(rg.includes(k), k);
 });

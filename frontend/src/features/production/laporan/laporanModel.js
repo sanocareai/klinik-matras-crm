@@ -38,11 +38,11 @@ export function paramsDariRange(params, range) {
 }
 
 // ── kueri API (periode + filter) ─────────────────────────────────────────────
-export const FILTER_KOSONG = Object.freeze({ qOrder: "", qBahan: "", status: "", masalah: "", urut: "masalah", termasukMasuk: false, peran: "MEJA", dasar: "meja" });
+export const FILTER_KOSONG = Object.freeze({ qOrder: "", qBahan: "", status: "", masalah: "", alasan: "", urut: "masalah", hanyaPemakaian: false, peran: "MEJA", dasar: "meja" });
 /** Hanya filter yang BERLAKU pada tab itu yang dikirim (pencarian order tidak boleh menyaring tab Bahan, dst.). `tab` = kunci tab model (ringkasan|biaya|kinerja|bahan). */
 export function filterUntukTab(tab, f = {}) {
   const g = { ...FILTER_KOSONG, ...f };
-  if (tab === "biaya") return { q: g.qOrder, status: g.status, masalah: g.masalah, urut: g.urut, termasukMasuk: g.termasukMasuk };
+  if (tab === "biaya") return { q: g.qOrder, status: g.status, masalah: g.masalah, alasan: g.alasan, urut: g.urut, hanyaPemakaian: g.hanyaPemakaian };
   if (tab === "bahan") return { q: g.qBahan };
   if (tab === "kinerja") return { peran: g.peran };
   return {};
@@ -50,19 +50,20 @@ export function filterUntukTab(tab, f = {}) {
 export function queryLaporan(range, filters = {}, ekstra = {}) {
   const p = new URLSearchParams(); const api = toApiParams(range);
   if (api.from) p.set("from", api.from); if (api.to) p.set("to", api.to);
-  const f = { q: "", status: "", masalah: "", urut: FILTER_KOSONG.urut, termasukMasuk: false, peran: "MEJA", ...filters };
+  const f = { q: "", status: "", masalah: "", alasan: "", urut: FILTER_KOSONG.urut, hanyaPemakaian: false, peran: "MEJA", ...filters };
   if (f.q?.trim()) p.set("q", f.q.trim());
   if (f.status) p.set("status", f.status);
   if (f.masalah) p.set("masalah", f.masalah);
+  if (f.alasan) p.set("alasan", f.alasan);
   if (f.urut && f.urut !== FILTER_KOSONG.urut) p.set("urut", f.urut);
-  if (f.termasukMasuk) p.set("termasukMasuk", "1");
+  if (f.hanyaPemakaian) p.set("hanyaPemakaian", "1");
   if (f.peran === "CORNER") p.set("peran", "CORNER");
   for (const [k, v] of Object.entries(ekstra)) if (v != null && v !== "") p.set(k, String(v));
   return p.toString();
 }
 /** Rupiah hanya bila nilai benar-benar diketahui; selain itu teks status (BUKAN Rp 0). */
 export const rupiahDiketahui = (v, diketahui) => (diketahui ? rupiah(v) : "Belum diketahui");
-export const jumlahFilterLanjut = (f = {}) => [f.status, f.masalah, f.termasukMasuk ? "1" : "", f.urut && f.urut !== FILTER_KOSONG.urut ? f.urut : ""].filter(Boolean).length;
+export const jumlahFilterLanjut = (f = {}) => [f.status, f.masalah, f.alasan, f.hanyaPemakaian ? "1" : "", f.urut && f.urut !== FILTER_KOSONG.urut ? f.urut : ""].filter(Boolean).length;
 
 // ── format ──────────────────────────────────────────────────────────────────
 const nfRp = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
@@ -80,8 +81,11 @@ export function durasiTeks(d) { if (!d) return "Belum tersedia"; return d.rataMe
 
 export const NADA_STATUS = Object.freeze({ LENGKAP: "bg-greenbg text-green", PARSIAL: "bg-orangebg text-orange", BELUM_DIKETAHUI: "bg-redbg text-red" });
 export const LABEL_STATUS_BAHAN = Object.freeze({
-  DIBEKUKAN: "Dibekukan", BELUM_DIBEKUKAN: "Belum dibekukan", TANPA_HARGA: "Tanpa harga", GAGAL: "Pembekuan gagal", GUARD: "SANO GUARD · tidak dihitung",
+  DIBEKUKAN: "Dibekukan", BELUM_DIBEKUKAN: "Belum dibekukan", TANPA_HARGA: "Tanpa harga", GAGAL: "Pembekuan gagal",
 });
+export const LABEL_ALASAN_LINGKUP = Object.freeze({ PEMAKAIAN: "Ada pemakaian", MASUK: "Unit masuk", SELESAI: "Selesai", TERKIRIM: "Terkirim" });
+/** Tautan "Lengkapi": Order Produksi dengan pencarian nomor order (tindakan nyata ada di sana: catat bahan / nyatakan tanpa bahan baru). */
+export const tautanLengkapi = (nomorOrder) => `/bengkel/order-produksi?q=${encodeURIComponent(nomorOrder ?? "")}`;
 
 /** Daftar masalah (untuk chip & rincian) berurutan dari jenis terbanyak; hanya yang > 0. */
 export function daftarMasalah(masalah = {}, definisi = {}) {

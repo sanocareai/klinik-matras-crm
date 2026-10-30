@@ -37,10 +37,10 @@ export default function TabBahan({ qs, meta, filters, onFilters, page, onPage, o
           <tbody>
             {d.rows.map((r) => (
               <tr key={r.materialId} className="border-b border-line/60" data-testid={`bahan-${r.kode}`}>
-                <td className="px-3 py-2"><b>{r.bahan}</b><span className="block text-[11px] text-ink3">{r.kode}{r.guard ? " · SANO GUARD (tidak dihitung ke HPP)" : ""}</span></td>
+                <td className="px-3 py-2"><b>{r.bahan}</b><span className="block text-[11px] text-ink3">{r.kode}{r.guard ? " · SANO GUARD: nilai tercatat ikut dihitung; biaya perakitan belum tersedia" : ""}</span></td>
                 <td className="px-3 py-2 text-right tabular-nums">{angka(r.dipakai)} {r.satuan}</td><td className="px-3 py-2 text-right tabular-nums">{angka(r.dikembalikan)}</td><td className="px-3 py-2 text-right tabular-nums">{angka(r.koreksi)}</td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{angka(r.bersih)}</td><td className="px-3 py-2 text-right tabular-nums">{angka(r.susut)}</td><td className="px-3 py-2 text-right tabular-nums">{angka(r.unit)}</td>
-                {d.izinHarga && <td className="px-3 py-2 text-right tabular-nums">{r.guard ? "—" : rupiah(r.nilaiDiketahui)}</td>}
+                {d.izinHarga && <td className="px-3 py-2 text-right tabular-nums">{rupiah(r.nilaiDiketahui)}</td>}
                 <td className="px-3 py-2 text-right tabular-nums">{r.masalah || "—"}</td>
               </tr>
             ))}
