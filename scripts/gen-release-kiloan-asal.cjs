@@ -19,9 +19,9 @@ const LIB_REH = "scripts/lib/rehearsal-kiloan-asal.mjs", LIB_SMOKE = "scripts/li
 const GENERATOR = "scripts/gen-release-kiloan-asal.cjs";
 const TPL_FILES = ["header", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
-const CAND_BRANCH = "fix/klasifikasi-kiloan-on-382027ef";
-// Rilis ini TANPA perubahan frontend: tidak ada teks fitur baru. Teks fitur live (saringan Stok 382027ef, drawer, penjadwalan, pemakaian, Gudang) tidak boleh hilang dari bundel.
-const DIST_LIVE_TAMBAHAN = ["Atur ulang saringan", "Saring harga berlaku", "Saring kelengkapan data bahan", "Saring satuan stok", "Ada stok tetapi belum ada harga", "Saldo nol atau minus", "Belum ada vendor", "Ada stok", "Stok belum diketahui", "Nol menurut pergerakan", "Saldo minus", "Koreksi saldo", "Ubah harga", "Pilih meja", "Pilih semua unit order ini", "Belum dijadwalkan", "Riwayat dan dokumen pemakaian", "Tanpa pengeluaran stok", "Mengurangi stok", "Beranda Gudang", "Pengeluaran Material", "Konfirmasi Barang Jadi"];
+const CAND_BRANCH = "fix/klasifikasi-kiloan-on-f0f655d7";
+// Rilis ini TANPA perubahan frontend/src: tidak ada teks fitur baru. Teks fitur live (saringan Stok 382027ef, tab Marketing f0f655d7, drawer, penjadwalan, pemakaian, Gudang) tidak boleh hilang dari bundel; dist dibangun ulang dari sumber yang memuat Marketing.
+const DIST_LIVE_TAMBAHAN = ["Atur ulang saringan", "Saring harga berlaku", "Saring kelengkapan data bahan", "Saring satuan stok", "Ada stok tetapi belum ada harga", "Saldo nol atau minus", "Belum ada vendor", "Ada stok", "Stok belum diketahui", "Nol menurut pergerakan", "Saldo minus", "Koreksi saldo", "Ubah harga", "Pilih meja", "Pilih semua unit order ini", "Belum dijadwalkan", "Riwayat dan dokumen pemakaian", "Tanpa pengeluaran stok", "Mengurangi stok", "Beranda Gudang", "Pengeluaran Material", "Konfirmasi Barang Jadi", "Total lead (termasuk spam)", "Tren lead harian (tanpa spam)", "Pola lead & respons", "Kesehatan & referensi", "Kreatif & tautan", "Customer lunas (ledger)", "marketing-sumber-", "Lead CTWA terbukti", "Meta CTWA", "Kualitas data", "Kelola biaya iklan", "Rincian per Iklan", "Rencana Produksi", "Target KPI", "Impor spend"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };

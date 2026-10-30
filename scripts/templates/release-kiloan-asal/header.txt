@@ -5,7 +5,7 @@
 #     atau berubah sejak audit DITAHAN. D1 TIDAK dijalankan oleh skrip ini maupun oleh deploy kode: keenam belas catatan harus tetap BUKAN_STOK sesudah switch (dibuktikan di rehearsal dan smoke).
 #   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; D1 diuji PENUH — izin, pratinjau, terapkan, ulang tanpa duplikat, penahanan, kestabilan terhadap evaluasi ulang, tanpa efek ke master/stok/penerimaan/harga/valuasi/jurnal —
 #     ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang); build image + web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (tanpa token, tanpa tulis).
-#   • BASELINE = release aktif (frontend saringan Stok 382027ef di atas Kelengkapan 47a02286). GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch.
+#   • BASELINE = release aktif (tab Marketing f0f655d7 di atas saringan Stok 382027ef; backend identik 382027ef). GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch.
 #   • Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
 #
 #   cat scripts/release-kiloan-asal.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/kla.sh'
