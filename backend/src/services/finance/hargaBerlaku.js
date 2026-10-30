@@ -38,6 +38,7 @@ export const IZIN_TEKS = Object.freeze({
   admin: "Akun Admin tanpa peran Finance/Owner hanya dapat melihat — perluasan menunggu keputusan Owner.",
 });
 export const KELOMPOK_PENERAPAN = Object.freeze({ BELUM_DIBEKUKAN: "Pemakaian lama belum dibekukan harga operasionalnya", TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga berlaku (saat itu belum ada harga)", SELARAS_ULANG: "Harga beku berbeda dari harga berlaku pada waktu pemakaian (mis. setelah koreksi)" });
+export const AWALAN_KUNCI_PO = "po-harga:"; // kunci idempotensi harga otomatis dari persetujuan PO; tidak boleh dipakai jalur manual
 export const GAGAL = "GAGAL_PEMBEKUAN"; // penanda kegagalan pembekuan (BEDA dari TANPA_HARGA = memang tidak ada harga berlaku saat itu)
 const D = (v) => new Decimal(String(v ?? 0));
 const wajib = (c, m, kode, status = 400) => { if (!c) throw new KoreksiError(m, status, kode); };
@@ -68,6 +69,23 @@ export async function hargaBerlakuPada(db, materialId, at) {
 export function penyelesaiHargaBerlaku(db) {
   const c = new Map();
   return async (materialId, at) => { if (!c.has(materialId)) c.set(materialId, await barisAktif(db, materialId)); const r = pilih(c.get(materialId).aktif, new Date(at)); return r ? { harga: D(r.unitPrice), baris: r, label: labelDari(r) } : null; };
+}
+
+/** Keadaan harga satu bahan pada waktu `at` (baca-saja): baris yang berlaku, dan baris terjadwal sesudahnya. Dipakai pratinjau harga dari PO. */
+export async function keadaanHarga(db, materialId, at = new Date()) {
+  const { aktif } = await barisAktif(db, materialId); const t = new Date(at);
+  return { berlaku: pilih(aktif, t), terjadwal: aktif.filter((x) => new Date(x.effectiveFrom) > t), terbaru: aktif[aktif.length - 1] ?? null };
+}
+
+const TEKS_STATUS_PO = Object.freeze({ DRAFT: "belum diterima", DISETUJUI: "belum diterima", DITERIMA_SEBAGIAN: "diterima sebagian", SELESAI: "sudah diterima", DIBATALKAN: "PO dibatalkan — harga tetap berlaku sampai diubah" });
+/** Teks sumber untuk tampilan: status PO dibaca SAAT INI (baris harga append-only tidak diubah ketika PO diterima/dibatalkan). */
+export const teksSumberPO = (nomor, statusPO) => `Dari PO ${nomor} — ${TEKS_STATUS_PO[statusPO] ?? "belum diterima"}`;
+/** Menambah status PO & teks sumber ke baris tampilan yang bersumber PO (mutasi: kembalikan daftar yang sama). */
+export async function perkayaSumber(db, daftar) {
+  const ids = [...new Set(daftar.map((x) => x?.sumber?.poId).filter(Boolean))]; if (!ids.length) return daftar;
+  const po = new Map((await db.finPurchaseOrder.findMany({ where: { id: { in: ids } }, select: { id: true, poNumber: true, status: true } })).map((x) => [x.id, x]));
+  for (const x of daftar) if (x?.sumber?.poId) { const p = po.get(x.sumber.poId); x.sumber = { ...x.sumber, poNumber: p?.poNumber ?? x.sumber.poNumber, statusPO: p?.status ?? null, teks: teksSumberPO(p?.poNumber ?? x.sumber.poNumber, p?.status) }; }
+  return daftar;
 }
 
 // ── dasar waktu harga untuk PEMBETULAN terlambat (unit terkirim) ───────────────────────────────────
@@ -138,7 +156,7 @@ export async function hargaUntukPergerakan(db, p, sel) {
 const tampilBaris = (x, { diganti, aktifId, sekarang }) => ({
   id: x.id, jenis: x.jenis, harga: Number(x.unitPrice), satuan: x.satuan, berlakuMulai: x.effectiveFrom, hargaLama: x.previousPrice == null ? null : Number(x.previousPrice),
   alasan: x.reason, catatan: x.note, catatanBukti: x.evidenceNote, labelBukti: labelDari(x), teksLabelBukti: LABEL_BUKTI[labelDari(x)],
-  diperbaikiOleh: null, menggantikan: x.correctsId, dibuatOleh: x.createdById, dibuatPada: x.createdAt,
+  diperbaikiOleh: null, menggantikan: x.correctsId, sumber: x.impact?.sumber === "PO" ? { jenis: "PO", poId: x.impact.poId ?? null, poNumber: x.impact.poNumber ?? null, barisPO: x.impact.barisPO ?? null, aksi: x.impact.aksi ?? null, pelakuId: x.impact.pelakuId ?? null, revisi: x.impact.revisi ?? 0, hargaBeli: x.impact.hargaBeli ?? null, satuanBeli: x.impact.satuanBeli ?? null, faktor: x.impact.faktor ?? null } : null, dibuatOleh: x.createdById, dibuatPada: x.createdAt,
   status: diganti.has(x.id) ? "DIGANTI_KOREKSI" : x.id === aktifId ? "BERLAKU_SEKARANG" : new Date(x.effectiveFrom) > sekarang ? "TERJADWAL" : "BERAKHIR_DIGANTI_HARGA_BARU",
 });
 
@@ -147,7 +165,7 @@ export async function riwayatHarga(db, materialId) {
   const { semua, aktif, diganti } = await barisAktif(db, materialId); const sekarang = new Date();
   const berlaku = pilih(aktif, sekarang); const pengguna = new Map((await db.user.findMany({ where: { id: { in: [...new Set(semua.map((x) => x.createdById).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const peta = new Map(semua.map((x) => [x.correctsId, x.id]));
-  return semua.slice().reverse().map((x) => ({ ...tampilBaris(x, { diganti, aktifId: berlaku?.id, sekarang }), dibuatOlehNama: pengguna.get(x.createdById) ?? null, diperbaikiOleh: peta.get(x.id) ?? null }));
+  return perkayaSumber(db, semua.slice().reverse().map((x) => ({ ...tampilBaris(x, { diganti, aktifId: berlaku?.id, sekarang }), dibuatOlehNama: pengguna.get(x.createdById) ?? null, diperbaikiOleh: peta.get(x.id) ?? null })));
 }
 
 // ── dampak: berapa order/pemakaian ───────────────────────────────────────────────────────────────────
@@ -174,11 +192,12 @@ export async function ringkasanBahan(db, materialId) {
   const bahan = await db.material.findUnique({ where: { id: materialId }, select: { id: true, code: true, name: true, unit: true, referenceUnitCost: true, referenceUnitCostMonth: true } }); wajib(bahan, "Bahan tidak ditemukan", "BAHAN_TIDAK_ADA", 404);
   const { aktif, semua, diganti } = await barisAktif(db, materialId); const sekarang = new Date(); const berlaku = pilih(aktif, sekarang); const terjadwal = aktif.filter((x) => new Date(x.effectiveFrom) > sekarang);
   const dampak = await hitungDampak(db, materialId, berlaku ? new Date(berlaku.effectiveFrom) : new Date(0));
+  const tampilBerlaku = berlaku ? (await perkayaSumber(db, [tampilBaris(berlaku, { diganti, aktifId: berlaku.id, sekarang })]))[0] : null;
   const rcpt = (await db.$queryRawUnsafe(`select unit_cost, created_at from stock_movements where material_id = $1::uuid and type = 'RECEIPT' and unit_cost > 0 and qty > 0 order by created_at desc limit 1`, materialId))[0];
   const aktifApp = await db.biayaOperasionalPenerapan.findFirst({ where: { materialId, status: "DIAJUKAN" }, select: { id: true, previewCount: true, requestedAt: true } });
   return {
     bahan: { id: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit },
-    hargaBerlaku: berlaku ? { ...tampilBaris(berlaku, { diganti, aktifId: berlaku.id, sekarang }) } : null,
+    hargaBerlaku: tampilBerlaku,
     terjadwal: terjadwal.map((x) => tampilBaris(x, { diganti, aktifId: null, sekarang })),
     labelHarga: "HPP operasional per satuan stok — harga kerja, bukan nilai buku dan bukan HPP final Finance.",
     pemisah: PEMISAH,
@@ -297,25 +316,34 @@ export const tanpaInternal = ({ _simpan, ...x }) => x;
 
 const tampilSimpan = (b) => ({ id: b.id, jenis: b.jenis, bahanId: b.materialId, harga: Number(b.unitPrice), satuan: b.satuan, berlakuMulai: b.effectiveFrom, hargaLama: b.previousPrice == null ? null : Number(b.previousPrice), alasan: b.reason, labelBukti: labelDari(b), teksLabelBukti: LABEL_BUKTI[labelDari(b)], dibuatOleh: b.createdById, dibuatPada: b.createdAt, dampak: b.impact ?? null });
 
-/** Simpan Harga Berlaku baru / KOREKSI salah input (tindakan khusus). Idempoten (Idempotency-Key), hash pratinjau wajib sama, append-only, tanpa tanggal mundur untuk harga biasa. */
-export async function simpanHarga(prisma, masukan, { aktor, kunci }) {
+/**
+ * Simpan Harga Berlaku baru / KOREKSI salah input (tindakan khusus). Idempoten (Idempotency-Key), hash pratinjau wajib sama, append-only, tanpa tanggal mundur untuk harga biasa.
+ * Isi transaksinya ada di simpanHargaDiTx supaya persetujuan PO memakai layanan YANG SAMA di dalam transaksinya sendiri (satu commit: PO disetujui + harga tercatat, atau keduanya tidak).
+ */
+export async function simpanHarga(prisma, masukan, { aktor, kunci, sumber = null }) {
   const idem = kunciValid(kunci); wajib(aktor?.id, "Pelaku wajib ada", "PELAKU_WAJIB");
   const ada = await prisma.materialHargaBerlaku.findUnique({ where: { idempotencyKey: idem } });
   if (ada) { wajib(ada.materialId === masukan.materialId, "Idempotency-Key ini sudah dipakai untuk bahan lain", "KUNCI_DIPAKAI_LAIN", 409); return { ulang: true, ...tampilSimpan(ada) }; }
-  return prisma.$transaction(async (tx) => {
-    await lockRowForUpdate(tx, "materials", String(masukan.materialId ?? ""));
-    const dupl = await tx.materialHargaBerlaku.findUnique({ where: { idempotencyKey: idem } }); if (dupl) return { ulang: true, ...tampilSimpan(dupl) };
-    const pra = await pratinjauUbahHarga(tx, masukan, { lengkap: false });
-    wajib(String(masukan.hashPratinjau ?? "") === pra.hash, "Pratinjau yang Anda lihat sudah berbeda dari keadaan sekarang (harga lain disimpan, pemakaian baru, atau isian berubah). Muat ulang pratinjau lalu simpan lagi.", "PRATINJAU_BERUBAH", 409);
-    const { m, koreksiId, dampak } = pra._simpan;
-    if (koreksiId) wajib(masukan.konfirmasiDampak === true, "Koreksi salah input historis wajib dikonfirmasi setelah membaca seluruh pemakaian terdampak", "KONFIRMASI_DAMPAK_WAJIB", 422);
-    const sekarang = new Date(); const mulai = m.saatDisimpan ? sekarang : m.mulai;
-    if (!koreksiId) wajib(mulai.getTime() >= sekarang.getTime(), "Waktu berlaku terjadwal sudah terlewat saat disimpan — pilih ulang waktu", "WAKTU_MUNDUR", 422);
-    const { aktif } = await barisAktif(tx, pra._simpan.materialId); const dasar = koreksiId ? aktif.filter((x) => x.id !== koreksiId) : aktif; const sebelum = pilih(dasar, mulai);
-    const impact = koreksiId ? { ...dampak.ringkas, movementIds: dampak.ids.slice(0, 500), dikonfirmasiOleh: aktor.id } : null;
-    const b = await tx.materialHargaBerlaku.create({ data: { materialId: pra._simpan.materialId, jenis: m.jenis, unitPrice: m.harga.toString(), satuan: pra._simpan.satuan, effectiveFrom: mulai, previousPrice: sebelum ? String(sebelum.unitPrice) : null, correctsId: koreksiId, reason: m.alasan, note: m.catatan, evidenceNote: m.bukti, createdById: aktor.id, createdAt: sekarang, idempotencyKey: idem, impact } });
-    return { ulang: false, ...tampilSimpan(b) };
-  }, { timeout: 30_000, maxWait: 10_000 });
+  return prisma.$transaction((tx) => simpanHargaDiTx(tx, masukan, { aktor, kunci: idem, sumber }), { timeout: 30_000, maxWait: 10_000 });
+}
+
+/** Isi simpanHarga di dalam transaksi pemanggil. `sumber` (opsional, hanya harga biasa) disimpan di kolom impact: asal harga (mis. persetujuan PO) — tidak mengubah aturan apa pun. */
+export async function simpanHargaDiTx(tx, masukan, { aktor, kunci, sumber = null }) {
+  const idem = kunciValid(kunci); wajib(aktor?.id, "Pelaku wajib ada", "PELAKU_WAJIB");
+  wajib(sumber?.sumber === "PO" || !idem.startsWith(AWALAN_KUNCI_PO), "Idempotency-Key berawalan ‘" + AWALAN_KUNCI_PO + "’ dicadangkan untuk harga otomatis dari PO", "KUNCI_DICADANGKAN", 422);
+  await lockRowForUpdate(tx, "materials", String(masukan.materialId ?? ""));
+  const dupl = await tx.materialHargaBerlaku.findUnique({ where: { idempotencyKey: idem } });
+  if (dupl) { wajib(dupl.materialId === masukan.materialId, "Idempotency-Key ini sudah dipakai untuk bahan lain", "KUNCI_DIPAKAI_LAIN", 409); return { ulang: true, ...tampilSimpan(dupl) }; }
+  const pra = await pratinjauUbahHarga(tx, masukan, { lengkap: false });
+  wajib(String(masukan.hashPratinjau ?? "") === pra.hash, "Pratinjau yang Anda lihat sudah berbeda dari keadaan sekarang (harga lain disimpan, pemakaian baru, atau isian berubah). Muat ulang pratinjau lalu simpan lagi.", "PRATINJAU_BERUBAH", 409);
+  const { m, koreksiId, dampak } = pra._simpan;
+  if (koreksiId) wajib(masukan.konfirmasiDampak === true, "Koreksi salah input historis wajib dikonfirmasi setelah membaca seluruh pemakaian terdampak", "KONFIRMASI_DAMPAK_WAJIB", 422);
+  const sekarang = new Date(); const mulai = m.saatDisimpan ? sekarang : m.mulai;
+  if (!koreksiId) wajib(mulai.getTime() >= sekarang.getTime(), "Waktu berlaku terjadwal sudah terlewat saat disimpan — pilih ulang waktu", "WAKTU_MUNDUR", 422);
+  const { aktif } = await barisAktif(tx, pra._simpan.materialId); const dasar = koreksiId ? aktif.filter((x) => x.id !== koreksiId) : aktif; const sebelum = pilih(dasar, mulai);
+  const impact = koreksiId ? { ...dampak.ringkas, movementIds: dampak.ids.slice(0, 500), dikonfirmasiOleh: aktor.id } : (sumber ?? null);
+  const b = await tx.materialHargaBerlaku.create({ data: { materialId: pra._simpan.materialId, jenis: m.jenis, unitPrice: m.harga.toString(), satuan: pra._simpan.satuan, effectiveFrom: mulai, previousPrice: sebelum ? String(sebelum.unitPrice) : null, correctsId: koreksiId, reason: m.alasan, note: m.catatan, evidenceNote: m.bukti, createdById: aktor.id, createdAt: sekarang, idempotencyKey: idem, impact } });
+  return { ulang: false, ...tampilSimpan(b) };
 }
 
 

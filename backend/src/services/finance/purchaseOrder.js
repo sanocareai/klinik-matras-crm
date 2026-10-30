@@ -15,6 +15,7 @@ import { Decimal } from "./money.js";
 import { validasiPendamping, pendampingPO, PendampingError } from "../../lib/domain/pendamping.js";
 import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError, kunciAdvisoryNama } from "./skuBaru.js";
 import { DEFINISI_PROGRES, hitungProgresPO, ringkasProgresPO } from "./progresPO.js";
+import { terapkanHargaSimpanPO, hargaBersumberPO } from "./hargaDariPO.js";
 
 export class PurchaseOrderError extends Error {
   constructor(message, statusCode = 400, code = null) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -153,6 +154,8 @@ async function kunciDanMuat(tx, id) {
 
 // ── Perintah ─────────────────────────────────────────────────────────────
 
+const ringkasHarga = (h) => ({ diterapkan: h.diterapkan.map(({ materialId, kode, status, hargaLama, hargaBaru, satuan, barisPO, revisi }) => ({ materialId, kode, status, hargaLama, hargaBaru, satuan, barisPO, revisi })), tidakBerubah: h.tidakBerubah.length });
+
 /** Snapshot termin PO: warisi master supplier, atau ganti (finance:admin + alasan). Galat termin → gagal() supaya route memetakannya ke 4xx. */
 function terminPO(supplier, body, { userId, bolehOverride }) {
   try {
@@ -160,7 +163,11 @@ function terminPO(supplier, body, { userId, bolehOverride }) {
   } catch (e) { if (e instanceof TerminError) throw gagal(e.message, e.statusCode, e.code); throw e; }
 }
 
-export async function buatPO(tx, { body, userId, bolehOverride = false, bolehBuatSku = false }) {
+/**
+ * HARGA BERLAKU OTOMATIS (hargaDariPO.js): setelah PO tersimpan, harga bahan yang BERUBAH menjadi Harga Berlaku operasional di transaksi yang SAMA (efektif saat disimpan, sumber nomor PO/baris/revisi/pelaku).
+ * Masalah konversi/konflik/harga ⇒ galat bernomor baris dan PO tidak tersimpan. `keluaran.hargaDariPO` diisi hasilnya untuk respons API.
+ */
+export async function buatPO(tx, { body, userId, bolehOverride = false, bolehBuatSku = false, keluaran = null }) {
   const m = await siapkanMasukan(tx, body, { bolehBuatSku, buatSku: true, userId });
   const termin = terminPO(m.supplier, body, { userId, bolehOverride });
   const poNumber = await generateDocumentNumber(tx, "PO", m.orderDate);
@@ -172,15 +179,18 @@ export async function buatPO(tx, { body, userId, bolehOverride = false, bolehBua
     },
   });
   for (const s of m.skuBaru) await tautkanPoPertama(tx, { materialId: s.materialId, purchaseOrderId: po.id });
-  await catat(tx, po, "DIBUAT", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length, ...(m.skuBaru.length && { skuBaru: m.skuBaru }) } });
+  const hargaDariPO = await terapkanHargaSimpanPO(tx, { po, aksi: "DIBUAT", aktor: { id: userId }, baris: m.lines.map((l, i) => ({ no: i + 1, ...l })) });
+  await catat(tx, po, "DIBUAT", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length, ...(m.skuBaru.length && { skuBaru: m.skuBaru }), ...(hargaDariPO.aktif && { hargaDariPO: ringkasHarga(hargaDariPO) }) } });
+  if (keluaran) keluaran.hargaDariPO = hargaDariPO;
   return po.id;
 }
 
-export async function ubahDraf(tx, { id, body, userId, bolehOverride = false, bolehBuatSku = false }) {
+export async function ubahDraf(tx, { id, body, userId, bolehOverride = false, bolehBuatSku = false, keluaran = null }) {
   const po = await kunciDanMuat(tx, id);
   if (po.status !== "DRAFT") throw gagal(`PO berstatus ${po.status} tidak bisa diubah — hanya draf yang bisa diedit (batalkan dan buat PO baru bila perlu)`, 409);
   // Baris yang SUDAH berisi SKU buatan draf ini dikirim ulang frontend dengan materialId (bukan materialBaru) → tidak dibuat dua kali.
   const m = await siapkanMasukan(tx, body, { bolehBuatSku, buatSku: true, userId });
+  const barisSebelum = po.lines.map((l) => ({ materialId: l.materialId, unit: l.unit, unitPrice: l.unitPrice, conversionFactor: l.conversionFactor }));
   await tx.finPurchaseOrderLine.deleteMany({ where: { purchaseOrderId: po.id } });
   // Termin: ikut master supplier baru bila supplier diganti atau termin diketik ulang; selain itu snapshot lama dipertahankan.
   const ulangTermin = m.supplier.id !== po.supplierId || (body?.terminJenis !== undefined && body?.terminJenis !== null && body?.terminJenis !== "");
@@ -190,7 +200,9 @@ export async function ubahDraf(tx, { id, body, userId, bolehOverride = false, bo
     data: { supplierId: m.supplier.id, orderDate: m.orderDate, expectedDate: m.expectedDate, notes: m.notes, ...termin, lines: { create: m.lines } },
   });
   for (const s of m.skuBaru) await tautkanPoPertama(tx, { materialId: s.materialId, purchaseOrderId: po.id });
-  await catat(tx, po, "DIUBAH", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length, ...(m.skuBaru.length && { skuBaru: m.skuBaru }) } });
+  const hargaDariPO = await terapkanHargaSimpanPO(tx, { po, aksi: "DIUBAH", aktor: { id: userId }, baris: m.lines.map((l, i) => ({ no: i + 1, ...l })), sebelum: barisSebelum });
+  await catat(tx, po, "DIUBAH", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length, ...(m.skuBaru.length && { skuBaru: m.skuBaru }), ...(hargaDariPO.aktif && { hargaDariPO: ringkasHarga(hargaDariPO) }) } });
+  if (keluaran) keluaran.hargaDariPO = hargaDariPO;
   return po.id;
 }
 
@@ -226,10 +238,12 @@ export async function batalkanPO(tx, { id, reason, userId, bolehBatalkanDisetuju
       throw gagal(`Masih ada penerimaan berjalan untuk PO ini (${berjalan.map((r) => r.receiptNumber).join(", ")}). Minta Gudang menolak/menyelesaikannya dulu.`, 409);
     }
   }
+  // Harga Berlaku yang bersumber PO ini TIDAK dihapus/dikembalikan (bisa sudah dipakai atau sudah ada harga lebih baru): hanya dicatat di riwayat PO agar Finance tahu harus memeriksanya.
+  const hargaPO = await hargaBersumberPO(tx, po.id);
   await tx.finPurchaseOrder.update({ where: { id: po.id }, data: { status: "DIBATALKAN", cancelledAt: new Date(), cancelReason: alasan } });
   // Uang muka yang sudah dibayar untuk PO ini TIDAK dihapus/dibalik oleh pembatalan PO (kas keluar nyata): dicatat di riwayat dan ditampilkan sebagai "perlu dikembalikan atau dialihkan".
   const dp = await tx.finPurchase.aggregate({ where: { purchaseOrderId: po.id, status: "DIBAYAR", category: { code: "UANG_MUKA_PEMBELIAN" } }, _sum: { amount: true }, _count: true });
-  await catat(tx, po, "DIBATALKAN", userId, { note: alasan, metadata: { statusSebelumnya: po.status, ...(dp._count > 0 && { uangMukaDibayar: String(dp._sum.amount), jumlahUangMuka: dp._count, peringatan: "Uang muka perlu dikembalikan atau dialihkan" }) } });
+  await catat(tx, po, "DIBATALKAN", userId, { note: alasan, metadata: { statusSebelumnya: po.status, ...(hargaPO.length && { hargaBerlakuDariPO: hargaPO, catatanHarga: "Harga Berlaku dari PO ini TIDAK dikembalikan otomatis; periksa dan ubah manual bila perlu." }), ...(dp._count > 0 && { uangMukaDibayar: String(dp._sum.amount), jumlahUangMuka: dp._count, peringatan: "Uang muka perlu dikembalikan atau dialihkan" }) } });
   return po.id;
 }
 

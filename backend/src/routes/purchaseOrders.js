@@ -14,6 +14,7 @@ import { wajibUuid } from "../lib/uuidParam.js";
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
+import { pratinjauHargaFormulir } from "../services/finance/hargaDariPO.js";
 import { bangunViewPO, namaBerkasPO } from "../services/finance/purchaseOrderDocument.js";
 import { renderPurchaseOrderPdf } from "../services/purchaseOrderPdf.js";
 import { pratinjauDuplikat, cekDuplikatPO, daftarKatalog, bacaAsalSku, perbaikiSku } from "../services/finance/skuBaru.js";
@@ -210,17 +211,27 @@ async function jalankan(res, fn) {
   return res.json({ ...po, riwayat: await daftarRiwayat(prisma, id) });
 }
 
+// PRATINJAU DAMPAK HARGA di formulir (baca-saja; input yang belum disimpan TIDAK mengubah harga). Rute statis SEBELUM /:id.
+purchaseOrderFinanceRouter.post("/pratinjau-harga", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await pratinjauHargaFormulir(prisma, req.body ?? {})); } catch (e) { handleFinanceError(e, res); }
+});
+
+// Menyimpan PO (draf) = Harga Berlaku bahan yang harganya berubah ikut diperbarui, ATOMIK di transaksi yang sama (hargaDariPO.js). Tanpa izin/persetujuan harga tambahan.
 purchaseOrderFinanceRouter.post("/", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const id = await prisma.$transaction((tx) => buatPO(tx, { body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN), bolehBuatSku: hasPermission(req.user, P.FINANCE_ADMIN) }));
+    const keluaran = {};
+    const id = await prisma.$transaction((tx) => buatPO(tx, { body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN), bolehBuatSku: hasPermission(req.user, P.FINANCE_ADMIN), keluaran }), { timeout: 30000, maxWait: 10000 });
     const po = await bentukPO(prisma, id, { harga: true });
-    res.status(201).json({ ...po, riwayat: await daftarRiwayat(prisma, id) });
+    res.status(201).json({ ...po, riwayat: await daftarRiwayat(prisma, id), hargaDariPO: keluaran.hargaDariPO ?? null });
   } catch (e) { handleFinanceError(e, res); }
 });
 
 purchaseOrderFinanceRouter.patch("/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    await jalankan(res, (tx) => ubahDraf(tx, { id: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN), bolehBuatSku: hasPermission(req.user, P.FINANCE_ADMIN) }));
+    const keluaran = {};
+    const id = await prisma.$transaction((tx) => ubahDraf(tx, { id: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN), bolehBuatSku: hasPermission(req.user, P.FINANCE_ADMIN), keluaran }), { timeout: 30000, maxWait: 10000 });
+    const po = await bentukPO(prisma, id, { harga: true });
+    res.json({ ...po, riwayat: await daftarRiwayat(prisma, id), hargaDariPO: keluaran.hargaDariPO ?? null });
   } catch (e) { handleFinanceError(e, res); }
 });
 
@@ -234,10 +245,15 @@ purchaseOrderFinanceRouter.post("/:id/approve", requirePermission(P.FINANCE_APPR
 // pembatalan tagihan/pembelian yang sudah disetujui). Izin yang kurang dijawab 403 oleh service, setelah status PO diketahui.
 purchaseOrderFinanceRouter.post("/:id/cancel", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    await jalankan(res, (tx) => batalkanPO(tx, {
+    const id = await prisma.$transaction((tx) => batalkanPO(tx, {
       id: req.params.id, reason: req.body?.reason, userId: req.user.id,
       bolehBatalkanDisetujui: hasPermission(req.user, P.FINANCE_ADMIN),
     }));
+    const po = await bentukPO(prisma, id, { harga: true });
+    const riwayat = await daftarRiwayat(prisma, id);
+    // Harga Berlaku yang bersumber PO ini TIDAK dikembalikan/dihapus; pembatalan hanya mencatat apakah harga itu masih berlaku agar Finance memeriksanya.
+    const harga = [...riwayat].reverse().find((r) => r.type === "DIBATALKAN")?.metadata?.hargaBerlakuDariPO ?? null;
+    res.json({ ...po, riwayat, hargaBerlakuDariPO: harga, ...(harga?.length && { peringatanHarga: "Harga Berlaku yang diperbarui dari PO ini TIDAK dikembalikan otomatis. Periksa dan ubah manual (Stok → bahan → Ubah harga) bila perlu." }) });
   } catch (e) { handleFinanceError(e, res); }
 });
 
