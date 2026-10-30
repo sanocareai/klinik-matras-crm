@@ -28,7 +28,7 @@ for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) 
 CAND_BRANCH="${CAND_BRANCH:-feat/stok-saringan-lengkap-on-47a02286}"
 CAND_REF="refs/remotes/origin/cand-stk"
 BUNDLE="${BUNDLE:-}"
-ALLOWED_RE='^(frontend/src/features/warehouse/stok/stokLogic\.js|frontend/src/pages/warehouse/WarehouseInventory\.jsx|frontend/tests/gudangUxTahap3\.test\.js|frontend/tests/stokFilterTambahan\.test\.js|scripts/gen-release-stok-saringan\.cjs|scripts/release-stok-saringan\.sh|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt|scripts/templates/release-penjadwalan-langsung/verifikasi-hotfix\.txt|scripts/templates/release-stok-saringan/build-only\.txt|scripts/templates/release-stok-saringan/container-baru\.txt|scripts/templates/release-stok-saringan/fitur-dist\.txt|scripts/templates/release-stok-saringan/header\.txt)$'
+ALLOWED_RE='^(frontend/src/features/warehouse/stok/stokLogic\.js|frontend/src/pages/warehouse/WarehouseInventory\.jsx|frontend/tests/gudangUxTahap3\.test\.js|frontend/tests/stokFilterTambahan\.test\.js|scripts/gen-release-stok-saringan\.cjs|scripts/lib/sidik-data\.sh|scripts/release-stok-saringan\.sh|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt|scripts/templates/release-penjadwalan-langsung/verifikasi-hotfix\.txt|scripts/templates/release-stok-saringan/build-only\.txt|scripts/templates/release-stok-saringan/container-baru\.txt|scripts/templates/release-stok-saringan/fitur-dist\.txt|scripts/templates/release-stok-saringan/header\.txt)$'
 FRONTEND_SRC_EXPECT="frontend/src/features/warehouse/stok/stokLogic.js frontend/src/pages/warehouse/WarehouseInventory.jsx"
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -201,6 +201,26 @@ PUB_BEFORE="$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0
 PREV_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PREV_DIR/frontend/dist/index.html" | sed -n 1p)"
 [ "$PUB_BEFORE" = "$PREV_INDEX" ] || die "bundel publik (${PUB_BEFORE}) != dist release aktif (${PREV_INDEX})"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migration menggantung"
+# Pembanding SIDIK JARI hitungan data rilis: migrasi|stok|MI|ST|koreksi|pesan (enam angka, dipisah |).
+# Pesan WhatsApp ("Message") terus bertambah oleh PESAN MASUK YANG SAH, bukan oleh deploy. Maka:
+#   • lima komponen bisnis (migrasi, pergerakan stok, Material Issue, Stock Transfer, koreksi Gudang) harus IDENTIK sebelum vs sesudah;
+#   • komponen pesan boleh NAIK (pesan masuk sah selama rilis), tetapi TIDAK boleh TURUN (pesan hilang = dampak berbahaya) dan harus angka valid.
+# Dipakai: bandingkan_sidik_data "<sebelum>" "<sesudah>"  → exit 0 bila lolos (info kenaikan pesan di stdout), exit 1 + alasan di stderr bila tidak.
+bandingkan_sidik_data() {
+  local a="${1-}" b="${2-}" i; local -a A B
+  IFS='|' read -r -a A <<< "$a"; IFS='|' read -r -a B <<< "$b"
+  if [ "${#A[@]}" -ne 6 ] || [ "${#B[@]}" -ne 6 ]; then echo "sidik jari harus 6 komponen (sebelum=${a} sesudah=${b})" >&2; return 1; fi
+  for i in 0 1 2 3 4 5; do
+    [[ "${A[$i]}" =~ ^[0-9]+$ && "${B[$i]}" =~ ^[0-9]+$ ]] || { echo "komponen ke-$((i + 1)) bukan angka (sebelum=${A[$i]} sesudah=${B[$i]})" >&2; return 1; }
+  done
+  local nama=(migrasi pergerakan_stok material_issue stock_transfer koreksi_gudang pesan)
+  for i in 0 1 2 3 4; do
+    [ "${A[$i]}" = "${B[$i]}" ] || { echo "hitungan ${nama[$i]} BERUBAH selama rilis: sebelum=${A[$i]} sesudah=${B[$i]}" >&2; return 1; }
+  done
+  if [ "${B[5]}" -lt "${A[5]}" ]; then echo "jumlah pesan BERKURANG selama rilis: sebelum=${A[5]} sesudah=${B[5]}" >&2; return 1; fi
+  if [ "${B[5]}" -gt "${A[5]}" ]; then echo "pesan masuk sah selama rilis: +$((B[5] - A[5])) (bukan dampak deploy); hitungan bisnis lain identik"; fi
+  return 0
+}
 FP_SQL='select (select count(*) from _prisma_migrations where finished_at is not null) || chr(124) || (select count(*) from stock_movements) || chr(124) || (select count(*) from material_issues) || chr(124) || (select count(*) from stock_transfers) || chr(124) || (select count(*) from warehouse_corrections) || chr(124) || (select count(*) from "Message")'
 FP_0="$(psql_live -At -c "$FP_SQL")"; [[ "$FP_0" =~ ^[0-9]+(\|[0-9]+){5}$ ]] || die "sidik jari hitungan data tidak terbaca: ${FP_0}"
 ok "health sehat; bundel publik = dist aktif (${PREV_INDEX}); tidak ada migrasi menggantung; hitungan data (migrasi|stok|MI|ST|koreksi|pesan) = ${FP_0}"
@@ -318,8 +338,8 @@ if [ -n "$OLD_ONLY" ]; then [ "$(curl -s -o /dev/null -w '%{http_code}' --max-ti
 [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/tidak-ada-zz.js")" = "404" ] || die "aset yang tidak ada harus 404 jujur"
 ok "aset yang tidak ada = 404"
 [ "$(sha256sum "$PERSIST/backend/.env" | cut -c1-16)" = "$ENV_SHA" ] || die ".env BERUBAH selama rilis"
-FP_1="$(psql_live -At -c "$FP_SQL")"; [ "$FP_1" = "$FP_0" ] || die "hitungan data BERUBAH selama rilis: sebelum=${FP_0} sesudah=${FP_1}"
-ok ".env identik (sha ${ENV_SHA}); hitungan data identik ${FP_1}"
+FP_1="$(psql_live -At -c "$FP_SQL")"; FP_INFO="$(bandingkan_sidik_data "$FP_0" "$FP_1")" || die "hitungan data BERUBAH selama rilis: sebelum=${FP_0} sesudah=${FP_1}"; [ -z "$FP_INFO" ] || ok "${FP_INFO}"
+ok ".env identik (sha ${ENV_SHA}); hitungan data bisnis identik (sebelum ${FP_0}; sesudah ${FP_1}; hanya pesan masuk sah boleh bertambah)"
 # Smoke baca-saja: API tanpa token = 401 (backend hidup, tanpa menyentuh data). Halaman lama sudah dibuktikan HILANG di dist baru pada fase build (sebelum aset lama dibawa untuk tab terbuka).
 [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/api/inventory/material-issues")" = "401" ] || die "API tanpa token harus 401"
 for ep in /api/production/rencana/jadwal-batch /api/analytics/sales-report /api/inventory/adjustments/koreksi-saldo/bahan/x; do [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}${ep}")" = "401" ] || die "API ${ep} tanpa token harus 401"; done
