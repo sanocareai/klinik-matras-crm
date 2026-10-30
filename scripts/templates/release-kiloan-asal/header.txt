@@ -1,0 +1,17 @@
+# RILIS "KLASIFIKASI ASAL KILOAN + KOREKSI D1" (Produksi → catatan pemakaian historis): BACKEND-SAJA (tanpa perubahan frontend), TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • KILOAN = CARA BELI (per kg), bukan asal bahan. Komponen lama hanya dikenali dari penanda asal eksplisit (kata utuh LAMA, BUANG KASUR). Nama KILOAN yang belum ada di katalog: bukti pembelian tertulis (fin_purchases) → "Perlu dicek" + info asal dibeli;
+#     tanpa bukti → "Perlu dicek" + penanda BLOK "asal perlu dicek"; KILOAN + LAMA tetap komponen lama. Tidak ada master/stok/penerimaan/jurnal/harga dibuat.
+#   • Fungsi D1 (berizin OWNER/FINANCE, Idempotency-Key, manifest {id,sidik}): mengoreksi catatan KILOAN hasil impor yang salah BUKAN_STOK menjadi PERLU_DICEK, dengan peristiwa DIKOREKSI (keadaan lama/baru, alasan, pelaku, bukti sumber). Catatan yang sudah punya keputusan
+#     atau berubah sejak audit DITAHAN. D1 TIDAK dijalankan oleh skrip ini maupun oleh deploy kode: keenam belas catatan harus tetap BUKAN_STOK sesudah switch (dibuktikan di rehearsal dan smoke).
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; D1 diuji PENUH — izin, pratinjau, terapkan, ulang tanpa duplikat, penahanan, kestabilan terhadap evaluasi ulang, tanpa efek ke master/stok/penerimaan/harga/valuasi/jurnal —
+#     ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang); build image + web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (tanpa token, tanpa tulis).
+#   • BASELINE = release aktif (frontend saringan Stok 382027ef di atas Kelengkapan 47a02286). GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch.
+#   • Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
+#
+#   cat scripts/release-kiloan-asal.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/kla.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/kla.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/kla.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/klar.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/kla.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/kla.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Bila D1 sudah dijalankan SESUDAH rilis, catatan hasil D1 tetap sah (keadaan PERLU_DICEK + peristiwa); kode lama membacanya sebagai catatan biasa.
+# (dibangkitkan oleh scripts/gen-release-kiloan-asal.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-kiloan-asal/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)
