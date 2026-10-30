@@ -6,7 +6,7 @@ import { barisMeta, BASIS_LAPORAN } from "../features/laporan/marketingLogic.js"
 
 // ── Sheet: Marketing (laporan sumber) ──────────────────────────────────────
 // Isi = objek server yang sama dengan tabel di layar (/atribusi/iklan/sumber), urutan sama dengan layar. null → "—" (bukan 0); alasan null di kolom sebelahnya.
-export const KOLOM_XLSX_MARKETING = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah (non-spam)", "Customer ber-order", "Customer membayar", "Customer lunas (ledger)", "Konversi ber-order % (÷ total lead termasuk spam)", "Konversi non-spam %", "Nilai order saat ini", "Pembayaran tercatat bersih", "Biaya iklan", "Status biaya", "CPA lunas", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong"];
+export const KOLOM_XLSX_MARKETING = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah (non-spam)", "Customer ber-order", "Customer membayar", "Customer lunas (terbukti ledger)", "Konversi ber-order % (÷ total lead termasuk spam)", "Konversi non-spam %", "Nilai order saat ini", "Pembayaran tercatat bersih", "Biaya iklan", "Status biaya", "CPA lunas", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong"];
 export function sheetMarketing({ periode, marketing }) {
   const { lap, urut } = marketing;
   const p = lap.periode || {};
@@ -16,6 +16,7 @@ export function sheetMarketing({ periode, marketing }) {
   sb.row(["Dasar sumber", "Label CRM (Customer.leadSource). CPA/ROAS = Atribusi label CRM, BUKAN CPA campaign (lihat sheet \"Meta CTWA\")."]);
   sb.row(["Periode lead masuk (WIB)", `${p.dari ?? ""} s/d ${p.sampai ?? ""}`]);
   sb.row(["Evaluasi pembayaran sampai", teksCutoff(lap) || "—"]);
+  sb.row(["Cakupan ledger (terpisah dari angka lunas)", lap.status?.ledger?.orderEligible > 0 ? `${lap.status.ledger.orderBerLedger} dari ${lap.status.ledger.orderEligible} order eligible punya pembayaran di ledger (${lap.status.ledger.persen}%)` : "—"]);
   sb.row(["Urut menurut", (urut && METRIK_BY_ID[urut]?.label) || "urutan server"]);
   sb.row(["Definisi", "Nilai order = nilai order eligible saat ini; pembayaran bersih = ledger − refund disetujui; bukan laba. \"—\" = tidak tersedia (bukan 0)."]);
   if (!marketing.iklan?.grup) sb.row(["Catatan", "Sheet \"Meta CTWA\" tidak disertakan: laporan Meta belum termuat atau gagal dimuat saat ekspor."]);

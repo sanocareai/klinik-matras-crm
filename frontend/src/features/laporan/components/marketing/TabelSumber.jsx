@@ -15,7 +15,7 @@ export const TIP = {
   spam: "Persentase lead sumber ini yang ditandai SPAM. Diagnostik kualitas targeting — bukan penalti.",
   berOrder: "Customer unik dengan ≥ 1 order eligible (bukan batal/pending, bukan penjualan karyawan). Ber-order BUKAN berarti sudah membayar.",
   membayar: "Customer dengan ≥ 1 pembayaran sah di ledger. Batas bawah: pembayaran di luar sistem tidak terlihat.",
-  lunas: "Customer dengan order yang ledger-nya (setelah refund disetujui) menutup seluruh tagihan.",
+  lunas: "Customer lunas TERBUKTI LEDGER: ledger order-nya (setelah refund disetujui) menutup seluruh tagihan. Angka hitung; cakupan ledger dinilai terpisah (Kualitas data).",
   nilai: "Σ nilai order eligible kohort lead periode ini (nilai SAAT INI). Bukan uang diterima dan bukan laba.",
   uang: "Pembayaran sah di ledger dikurangi refund disetujui, kohort lead periode ini. Bukan nilai order, bukan laba.",
   spend: "Biaya sumber pada periode yang sama; terisi hanya bila lengkap setiap hari (detail Ad, entri harian, atau total rentang). Kosong ≠ Rp0. Terisi ≠ diverifikasi independen.",
@@ -85,7 +85,7 @@ const Sel = ({ c }) => (
 
 function KartuSumber({ s, lap, banding, onBuka, kolom }) {
   const [lebih, setLebih] = useState(false);
-  const utama = ["lead", "berOrder", "lunas", "nilai", "uang", "spend"];
+  const utama = ["lead", "berOrder", "lunas", "konversi", "cpa"];
   const tambahan = kolom.map((k) => k.id).filter((id) => !utama.includes(id));
   const baris = (ids) => ids.map((id) => { const c = selSumber(s, id, { banding, lap }); const lab = KOLOM_SUMBER.find((k) => k.id === id)?.label; return (
     <div key={id} className="min-w-0"><dt className="t-secondary">{lab}</dt><dd className={cn("m-0 truncate font-medium tabular-nums", c.kosong ? "text-ink3" : "text-ink")} title={c.title}>{c.t}{c.sub ? <span className="t-secondary ml-1 text-[10.5px] font-normal">{c.sub}</span> : null}</dd></div>
@@ -103,7 +103,7 @@ function KartuSumber({ s, lap, banding, onBuka, kolom }) {
       </button>
       <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1 text-[12px]">{baris(utama)}</dl>
       <button type="button" className="inline-flex items-center gap-1 self-start text-[12px] text-accent hover:underline" aria-expanded={lebih} onClick={() => setLebih((v) => !v)}>
-        {lebih ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {lebih ? "Sembunyikan" : "Konversi & efisiensi biaya"}
+        {lebih ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {lebih ? "Sembunyikan" : "Spam, nilai order, uang, biaya, ROAS"}
       </button>
       {lebih && <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1 rounded-btn bg-inset p-2.5 text-[12px]">{baris(tambahan)}</dl>}
     </Card>
@@ -142,11 +142,11 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
 
       {/* desktop/tablet: tabel */}
       <Card className="hidden overflow-x-auto !p-0 md:block">
-        <table className={cn("w-full border-collapse text-[13px]", lengkap ? "min-w-[1200px]" : "min-w-[900px]")}>
+        <table className={cn("w-full border-collapse text-[13px]", lengkap ? "min-w-[1500px]" : "min-w-[700px]")}>
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-ink3">
               <th className="px-3 py-2">#</th><th className="px-3 py-2">Sumber</th>
-              {kolom.map((k) => <th key={k.id} className="whitespace-nowrap px-3 py-2 text-right"><span className="inline-flex items-center justify-end gap-1">{k.label}<InfoTooltip text={TIP[k.id]} /></span></th>)}
+              {kolom.map((k) => <th key={k.id} className="min-w-[104px] px-3 py-2 text-right align-bottom"><span className="inline-flex items-center justify-end gap-1">{k.label}<InfoTooltip text={TIP[k.id]} /></span></th>)}
               <th className="px-3 py-2" />
             </tr>
           </thead>

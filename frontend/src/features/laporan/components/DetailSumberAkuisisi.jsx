@@ -58,8 +58,8 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
           <Baris k="Total lead label CRM (termasuk spam)" v={angka(s.lead)} sub={`${angka(s.leadSah)} sah · ${angka(s.spam)} spam (${formatPersen(s.spamPersen?.nilai)})`} tebal />
           <Baris k="Customer ber-order" v={angka(s.berOrder)} sub={`${formatPersen(s.konversiOrder?.nilai)} = ${angka(s.konversiOrder?.pembilang)} dari ${angka(s.konversiOrder?.penyebut)} ${PENYEBUT_LABEL[s.konversiOrder?.penyebutJenis] || "total lead"}`} />
           <Baris k="Konversi non-spam (label CRM)" v={formatPersen(s.konversiOrderNonSpam?.nilai)} sub={`${angka(s.konversiOrderNonSpam?.pembilang)} dari ${angka(s.konversiOrderNonSpam?.penyebut)} ${PENYEBUT_LABEL.LEAD_SAH_NON_SPAM}`} />
-          <Baris k="Customer membayar" v={angka(s.membayar)} sub="≥ 1 pembayaran sah di ledger (batas bawah)" />
-          <Baris k="Customer lunas" v={angka(s.lunas)} sub="ledger menutup seluruh tagihan" />
+          <Baris k="Customer membayar" v={angka(s.membayar)} sub="≥ 1 pembayaran sah di ledger (terbukti ledger; cakupan ledger terpisah)" />
+          <Baris k="Customer lunas terbukti ledger" v={angka(s.lunas)} sub="ledger menutup seluruh tagihan" />
           <p className="t-secondary mt-1 text-[11.5px]">{teksPengecualian(s)}</p>
         </Bagian>
 

@@ -39,15 +39,35 @@ const catat = (metrik, api, layar, csv, xlsx, db) => rekap.push({ metrik, api, l
     catat("Uang diterima bersih (Rp)", t.uangBersih, kartu.uang, null, null, null);
     catat("Biaya iklan berbayar (Rp)", t.berbayar?.spend ?? null, biayaLayar, null, null, null);
 
+    // ── tabel sumber: mode RINGKAS (1440 px) — kolom utama langsung terlihat tanpa gulir mendatar ──
+    const judulKol = () => page.$$eval('[data-testid="tabel-sumber"] thead th', (ths) => ths.map((x) => x.textContent.trim()));
+    const hdrR = await judulKol();
+    const utamaAda = ["Sumber", "Total lead (+spam)", "Customer ber-order", "Customer lunas", "Konversi ber-order", "CPA lunas"].every((h) => hdrR.some((x) => x.startsWith(h)));
+    const lebarTabel = await page.evaluate(() => { const w = document.querySelector('[data-testid="tabel-sumber"] table'); const c = w.parentElement; const hs = [...w.querySelectorAll("thead th")]; const kanan = Math.max(...hs.map((h) => h.getBoundingClientRect().right)); return { tanpaGulir: c.scrollWidth <= c.clientWidth + 1, kananTerjauh: Math.round(kanan), viewport: window.innerWidth, font: getComputedStyle(w.querySelector("tbody td")).fontSize }; });
+    ok("Tabel ringkas 1440 px: enam kolom utama (sumber, total lead, ber-order, lunas, konversi, CPA lunas) ada, tanpa gulir mendatar, di dalam viewport", utamaAda && lebarTabel.tanpaGulir && lebarTabel.kananTerjauh <= lebarTabel.viewport, JSON.stringify(lebarTabel) + " | " + hdrR.join(" / "));
+    ok("Tabel ringkas: kolom tambahan (spam, nilai order, uang, biaya, ROAS) TIDAK ada; font isi tetap 13px (tidak dikecilkan)", !hdrR.some((x) => /^(Spam|Nilai order|Uang diterima|Biaya iklan|Booked|Cash)/.test(x)) && lebarTabel.font === "13px", lebarTabel.font);
+    const idxR = (nama) => hdrR.findIndex((x) => x.startsWith(nama));
+    for (const s of sumber.sumber) {
+      const b = await page.$$eval(`[data-testid="baris-sumber-${s.id}"] td`, (tds) => tds.map((x) => x.textContent.trim())).catch(() => null);
+      ok(`Ringkas = API baris ${s.id}: total lead / ber-order / lunas / konversi`, !!b && num(b[idxR("Total lead")]) === s.lead && num(b[idxR("Customer ber-order")]) === s.berOrder && num(b[idxR("Customer lunas")]) === s.lunas && (s.konversiOrder?.nilai == null ? /—/.test(b[idxR("Konversi")]) : Math.abs(num(b[idxR("Konversi")]) - s.konversiOrder.nilai) < 0.011), b && [b[idxR("Total lead")], b[idxR("Customer ber-order")], b[idxR("Customer lunas")], b[idxR("Konversi")]].join(" | "));
+      if (s.biaya?.cpa == null) ok(`CPA null ${s.id} tampil '—'/'tidak tersedia' + alasan (bukan Rp0)`, !!b && !/^Rp0/.test(b[idxR("CPA lunas")]), b && b[idxR("CPA lunas")]); else ok(`CPA ${s.id} = API`, !!b && num(b[idxR("CPA lunas")]) === Math.round(s.biaya.cpa), b && b[idxR("CPA lunas")]);
+    }
+    // ── mode LENGKAP lewat pemilih kolom: nilai order, uang, biaya, ROAS tetap tersedia ──
+    await page.click('[data-testid="toggle-kolom"]'); await U.tungguUrl(page, /kolom=lengkap/); await tidur(800);
+    const hdr = await judulKol(); const idx = (nama) => hdr.findIndex((x) => x.startsWith(nama));
+    ok("Kolom lengkap (pemilih kolom): spam, membayar, nilai order, uang diterima, biaya iklan, ROAS tersedia", ["Spam", "Membayar", "Konversi non-spam", "Nilai order", "Uang diterima bersih", "Biaya iklan", "Booked ROAS", "Cash ROAS"].every((h) => idx(h) >= 0), hdr.join(" / "));
     const barisSumber = {}; for (const s of sumber.sumber) { barisSumber[s.id] = await page.$$eval(`[data-testid="baris-sumber-${s.id}"] td`, (tds) => tds.map((x) => x.textContent.trim())).catch(() => null); }
     for (const s of sumber.sumber) {
       const b = barisSumber[s.id]; if (!b) { ok(`Baris sumber ${s.id} tampil`, false); continue; }
-      const cocok = num(b[2]) === s.lead && num(b[3]) === s.berOrder && num(b[4]) === s.lunas && num(b[5]) === s.uang.nilaiOrderSaatIni && num(b[6]) === s.uang.uangBersih;
-      ok(`Layar = API baris ${s.id}: lead/ber-order/lunas/nilai/uang`, cocok, `${b.slice(2, 8).join(" | ")}`);
-      if (s.biaya?.spend == null) ok(`Spend null ${s.id} tampil '—'/'tidak tersedia' (bukan Rp0)`, !/^Rp0$/.test(b[7]), b[7]); else ok(`Spend ${s.id} = API`, num(b[7]) === s.biaya.spend, b[7]);
+      const cocok = num(b[idx("Total lead")]) === s.lead && num(b[idx("Customer ber-order")]) === s.berOrder && num(b[idx("Customer lunas")]) === s.lunas && num(b[idx("Nilai order")]) === s.uang.nilaiOrderSaatIni && num(b[idx("Uang diterima bersih")]) === s.uang.uangBersih;
+      ok(`Layar = API baris ${s.id}: lead/ber-order/lunas/nilai/uang`, cocok, [b[idx("Total lead")], b[idx("Customer ber-order")], b[idx("Customer lunas")], b[idx("Nilai order")], b[idx("Uang diterima bersih")]].join(" | "));
+      const sp = b[idx("Biaya iklan")];
+      if (s.biaya?.spend == null) ok(`Spend null ${s.id} tampil '—'/'tidak tersedia' (bukan Rp0)`, !/^Rp0$/.test(sp), sp); else ok(`Spend ${s.id} = API`, num(sp) === s.biaya.spend, sp);
     }
     const tot = await page.$$eval('[data-testid="baris-total"] td', (tds) => tds.map((x) => x.textContent.trim()));
-    ok("Baris total layar = API total", num(tot[2]) === t.lead && num(tot[3]) === t.berOrder && num(tot[5]) === t.nilaiOrderSaatIni, tot.slice(2, 8).join(" | "));
+    ok("Baris total layar = API total", num(tot[idx("Total lead")]) === t.lead && num(tot[idx("Customer ber-order")]) === t.berOrder && num(tot[idx("Customer lunas")]) === t.lunas && num(tot[idx("Nilai order")]) === t.nilaiOrderSaatIni, [tot[idx("Total lead")], tot[idx("Customer ber-order")], tot[idx("Nilai order")]].join(" | "));
+    const lunasKartu = await teks(page, '[data-testid="kartu-lunas"]');
+    ok("Kartu lunas: '<angka> customer lunas terbukti ledger' (tanpa ≥) + catatan cakupan ledger TERPISAH bila parsial", !/≥/.test(lunasKartu || "") && new RegExp(String(t.lunas)).test(lunasKartu || "") && /customer lunas terbukti ledger/.test(lunasKartu || "") && (sumber.status.ledger.orderBerLedger >= sumber.status.ledger.orderEligible || /Cakupan ledger/.test(await teks(page, '[data-testid="catatan-lunas"]') || "")), lunasKartu);
     const rl = await teks(page, '[data-butir="rekonLead"]');
     ok("Rekonsiliasi lead di layar: total − spam = tren harian", new RegExp(`${t.lead.toLocaleString("id-ID")}.*${t.spam.toLocaleString("id-ID")}.*${traffic.totalLeads.toLocaleString("id-ID")}`).test(rl || "") && /Cocok/.test(rl || ""), rl);
     catat("Lead tanpa spam = tren harian (/analytics/traffic)", traffic.totalLeads, traffic.totalLeads, null, null, DBR.customerDibuat - DBR.b2bKaryawan - DBR.spam);
@@ -60,9 +80,9 @@ const catat = (metrik, api, layar, csv, xlsx, db) => rekap.push({ metrik, api, l
       ok("CSV memuat periode, basis, cutoff, dasar, urutan yang terlihat", rows.some((r) => r[0] === "Periode lead masuk (WIB)" && r[1] === `${DARI} s/d ${SAMPAI}`) && rows.some((r) => r[0] === "Basis laporan") && rows.some((r) => r[0] === "Evaluasi pembayaran sampai" && /WIB/.test(r[1])) && rows.some((r) => r[0] === "Urut menurut"), rows.slice(0, 6).map((r) => r.join("=")).join(" ; "));
       const c = (r, nama) => r[kol.indexOf(nama)];
       const totR = rows.find((r) => r[0] === "TOTAL (semua sumber)");
-      ok("CSV total = API (lead/spam/ber-order/lunas/nilai/uang)", Number(c(totR, "Total lead (termasuk spam)")) === t.lead && Number(c(totR, "Spam")) === t.spam && Number(c(totR, "Ber-order")) === t.berOrder && Number(c(totR, "Lunas")) === t.lunas && Number(c(totR, "Nilai order saat ini (Rp)")) === t.nilaiOrderSaatIni && Number(c(totR, "Pembayaran tercatat bersih (Rp)")) === t.uangBersih);
+      ok("CSV total = API (lead/spam/ber-order/lunas/nilai/uang)", Number(c(totR, "Total lead (termasuk spam)")) === t.lead && Number(c(totR, "Spam")) === t.spam && Number(c(totR, "Ber-order")) === t.berOrder && Number(c(totR, "Customer lunas (terbukti ledger)")) === t.lunas && Number(c(totR, "Nilai order saat ini (Rp)")) === t.nilaiOrderSaatIni && Number(c(totR, "Pembayaran tercatat bersih (Rp)")) === t.uangBersih);
       let semua = true, nullKosong = true;
-      for (const s of sumber.sumber) { const r = rows.find((x) => x[0] === s.label); if (!r) { semua = false; continue; } if (!(Number(c(r, "Total lead (termasuk spam)")) === s.lead && Number(c(r, "Ber-order")) === s.berOrder && Number(c(r, "Lunas")) === s.lunas && Number(c(r, "Nilai order saat ini (Rp)")) === s.uang.nilaiOrderSaatIni)) semua = false; if (s.biaya?.spend == null && c(r, "Biaya iklan (Rp)") !== "") nullKosong = false; if (s.biaya?.cpa == null && c(r, "CPA lunas (Rp)") !== "") nullKosong = false; }
+      for (const s of sumber.sumber) { const r = rows.find((x) => x[0] === s.label); if (!r) { semua = false; continue; } if (!(Number(c(r, "Total lead (termasuk spam)")) === s.lead && Number(c(r, "Ber-order")) === s.berOrder && Number(c(r, "Customer lunas (terbukti ledger)")) === s.lunas && Number(c(r, "Nilai order saat ini (Rp)")) === s.uang.nilaiOrderSaatIni)) semua = false; if (s.biaya?.spend == null && c(r, "Biaya iklan (Rp)") !== "") nullKosong = false; if (s.biaya?.cpa == null && c(r, "CPA lunas (Rp)") !== "") nullKosong = false; }
       ok("CSV per sumber = API (lead/ber-order/lunas/nilai)", semua); ok("CSV: spend/CPA null = sel kosong (bukan 0)", nullKosong);
       const urutLayar = await page.$$eval('[data-testid^="baris-sumber-"]', (r) => r.map((x) => x.dataset.testid.replace("baris-sumber-", "")));
       const urutCsv = rows.slice(head + 1).filter((r) => !/^TOTAL/.test(r[0]) && r[0] !== "").map((r) => sumber.sumber.find((s) => s.label === r[0])?.id);
@@ -81,16 +101,16 @@ const catat = (metrik, api, layar, csv, xlsx, db) => rekap.push({ metrik, api, l
       ok("XLSX Marketing: periode, basis, cutoff, urutan", new RegExp(`Periode lead masuk \\(WIB\\)\\|${DARI} s/d ${SAMPAI}`).test(teksSemua) && /Basis laporan\|/.test(teksSemua) && /Evaluasi pembayaran sampai\|.*WIB/.test(teksSemua) && /Urut menurut\|/.test(teksSemua));
       const head = r.findIndex((x) => x[0] === "Sumber"); const kol = r[head]; const c = (row, nama) => row[kol.indexOf(nama)];
       const totR = r.find((x) => String(x[0]).startsWith("TOTAL (semua"));
-      ok("XLSX total = API", c(totR, "Total lead (termasuk spam)") === t.lead && c(totR, "Spam") === t.spam && c(totR, "Customer ber-order") === t.berOrder && c(totR, "Customer lunas (ledger)") === t.lunas && c(totR, "Nilai order saat ini") === t.nilaiOrderSaatIni && c(totR, "Pembayaran tercatat bersih") === t.uangBersih);
+      ok("XLSX total = API", c(totR, "Total lead (termasuk spam)") === t.lead && c(totR, "Spam") === t.spam && c(totR, "Customer ber-order") === t.berOrder && c(totR, "Customer lunas (terbukti ledger)") === t.lunas && c(totR, "Nilai order saat ini") === t.nilaiOrderSaatIni && c(totR, "Pembayaran tercatat bersih") === t.uangBersih);
       let semua = true, nullStrip = true;
-      for (const s of sumber.sumber) { const row = r.find((x) => x[0] === s.label); if (!row) { semua = false; continue; } if (!(c(row, "Total lead (termasuk spam)") === s.lead && c(row, "Customer ber-order") === s.berOrder && c(row, "Customer lunas (ledger)") === s.lunas && c(row, "Nilai order saat ini") === s.uang.nilaiOrderSaatIni)) semua = false; if (s.biaya?.spend == null && c(row, "Biaya iklan") !== "—") nullStrip = false; if (s.biaya?.cpa == null && c(row, "CPA lunas") !== "—") nullStrip = false; }
+      for (const s of sumber.sumber) { const row = r.find((x) => x[0] === s.label); if (!row) { semua = false; continue; } if (!(c(row, "Total lead (termasuk spam)") === s.lead && c(row, "Customer ber-order") === s.berOrder && c(row, "Customer lunas (terbukti ledger)") === s.lunas && c(row, "Nilai order saat ini") === s.uang.nilaiOrderSaatIni)) semua = false; if (s.biaya?.spend == null && c(row, "Biaya iklan") !== "—") nullStrip = false; if (s.biaya?.cpa == null && c(row, "CPA lunas") !== "—") nullStrip = false; }
       ok("XLSX per sumber = API", semua); ok("XLSX: spend/CPA null = '—' (bukan 0)", nullStrip);
       const urutX = r.slice(head + 1).filter((x) => x[0] && !/^TOTAL/.test(String(x[0]))).map((x) => sumber.sumber.find((s) => s.label === x[0])?.id);
       const urutLayar = await page.$$eval('[data-testid^="baris-sumber-"]', (rr) => rr.map((x) => x.dataset.testid.replace("baris-sumber-", "")));
       ok("Urutan XLSX = urutan layar", urutX.join() === urutLayar.join());
       catat("Total lead (termasuk spam)", t.lead, kartu.lead, null, c(totR, "Total lead (termasuk spam)"), null);
       catat("Customer ber-order", t.berOrder, kartu.berOrder, null, c(totR, "Customer ber-order"), null);
-      catat("Customer lunas (ledger)", t.lunas, kartu.lunas, null, c(totR, "Customer lunas (ledger)"), null);
+      catat("Customer lunas (terbukti ledger)", t.lunas, kartu.lunas, null, c(totR, "Customer lunas (terbukti ledger)"), null);
       catat("Nilai order (Rp)", t.nilaiOrderSaatIni, kartu.nilai, null, c(totR, "Nilai order saat ini"), null);
       catat("Uang diterima bersih (Rp)", t.uangBersih, kartu.uang, null, c(totR, "Pembayaran tercatat bersih"), null);
       const rm = sheetRows(wb, "Meta CTWA"); const hm = rm.findIndex((x) => x[0] === "Peringkat"); const km = rm[hm];

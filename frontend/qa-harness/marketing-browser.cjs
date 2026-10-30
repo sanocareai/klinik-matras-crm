@@ -51,7 +51,7 @@ const klikTeks = async (page, selector, t) => { const h = await page.evaluateHan
     ok("A. cutoff evaluasi pembayaran tampil", /dievaluasi sampai/.test(await teks(page, '[data-testid="banner-periode"]') || ""));
     ok("B. kartu: total lead = API Akuisisi", num(await kart("lead")) === k.lead, `${await kart("lead")} vs ${k.lead}`);
     ok("B. kartu: customer ber-order", num(await kart("berOrder")) === k.berOrder, await kart("berOrder"));
-    ok("B. kartu: customer lunas (ledger) — ledger parsial → batas bawah '≥'", num(await kart("lunas")) === k.lunas, await kart("lunas"));
+    ok("B. kartu: customer lunas terbukti ledger = API (angka hitung, tanpa awalan ≥)", num(await kart("lunas")) === k.lunas, await kart("lunas"));
     ok("B. kartu: nilai order", num(await kart("nilai")) === k.nilaiOrder, await kart("nilai"));
     ok("B. kartu: uang diterima bersih", num(await kart("uang")) === k.uangBersih, await kart("uang"));
     ok("B. kartu: biaya iklan (berbayar) = API", (REF.sebelum.akuisisi.spendBerbayar == null ? (await kart("biaya")) === "—" : num(await kart("biaya")) === REF.sebelum.akuisisi.spendBerbayar), await kart("biaya"));
@@ -61,13 +61,24 @@ const klikTeks = async (page, selector, t) => { const h = await page.evaluateHan
     const baris = async (id) => page.$$eval(`[data-testid="baris-sumber-${id}"] td`, (tds) => tds.map((t) => t.textContent.trim()));
     const meta = await baris("META"), tik = await baris("TIKTOK"), wa = await baris("WHATSAPP");
     const S = REF.sebelum.perSumber;
-    ok("D. baris Meta: lead/ber-order/lunas/nilai/uang = API", [num(meta[2]), num(meta[3]), num(meta[4]), num(meta[5]), num(meta[6])].join() === [S.META.lead, S.META.berOrder, S.META.lunas, S.META.nilai, S.META.uang].join(), meta.slice(2, 8).join(" | "));
-    ok("D. baris TikTok = API (termasuk biaya sumber manual)", [num(tik[2]), num(tik[3]), num(tik[4]), num(tik[5]), num(tik[6]), num(tik[7])].join() === [S.TIKTOK.lead, S.TIKTOK.berOrder, S.TIKTOK.lunas, S.TIKTOK.nilai, S.TIKTOK.uang, S.TIKTOK.spend].join(), tik.slice(2, 10).join(" | "));
-    ok("D. WhatsApp (organik): biaya 'tidak tersedia' (bukan Rp0), CPA tidak dihitung", /tidak tersedia/.test(wa[7]) && /tidak tersedia/.test(wa[9]), `${wa[7]} / ${wa[9]}`);
+    // ringkas: [2]=total lead [3]=ber-order [4]=lunas [5]=konversi [6]=CPA lunas
+    ok("D. baris Meta (ringkas): total lead/ber-order/lunas = API", [num(meta[2]), num(meta[3]), num(meta[4])].join() === [S.META.lead, S.META.berOrder, S.META.lunas].join(), meta.slice(2, 7).join(" | "));
+    ok("D. baris TikTok (ringkas) = API: total lead/ber-order/lunas", [num(tik[2]), num(tik[3]), num(tik[4])].join() === [S.TIKTOK.lead, S.TIKTOK.berOrder, S.TIKTOK.lunas].join(), tik.slice(2, 7).join(" | "));
+    ok("D. WhatsApp (organik): CPA 'tidak tersedia' (bukan Rp0)", /tidak tersedia/.test(wa[6]), wa[6]);
     const tot = await page.$$eval('[data-testid="baris-total"] td', (tds) => tds.map((t) => t.textContent.trim()));
-    ok("D. baris total = Σ semua sumber = kartu", num(tot[2]) === k.lead && num(tot[3]) === k.berOrder && num(tot[5]) === k.nilaiOrder, tot.slice(2, 8).join(" | "));
-    ok("D. konversi utama memakai total lead termasuk spam (pembilang/penyebut tampil)", new RegExp(`${k.berOrder}/${k.lead}`).test(tot[8]), tot[8]);
-    ok("D. kolom ringkas: tidak ada kolom Spam/Booked/Cash di header", !/Booked ROAS|Cash ROAS|Konversi non-spam/.test(await teks(page, '[data-testid="tabel-sumber"] thead') || ""));
+    ok("D. baris total (ringkas) = Σ semua sumber = kartu", num(tot[2]) === k.lead && num(tot[3]) === k.berOrder && num(tot[4]) === k.lunas, tot.slice(2, 7).join(" | "));
+    ok("D. konversi utama memakai total lead termasuk spam (pembilang/penyebut tampil)", new RegExp(`${k.berOrder}/${k.lead}`).test(tot[5]), tot[5]);
+    ok("D. kolom ringkas: hanya kolom utama — tidak ada Spam/Nilai order/Uang/Biaya/Booked/Cash di header", !/Booked ROAS|Cash ROAS|Konversi non-spam|Nilai order|Uang diterima|Biaya iklan|Spam/.test(await teks(page, '[data-testid="tabel-sumber"] thead') || ""));
+    ok("D. 1440 px: tabel ringkas tanpa gulir mendatar", await page.evaluate(() => { const c = document.querySelector('[data-testid="tabel-sumber"] table').parentElement; return c.scrollWidth <= c.clientWidth + 1; }));
+    ok("B. kartu lunas: tanpa '≥', berbunyi 'customer lunas terbukti ledger' + catatan cakupan ledger terpisah", !/≥/.test(await teks(page, '[data-testid="kartu-lunas"]') || "") && /customer lunas terbukti ledger/.test(await teks(page, '[data-testid="kartu-lunas"]') || "") && /Cakupan ledger/.test(await teks(page, '[data-testid="catatan-lunas"]') || ""), await teks(page, '[data-testid="kartu-lunas"]'));
+    // lengkap (pemilih kolom): [7]=spam [8]=membayar [9]=non-spam [10]=nilai [11]=uang [12]=biaya
+    await page.click('[data-testid="toggle-kolom"]'); await tungguUrl(page, /kolom=lengkap/); await tidur(600);
+    const metaL = await baris("META"), tikL = await baris("TIKTOK");
+    ok("D. baris Meta (lengkap): nilai order/uang = API", [num(metaL[10]), num(metaL[11])].join() === [S.META.nilai, S.META.uang].join(), metaL.slice(10, 13).join(" | "));
+    ok("D. baris TikTok (lengkap) = API (nilai, uang, biaya sumber manual)", [num(tikL[10]), num(tikL[11]), num(tikL[12])].join() === [S.TIKTOK.nilai, S.TIKTOK.uang, S.TIKTOK.spend].join(), tikL.slice(10, 13).join(" | "));
+    const totL = await page.$$eval('[data-testid="baris-total"] td', (tds) => tds.map((t) => t.textContent.trim()));
+    ok("D. baris total (lengkap): nilai order = kartu", num(totL[10]) === k.nilaiOrder, totL.slice(10, 13).join(" | "));
+    await page.click('[data-testid="toggle-kolom"]'); await tungguUrl(page, /^((?!kolom).)*$/); await tidur(400);
     ok("Tombol 'Kelola biaya iklan' ada (bukan tab utama); tab utama = 5 tab", !!(await page.$('[data-testid="kelola-biaya"]')) && (await sel(page, '[role="tab"]')).slice(-5).join("|") === "Ringkasan|Sales|Marketing|Performa Tim|Pipeline", (await sel(page, '[role="tab"]')).join("|"));
     await foto(page, "01-marketing-ringkasan-desktop");
 

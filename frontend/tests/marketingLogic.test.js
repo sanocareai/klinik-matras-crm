@@ -134,7 +134,10 @@ test("kartu ringkas: enam kartu; biaya iklan tidak lengkap = '—' dengan alasan
   const k = kartuRingkas(LAP());
   assert.deepEqual(k.map((x) => x.id), ["lead", "berOrder", "lunas", "nilai", "uang", "biaya"]);
   const biaya = k.find((x) => x.id === "biaya"); assert.equal(biaya.nilai, "—"); assert.equal(biaya.kosong, true); assert.match(biaya.sub, /spend belum lengkap|belum lengkap/i);
-  const lunas = k.find((x) => x.id === "lunas"); assert.match(lunas.nilai, /^≥ 3$/); assert.equal(lunas.peringatan, true);
+  const lunas = k.find((x) => x.id === "lunas");
+  assert.equal(lunas.nilai, "3", "hasil hitung ditampilkan apa adanya, tanpa awalan ≥"); assert.match(lunas.judul, /Customer lunas terbukti ledger/); assert.match(lunas.sub, /customer lunas terbukti ledger/);
+  assert.match(lunas.catatan, /Cakupan ledger 60%: 6 dari 10 order eligible punya pembayaran di ledger/, "cakupan ledger parsial = catatan TERPISAH dari angka"); assert.ok(!lunas.peringatan);
+  assert.ok(!/≥/.test(`${lunas.nilai} ${lunas.sub} ${lunas.catatan}`));
   assert.match(k.find((x) => x.id === "lead").sub, /90 sah · 8 spam/); assert.match(k.find((x) => x.id === "lead").judul, /Total lead \(termasuk spam\)/);
   assert.match(k.find((x) => x.id === "berOrder").sub, /^12% dari total lead \(termasuk spam\)$/, "penyebut konversi utama eksplisit (total lead termasuk spam), bukan lead sah");
   for (const x of k) assert.ok(!/closing/i.test(`${x.judul} ${x.sub} ${x.tip}`), `label ambigu 'Closing' pada kartu ${x.id}`);
@@ -174,9 +177,9 @@ test("kualitas data: coverage, ledger parsial, spend hilang, UNKNOWN, UNMAPPED, 
 });
 
 // ── kolom & ekspor ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-test("kolom sumber: ringkas = 8 kolom utama; lengkap menambah spam, membayar, konversi non-spam, Booked & Cash ROAS", () => {
-  assert.deepEqual(kolomTampil("ringkas").map((k) => k.id), ["lead", "berOrder", "lunas", "nilai", "uang", "spend", "konversi", "cpa"]);
-  assert.equal(kolomTampil("lengkap").length, KOLOM_SUMBER.length); assert.deepEqual(kolomTampil("lengkap").slice(8).map((k) => k.id), ["spam", "membayar", "konversiNonSpam", "booked", "cash"]);
+test("kolom sumber: ringkas = 5 kolom utama (+ sumber); lengkap menambah spam, membayar, konversi non-spam, nilai order, uang, biaya, ROAS", () => {
+  assert.deepEqual(kolomTampil("ringkas").map((k) => k.id), ["lead", "berOrder", "lunas", "konversi", "cpa"]);
+  assert.equal(kolomTampil("lengkap").length, KOLOM_SUMBER.length); assert.deepEqual(kolomTampil("lengkap").slice(5).map((k) => k.id), ["spam", "membayar", "konversiNonSpam", "nilai", "uang", "spend", "booked", "cash"]);
 });
 
 test("ekspor CSV Meta: kolom ber-order/membayar/lunas terpisah; null dikosongkan + alasan; UNMAPPED/UNKNOWN ikut; formula injection dinetralkan", () => {

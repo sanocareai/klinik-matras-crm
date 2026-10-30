@@ -20,6 +20,7 @@ const sumberS = (id, o = {}) => ({
   uang: { nilaiOrderSaatIni: 8_000_000, uangBersih: 3_000_000 }, biaya: { dasar: "ATRIBUSI_LABEL_CRM", status: "BELUM_DIISI", ...NULL_BIAYA }, ...o,
 });
 const LAP = () => ({
+  status: { ledger: { orderEligible: 10, orderBerLedger: 6, persen: 60 } },
   periode: { dari: "2026-10-01", sampai: "2026-10-10" }, cutoffEvaluasi: { waktuWib: "2026-10-30 09:15:00 WIB" },
   total: { lead: 55, spam: 4, leadSah: 51, berOrder: 5, membayar: 2, lunas: 1, nilaiOrderSaatIni: 16_000_000, uangBersih: 6_000_000 },
   sumber: [sumberS("META", { lead: 5 }), sumberS("TIKTOK", { lead: 30, berOrder: 1 }), sumberS("ORGANIK", { jenis: "ORGANIK", lead: 0, berOrder: 0, lunas: 0, uang: { nilaiOrderSaatIni: 0, uangBersih: 0 } })],
@@ -33,6 +34,8 @@ test("CSV sumber: periode, basis, cutoff, urutan layar; 'Total lead (termasuk sp
   assert.match(csv, /Evaluasi pembayaran sampai,2026-10-30 09:15:00 WIB/);
   assert.match(csv, /Total lead \(termasuk spam\)/);
   assert.match(csv, /Urut menurut,Total lead/);
+  assert.match(csv, /Cakupan ledger \(terpisah dari angka lunas\),6 dari 10 order eligible punya pembayaran di ledger \(60%\)/);
+  assert.match(csv, /Customer lunas \(terbukti ledger\)/);
   const b = csv.trim().split("\r\n"); const iHead = b.findIndex((x) => x.startsWith("Sumber,")); const kol = b[iHead].split(",");
   assert.deepEqual(b.slice(iHead + 1, iHead + 4).map((x) => x.split(",")[0]), ["TIKTOK", "META", "ORGANIK"], "urutan = layar (lead terbanyak dulu)");
   const baris = b[iHead + 1].split(",");
@@ -63,7 +66,9 @@ test("XLSX: sheet Marketing = layar (periode, urutan, cutoff); null → '—' bu
   assert.match(teks, /Periode lead masuk \(WIB\)\|2026-10-01 s\/d 2026-10-10/);
   assert.match(teks, /Evaluasi pembayaran sampai\|2026-10-30 09:15:00 WIB/);
   assert.match(teks, /Urut menurut\|Total lead/);
+  assert.match(teks, /Cakupan ledger \(terpisah dari angka lunas\)\|6 dari 10 order eligible punya pembayaran di ledger \(60%\)/);
   const iHead = baris.findIndex((r) => r[0] === "Sumber"); const kol = baris[iHead];
+  assert.ok(kol.includes("Customer lunas (terbukti ledger)"), "header lunas = terbukti ledger");
   assert.deepEqual(baris.slice(iHead + 1, iHead + 4).map((r) => r[0]), ["TIKTOK", "META", "ORGANIK"]);
   const t = baris[iHead + 1];
   assert.equal(t[kol.indexOf("Total lead (termasuk spam)")], 30);

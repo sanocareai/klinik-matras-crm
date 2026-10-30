@@ -92,11 +92,12 @@ export function jejakMeta(jalur, grup) {
 
 // ── TABEL SUMBER ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Kolom utama selalu tampil di desktop; tambahan lewat pilihan kolom (?kolom=lengkap). Mobile memakai kartu (ringkas + detail yang dapat dibuka).
+// Kolom UTAMA (terlihat langsung di 1440 px): sumber, total lead, customer ber-order, customer lunas, konversi ber-order, CPA lunas. Sisanya lewat "Kolom lengkap" (?kolom=lengkap); mobile = kartu.
 export const KOLOM_SUMBER = Object.freeze([
-  { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "berOrder", label: "Ber-order", utama: true }, { id: "lunas", label: "Lunas", utama: true },
-  { id: "nilai", label: "Nilai order", utama: true }, { id: "uang", label: "Uang bersih", utama: true }, { id: "spend", label: "Biaya iklan", utama: true },
-  { id: "konversi", label: "Konversi", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
+  { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "berOrder", label: "Customer ber-order", utama: true }, { id: "lunas", label: "Customer lunas", utama: true },
+  { id: "konversi", label: "Konversi ber-order", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
   { id: "spam", label: "Spam", utama: false }, { id: "membayar", label: "Membayar", utama: false }, { id: "konversiNonSpam", label: "Konversi non-spam", utama: false },
+  { id: "nilai", label: "Nilai order", utama: false }, { id: "uang", label: "Uang diterima bersih", utama: false }, { id: "spend", label: "Biaya iklan", utama: false },
   { id: "booked", label: "Booked ROAS", utama: false }, { id: "cash", label: "Cash ROAS", utama: false },
 ]);
 export const MODE_KOLOM = Object.freeze(["ringkas", "lengkap"]);
@@ -107,6 +108,11 @@ export { METRIK_URUT };
 
 // ── KARTU RINGKAS (satu baris, dari total /sumber) ───────────────────────────────────────────────────────────────────────────────────────────────
 // Semua kartu membaca objek server yang SAMA dengan tabel; tidak ada angka yang dihitung ulang. "Lunas" = customer lunas terbukti LEDGER (bukan status CRM).
+/** Catatan cakupan ledger (terpisah dari angka lunas): berapa order eligible yang punya pembayaran di ledger. null bila tidak ada data. */
+export function teksCakupanLedger(lap) {
+  const l = lap?.status?.ledger; if (!l || !(l.orderEligible > 0)) return null;
+  return `Cakupan ledger ${formatPersen(l.persen)}: ${angka(l.orderBerLedger)} dari ${angka(l.orderEligible)} order eligible punya pembayaran di ledger; pembayaran di luar sistem belum terlihat.`;
+}
 export function kartuRingkas(lap) {
   const t = lap?.total; if (!t) return [];
   const bayar = statusMembayar(lap); const bb = t.berbayar;
@@ -114,7 +120,7 @@ export function kartuRingkas(lap) {
   return [
     { id: "lead", judul: "Total lead (termasuk spam)", nilai: angka(t.lead), sub: `${angka(t.leadSah)} sah · ${angka(t.spam)} spam`, tip: "Customer baru dibuat di periode, semua sumber pemasaran. Spam ikut terhitung (sama dengan penyebut konversi utama); lead sah = bukan spam/staf/karyawan." },
     { id: "berOrder", judul: "Customer ber-order", nilai: angka(t.berOrder), sub: konversiTotal(t).nilai == null ? "—" : `${formatPersen(konversiTotal(t).nilai)} dari total lead (termasuk spam)`, tip: "Customer unik dengan ≥ 1 order eligible. Konversi utama = ber-order ÷ total lead (termasuk spam); konversi non-spam ada di tabel (kolom lengkap). Ber-order BUKAN berarti sudah membayar." },
-    { id: "lunas", judul: "Customer lunas", nilai: bayar.lengkap ? angka(t.lunas) : `≥ ${angka(t.lunas)}`, sub: bayar.lengkap ? "terbukti ledger" : "terbukti ledger · batas bawah", tip: "Customer unik yang ledger pembayarannya (setelah refund disetujui) menutup seluruh tagihan. Bukan status LUNAS di CRM.", peringatan: !bayar.lengkap },
+    { id: "lunas", judul: "Customer lunas terbukti ledger", nilai: angka(t.lunas), sub: "customer lunas terbukti ledger", catatan: bayar.lengkap ? null : teksCakupanLedger(lap), tip: "Customer unik yang ledger pembayarannya (setelah refund disetujui) menutup seluruh tagihan — angka hitung, bukan perkiraan. Cakupan ledger dinilai terpisah (catatan di bawah angka). Bukan status LUNAS di CRM." },
     { id: "nilai", judul: "Nilai order", nilai: rupiah(t.nilaiOrderSaatIni), sub: "kohort lead · nilai saat ini", tip: "Σ nilai order eligible kohort lead periode ini. Bukan uang diterima dan bukan laba." },
     { id: "uang", judul: "Uang diterima bersih", nilai: rupiah(t.uangBersih), sub: "ledger − refund", tip: "Pembayaran sah di ledger dikurangi refund disetujui. Batas bawah: pembayaran di luar sistem tidak terlihat. Bukan laba bersih." },
     { id: "biaya", judul: "Biaya iklan", nilai: spend.teks, kosong: spend.kosong, sub: spend.kosong ? (spend.alasan || "belum lengkap") : `${rb?.jumlah ?? 0} sumber berbayar`, tip: "Total biaya sumber berbayar pada periode yang sama; terisi hanya bila SEMUA sumber berbayar lengkap setiap hari. Kosong ≠ Rp0." },
@@ -145,7 +151,7 @@ export function kualitasData({ lap, iklan, traffic, periode }) {
   const l = lap?.status?.ledger;
   if (l) out.push({ id: "coverage", judul: "Cakupan ledger", status: l.orderEligible > 0 && l.orderBerLedger < l.orderEligible ? "perhatian" : "ok", nilai: formatPersen(l.persen), teks: `${angka(l.orderBerLedger)} dari ${angka(l.orderEligible)} order eligible punya pembayaran di ledger.` });
   const bayar = statusMembayar(lap);
-  if (lap) out.push({ id: "ledgerParsial", judul: "Ledger parsial", status: bayar.lengkap ? "ok" : "perhatian", nilai: bayar.lengkap ? "Lengkap" : "Parsial", teks: bayar.lengkap ? "Semua order eligible punya pembayaran di ledger." : `${bayar.teks}. Customer membayar/lunas adalah batas bawah.` });
+  if (lap) out.push({ id: "ledgerParsial", judul: "Ledger parsial", status: bayar.lengkap ? "ok" : "perhatian", nilai: bayar.lengkap ? "Lengkap" : "Parsial", teks: bayar.lengkap ? "Semua order eligible punya pembayaran di ledger." : `${bayar.teks}. Angka customer membayar/lunas = yang terbukti di ledger; pembayaran di luar sistem belum terlihat.` });
   const rb = ringkasBiayaBerbayar(lap);
   if (rb) out.push({ id: "spendSumber", judul: "Biaya sumber berbayar", status: rb.lengkap ? "ok" : "perhatian", nilai: rb.lengkap ? "Lengkap" : "Belum lengkap", teks: rb.lengkap ? `${rb.jumlah} sumber berbayar terisi setiap hari. Terisi ≠ diverifikasi independen.` : (rb.belum.map((x) => `${x.id}: ${statusBiayaTeks(x.status).toLowerCase()}`).join(" · ") || "Ada sumber berbayar yang belum lengkap.") });
   const b = iklan?.biaya;

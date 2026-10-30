@@ -172,7 +172,7 @@ export function ringkasBiayaBerbayar(lap) {
 }
 
 // ── EKSPOR CSV: kolom = apa yang tampil di layar; nilai null → sel kosong + kolom alasan (tidak pernah 0). ────────────────────────────────────────────────────
-const CSV_KOLOM = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah", "Ber-order", "Membayar", "Lunas", "Konversi ber-order % (÷ total lead termasuk spam)", "Pembilang", "Penyebut",
+const CSV_KOLOM = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah", "Ber-order", "Membayar", "Customer lunas (terbukti ledger)", "Konversi ber-order % (÷ total lead termasuk spam)", "Pembilang", "Penyebut",
   "Nilai order saat ini (Rp)", "Pembayaran tercatat bersih (Rp)", "Biaya iklan (Rp)", "Status biaya", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Sementara", "Verifikasi biaya (bukan verifikasi independen)"];
 const cel = (v) => {
   if (v == null) return "";
@@ -184,7 +184,7 @@ export function buatCsvAkuisisi(lap, { urut = null } = {}) {
   if (!lap) return "";
   const p = lap.periode || {};
   const meta = [["Periode lead masuk (WIB)", `${p.dari ?? ""} s/d ${p.sampai ?? ""}`], ["Evaluasi pembayaran sampai", teksCutoff(lap) || ""], ["Dasar sumber", "Label CRM (Customer.leadSource); CPA/ROAS = Atribusi label CRM, bukan CPA campaign"],
-    ["Basis laporan", "Customer baru menurut tanggal lead masuk (WIB); hasil order/pembayaran dihitung sampai waktu evaluasi"], ["Urut menurut", (urut && METRIK_BY_ID[urut]?.label) || "urutan server"],
+    ["Basis laporan", "Customer baru menurut tanggal lead masuk (WIB); hasil order/pembayaran dihitung sampai waktu evaluasi"], ["Cakupan ledger (terpisah dari angka lunas)", lap?.status?.ledger?.orderEligible > 0 ? `${lap.status.ledger.orderBerLedger} dari ${lap.status.ledger.orderEligible} order eligible punya pembayaran di ledger (${lap.status.ledger.persen}%)` : ""], ["Urut menurut", (urut && METRIK_BY_ID[urut]?.label) || "urutan server"],
     ["Definisi", "Nilai order = nilai order eligible saat ini; Pembayaran bersih = ledger - refund disetujui; CPA lunas = biaya sumber / customer unik lunas; null dikosongkan"]];
   const baris = (urut && METRIK_BY_ID[urut] ? urutkan(lap.sumber || [], urut) : (lap.sumber || [])).map((s) => {
     const b = s.biaya || {};
