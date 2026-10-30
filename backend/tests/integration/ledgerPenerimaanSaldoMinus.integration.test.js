@@ -29,7 +29,8 @@ const hariIni = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice
 
 async function dunia() {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
-  const [fin, gudang, admin] = await Promise.all(["FINANCE", "WAREHOUSE", "ADMIN"].map((r) => createTestUser({ roles: [r] })));
+  // Admin Finance (ADMIN + FINANCE, seperti akun produksi yang menyetujui PO): PO yang mengubah Harga Berlaku butuh izin harga berlaku.
+  const [fin, gudang, admin] = await Promise.all([["FINANCE"], ["WAREHOUSE"], ["ADMIN", "FINANCE"]].map((r) => createTestUser({ roles: r })));
   const c = (u) => makeClient(server.baseUrl, u.token);
   const supplier = await testPrisma.finSupplier.create({ data: { code: "SUP-TBF", name: "TOKO BERSAMA FURNITURE", paymentTermType: "HARI", paymentTermDays: 30 } });
   return { f: c(fin), g: c(gudang), a: c(admin), supplier };
