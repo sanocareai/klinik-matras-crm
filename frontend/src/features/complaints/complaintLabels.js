@@ -105,6 +105,8 @@ export function formatComplaintActivitySentence(event) {
       return "Customer mengonfirmasi komplain SELESAI";
     case "COMPLAINT_CANCELLED":
       return metadata.reason ? `Kasus dibatalkan — ${metadata.reason}` : "Kasus dibatalkan";
+    case "COMPLAINT_REDELIVERY_WAIVED":
+      return `Diselesaikan tanpa pengiriman ulang — ${metadata.reason || "tanpa keterangan"}`;
     default:
       return eventType || "Aktivitas";
   }

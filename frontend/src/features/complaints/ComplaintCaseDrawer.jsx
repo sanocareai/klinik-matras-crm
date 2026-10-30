@@ -57,6 +57,9 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
   const [qcTests, setQcTests] = useState([]);
   const [qcId, setQcId] = useState("");
 
+  const [showWaiveForm, setShowWaiveForm] = useState(false);
+  const [waiveReason, setWaiveReason] = useState("");
+
   const load = useCallback(() => {
     if (!caseId) return;
     setLoading(true);
@@ -180,7 +183,29 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
+  async function submitWaiveRedelivery() {
+    if (!waiveReason.trim()) { setError("Alasan wajib diisi"); return; }
+    setBusy(true); setError("");
+    try {
+      await api.waiveComplaintRedelivery(caseId, waiveReason.trim());
+      setShowWaiveForm(false); setWaiveReason("");
+      notifyChanged();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
   const transitions = kase ? (ALLOWED_TRANSITIONS[kase.status] || []) : [];
+
+  // Gerbang redelivery (31 Oktober 2026, insiden Sony RES-27082026-183) —
+  // cermin FRONTEND dari assertRedeliveryCompleted di backend/services/
+  // complaintCase.js: job DELIVERY tertaut kasus ini yang BELUM COMPLETED
+  // dengan bukti foto. HANYA untuk ditampilkan (backend yang MENEGAKKAN,
+  // bukan pemeriksaan ini) — supaya staf tahu KENAPA konfirmasi ditolak
+  // sebelum mencoba, bukan cuma baca pesan error sesudahnya.
+  const outstandingRedeliveryJobs = kase && !kase.redeliveryWaivedAt
+    ? (kase.jobs || []).filter((j) => j.type === "DELIVERY" && !(j.status === "COMPLETED" && (j.proofPhotoUrls?.length || 0) > 0))
+    : [];
+  const redeliveryLocked = outstandingRedeliveryJobs.length > 0;
+  const canWaiveRedelivery = kase && redeliveryLocked && ["DIKIRIM_ULANG", "KONFIRMASI_CUSTOMER"].includes(kase.status);
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => (o ? null : onClose())}>
@@ -247,6 +272,25 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
                     <Save size={12} /> Simpan
                   </button>
                 </Section>
+
+                {redeliveryLocked && (
+                  <div className="rounded-btn bg-orangebg px-2.5 py-2 text-[11.5px] text-orange">
+                    <p className="font-semibold">Belum bisa Konfirmasi Customer / Selesai</p>
+                    <p className="mt-0.5">Job pengiriman ulang berikut belum tuntas dengan bukti foto:</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {outstandingRedeliveryJobs.map((j) => (
+                        <li key={j.id}>{JOB_STATUS_LABEL[j.status] || j.status}{j.status === "COMPLETED" ? " (tanpa bukti foto)" : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {kase.redeliveryWaivedAt && (
+                  <p className="rounded-btn bg-inset px-2.5 py-2 text-[11.5px] text-ink2">
+                    Diselesaikan tanpa pengiriman ulang {formatTanggalJam(kase.redeliveryWaivedAt)}
+                    {kase.redeliveryWaivedBy?.name ? ` oleh ${kase.redeliveryWaivedBy.name}` : ""} — {kase.redeliveryWaivedReason}
+                  </p>
+                )}
 
                 {kase.status !== "SELESAI" && kase.status !== "DIBATALKAN" && (
                   <Section title="Ubah Status">
@@ -358,6 +402,29 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
                         className="flex w-full items-center justify-center gap-1.5 rounded-btn bg-accent py-2 text-[12.5px] font-bold text-white hover:opacity-90 disabled:opacity-50">
                         {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Konfirmasi Customer — Tandai SELESAI
                       </button>
+                    )}
+
+                    {canWaiveRedelivery && (
+                      !showWaiveForm ? (
+                        <button type="button" onClick={() => setShowWaiveForm(true)}
+                          className="w-full rounded-btn px-2.5 py-1.5 text-[11.5px] font-semibold text-ink3 underline hover:text-ink2">
+                          Selesaikan tanpa pengiriman ulang…
+                        </button>
+                      ) : (
+                        <div className="rounded-btn border border-border p-2">
+                          <textarea
+                            value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} rows={2}
+                            placeholder="Kenapa diselesaikan tanpa pengiriman ulang (wajib) — mis. customer pilih refund"
+                            className="mb-1.5 w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                          />
+                          <div className="flex gap-1.5">
+                            <button type="button" onClick={submitWaiveRedelivery} disabled={busy}
+                              className="rounded-btn bg-accent px-2.5 py-1.5 text-[11.5px] font-bold text-white hover:opacity-90 disabled:opacity-50">Simpan</button>
+                            <button type="button" onClick={() => { setShowWaiveForm(false); setWaiveReason(""); }}
+                              className="rounded-btn px-2.5 py-1.5 text-[11.5px] font-semibold text-ink3 hover:bg-hovertint">Batal</button>
+                          </div>
+                        </div>
+                      )
                     )}
                     {kase.status === "SELESAI" && (
                       <p className="rounded-btn bg-greenbg px-2.5 py-2 text-[12px] font-semibold text-green">

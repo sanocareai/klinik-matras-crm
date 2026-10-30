@@ -55,6 +55,25 @@ async function clientAs(roles) {
   return { api: makeClient(server.baseUrl, token), user };
 }
 
+// Bawa kasus sampai SIAP_DIKIRIM lalu buat Delivery Task DELIVERY (D-116) —
+// titik awal bersama untuk semua tes gerbang redelivery di bawah (insiden
+// Sony RES-27082026-183, 31 Oktober 2026). Job yang lahir TETAP UNSCHEDULED
+// (lihat createDeliveryTask) — tiap tes mengubah statusnya sendiri sesuai
+// skenario yang diuji.
+async function setupKasusMenujuDikirimUlang(sales, dispatcher) {
+  const { order, unit } = await createTestUnit();
+  const create = await sales.api.post("/api/complaints", {
+    orderId: order.id, unitId: unit.id, category: "KENYAMANAN", description: "Test gerbang redelivery",
+  });
+  const caseId = create.body.id;
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "VERIFIKASI" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "ACTION_REQUIRED" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "SIAP_DIKIRIM" });
+  const redeliver = await dispatcher.api.post(`/api/complaints/${caseId}/delivery-task`, { jobType: "DELIVERY" });
+  const deliveryJobId = redeliver.body.jobs.find((j) => j.type === "DELIVERY").id;
+  return { caseId, order, unit, deliveryJobId };
+}
+
 async function makeRoutingStage() {
   const stage = await testPrisma.routingStage.create({
     data: { code: `qc-${Date.now()}-${Math.random()}`, labelId: "Uji Berat Badan", phase: "MODULE", sequence: 1, requiresQc: true },
@@ -354,4 +373,283 @@ test("Edge case: order tidak ditemukan -> 404", async () => {
   const sales = await clientAs(["SALES"]);
   const r = await sales.api.post("/api/complaints", { orderId: "00000000-0000-0000-0000-000000000000", category: "LAINNYA", description: "Test" });
   assert.equal(r.status, 404);
+});
+
+// ─── GERBANG REDELIVERY (31 Oktober 2026, insiden Sony RES-27082026-183) ──
+// Kronologi nyata yang direplikasi di tes-tes ini: ADMIN mendorong kasus
+// sampai DIKIRIM_ULANG, job DELIVERY baru lahir ASSIGNED ke driver, lalu
+// 27 MENIT KEMUDIAN kasus didorong manual ke KONFIRMASI_CUSTOMER lalu
+// SELESAI lewat POST /:id/status + /confirm-customer — TANPA job itu
+// pernah COMPLETED. Job pengiriman ulang nyangkut di tab Aktif driver
+// selamanya sementara kasus sudah bilang "selesai". Lihat laporan audit
+// + assertRedeliveryCompleted di services/complaintCase.js.
+
+test("Gerbang redelivery — bypass transisi langsung: job masih ASSIGNED, POST /:id/status ke KONFIRMASI_CUSTOMER ditolak 409", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status: "ASSIGNED" } });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.match(r.body.error, /belum tuntas/);
+  assert.match(r.body.error, /Ditugaskan/);
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.status, "DIKIRIM_ULANG", "status TIDAK boleh berubah kalau gerbang menolak");
+});
+
+test("Gerbang redelivery: EN_ROUTE dan ARRIVED juga ditolak (masih dalam perjalanan, belum sampai)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+
+  for (const status of ["EN_ROUTE", "ARRIVED"]) {
+    const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+    await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status } });
+    const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+    assert.equal(r.status, 409, `status job ${status} seharusnya masih diblokir: ${JSON.stringify(r.body)}`);
+  }
+});
+
+test("Gerbang redelivery: job FAILED (gagal kirim) tetap ditolak -- gagal BUKAN selesai", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  await testPrisma.job.update({
+    where: { id: deliveryJobId },
+    data: { status: "FAILED", failureReason: "Alamat tidak ditemukan", failurePhotoUrls: ["/media/job-photos/fail.jpg"] },
+  });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.match(r.body.error, /Gagal/);
+});
+
+test("Gerbang redelivery: job COMPLETED tapi proofPhotoUrls KOSONG (data lama/legacy) tetap ditolak", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  await testPrisma.job.update({
+    where: { id: deliveryJobId },
+    data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls: [] },
+  });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.match(r.body.error, /tanpa bukti/);
+});
+
+test("Gerbang redelivery: job DELIVERY LAMA yang tidak terkait komplain ini (complaintCaseId null) TIDAK dipakai sebagai bukti", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { order, unit } = await createTestUnit();
+
+  // Job pengiriman ORIGINAL (bukan dari komplain) sudah COMPLETED+POD duluan
+  // -- persis pola Order.status DELIVERED dari pengiriman asli yang TIDAK
+  // boleh dipakai sebagai bukti redelivery (rule 3 instruksi).
+  await testPrisma.job.create({
+    data: { type: "DELIVERY", orderId: order.id, status: "COMPLETED", completedAt: new Date(), proofPhotoUrls: ["/media/job-photos/original.jpg"] },
+  });
+
+  const create = await sales.api.post("/api/complaints", { orderId: order.id, unitId: unit.id, category: "KENYAMANAN", description: "Test" });
+  const caseId = create.body.id;
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "VERIFIKASI" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "ACTION_REQUIRED" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "SIAP_DIKIRIM" });
+  await dispatcher.api.post(`/api/complaints/${caseId}/delivery-task`, { jobType: "DELIVERY" });
+  // Job redelivery BARU sengaja tidak disentuh -- masih UNSCHEDULED, 0 bukti.
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(r.status, 409, "job lama yang tidak terkait kasus ini tidak boleh ikut dihitung sebagai bukti redelivery");
+});
+
+test("Gerbang redelivery: status Route (termasuk COMPLETED) TIDAK relevan -- yang diperiksa status Job itu sendiri", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const route = await testPrisma.route.create({ data: { code: `RTE-TEST-${Date.now()}`, date: new Date("2026-09-01"), status: "COMPLETED" } });
+  await testPrisma.job.update({
+    where: { id: deliveryJobId },
+    data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls: ["/media/job-photos/ok.jpg"], routeId: route.id },
+  });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+});
+
+test("Gerbang redelivery -- defense in depth: confirmCustomer tetap menolak walau status dipaksa KONFIRMASI_CUSTOMER lewat jalur lain", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status: "ASSIGNED" } });
+
+  // Simulasikan status kasus sudah KONFIRMASI_CUSTOMER lewat jalur di luar
+  // transitionStatus (migrasi data/skrip lama) -- transitionStatus BUKAN
+  // satu-satunya penjaga, confirmCustomer wajib cek lagi sendiri.
+  await testPrisma.complaintCase.update({ where: { id: caseId }, data: { status: "KONFIRMASI_CUSTOMER" } });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/confirm-customer`, {});
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.status, "KONFIRMASI_CUSTOMER", "TIDAK boleh ikut naik ke SELESAI");
+  assert.equal(caseRow.customerConfirmedAt, null);
+});
+
+test("Redelivery sukses + retry/double-click: job complete -> auto-advance -> confirm-customer SELESAI; panggilan kedua gagal bersih tanpa menimpa data", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  await dispatcher.api.patch(`/api/armada/jobs/${deliveryJobId}`, { scheduledDate: "2026-09-13" });
+  const complete = await dispatcher.api.post(`/api/armada/jobs/${deliveryJobId}/complete`, { proofPhotoUrls: ["/media/job-photos/ok.jpg"] });
+  assert.equal(complete.status, 200, JSON.stringify(complete.body));
+
+  const afterComplete = await sales.api.get(`/api/complaints/${caseId}`);
+  assert.equal(afterComplete.body.status, "KONFIRMASI_CUSTOMER", "job tuntas+POD -> auto-advance, gerbang otomatis terpenuhi");
+
+  const first = await sales.api.post(`/api/complaints/${caseId}/confirm-customer`, {});
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.status, "SELESAI");
+  const firstConfirmedAt = first.body.customerConfirmedAt;
+
+  const second = await sales.api.post(`/api/complaints/${caseId}/confirm-customer`, {});
+  assert.equal(second.status, 400, JSON.stringify(second.body));
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.customerConfirmedAt.toISOString(), new Date(firstConfirmedAt).toISOString(), "retry TIDAK boleh menimpa timestamp konfirmasi pertama");
+});
+
+test("waive-redelivery: alasan wajib, lalu melewati gerbang dengan audit trail -- jalur resolusi tanpa pengiriman ulang fisik", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const blocked = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(blocked.status, 409);
+
+  const noReason = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, {});
+  assert.equal(noReason.status, 400);
+
+  const waive = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, {
+    reason: "Customer pilih refund, redelivery dibatalkan",
+  });
+  assert.equal(waive.status, 200, JSON.stringify(waive.body));
+  assert.ok(waive.body.redeliveryWaivedAt);
+  assert.equal(waive.body.redeliveryWaivedReason, "Customer pilih refund, redelivery dibatalkan");
+  assert.equal(waive.body.redeliveryWaivedBy.id, sales.user.id);
+
+  const advance = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(advance.status, 200, JSON.stringify(advance.body));
+
+  const confirm = await sales.api.post(`/api/complaints/${caseId}/confirm-customer`, {});
+  assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
+  assert.equal(confirm.body.status, "SELESAI");
+
+  // Job itu sendiri TIDAK ikut berubah -- waive hanya membuka gerbang, bukan
+  // berpura-pura job sudah dikerjakan.
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.status, "UNSCHEDULED");
+
+  const timeline = await sales.api.get(`/api/activity?entityType=complaint&entityId=${caseId}`);
+  assert.ok(timeline.body.events.some((e) => e.eventType === "COMPLAINT_REDELIVERY_WAIVED"));
+});
+
+test("waive-redelivery: tidak relevan di status yang belum pernah ada rencana redelivery", async () => {
+  const sales = await clientAs(["SALES"]);
+  const { order } = await createTestUnit();
+  const create = await sales.api.post("/api/complaints", { orderId: order.id, category: "LAINNYA", description: "Test" });
+  const r = await sales.api.post(`/api/complaints/${create.body.id}/waive-redelivery`, { reason: "Tidak relevan" });
+  assert.equal(r.status, 400);
+});
+
+test("Pembatalan komplain TIDAK menyentuh Job/POD terkait -- tidak membatalkan job berjalan diam-diam (rule pembatalan existing)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status: "EN_ROUTE" } });
+
+  const cancel = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "DIBATALKAN", note: "Customer menarik komplain" });
+  assert.equal(cancel.status, 200, JSON.stringify(cancel.body));
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.status, "EN_ROUTE", "job yang sedang berjalan TIDAK boleh ikut dibatalkan diam-diam oleh pembatalan komplain");
+  assert.equal(jobRow.proofPhotoUrls.length, 0);
+});
+
+test("createDeliveryTask: job redelivery lahir TANPA route (biarkan belum terjadwal, bukan menempel diam-diam)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.routeId, null);
+  assert.equal(jobRow.status, "UNSCHEDULED");
+});
+
+test("PATCH /routes/:id/jobs menolak menempel job redelivery komplain yang BELUM tuntas ke rute yang sudah Selesai", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const admin = await clientAs(["ADMIN"]);
+  const { deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const route = await testPrisma.route.create({ data: { code: `RTE-DONE-${Date.now()}`, date: new Date("2026-09-01"), status: "COMPLETED" } });
+
+  const r = await admin.api.patch(`/api/armada/routes/${route.id}/jobs`, { jobIds: [deliveryJobId], reason: "Tambahkan stop ketinggalan" });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.routeId, null, "job TIDAK boleh ikut tertempel walau request ditolak");
+});
+
+test("PATCH /routes/:id/jobs menolak menempel job redelivery komplain ke rute yang Dibatalkan (guard generik yang SUDAH ada, bukan admin-override)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const admin = await clientAs(["ADMIN"]);
+  const { deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const route = await testPrisma.route.create({ data: { code: `RTE-CANCEL-${Date.now()}`, date: new Date("2026-09-01"), status: "CANCELLED" } });
+
+  // Rute Dibatalkan sudah ditolak oleh guard generik ("route.status !==
+  // DRAFT") BUKAN admin override ("stop ketinggalan") -- tidak ada jalur
+  // mengubah anggota rute CANCELLED sama sekali, bahkan untuk ADMIN.
+  const r = await admin.api.patch(`/api/armada/routes/${route.id}/jobs`, { jobIds: [deliveryJobId], reason: "Coba tempel ke rute batal" });
+  assert.equal(r.status, 400, JSON.stringify(r.body));
+  assert.match(r.body.error, /CANCELLED tidak bisa diubah/);
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.routeId, null);
+});
+
+test("PATCH /routes/:id/jobs TETAP mengizinkan 'stop ketinggalan' biasa (job BUKAN komplain aktif) ke rute Selesai -- fitur lama 8 Sep tidak boleh rusak", async () => {
+  const admin = await clientAs(["ADMIN"]);
+  const { order } = await createTestUnit();
+  const ordinaryJob = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: order.id, status: "UNSCHEDULED" } });
+
+  const route = await testPrisma.route.create({ data: { code: `RTE-DONE2-${Date.now()}`, date: new Date("2026-09-01"), status: "COMPLETED" } });
+
+  const r = await admin.api.patch(`/api/armada/routes/${route.id}/jobs`, { jobIds: [ordinaryJob.id], reason: "Tambahkan stop ketinggalan" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: ordinaryJob.id } });
+  assert.equal(jobRow.routeId, route.id);
+});
+
+test("PATCH /routes/:id/jobs TETAP mengizinkan job komplain yang SUDAH tuntas (COMPLETED) ditempel ke rute Selesai -- bookkeeping retroaktif yang sah", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const admin = await clientAs(["ADMIN"]);
+  const { deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  await testPrisma.job.update({
+    where: { id: deliveryJobId },
+    data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls: ["/media/job-photos/ok.jpg"] },
+  });
+
+  const route = await testPrisma.route.create({ data: { code: `RTE-DONE3-${Date.now()}`, date: new Date("2026-09-01"), status: "COMPLETED" } });
+
+  const r = await admin.api.patch(`/api/armada/routes/${route.id}/jobs`, { jobIds: [deliveryJobId], reason: "Catat retroaktif" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
 });

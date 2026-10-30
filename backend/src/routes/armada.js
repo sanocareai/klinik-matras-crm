@@ -2541,6 +2541,40 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     }
 
     const jobIds = Array.isArray(req.body.jobIds) ? req.body.jobIds : [];
+
+    // Gerbang khusus Job komplain (31 Oktober 2026, insiden Sony RES-27082026-183)
+    // — jalur admin-override "tambah job ketinggalan ke rute Selesai" di atas
+    // (8 September 2026) dibuat untuk job yang SECARA FISIK biasanya sudah
+    // selesai, cuma ketinggalan dicatat di rute. Job redelivery dari komplain
+    // yang BARU DIBUAT (complaintCaseId terisi, status BELUM COMPLETED/FAILED/
+    // RESCHEDULED — pekerjaan sungguhan yang belum dikerjakan) adalah kasus
+    // SEBALIKNYA — menempelkannya ke rute yang sudah Selesai membuatnya gampang
+    // terlewat (itulah yang terjadi ke Sony: job ditempel ke rute 12 September
+    // yang sudah Selesai, lalu tidak pernah ditindaklanjuti). Rute CANCELLED
+    // TIDAK perlu dicek di sini — guard generik 2 baris di atas (`route.status
+    // !== "DRAFT"`) SUDAH menolak semua orang (admin termasuk) mengubah
+    // anggota rute Dibatalkan, jadi jalur ini tidak pernah tercapai untuk
+    // CANCELLED. HANYA berlaku untuk job yang BARU masuk rute ini (job yang
+    // sudah jadi anggota lalu diurutkan ulang TIDAK kena — itu bukan
+    // "menempelkan baru").
+    if (editingCompleted) {
+      const incoming = jobIds.length
+        ? await prisma.job.findMany({
+            where: { id: { in: jobIds } },
+            select: { id: true, status: true, complaintCaseId: true, routeId: true },
+          })
+        : [];
+      const complaintJobsBaruMasuk = incoming.filter(
+        (j) => j.complaintCaseId && j.routeId !== route.id && !SETTLED_JOB_STATUSES.includes(j.status)
+      );
+      if (complaintJobsBaruMasuk.length > 0) {
+        throw new ArmadaError(
+          "Job pengiriman ulang dari komplain yang belum tuntas tidak boleh ditempel ke rute yang sudah Selesai — biarkan belum terjadwal atau pilih rute aktif secara eksplisit",
+          409
+        );
+      }
+    }
+
     // Job yang ditarik dari route lain ikut dihitung: route asal di luar cohort -> 409 (bukan drift diam-diam).
     const useV2RouteWriter = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id, jobIds: Array.isArray(req.body.jobIds) ? req.body.jobIds : [] });
     if (useV2RouteWriter && jobIds.length > 0) {

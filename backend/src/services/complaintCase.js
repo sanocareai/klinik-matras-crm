@@ -120,6 +120,62 @@ export function assertValidTransition(from, to) {
   }
 }
 
+// ─── GERBANG REDELIVERY (31 Oktober 2026, insiden Sony RES-27082026-183) ──
+//
+// Kronologi nyata: ADMIN mendorong kasus DIJADWALKAN→DALAM_PENANGANAN→QC→
+// SIAP_DIKIRIM (8 detik), bikin Job DELIVERY baru (langsung ASSIGNED ke
+// driver), lalu 27 MENIT KEMUDIAN mendorong DIKIRIM_ULANG→KONFIRMASI_
+// CUSTOMER→SELESAI lewat POST /:id/status manual — TANPA job DELIVERY itu
+// pernah tersentuh driver sama sekali (0 DeliveryExecutionEvent, 0 foto,
+// tetap ASSIGNED). Kasus bilang "selesai", job pengiriman ulangnya nyangkut
+// selamanya di tab Aktif driver. Auto-advance dari POST /jobs/:id/complete
+// (routes/armada.js) TIDAK kena masalah ini — itu TRIGGER-nya job yang
+// benar-benar COMPLETED, otomatis sudah memenuhi gerbang ini. Yang bolong
+// adalah jalur MANUAL (transitionStatus) yang bisa melompat lebih cepat
+// dari pekerjaan fisiknya.
+//
+// Job TUNTAS hanya kalau type DELIVERY, status COMPLETED, DAN punya bukti
+// (proofPhotoUrls terisi — POST /jobs/:id/complete SELALU mewajibkan ini,
+// lihat validatePodInput di services/deliveryExecution.js, jadi kriteria
+// ini sama persis dengan yang sudah ditegakkan di titik penyelesaian job).
+// ASSIGNED/EN_ROUTE/ARRIVED/FAILED/RESCHEDULED semuanya BELUM memenuhi —
+// FAILED secara khusus TETAP diblokir (gagal kirim bukan "selesai"), job
+// lama (complaintCaseId beda/null) TIDAK ikut dihitung sama sekali (relasi
+// langsung ke Job.complaintCaseId, BUKAN Order.status atau job pengiriman
+// original), dan status Route (termasuk COMPLETED) TIDAK relevan — sumber
+// kebenaran "sudah sampai" adalah Job itu sendiri, bukan rute pembawanya.
+export function isRedeliveryJobSettled(job) {
+  return job.status === "COMPLETED" && Array.isArray(job.proofPhotoUrls) && job.proofPhotoUrls.length > 0;
+}
+
+export async function getOutstandingRedeliveryJobs(client, caseId) {
+  const jobs = await client.job.findMany({
+    where: { complaintCaseId: caseId, type: "DELIVERY" },
+    select: { id: true, status: true, proofPhotoUrls: true, routeId: true },
+  });
+  return jobs.filter((j) => !isRedeliveryJobSettled(j));
+}
+
+// Dipanggil di DUA titik (transitionStatus DAN confirmCustomer, lihat
+// instruksi "validasi backend pada transisi dan confirmCustomer, bukan
+// warning UI saja") — bukan sekali di titik paling awal, supaya tidak ada
+// jalur yang bisa memanggil salah satu tanpa lewat yang lain.
+export async function assertRedeliveryCompleted(client, kase) {
+  if (kase.redeliveryWaivedAt) return; // keputusan eksplisit admin, lihat waiveRedelivery()
+  const outstanding = await getOutstandingRedeliveryJobs(client, kase.id);
+  if (outstanding.length === 0) return; // tidak ada Job DELIVERY sama sekali -> kasus ini memang tidak butuh redelivery
+  const statuses = outstanding.map((j) => STATUS_LABEL_JOB[j.status] || j.status).join(", ");
+  throw new ComplaintError(
+    `Kasus ini punya ${outstanding.length} job pengiriman ulang yang belum tuntas (status: ${statuses}) — lengkapi dulu lewat app driver (selesai + bukti foto), atau gunakan "Selesaikan tanpa pengiriman ulang" dengan alasan kalau redelivery memang tidak akan dilanjutkan.`,
+    409
+  );
+}
+
+const STATUS_LABEL_JOB = {
+  UNSCHEDULED: "Belum Dijadwalkan", SCHEDULED: "Dijadwalkan", ASSIGNED: "Ditugaskan",
+  EN_ROUTE: "Dalam Perjalanan", ARRIVED: "Tiba", COMPLETED: "Selesai (tanpa bukti)", FAILED: "Gagal", RESCHEDULED: "Dijadwalkan Ulang",
+};
+
 export const complaintCaseInclude = {
   order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } } } },
   unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, status: true } },
@@ -127,9 +183,13 @@ export const complaintCaseInclude = {
   customerConfirmedBy: { select: { id: true, name: true } },
   qcFitTest: { select: { id: true, verdict: true, createdAt: true } },
   jobs: {
-    select: { id: true, type: true, status: true, scheduledDate: true, driverId: true, completedAt: true, createdAt: true },
+    select: {
+      id: true, type: true, status: true, scheduledDate: true, driverId: true, completedAt: true, createdAt: true,
+      proofPhotoUrls: true, routeId: true,
+    },
     orderBy: { createdAt: "desc" },
   },
+  redeliveryWaivedBy: { select: { id: true, name: true } },
   unitRevisions: {
     select: { id: true, trigger: true, status: true, createdAt: true },
     orderBy: { createdAt: "desc" },
@@ -288,6 +348,13 @@ export async function transitionStatus(caseId, { status, currentOwner, note }, u
   if (status === "DIBATALKAN" && !note?.trim() && !existing.cancelReason) {
     throw new ComplaintError("Alasan pembatalan wajib diisi");
   }
+  // Gerbang redelivery — SATU-SATUNYA pintu manual menuju KONFIRMASI_CUSTOMER
+  // (selain auto-advance dari job completion, yang sudah otomatis memenuhi
+  // gerbang ini karena dipicu OLEH job yang baru saja COMPLETED). Lihat
+  // catatan panjang di assertRedeliveryCompleted di atas.
+  if (status === "KONFIRMASI_CUSTOMER") {
+    await assertRedeliveryCompleted(prisma, existing);
+  }
 
   const data = {
     status,
@@ -419,6 +486,14 @@ export async function confirmCustomer(caseId, userId) {
       `Kasus berstatus "${STATUS_LABEL[kase.status] || kase.status}" — konfirmasi customer cuma relevan setelah barang dikirim ulang & customer dihubungi`
     );
   }
+  // Pertahanan kedua (defense in depth) — transitionStatus SUDAH menolak
+  // masuk ke KONFIRMASI_CUSTOMER tanpa redelivery tuntas, tapi SELESAI
+  // adalah titik tulis TERAKHIR dan PALING MAHAL untuk salah (itu yang
+  // dibaca "status order/komplain" di semua tempat lain) — diperiksa lagi
+  // di sini supaya tidak bergantung pada SATU gerbang saja kalau nanti ada
+  // jalur lain yang menulis status KONFIRMASI_CUSTOMER tanpa lewat
+  // transitionStatus.
+  await assertRedeliveryCompleted(prisma, kase);
 
   const updated = await prisma.$transaction(async (tx) => {
     const c = await tx.complaintCase.update({
@@ -440,4 +515,41 @@ export async function confirmCustomer(caseId, userId) {
   });
 
   return prisma.complaintCase.findUnique({ where: { id: updated.id }, include: complaintCaseInclude });
+}
+
+// POST /complaints/:id/waive-redelivery — jalur resolusi EKSPLISIT untuk
+// kasus yang penyelesaiannya SENGAJA TIDAK lewat pengiriman ulang fisik
+// (refund, kompensasi lain) atau redelivery yang sudah diputuskan batal
+// dilanjutkan (job gagal berkali-kali, customer akhirnya pilih opsi lain,
+// dst). SATU-SATUNYA cara melewati assertRedeliveryCompleted — alasan WAJIB,
+// siapa & kapan tercatat di kolom (redeliveryWaivedAt/By/Reason) DAN
+// ActivityEvent, pola sama dengan DIBATALKAN (cancelReason wajib). TIDAK
+// mengubah status kasus itu sendiri — hanya membuka gerbang; kasus tetap
+// harus lewat transitionStatus ke KONFIRMASI_CUSTOMER lalu confirmCustomer
+// seperti biasa (customer tetap wajib dikonfirmasi, cuma syarat "job
+// redelivery tuntas"-nya yang dilepas).
+export async function waiveRedelivery(caseId, reason, userId) {
+  if (!reason?.trim()) throw new ComplaintError("Alasan wajib diisi untuk menyelesaikan kasus tanpa pengiriman ulang");
+  const kase = await prisma.complaintCase.findUnique({ where: { id: caseId } });
+  if (!kase) throw new ComplaintError("Kasus tidak ditemukan", 404);
+  if (!["DIKIRIM_ULANG", "KONFIRMASI_CUSTOMER"].includes(kase.status)) {
+    throw new ComplaintError(
+      `Kasus berstatus "${STATUS_LABEL[kase.status] || kase.status}" — opsi ini cuma relevan setelah ada rencana pengiriman ulang yang batal dilanjutkan`
+    );
+  }
+  if (kase.redeliveryWaivedAt) throw new ComplaintError("Kasus ini sudah ditandai tidak butuh pengiriman ulang sebelumnya");
+
+  const trimmed = reason.trim();
+  await prisma.$transaction(async (tx) => {
+    await tx.complaintCase.update({
+      where: { id: caseId },
+      data: { redeliveryWaivedAt: new Date(), redeliveryWaivedById: userId, redeliveryWaivedReason: trimmed },
+    });
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.COMPLAINT, entityId: caseId, eventType: EVENT_TYPES.COMPLAINT_REDELIVERY_WAIVED,
+      actorId: userId, metadata: { reason: trimmed },
+    });
+  });
+
+  return prisma.complaintCase.findUnique({ where: { id: caseId }, include: complaintCaseInclude });
 }
