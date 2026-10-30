@@ -26,7 +26,7 @@ test("skrip: sintaks bash valid; FRONTEND-SAJA (allowlist tanpa backend/, prisma
 test("sumber dari git (git archive SHA kandidat), tanpa overlay / salinan berkas dari release aktif", () => {
   assert.ok(script.includes('sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR"'), "git archive");
   assert.ok(!/overlay|\.prev-release|rsync/i.test(script.replace(/Dibangun dari SUMBER GIT[^\n]*/, "")), "tanpa model overlay");
-  assert.ok(script.includes('CAND_BRANCH="${CAND_BRANCH:-feat/kelengkapan-filter-sederhana-on-c063779c}"'), "cabang kandidat");
+  assert.ok(script.includes('CAND_BRANCH="${CAND_BRANCH:-feat/kelengkapan-filter-sederhana-on-60b5df10}"'), "cabang kandidat");
 });
 
 test("GERBANG KODE LIVE (isi, bukan marker): fase 3, pra-switch, tepat sebelum switch; deploy lain diperiksa ulang", () => {
@@ -67,7 +67,7 @@ test("ROLLBACK: kembali ke baseline (folder BASE, image SAMA yang memuat hotfix)
 test("teks dist: tampilan baru ada, tampilan lama hilang, fitur live tetap", () => {
   assert.ok(script.includes('for s0 in "Jenis masalah" "Pilih beberapa" "Semua masalah" "Hapus semua filter" "Biaya bahan belum lengkap"'));
   assert.ok(script.includes('for s1 in "Bahan perlu dicek"'));
-  for (const f of ["Tampilkan semua bahan", "Saringan aktif", "Ada stok, belum ada harga", "Data order kurang", "Laporan Produksi", "Pilih meja", "Tambah pemakaian", "Koreksi saldo", "Harga Berlaku (HPP operasional)", "Belum dijadwalkan", "Belum ada harga berlaku", "Stok belum diketahui", "Nol menurut pergerakan"]) assert.ok(script.includes(`"${f}"`), f);
+  for (const f of ["Tampilkan semua bahan", "Saringan aktif", "Ada stok, belum ada harga", "Harga Berlaku otomatis", "Pembaruan Harga Berlaku otomatis dari PO sedang dimatikan", "Tidak ada konversi satuan", "Data order kurang", "Laporan Produksi", "Pilih meja", "Tambah pemakaian", "Koreksi saldo", "Harga Berlaku (HPP operasional)", "Belum dijadwalkan", "Belum ada harga berlaku", "Stok belum diketahui", "Nol menurut pergerakan"]) assert.ok(script.includes(`"${f}"`), f);
 });
 
 
