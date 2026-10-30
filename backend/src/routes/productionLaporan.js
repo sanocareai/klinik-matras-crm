@@ -7,7 +7,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
-import { DASAR_TANGGAL, bahanGudang, bangunKonteks, biayaPerOrder, kinerja, ringkasOrder, ringkasan, rincianOrder, saringUrutOrder } from "../services/laporanProduksi.js";
+import { ALASAN_LINGKUP, DASAR_TANGGAL, bahanGudang, bangunKonteks, biayaPerOrder, kinerja, ringkasOrder, ringkasan, rincianOrder, saringUrutOrder } from "../services/laporanProduksi.js";
 import { DEFINISI, buatBerkas } from "../services/laporanProduksiDokumen.js";
 import { MASALAH, STATUS_BIAYA } from "../lib/domain/laporanProduksi.js";
 
@@ -36,12 +36,12 @@ productionLaporanRouter.get("/meta", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json({
     capabilities: { ringkasan: c.full, biayaOrder: c.full || c.harga, kinerja: c.full, bahanGudang: c.gudang, harga: c.harga, targetWrite: c.targetWrite, self: c.self },
-    definisi: DEFINISI, masalah: Object.fromEntries(Object.entries(MASALAH).map(([k, v]) => [k, { label: v.label, aksi: v.aksi }])),
+    definisi: DEFINISI, alasanLingkup: ALASAN_LINGKUP, masalah: Object.fromEntries(Object.entries(MASALAH).map(([k, v]) => [k, { label: v.label, aksi: v.aksi }])),
     statusBiaya: Object.values(STATUS_BIAYA).map(({ key, label, tone }) => ({ key, label, tone })), dasarTanggal: DASAR_TANGGAL,
   });
 });
 
-async function konteks(req) { return bangunKonteks(prisma, { from: req.query.from, to: req.query.to, termasukMasuk: req.query.termasukMasuk }); }
+async function konteks(req) { return bangunKonteks(prisma, { from: req.query.from, to: req.query.to, hanyaPemakaian: req.query.hanyaPemakaian }); }
 
 productionLaporanRouter.get("/ringkasan", async (req, res) => {
   try {
@@ -61,7 +61,7 @@ productionLaporanRouter.get("/biaya-order", async (req, res) => {
     const { page, pageSize } = halaman(req.query);
     res.set("Cache-Control", "no-store");
     res.json({
-      periode: { from: ctx.periode.from, to: ctx.periode.to, days: ctx.periode.days }, dasarTanggal: DASAR_TANGGAL.biaya, izinHarga: c.harga,
+      periode: { from: ctx.periode.from, to: ctx.periode.to, days: ctx.periode.days }, dasarTanggal: DASAR_TANGGAL.biaya, dasarLingkup: DASAR_TANGGAL.lingkupOrder, lingkup: ctx.hanyaPemakaian ? "PEMAKAIAN_SAJA" : "PENUH", izinHarga: c.harga,
       ringkas: ringkasOrder(hasil), // SELURUH hasil setelah filter (bukan halaman): kartu, grafik, dan Excel memakai angka ini
       total: hasil.length, page, pageSize, rows: hasil.slice((page - 1) * pageSize, page * pageSize).map(sorot),
       cakupan: { unitNonBatal: ctx.units.length, orderRelevan: orders.length, pergerakanDiluarCakupan: ctx.movKeluarUnit },
@@ -80,7 +80,7 @@ productionLaporanRouter.get("/biaya-order/:orderId", async (req, res) => {
     res.set("Cache-Control", "no-store");
     res.json({ periode: { from: ctx.periode.from, to: ctx.periode.to }, dasarTanggal: DASAR_TANGGAL.biaya, izinHarga: c.harga, ...rincianOrder(o, { izinHarga: c.harga }), definisiMasalah: MASALAH,
       catatanFinance: c.harga ? "Nilai persediaan/jurnal Finance berbeda sumber (biaya perolehan PSA/GR) dan tidak dijumlahkan di sini; lihat Finance → Biaya Bahan per Unit." : null,
-      catatanGuard: o.adaGuard ? "Order ini memakai SANO GUARD (bahan produksi internal). Hubungan biaya perakitannya ke bahan penyusun belum tersedia, sehingga nilainya TIDAK dijumlahkan sebagai biaya terbukti (risiko hitung ganda dengan bahan penyusun)." : null });
+      catatanGuard: o.adaGuard ? "Order ini memakai SANO GUARD (bahan produksi internal). Nilainya memakai Harga Berlaku operasional yang sah dan IKUT dihitung, tetapi biaya perakitannya belum tersedia di sistem: ada potensi hitung ganda bila komponen penyusunnya juga tercatat pada unit yang sama. Verifikasi sebelum menganggap biaya order final." : null });
   } catch (err) { galat(err, res); }
 });
 

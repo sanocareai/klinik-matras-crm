@@ -5,7 +5,8 @@
 //     Pemakaian lama TIDAK dihitung ulang dengan harga master terbaru: yang belum dibekukan / tanpa harga / gagal dibekukan = MASALAH (gap), bukan Rp0.
 //   • "Lengkap" tidak pernah disimpulkan dari "semua catatan yang kebetulan sudah diinput berharga": status juga bergantung pada kelengkapan catatan (catatan historis tertahan,
 //     unit selesai tanpa pemakaian, pemakaian sementara, SANO GUARD) — sumber yang sama dengan filter Kelengkapan Order Produksi.
-//   • SANO GUARD = bahan produksi internal. Hubungan biaya perakitannya ke bahan penyusun BELUM ADA di sistem → nilainya TIDAK dijumlahkan sebagai biaya terbukti (risiko hitung ganda).
+//   • SANO GUARD = bahan produksi internal. Harga Berlaku yang dikonfirmasi Owner adalah harga operasional yang SAH: bila ada ISSUE dan snapshot operasional resmi, nilainya DIHITUNG (tidak dikecualikan hanya karena bahan dibuat internal).
+//     Yang belum tersedia = biaya PERAKITAN (hubungan ke bahan penyusun) → ditandai gap + potensi hitung ganda bila komponen penyusunnya juga tercatat; nilai tampil terpisah (nilaiGuard) supaya tidak hilang diam-diam.
 //   • Tanggal = hari kalender WIB. Tanggal PEMAKAIAN (dasar metrik biaya) dibedakan dari waktu PENCATATAN.
 import { TIPE_OP, tanggalDasarHarga } from "../../services/finance/hargaBerlaku.js";
 
@@ -22,7 +23,6 @@ export const STATUS_NILAI = Object.freeze({
   BELUM_DIBEKUKAN: "Belum dibekukan",
   TANPA_HARGA: "Tanpa harga berlaku saat pemakaian",
   GAGAL: "Pembekuan gagal",
-  GUARD: "SANO GUARD — hubungan biaya perakitan belum tersedia",
 });
 export const STATUS_BIAYA = Object.freeze({
   LENGKAP: { key: "LENGKAP", label: "Lengkap", tone: "green" },
@@ -39,7 +39,7 @@ export const MASALAH = Object.freeze({
   CATATAN_TERTAHAN: { label: "Catatan pemakaian historis belum jadi pengeluaran stok", aksi: "Order Produksi → Lengkapi → Pemakaian aktual" },
   BAHAN_BELUM_DICATAT: { label: "Unit dinilai tetapi pemakaian bahan belum dicatat", aksi: "Order Produksi → Lengkapi (catat bahan atau nyatakan tanpa bahan baru)" },
   SEMENTARA: { label: "Pemakaian sementara belum direkonsiliasi", aksi: "Order Produksi → Lengkapi → rekonsiliasi pemakaian sementara" },
-  GUARD: { label: "SANO GUARD: biaya perakitan belum terhubung ke bahan penyusun", aksi: "Menunggu pemodelan biaya perakitan; nilai tidak dihitung otomatis" },
+  GUARD: { label: "SANO GUARD: biaya perakitan belum tersedia; potensi hitung ganda bila komponen penyusun juga tercatat", aksi: "Nilai Harga Berlaku tercatat dan ikut dihitung; verifikasi dengan komponen penyusun sampai biaya perakitan dimodelkan" },
 });
 
 /** Tanggal PEMAKAIAN (YYYY-MM-DD WIB) sebuah pergerakan: tanggal yang dilaporkan (pembetulan) > tanggal pemakaian catatan historis tertaut > waktu pencatatan. */
@@ -55,7 +55,6 @@ export const DASAR_TANGGAL_TEKS = Object.freeze({
 
 /** Status nilai satu pergerakan dari baris biaya operasional TERAKHIR (snapshot). */
 export function statusNilai(mov, snapshot) {
-  if (isGuard(mov.materialKode)) return "GUARD";
   if (!snapshot) return "BELUM_DIBEKUKAN";
   if (snapshot.status === "DINILAI") return "DIBEKUKAN";
   if (snapshot.status === "GAGAL_PEMBEKUAN") return "GAGAL";
@@ -80,7 +79,7 @@ export function barisPergerakan(mov, snapshot, { usedAtCatatan = null } = {}) {
     tanggalPemakaian: tgl.tanggal, dasarTanggal: tgl.dasar, waktuPencatatan: mov.createdAt,
     dasarHargaTanggal: dinilai && snapshot.priceEffectiveFrom ? wibKeyDari(snapshot.priceEffectiveFrom) : null, // tanggal mulai berlaku harga yang dibekukan
     basisHarga: snapshot?.basisHarga ?? null, sumberHarga: snapshot?.sumber ?? null, labelBukti: snapshot?.evidenceLabel ?? null,
-    status: st, termasukHpp: dinilai && mov.type !== "WASTE",
+    status: st, termasukHpp: dinilai && mov.type !== "WASTE", guard: isGuard(mov.materialKode),
     koreksiDari: mov.correctsMovementId ?? null, catatan: mov.note ?? null,
   };
 }
@@ -88,7 +87,7 @@ export function barisPergerakan(mov, snapshot, { usedAtCatatan = null } = {}) {
 /** Jumlah pergerakan bermasalah menurut jenis (untuk badge + daftar tindakan). */
 export function hitungMasalahPergerakan(baris) {
   const m = { BELUM_DIBEKUKAN: 0, TANPA_HARGA: 0, GAGAL: 0, GUARD: 0 };
-  for (const b of baris) if (b.status === "BELUM_DIBEKUKAN") m.BELUM_DIBEKUKAN += 1; else if (b.status === "TANPA_HARGA") m.TANPA_HARGA += 1; else if (b.status === "GAGAL") m.GAGAL += 1; else if (b.status === "GUARD") m.GUARD += 1;
+  for (const b of baris) { if (b.status === "BELUM_DIBEKUKAN") m.BELUM_DIBEKUKAN += 1; else if (b.status === "TANPA_HARGA") m.TANPA_HARGA += 1; else if (b.status === "GAGAL") m.GAGAL += 1; if (b.guard && b.tipe !== "WASTE") m.GUARD += 1; }
   return m;
 }
 
@@ -99,16 +98,16 @@ export function hitungMasalahPergerakan(baris) {
  * `masalahUnit` = { catatanTertahan, bahanBelumDicatat, sementara } (jumlah, posisi saat ini, dari fakta Kelengkapan yang sama).
  */
 export function agregasi(baris, masalahUnit = {}) {
-  let nilai = 0; let susut = 0; let nDinilai = 0;
+  let nilai = 0; let susut = 0; let nDinilai = 0; let nilaiGuard = 0;
   for (const b of baris) {
     if (b.status !== "DIBEKUKAN") continue;
-    if (b.tipe === "WASTE") susut += b.subtotal; else { nilai += b.subtotal; nDinilai += 1; }
+    if (b.tipe === "WASTE") susut += b.subtotal; else { nilai += b.subtotal; nDinilai += 1; if (b.guard) nilaiGuard += b.subtotal; }
   }
   const mp = hitungMasalahPergerakan(baris);
   const masalah = { ...mp, CATATAN_TERTAHAN: masalahUnit.catatanTertahan ?? 0, BAHAN_BELUM_DICATAT: masalahUnit.bahanBelumDicatat ?? 0, SEMENTARA: masalahUnit.sementara ?? 0 };
   const jumlahMasalah = Object.values(masalah).reduce((a, v) => a + v, 0);
   const adaPemakaian = baris.some((b) => b.tipe === "ISSUE");
-  return { baris: baris.length, dinilai: nDinilai, nilaiDiketahui: r2(nilai), susut: r2(susut), masalah, jumlahMasalah, adaPemakaian, adaNilai: nDinilai > 0 };
+  return { baris: baris.length, dinilai: nDinilai, nilaiDiketahui: r2(nilai), nilaiGuard: r2(nilaiGuard), susut: r2(susut), masalah, jumlahMasalah, adaPemakaian, adaNilai: nDinilai > 0 };
 }
 
 /** Status biaya: LENGKAP hanya bila tidak ada masalah apa pun DAN ada dasar (nilai dibekukan, atau semua unit dinyatakan tanpa bahan). */
@@ -120,13 +119,13 @@ export function statusBiaya(agg, { semuaTanpaBahan = false } = {}) {
 
 /** Jumlahkan agregasi unit menjadi agregasi order — SATU fungsi, supaya total order = Σ rincian unit (diuji). */
 export function gabungAgregasi(daftar) {
-  const out = { baris: 0, dinilai: 0, nilaiDiketahui: 0, susut: 0, masalah: { BELUM_DIBEKUKAN: 0, TANPA_HARGA: 0, GAGAL: 0, GUARD: 0, CATATAN_TERTAHAN: 0, BAHAN_BELUM_DICATAT: 0, SEMENTARA: 0 }, jumlahMasalah: 0, adaPemakaian: false, adaNilai: false };
+  const out = { baris: 0, dinilai: 0, nilaiDiketahui: 0, nilaiGuard: 0, susut: 0, masalah: { BELUM_DIBEKUKAN: 0, TANPA_HARGA: 0, GAGAL: 0, GUARD: 0, CATATAN_TERTAHAN: 0, BAHAN_BELUM_DICATAT: 0, SEMENTARA: 0 }, jumlahMasalah: 0, adaPemakaian: false, adaNilai: false };
   for (const a of daftar) {
-    out.baris += a.baris; out.dinilai += a.dinilai; out.nilaiDiketahui += a.nilaiDiketahui; out.susut += a.susut; out.jumlahMasalah += a.jumlahMasalah;
+    out.baris += a.baris; out.dinilai += a.dinilai; out.nilaiDiketahui += a.nilaiDiketahui; out.nilaiGuard += a.nilaiGuard ?? 0; out.susut += a.susut; out.jumlahMasalah += a.jumlahMasalah;
     for (const k of Object.keys(out.masalah)) out.masalah[k] += a.masalah[k] ?? 0;
     out.adaPemakaian ||= a.adaPemakaian; out.adaNilai ||= a.adaNilai;
   }
-  out.nilaiDiketahui = r2(out.nilaiDiketahui); out.susut = r2(out.susut);
+  out.nilaiDiketahui = r2(out.nilaiDiketahui); out.nilaiGuard = r2(out.nilaiGuard); out.susut = r2(out.susut);
   return out;
 }
 
@@ -139,6 +138,31 @@ export function hariDalamPeriode(from, to) {
 export function seriHarian(hari, nilaiPerTanggal) { return hari.map((d) => ({ tanggal: d, nilai: r2(nilaiPerTanggal.get(d) ?? 0) })); }
 
 // ───────────────────────────────────────────── kinerja ─────────────────────────────────────────────
+/** Unit yang SUDAH selesai produksi menurut posisi SAAT INI (status order Siap Kirim/Siap Kirim-Ditahan/Dalam Pengiriman/Terkirim). */
+export const STATUS_SELESAI_POSISI = Object.freeze(["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"]);
+export const SUMBER_SELESAI = Object.freeze({
+  SERAH_BARANG_JADI: "Serah barang jadi ke Gudang", FASE_HANDOFF: "Fase serah terima produksi selesai", PELEPASAN_PENGIRIMAN: "Dilepas Siap Kirim oleh Admin/Owner", STATUS_KERJA_SELESAI: "Status kerja Selesai dicatat (waktu pencatatan)",
+});
+/**
+ * Pisahkan POSISI SAAT INI dari KEJADIAN selesai bertanggal. Satu unit dihitung SEKALI.
+ *   posisi      = unit berstatus selesai produksi sekarang (TIDAK bergantung periode).
+ *   bertanggal  = subset posisi (atau unit lain yang punya bukti kejadian) dengan tanggal selesai TERBUKTI dari sumber resmi; tanggal = yang paling awal. Tanpa bukti → tidak ditebak.
+ *   tanpaTanggal = posisi − bertanggal: selesai tetapi tanggalnya tidak dapat dibuktikan → TIDAK masuk tren tanggal mana pun, dan tidak boleh tampil sebagai 0.
+ * @param units [{ id, status }] · @param buktiPerUnit Map unitId → [{ sumber, at }] · @returns {{ posisi, bertanggal: Map, tanpaTanggal: string[], perSumber }}
+ */
+export function klasifikasiSelesai(units, buktiPerUnit = new Map()) {
+  const posisi = units.filter((u) => STATUS_SELESAI_POSISI.includes(u.status)).map((u) => u.id);
+  const bertanggal = new Map(); const perSumber = {};
+  for (const u of units) {
+    const b = (buktiPerUnit.get(u.id) ?? []).filter((x) => x?.at && Number.isFinite(new Date(x.at).getTime())).sort((a, c) => new Date(a.at) - new Date(c.at))[0];
+    if (!b) continue;
+    bertanggal.set(u.id, { at: new Date(b.at).toISOString(), key: wibKeyDari(b.at), sumber: b.sumber });
+    perSumber[b.sumber] = (perSumber[b.sumber] ?? 0) + 1;
+  }
+  const tanpaTanggal = posisi.filter((id) => !bertanggal.has(id));
+  return { posisi, bertanggal, tanpaTanggal, perSumber };
+}
+
 export const MIN_SAMPEL_DURASI = 3;
 /**
  * Setiap unit selesai dihitung TEPAT SEKALI. Pemilik (meja / PIC) = penetapan TERAKHIR sebelum/saat unit diserahkan; bila tidak ada → "Tidak tercatat" (bukan ditebak).
