@@ -7,7 +7,7 @@ import { KELENGKAPAN_BUKAN, labelKelengkapan, ringkasBaris } from "@/features/pr
 
 // Kelengkapan PER BARIS di daftar Order Produksi: SATU alasan utama (yang paling bisa ditindaklanjuti) + "+N masalah" bila ada yang lain + ikon info (semua alasan konkret) + SATU tombol "Lengkapi" yang membuka bagian terkait di drawer.
 // Klasifikasi datang dari server (row.adopsi.kelengkapan) — sama dengan filter, drawer, dan ekspor; ringkasBaris hanya mengatur apa yang ditampilkan lebih dulu.
-// Biaya bahan yang hanya berarti "bahan belum dicatat" tidak ditumpuk; masalah harga yang berdiri sendiri tetap tampil sebagai label kedua (tidak disembunyikan). Menampilkan/membuka ini tidak menulis apa pun.
+// Biaya bahan yang hanya akibat masalah bahan (dibaca dari kode + jumlah alasan server) tidak ditumpuk; masalah harga yang berdiri sendiri tetap tampil sebagai label kedua (tidak disembunyikan). Menampilkan/membuka ini tidak menulis apa pun.
 export default function KelengkapanBaris({ row, onLengkapi, tampilTombol = true, className }) {
   const info = useInfoToggle();
   const kel = row?.adopsi?.kelengkapan; const r = ringkasBaris(row);
@@ -32,7 +32,7 @@ export default function KelengkapanBaris({ row, onLengkapi, tampilTombol = true,
           <div key={k} data-testid="kelengkapan-info-item" data-kunci={k}>
             <p className="m-0 font-medium text-ink">{label(k)}</p>
             <ul className="m-0 list-disc pl-4">{(kel.items[k]?.alasan ?? []).map((a) => <li key={a.kode}>{a.teks}</li>)}</ul>
-            {r.terlipat.includes(k) && <p className="m-0 text-ink3" data-testid="kelengkapan-terlipat">Tidak ditampilkan terpisah di baris: penyebabnya sama dengan “{labelKelengkapan("BAHAN_BELUM_DICATAT")}”.</p>}
+            {r.terlipat.includes(k) && <p className="m-0 text-ink3" data-testid="kelengkapan-terlipat">Tidak ditampilkan terpisah di baris: penyebabnya sama dengan “{(r.lipatDari[k] ?? []).map((d) => labelKelengkapan(d)).join(", ")}”.</p>}
           </div>
         ))}
         <p className="m-0 text-ink3">{KELENGKAPAN_BUKAN}</p>
