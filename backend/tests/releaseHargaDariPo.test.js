@@ -60,6 +60,13 @@ test("SMOKE pasca-switch BACA-SAJA: tanpa SQL tulis dan tanpa tulisan Prisma; sa
   for (const k of ["TIDAK ada jejak tulis", "isi LENGKAP semua baris Harga Berlaku identik", "PO historis TIDAK diproses oleh rilis", "tanpa token = 401", "KONVERSI_TIDAK_ADA", "KONFLIK_HARGA_BEDA", "SAMA", "NAIK"]) assert.ok(smoke.includes(k), k);
 });
 
+test("GARIS DASAR smoke: BASE_HARGA_PO dihitung, divalidasi angka, disimpan di garis-dasar.env, dan diteruskan ke smoke fase 8b (regresi: sebelumnya NaN)", () => {
+  assert.ok(script.includes(`BASE_HARGA_PO="$(psql_live -At -c "select count(*)::int from material_harga_berlaku where impact->>'sumber' = 'PO'")"`), "dihitung");
+  assert.ok(script.includes(`for v in "$BASE_TIDAK_SEIMBANG" "$BASE_GANDA" "$BASE_HARGA_PO"; do`), "divalidasi angka");
+  assert.ok(script.includes("BASE_HARGA_PO=%q") && script.includes(`"$BASE_GANDA" "$BASE_HARGA_PO" "$ORDER_N"`), "disimpan di garis-dasar.env");
+  assert.ok(script.includes(`-e BASE_HARGA_PO="$BASE_HARGA_PO"`), "diteruskan ke smoke 8b");
+});
+
 test("TANPA PENGHAPUSAN: fase pembersihan dinonaktifkan; hanya jejak sementara rehearsal/trap; gerbang disk tetap (tidak diturunkan)", () => {
   assert.ok(script.includes('PHASE="9-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN') && script.includes("tidak ada folder release/image/backup/volume yang dihapus oleh skrip ini"));
   assert.ok(script.includes('[ "$AVAIL_KB" -ge $(( NM_KB * 2 + DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang"'), "gerbang disk apa adanya");

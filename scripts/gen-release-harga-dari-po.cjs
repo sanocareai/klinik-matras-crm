@@ -81,6 +81,11 @@ function bangkitkan({ baseScript, blok, berkasList, rehNode, smokeNode }) {
   gantiBaris('COUNT_SQL="', `COUNT_SQL="${COUNT_SQL}"`);
   r("hitung baris jadwal/Run/stok/pemakaian/harga/jurnal", "hitung baris stok/biaya beku/harga/Material Issue/jurnal/unit/order/job/pernyataan/run/jadwal/custody/status kerja");
   gantiBaris('say "CATATAN:', 'say "CATATAN: Rilis ini membawa Harga Berlaku otomatis dari PO: harga bahan menjadi Harga Berlaku operasional SAAT PO BERHASIL DISIMPAN (draf baru dan ubah draf), atomik dan idempoten, tanpa izin/dialog harga tambahan; persetujuan dan pembatalan PO tidak menulis atau mengembalikan harga; saklar darurat HARGA_DARI_PO=0. TANPA migrasi. Rilis TIDAK memproses PO historis dan TIDAK membuat PO/harga percobaan; tidak mengubah stok, valuasi Finance, jurnal, biaya beku, atau pemakaian lama. Perubahan nyata baru terjadi saat pengguna menyimpan PO. Rollback kode: harga yang sudah tertulis dari PO tetap ada (append-only)."\n');
+  // garis dasar "Harga Berlaku bersumber PO" (dipakai smoke 8b: PO historis tidak boleh diproses): dihitung di fase garis dasar, disimpan di garis-dasar.env, diteruskan ke smoke
+  r(`BASE_GANDA="$(psql_live -At -c "$SQL_GANDA")"\nfor v in "$BASE_TIDAK_SEIMBANG" "$BASE_GANDA"; do`, `BASE_GANDA="$(psql_live -At -c "$SQL_GANDA")"; BASE_HARGA_PO="$(psql_live -At -c "select count(*)::int from material_harga_berlaku where impact->>'sumber' = 'PO'")"\nfor v in "$BASE_TIDAK_SEIMBANG" "$BASE_GANDA" "$BASE_HARGA_PO"; do`);
+  r(`BASE_GANDA=%q\\nORDER_N=%q`, `BASE_GANDA=%q\\nBASE_HARGA_PO=%q\\nORDER_N=%q`);
+  r(`"$BASE_GANDA" "$ORDER_N"`, `"$BASE_GANDA" "$BASE_HARGA_PO" "$ORDER_N"`);
+  r(`-e BASE_GANDA="$BASE_GANDA" -e ORDER_N="$ORDER_N"`, `-e BASE_GANDA="$BASE_GANDA" -e BASE_HARGA_PO="$BASE_HARGA_PO" -e ORDER_N="$ORDER_N"`);
   s = terapkanKunci(s, blok);
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
   const sisa = s.split("\n").map((l, i) => [i + 1, l]).filter(([, l]) => !l.startsWith("#") && /penjadwalan|jadwal-batch|\bpjl\b|reh-pjl/i.test(l) && !/jadwal\/Run|production_unit_schedule/.test(l)).map(([i]) => i);
