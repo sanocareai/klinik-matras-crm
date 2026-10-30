@@ -103,9 +103,9 @@ export function parameterDaftar({ globalStatus, q, kerja, scope, kelengkapan, da
 // Klasifikasi dikirim server di row.adopsi.kelengkapan ({ keys, items, ringkas, pernyataan }) dan hitungannya dari /work-orders/kelengkapan-hitung — klien TIDAK menurunkannya sendiri.
 // Aturan lengkap ada di backend/src/lib/domain/kelengkapanOrderProduksi.js.
 export const KELENGKAPAN_FILTER = Object.freeze([
-  { key: "BAHAN_BELUM_DICATAT", label: "Bahan belum dicatat", pendek: "Bahan belum dicatat", bantu: "Unit sudah dikerjakan/selesai tetapi belum ada catatan pemakaian bahan (Gudang, sementara, komponen lama, atau historis) dan belum dinyatakan tanpa bahan baru. Unit yang belum tiba atau belum dikerjakan tidak dihitung." },
-  { key: "BAHAN_PERLU_DICEK", label: "Bahan perlu dicek", pendek: "Bahan perlu dicek", bantu: "Ada alasan konkret: bahan belum terpetakan ke katalog, satuan bermasalah, atau pemakaian sementara belum direkonsiliasi Gudang." },
-  { key: "HPP_BELUM_LENGKAP", label: "HPP belum lengkap", pendek: "HPP belum lengkap", bantu: "HPP operasional (harga berlaku Gudang; bukan nilai persediaan/biaya Finance): harga belum diketahui, belum dibekukan, pembekuan gagal, atau catatan tertahan." },
+  { key: "BAHAN_BELUM_DICATAT", label: "Belum ada catatan bahan", pendek: "Belum ada catatan bahan", bantu: "Unit sudah dikerjakan/selesai tetapi belum ada catatan pemakaian bahan (Gudang, sementara, komponen lama, atau historis) dan belum dinyatakan tanpa bahan baru. Unit yang belum tiba atau belum dikerjakan tidak dihitung." },
+  { key: "BAHAN_PERLU_DICEK", label: "Bahan perlu diperiksa", pendek: "Bahan perlu diperiksa", bantu: "Ada alasan konkret: bahan belum terpetakan ke katalog, satuan bermasalah, atau pemakaian sementara belum direkonsiliasi Gudang." },
+  { key: "HPP_BELUM_LENGKAP", label: "Biaya bahan belum lengkap", pendek: "Biaya bahan belum lengkap", bantu: "Biaya bahan = HPP operasional (harga berlaku Gudang; bukan nilai persediaan/biaya Finance): harga belum diketahui, belum dibekukan, pembekuan gagal, atau catatan tertahan." },
   { key: "DATA_ORDER_KURANG", label: "Data order kurang", pendek: "Data order kurang", bantu: "Hanya kebutuhan wajib yang terbukti: kelengkapan order Penjualan Karyawan. Order biasa belum punya aturan wajib sehingga tampil \"Belum dinilai\" (bukan lengkap, bukan kurang). Target, PIC, dan rencana bahan bersifat opsional dan tidak dihitung." },
 ]);
 export const KELENGKAPAN_KEYS = Object.freeze(KELENGKAPAN_FILTER.map((k) => k.key));
@@ -129,6 +129,46 @@ export function bacaHitungKelengkapan(h) {
 }
 /** Toggle satu kategori dalam daftar terpilih (gabungan). */
 export const toggleKelengkapan = (terpilih, key) => (terpilih.includes(key) ? terpilih.filter((k) => k !== key) : KELENGKAPAN_KEYS.filter((k) => k === key || terpilih.includes(k)));
+// ───────────────────────────── pilihan "Jenis masalah" (dropdown + panel gabungan) ─────────────────────────────
+// Hanya PENYAJIAN: klasifikasi, hitungan, dan hubungan OR tetap dari server. "Semua masalah" = keempat kategori digabung (OR) = unit unik yang punya setidaknya satu kekurangan (sama dengan angka "Perlu dilengkapi").
+export const MASALAH_SEMUA = "SEMUA"; export const MASALAH_GABUNGAN = "GABUNGAN";
+export const labelKelengkapan = (key, cadangan = key) => KELENGKAPAN_FILTER.find((k) => k.key === key)?.label ?? cadangan;
+/** Nilai <select>: "" (tanpa pilihan) · SEMUA · satu kunci · GABUNGAN (2–3 kategori dari panel "Pilih beberapa"). */
+export function nilaiJenisMasalah(terpilih) {
+  const t = Array.isArray(terpilih) ? terpilih : [];
+  if (!t.length) return ""; if (t.length === KELENGKAPAN_KEYS.length) return MASALAH_SEMUA; return t.length === 1 ? t[0] : MASALAH_GABUNGAN;
+}
+export function pilihanDariJenisMasalah(nilai) {
+  if (nilai === MASALAH_SEMUA) return [...KELENGKAPAN_KEYS];
+  return KELENGKAPAN_KEYS.includes(nilai) ? [nilai] : [];
+}
+// URL: ?masalah=semua atau ?masalah=catatan,periksa (kunci pendek); tidak dikenal diabaikan; tanpa pilihan = parameter dibuang.
+export const SLUG_MASALAH = Object.freeze({ BAHAN_BELUM_DICATAT: "catatan", BAHAN_PERLU_DICEK: "periksa", HPP_BELUM_LENGKAP: "biaya", DATA_ORDER_KURANG: "order" });
+export function masalahDariUrl(params) {
+  const mentah = String(params?.get?.("masalah") ?? "").toLowerCase().split(",").map((x) => x.trim()).filter(Boolean);
+  if (mentah.includes("semua")) return [...KELENGKAPAN_KEYS];
+  return KELENGKAPAN_KEYS.filter((k) => mentah.includes(SLUG_MASALAH[k]));
+}
+export function masalahKeUrl(params, terpilih) {
+  const n = new URLSearchParams(params); const t = Array.isArray(terpilih) ? terpilih : [];
+  if (!t.length) n.delete("masalah"); else n.set("masalah", t.length === KELENGKAPAN_KEYS.length ? "semua" : KELENGKAPAN_KEYS.filter((k) => t.includes(k)).map((k) => SLUG_MASALAH[k]).join(","));
+  return n;
+}
+/**
+ * Ringkasan SATU BARIS: utamakan SATU alasan yang paling bisa ditindaklanjuti (urutan tetap: catatan bahan → bahan perlu diperiksa → biaya bahan → data order).
+ * Biaya bahan yang HANYA berarti "bahan belum dicatat" tidak ditumpuk (penyebab sama; hilang sendiri setelah bahan dicatat). Masalah harga yang berdiri sendiri (harga belum diketahui, belum dibekukan, gagal, tertahan, sementara)
+ * TIDAK pernah disembunyikan: tampil sebagai label kedua. Sisanya masuk "+N masalah". Klasifikasi tidak diubah — hanya cara menampilkannya.
+ */
+export function ringkasBaris(row) {
+  const kel = row?.adopsi?.kelengkapan; const keys = KELENGKAPAN_KEYS.filter((k) => (kel?.keys ?? []).includes(k));
+  if (!keys.length) return { semua: [], utama: null, terlihat: [], lain: [], terlipat: [], sasaran: null };
+  const alasanHpp = kel?.items?.HPP_BELUM_LENGKAP?.alasan ?? [];
+  const hppMengulang = keys.includes("BAHAN_BELUM_DICATAT") && keys.includes("HPP_BELUM_LENGKAP") && alasanHpp.length > 0 && alasanHpp.every((a) => a.kode === "HPP_BAHAN_BELUM_DICATAT");
+  const terlipat = hppMengulang ? ["HPP_BELUM_LENGKAP"] : [];
+  const tampil = keys.filter((k) => !terlipat.includes(k)); const utama = tampil[0];
+  const terlihat = tampil.slice(1).filter((k) => k === "HPP_BELUM_LENGKAP"); const lain = tampil.slice(1).filter((k) => !terlihat.includes(k));
+  return { semua: keys, utama, terlihat, lain, terlipat, sasaran: sasaranLengkapi([utama]) };
+}
 /** Periode valid untuk dikirim: format tanggal dan dari ≤ sampai; selain itu galat yang dibaca pengguna (tidak diam-diam diabaikan). */
 export function validasiPeriode(dari, sampai) {
   const re = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;

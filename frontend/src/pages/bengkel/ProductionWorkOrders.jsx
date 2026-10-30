@@ -6,7 +6,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { bisaCatatBahan } from "@/lib/roles.js";
-import { useHubRange } from "@/hooks/useHubParam.js";
+import { useHubMasalah, useHubRange } from "@/hooks/useHubParam.js";
 const bacaPengguna = () => { try { return JSON.parse(localStorage.getItem("user")); } catch { return null; } };
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -19,7 +19,7 @@ import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx
 import OrderProduksiPanel from "@/features/production/OrderProduksiPanel.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
-import { KERJA_FILTER, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, kunciKelengkapan, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu } from "@/features/production/orderProduksiModel.js";
+import { KERJA_FILTER, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, kunciKelengkapan, masalahDariUrl, masalahKeUrl, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu } from "@/features/production/orderProduksiModel.js";
 import KelengkapanFilter from "@/features/production/KelengkapanFilter.jsx";
 import KelengkapanBaris from "@/features/production/KelengkapanBaris.jsx";
 
@@ -41,7 +41,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   useEffect(() => { if (firstScope.current) { firstScope.current = false; return; } setTab(scope === "riwayat" ? "TERKIRIM" : ""); }, [scope]);
   const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? DISPLAY_STATUS_TABS.filter((t) => t.key !== "TERKIRIM") : DISPLAY_STATUS_TABS;
   const [kerja, setKerja] = useState("");
-  const [kelengkapan, setKelengkapan] = useState([]); // penyaring cepat (gabungan/OR) — dihitung server
+  const [kelengkapan, setKelengkapan] = useHubMasalah(masalahDariUrl, masalahKeUrl); // jenis masalah (gabungan/OR) — dihitung server; tersimpan di URL (?masalah=) supaya bertahan saat muat ulang
   const [periode, setPeriode] = useHubRange(periodeDariUrl, periodeKeUrl); // periode = tanggal order masuk (unit dibuat); pemilih standar app, tersimpan di URL, diterapkan saat Terapkan
   const rentang = useMemo(() => paramPeriode(periode), [periode]); const dari = rentang.dari ?? ""; const sampai = rentang.sampai ?? "";
   const [urut, setUrut] = useState("terbaru");
@@ -196,7 +196,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
           )}
         </div>
 
-        <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])}
+        <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan(toggleKelengkapan(kelengkapan, k))} onPilih={setKelengkapan} onBersih={() => setKelengkapan([])}
           periode={periode} onPeriode={setPeriode} urut={urut} onUrut={setUrut} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
 
         {error && (
