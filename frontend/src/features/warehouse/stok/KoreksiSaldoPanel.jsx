@@ -22,7 +22,7 @@ export default function KoreksiSaldoPanel({ materialId, onChanged, onKeadaan = n
   useEffect(() => { onKeadaan?.(d?.keadaanSaldo ?? null); }, [d?.keadaanSaldo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (galat && !d) return <p role="alert" className="mt-3 rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" data-testid="galat-panel-koreksi">{galat}</p>;
-  if (!d) return <p className="mt-3 flex items-center gap-1.5 text-[12px] text-ink3"><Loader2 size={12} className="animate-spin" /> Memuat keadaan saldo…</p>;
+  if (!d) return <p className="mt-3 flex items-center gap-1.5 text-[12px] stok-t2"><Loader2 size={12} className="animate-spin" /> Memuat keadaan saldo…</p>;
   const k = KEADAAN_SALDO_UI[d.keadaanSaldo]; const aktif = d.riwayat.find((r) => ["DRAFT", "WAITING_APPROVAL", "APPROVED"].includes(r.status));
   const satuan = String(d.bahan.satuan ?? "").toLowerCase();
   const peringatan = peringatanStok({ keadaan: d.keadaanSaldo, aktif });
@@ -49,16 +49,16 @@ export default function KoreksiSaldoPanel({ materialId, onChanged, onKeadaan = n
       </InfoToggleIsi>
       {bukaRiwayat && (
         <ul className="mt-3 divide-y divide-line" data-testid="riwayat-koreksi">
-          {d.riwayat.length === 0 && <li className="py-2 text-[12px] text-ink3">Belum ada koreksi saldo untuk bahan ini.</li>}
+          {d.riwayat.length === 0 && <li className="py-2 text-[12px] stok-t2">Belum ada koreksi saldo untuk bahan ini.</li>}
           {d.riwayat.map((r) => {
             const st = STATUS_KOREKSI[r.status] ?? { teks: r.statusTeks, varian: "neutral" };
             return (
               <li key={r.id} className="py-2 text-[12px]" data-testid="baris-riwayat-koreksi">
                 <div className="flex flex-wrap items-center gap-1.5"><Link to={`/warehouse/adjustments/stock/${r.id}`} className="font-semibold text-accent hover:underline">{r.nomor}</Link><Badge variant={st.varian}>{r.statusTeks}</Badge>{r.kedaluwarsa && <Badge variant="red" data-testid="badge-kedaluwarsa">Kedaluwarsa</Badge>}</div>
-                <div className="mt-0.5 text-ink2">Fisik {fmt(r.jumlahFisik)} {satuan} · saldo dilihat {fmt(r.saldoDilihat)} · selisih <b className={r.selisih > 0 ? "text-green" : "text-red"}>{tanda(r.selisih)}</b></div>
-                <div className="text-ink3">Alasan: {r.alasan}</div>
-                <div className="text-ink3">Diajukan {tanggalJam(r.diajukanPada)} oleh {r.diajukanOleh ?? "—"}{r.disetujuiOleh ? ` · disetujui ${r.disetujuiOleh}` : ""}{r.dipostingOleh ? ` · diposting ${r.dipostingOleh} (${tanggalJam(r.dipostingPada)})` : ""}</div>
-                {r.pergerakan && <div className="text-ink3">Pergerakan stok tercipta: {tanda(r.pergerakan.qty)} {satuan}</div>}
+                <div className="mt-0.5 stok-t2">Fisik {fmt(r.jumlahFisik)} {satuan} · saldo dilihat {fmt(r.saldoDilihat)} · selisih <b className={r.selisih > 0 ? "text-green" : "text-red"}>{tanda(r.selisih)}</b></div>
+                <div className="stok-t2">Alasan: {r.alasan}</div>
+                <div className="stok-t2">Diajukan {tanggalJam(r.diajukanPada)} oleh {r.diajukanOleh ?? "—"}{r.disetujuiOleh ? ` · disetujui ${r.disetujuiOleh}` : ""}{r.dipostingOleh ? ` · diposting ${r.dipostingOleh} (${tanggalJam(r.dipostingPada)})` : ""}</div>
+                {r.pergerakan && <div className="stok-t2">Pergerakan stok tercipta: {tanda(r.pergerakan.qty)} {satuan}</div>}
                 {r.kedaluwarsa && <div className="mt-0.5 flex items-start gap-1 text-red"><TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden />{r.kedaluwarsaTeks}</div>}
               </li>
             );

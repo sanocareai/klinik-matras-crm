@@ -86,3 +86,41 @@ test("drawer: nama/stok/harga jadi fokus; Koreksi saldo dan Ubah harga dipertaha
   const hp = baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"); assert.match(hp, /d\.bolehUbah && <Button/);
   const pe = (name) => baca("features", "warehouse", "stok", name); assert.ok(pe("IkonBahan.jsx").includes("bukan foto") || /Ikon KELOMPOK/.test(pe("IkonBahan.jsx")), "ikon kelompok, bukan foto");
 });
+
+test("ringkasHasil menghitung SELURUH hasil saringan (bukan 25 baris halaman) dan membedakan minus / belum diketahui / nol terverifikasi / nol menurut pergerakan", async () => {
+  const { ringkasHasil, halamanDaftar } = await import("../src/features/warehouse/stok/stokTampilanLogic.js");
+  const baris = (i, o) => ({ materialId: `m${i}`, aktif: true, saldo: 5, keadaan: "ADA", ...o });
+  const rows = [
+    ...Array.from({ length: 40 }, (_, i) => baris(i)),
+    baris(40, { keadaan: "MINUS", saldo: -1 }), baris(41, { keadaan: "BELUM_ADA_CATATAN", saldo: null }), baris(42, { keadaan: "BELUM_ADA_CATATAN", saldo: null }),
+    baris(43, { keadaan: "NOL_TERHITUNG", saldo: 0, keadaanSaldo: "NOL_TERVERIFIKASI" }), baris(44, { keadaan: "NOL_TERHITUNG", saldo: 0 }),
+  ];
+  const peta = { harga: { m0: { harga: 100, satuan: "KG" }, m1: { harga: null, satuan: "KG", terjadwal: { harga: 5 } } } };
+  const h = ringkasHasil(rows, peta);
+  assert.deepEqual([h.total, h.minus, h.belumDiketahui, h.nolTerverifikasi, h.nolPergerakan], [45, 1, 2, 1, 1]);
+  assert.equal(h.hargaBelum, 44, "hanya m0 yang punya harga berlaku; harga terjadwal / kosong dihitung belum ada (bukan Rp0)");
+  assert.equal(ringkasHasil(rows, null).hargaBelum, null, "tanpa izin harga: tidak ada hitungan harga");
+  // baris-baris langka berada di halaman ke-2 (indeks ≥ 25): tetap terhitung karena rincian memakai seluruh daftar
+  assert.equal(halamanDaftar(rows, 1, 25).baris.some((r) => r.keadaan === "MINUS"), false);
+  assert.equal(h.minus, 1);
+  assert.deepEqual([h.total, halamanDaftar(rows, 2, 25).total], [45, 45], "jumlah total sama di setiap halaman");
+});
+
+test("kontras teks sekunder: kelas milik layar (bukan token global); terang dan gelap memenuhi AA; dipakai pada kode, satuan, judul kolom, placeholder, harga belum diisi", () => {
+  const css = baca("features", "warehouse", "stok", "kontras.css");
+  assert.match(css, /\.stok-t2 \{ color: rgba\(29, 29, 31, 0\.74\)/); assert.match(css, /\[data-theme="dark"\] \.stok-t2/); assert.match(css, /\.stok-ph::placeholder/);
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const campur = (fg, a, bg) => fg.map((v, i) => v * a + bg[i] * (1 - a));
+  const rasio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const T = [29, 29, 31], P = [245, 245, 247];
+  assert.ok(rasio(campur(T, 0.74, [255, 255, 255]), [255, 255, 255]) >= 4.5, "terang: teks sekunder di atas putih");
+  assert.ok(rasio(campur(T, 0.74, [245, 245, 247]), [245, 245, 247]) >= 4.5, "terang: di atas inset");
+  assert.ok(rasio(campur(T, 0.64, [255, 255, 255]), [255, 255, 255]) >= 4.5, "terang: placeholder");
+  assert.ok(rasio(campur(P, 0.74, [28, 28, 30]), [28, 28, 30]) >= 4.5 && rasio(campur(P, 0.74, [44, 44, 46]), [44, 44, 46]) >= 4.5, "gelap: teks sekunder di atas surface dan inset");
+  assert.ok(rasio(campur(P, 0.66, [28, 28, 30]), [28, 28, 30]) >= 4.5, "gelap: placeholder");
+  assert.ok(rasio(campur(T, 0.4, [255, 255, 255]), [255, 255, 255]) < 4.5, "token tersier lama memang di bawah AA (alasan perubahan)");
+  const d = baca("features", "warehouse", "stok", "DaftarBahan.jsx");
+  for (const k of ['data-testid="kode-bahan"', 'data-testid="kepala-kolom"']) assert.ok(new RegExp(`stok-t2[^\n]*${k}|${k}[^\n]*stok-t2|stok-t2[^\n]*\n[^\n]*${k}`).test(d) || d.split("\n").some((l) => l.includes(k) && l.includes("stok-t2")), k);
+  assert.ok(!/text-ink3/.test(d) && !/text-ink3/.test(baca("pages", "warehouse", "WarehouseInventory.jsx")), "tidak ada teks sekunder pucat tersisa di daftar dan halaman");
+  assert.match(baca("pages", "warehouse", "WarehouseInventory.jsx"), /stok-ph/); assert.match(baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"), /italic[^"]*stok-t2|stok-t2[^"]*italic|belum-ada-harga/);
+});

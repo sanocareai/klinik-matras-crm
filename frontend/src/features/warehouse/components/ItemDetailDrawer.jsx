@@ -8,6 +8,7 @@ import { ISTILAH, TEKS_DRAWER, labelStatusStok, teksAngkaStok } from "../stok/dr
 import { api } from "@/api.js";
 import RiwayatReferensiBahan from "./RiwayatReferensiBahan.jsx";
 import IkonBahan from "../stok/IkonBahan.jsx";
+import "../stok/kontras.css";
 import { tampilHargaDaftar } from "../stok/koreksiSaldoLogic.js";
 import { riwayatLokasi } from "../stok/stokLogic.js";
 import HargaBerlakuPanel from "../stok/HargaBerlakuPanel.jsx";
@@ -39,7 +40,7 @@ const waktu = (s) => new Date(s).toLocaleString("id-ID", {
 function Baris({ label, children }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1">
-      <dt className="shrink-0 text-[11.5px] text-ink3">{label}</dt>
+      <dt className="shrink-0 text-[11.5px] stok-t2">{label}</dt>
       <dd className="min-w-0 text-right text-[12.5px] font-medium text-ink">{children}</dd>
     </div>
   );
@@ -111,14 +112,14 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
             <IkonBahan kode={baris?.kelompok?.kode} ukuran="lg" />
             <div className="min-w-0 flex-1">
               <Dialog.Title className="m-0 text-[18px] font-bold leading-snug text-ink" data-testid="drawer-nama">{item.name}</Dialog.Title>
-              <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink3" data-testid="drawer-kode-satuan">{item.code} · satuan {satuanTeks}</p>
+              <p className="m-0 mt-0.5 truncate text-[12.5px] stok-t2" data-testid="drawer-kode-satuan">{item.code} · satuan {satuanTeks}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <Badge variant={status.tone} className="shrink-0" data-testid="status-stok" data-status={status.key}>{status.label}</Badge>
-                {baris?.kelompok?.label && <span className="rounded-full bg-inset px-2.5 py-0.5 text-[11.5px] font-medium text-ink2" data-testid="drawer-kelompok">{baris.kelompok.label}</span>}
-                {ringkasHargaHeader && <span className={`text-[12.5px] ${ringkasHargaHeader.ada ? "font-semibold text-ink" : "italic text-ink3"}`} data-testid="header-harga">{ringkasHargaHeader.ada ? `Rp${Number(ringkasHargaHeader.harga).toLocaleString("id-ID", { maximumFractionDigits: 4 })} / ${ringkasHargaHeader.satuan}` : ringkasHargaHeader.teks}</span>}
+                {baris?.kelompok?.label && <span className="rounded-full bg-inset px-2.5 py-0.5 text-[11.5px] font-medium stok-t2" data-testid="drawer-kelompok">{baris.kelompok.label}</span>}
+                {ringkasHargaHeader && <span className={`text-[12.5px] ${ringkasHargaHeader.ada ? "font-semibold text-ink" : "italic stok-t2"}`} data-testid="header-harga">{ringkasHargaHeader.ada ? `Rp${Number(ringkasHargaHeader.harga).toLocaleString("id-ID", { maximumFractionDigits: 4 })} / ${ringkasHargaHeader.satuan}` : ringkasHargaHeader.teks}</span>}
               </div>
             </div>
-            <Dialog.Close aria-label="Tutup" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-inset text-ink2 hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11">
+            <Dialog.Close aria-label="Tutup" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-inset stok-t2 hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11">
               <X size={16} />
             </Dialog.Close>
           </div>
@@ -127,15 +128,15 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
             {/* Kartu Stok: Tersedia (angka utama), Saldo dan Dipesan (pendukung), peringatan + tombol Koreksi saldo / Riwayat */}
             <section className="rounded-card bg-surface p-4 shadow-card" aria-label="Stok bahan" data-testid="kartu-stok">
               <div className="flex items-center gap-1.5">
-                <div className="min-w-0 flex-1 text-[13px] font-semibold text-ink2">{ISTILAH.tersedia}</div>
+                <div className="min-w-0 flex-1 text-[13px] font-semibold stok-t2">{ISTILAH.tersedia}</div>
                 <InfoToggleButton info={infoStok} label="cara hitung stok" />
               </div>
               <div className="mt-1 text-[34px] font-extrabold leading-none tabular-nums text-ink" data-testid="stok-tersedia">
                 {teksAngkaStok(item.available, keadaan, (n) => formatQty(n, item.unit))}
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-inset px-3 py-2 text-[12.5px]">
-                <div><dt className="text-[11.5px] text-ink3">{ISTILAH.saldo}</dt><dd className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="stok-saldo">{teksAngkaStok(item.balance, keadaan, (n) => formatQty(n, item.unit))}</dd></div>
-                <div><dt className="text-[11.5px] text-ink3">{ISTILAH.dipesan}</dt><dd className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
+                <div><dt className="text-[11.5px] stok-t2">{ISTILAH.saldo}</dt><dd className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="stok-saldo">{teksAngkaStok(item.balance, keadaan, (n) => formatQty(n, item.unit))}</dd></div>
+                <div><dt className="text-[11.5px] stok-t2">{ISTILAH.dipesan}</dt><dd className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
               </dl>
               <InfoToggleIsi info={infoStok}><p className="m-0" data-testid="rumus-stok">{ISTILAH.rumusStok}</p></InfoToggleIsi>
               <KoreksiSaldoPanel materialId={materialId} onChanged={onChanged} onKeadaan={setKeadaan} />
@@ -146,7 +147,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
             {item.dataNote && (
               <div className="flex items-start gap-2 rounded-card bg-orangebg px-4 py-3" data-testid="data-belum-lengkap">
                 <TriangleAlert size={14} className="mt-0.5 shrink-0 text-orange" aria-hidden />
-                <p className="m-0 text-[11.5px] leading-relaxed text-ink2">
+                <p className="m-0 text-[11.5px] leading-relaxed stok-t2">
                   <span className="font-semibold text-orange">Data belum lengkap: </span>
                   {item.dataNote}
                 </p>
@@ -160,16 +161,16 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
                   <dl className="m-0 divide-y divide-line">
                     <Baris label="Harga referensi">
                       {item.referenceUnitCost != null
-                        ? <>{formatRupiah(item.referenceUnitCost)} <span className="text-ink3">({item.referenceUnitCostMonth})</span></>
-                        : <span className="text-ink3">Tidak tercatat</span>}
+                        ? <>{formatRupiah(item.referenceUnitCost)} <span className="stok-t2">({item.referenceUnitCostMonth})</span></>
+                        : <span className="stok-t2">Tidak tercatat</span>}
                     </Baris>
                     <Baris label="Nilai stok referensi">
                       {item.referenceStockValue != null
-                        ? <>{formatRupiah(item.referenceStockValue)} <span className="text-ink3">({item.referenceStockValueMonth})</span></>
-                        : <span className="text-ink3">Tidak tercatat</span>}
+                        ? <>{formatRupiah(item.referenceStockValue)} <span className="stok-t2">({item.referenceStockValueMonth})</span></>
+                        : <span className="stok-t2">Tidak tercatat</span>}
                     </Baris>
                   </dl>
-                  <p className="m-0 mt-1 text-[11px] leading-relaxed text-ink3">{TEKS_DRAWER.referensi}</p>
+                  <p className="m-0 mt-1 text-[11px] leading-relaxed stok-t2">{TEKS_DRAWER.referensi}</p>
                 </Lipat>
               )}
 
@@ -178,30 +179,30 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
                   <Baris label="Kategori">
                     {item.category
                       ? `${CATEGORY_REAL[item.category]?.label} · ${CATEGORY_REAL[item.category]?.labelId}`
-                      : <span className="text-ink3">Tanpa kategori</span>}
+                      : <span className="stok-t2">Tanpa kategori</span>}
                   </Baris>
                   <Baris label="Lini layanan">
-                    {item.serviceLine ? SERVICE_LINE_REAL[item.serviceLine]?.labelId : <span className="text-ink3">Lintas lini</span>}
+                    {item.serviceLine ? SERVICE_LINE_REAL[item.serviceLine]?.labelId : <span className="stok-t2">Lintas lini</span>}
                   </Baris>
                   <Baris label="Satuan">{satuanTeks}</Baris>
                   <Baris label="Batas minimum (titik restok)">
                     {item.reorderPoint != null
                       ? formatQty(item.reorderPoint, item.unit)
-                      : <span className="text-ink3">belum diatur</span>}
+                      : <span className="stok-t2">belum diatur</span>}
                   </Baris>
                   <Baris label="Jumlah restok standar">
-                    {item.reorderQty != null ? formatQty(item.reorderQty, item.unit) : <span className="text-ink3">—</span>}
+                    {item.reorderQty != null ? formatQty(item.reorderQty, item.unit) : <span className="stok-t2">—</span>}
                   </Baris>
                   <Baris label="Vendor langganan">
-                    {item.vendor || <span className="text-ink3">Tidak tercatat</span>}
+                    {item.vendor || <span className="stok-t2">Tidak tercatat</span>}
                   </Baris>
                   <Baris label="Supplier terakhir">
-                    {supplierTerakhir || <span className="text-ink3">Belum ada penerimaan</span>}
+                    {supplierTerakhir || <span className="stok-t2">Belum ada penerimaan</span>}
                   </Baris>
                   {baris?.kelompok?.label && <Baris label="Kelompok">{baris.kelompok.kode === "BELUM" ? <span className="text-orange">Belum dikelompokkan</span> : baris.kelompok.label}</Baris>}
-                  <Baris label="Riwayat penerimaan">{lokasiTerima ? <span data-testid="drawer-riwayat-penerimaan" title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini.">{lokasiTerima.teks.replace("Terakhir diterima di ", "")}</span> : <span className="text-ink3">tidak ada riwayat</span>}</Baris>
+                  <Baris label="Riwayat penerimaan">{lokasiTerima ? <span data-testid="drawer-riwayat-penerimaan" title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini.">{lokasiTerima.teks.replace("Terakhir diterima di ", "")}</span> : <span className="stok-t2">tidak ada riwayat</span>}</Baris>
                   <Baris label="Sub-kategori">
-                    {item.itemGroup || <span className="text-ink3">—</span>}
+                    {item.itemGroup || <span className="stok-t2">—</span>}
                   </Baris>
                   <Baris label="Status item">{item.active ? "Aktif" : "Nonaktif"}</Baris>
                   {item.createdVia === "PO" && (
@@ -212,18 +213,18 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
                   {item.specification && <Baris label="Spesifikasi">{item.specification}</Baris>}
                   {item.storageHint && <Baris label="Lokasi penyimpanan">{item.storageHint}</Baris>}
                 </dl>
-                <p className="m-0 mt-1 text-[11px] leading-relaxed text-ink3">{TEKS_DRAWER.catatanLokasi}</p>
+                <p className="m-0 mt-1 text-[11px] leading-relaxed stok-t2">{TEKS_DRAWER.catatanLokasi}</p>
               </Lipat>
 
               <Lipat judul="Riwayat pergerakan" ringkas={loading ? "memuat…" : movements ? `${movements.length} terbaru` : null} testid="lipat-pergerakan">
                 <h4 className="sr-only"><History size={12} aria-hidden /> Riwayat pergerakan</h4>
                 {loading && (
-                  <p className="m-0 flex items-center gap-1.5 py-2 text-[12px] text-ink3">
+                  <p className="m-0 flex items-center gap-1.5 py-2 text-[12px] stok-t2">
                     <Loader2 size={12} className="animate-spin" /> Memuat riwayat…
                   </p>
                 )}
                 {!loading && movements?.length === 0 && (
-                  <p className="m-0 py-2 text-[12px] text-ink3">
+                  <p className="m-0 py-2 text-[12px] stok-t2">
                     Belum ada pergerakan stok untuk item ini.
                   </p>
                 )}
@@ -233,12 +234,12 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
                       <li key={m.id} className="flex items-start gap-2 py-2">
                         <StatusBadge map={PERGERAKAN_ID} value={m.type} className="mt-0.5 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <p className="m-0 text-[11px] text-ink3">{waktu(m.createdAt)}</p>
+                          <p className="m-0 text-[11px] stok-t2">{waktu(m.createdAt)}</p>
                           {(m.reason || m.note) && (
-                            <p className="m-0 truncate text-[11.5px] text-ink2">{m.reason || m.note}</p>
+                            <p className="m-0 truncate text-[11.5px] stok-t2">{m.reason || m.note}</p>
                           )}
-                          {m.unit?.unitCode && <p className="m-0 text-[11px] text-ink3">Unit {m.unit.unitCode}</p>}
-                          {m.createdBy?.name && <p className="m-0 text-[10.5px] text-ink3">oleh {m.createdBy.name}</p>}
+                          {m.unit?.unitCode && <p className="m-0 text-[11px] stok-t2">Unit {m.unit.unitCode}</p>}
+                          {m.createdBy?.name && <p className="m-0 text-[10.5px] stok-t2">oleh {m.createdBy.name}</p>}
                         </div>
                         <span className={`shrink-0 text-[12.5px] font-bold tabular-nums ${Number(m.qty) < 0 ? "text-red" : "text-green"}`}>
                           {Number(m.qty) > 0 ? "+" : ""}{Number(m.qty)}

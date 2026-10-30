@@ -30,7 +30,7 @@ export default function PanelSaringan({ jumlah = 0, onAturUlang, children }) {
           <div className="flex items-center gap-2">
             <h3 className="m-0 flex-1 text-[15px] font-bold text-ink">Saringan</h3>
             {jumlah > 0 && <button type="button" onClick={onAturUlang} data-testid="atur-ulang-saringan" className="inline-flex min-h-11 items-center rounded-xl px-2.5 text-[13px] font-semibold text-accent hover:bg-accentbg sm:min-h-9">Atur ulang</button>}
-            <button type="button" onClick={() => tutup()} aria-label="Tutup saringan" className="flex h-11 w-11 items-center justify-center rounded-xl text-ink3 hover:bg-hovertint hover:text-ink sm:h-9 sm:w-9"><X size={16} aria-hidden /></button>
+            <button type="button" onClick={() => tutup()} aria-label="Tutup saringan" className="flex h-11 w-11 items-center justify-center rounded-xl stok-t2 hover:bg-hovertint hover:text-ink sm:h-9 sm:w-9"><X size={16} aria-hidden /></button>
           </div>
           {children}
           <button type="button" onClick={() => tutup()} data-testid="selesai-saringan" className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-accent text-[14px] font-semibold text-white hover:bg-accenthov">Selesai</button>
@@ -42,6 +42,6 @@ export default function PanelSaringan({ jumlah = 0, onAturUlang, children }) {
 
 /** Satu baris pilihan di panel: label di atas, select asli di bawah (tinggi 44px). */
 export function PilihanSaringan({ label, children }) {
-  return <label className="block"><span className="mb-1 block text-[12px] font-medium text-ink2">{label}</span>{children}</label>;
+  return <label className="block"><span className="mb-1 block text-[12px] font-medium stok-t2">{label}</span>{children}</label>;
 }
 export const kelasSelect = "h-11 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/40";

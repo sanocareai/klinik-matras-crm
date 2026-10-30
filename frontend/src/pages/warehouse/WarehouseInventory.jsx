@@ -11,7 +11,8 @@ import DaftarBahan from "@/features/warehouse/stok/DaftarBahan.jsx";
 import PanelSaringan, { PilihanSaringan, kelasSelect } from "@/features/warehouse/stok/PanelSaringan.jsx";
 import { useFilterDaftar } from "@/features/warehouse/dokumen/useFilterDaftar.js";
 import { FILTER_KEADAAN, FILTER_JENIS, FILTER_HARGA, FILTER_LAIN, hitungOpsiSaring, saringStok, jangkauanCari, kunciJenis } from "@/features/warehouse/stok/stokLogic.js";
-import { halamanDaftar, saringanAktif, ringkasanAtas } from "@/features/warehouse/stok/stokTampilanLogic.js";
+import "@/features/warehouse/stok/kontras.css";
+import { halamanDaftar, saringanAktif, ringkasanAtas, ringkasHasil } from "@/features/warehouse/stok/stokTampilanLogic.js";
 
 // STOK & LOKASI (redesain Okt 2026) — halaman bersih: pencarian + tombol Filter + Tambah Bahan; ringkasan tiga angka; pilihan kelompok ringkas dengan jumlah; DAFTAR LANGSUNG TERLIHAT sesuai saringan.
 // Layanan, izin, perhitungan, dan parameter URL TIDAK berubah (?kelompok=&jenis=&q=&keadaan=&nonaktif=&semua=&harga=&lain=&satuan=); yang berubah hanya susunan tampilan.
@@ -26,7 +27,7 @@ const LABEL_CHIP = { keadaan: label(FILTER_KEADAAN), harga: label(FILTER_HARGA),
 function Ubin({ judul, angka, angkaTestid, nada = "ink", onClick, testid, tombolTestid }) {
   const isi = (
     <>
-      <span className="block text-[12px] font-medium text-ink2 sm:text-[12.5px]">{judul}</span>
+      <span className="block text-[12px] font-medium stok-t2 sm:text-[12.5px]">{judul}</span>
       <span className={cn("mt-0.5 block text-[24px] font-bold leading-none tabular-nums sm:mt-1 sm:text-[28px]", nada === "red" ? "text-red" : nada === "orange" ? "text-orange" : "text-ink")} data-testid={angkaTestid}>{angka}</span>
     </>
   );
@@ -55,6 +56,7 @@ export default function WarehouseInventory() {
   const terfilter = useMemo(() => (data ? saringStok(data.rows, { jenis, kelompok, cari, keadaan, nonaktif, harga: hargaF, petaHarga: harga, lain: lainF, satuan: satuanF }) : null), [data, jenis, kelompok, cari, keadaan, nonaktif, hargaF, harga, lainF, satuanF]);
   const opsi = useMemo(() => (data ? hitungOpsiSaring(data.rows, { petaHarga: harga, nonaktif }) : null), [data, harga, nonaktif]);
   useEffect(() => { setNomorHalaman(1); }, [jenis, kelompok, cari, keadaan, nonaktif, hargaF, lainF, satuanF]);
+  const hasil = useMemo(() => ringkasHasil(terfilter ?? [], harga), [terfilter, harga]); // SELURUH hasil saringan, bukan 25 baris halaman
   const halaman = useMemo(() => halamanDaftar(terfilter ?? [], nomorHalaman, UKURAN_HALAMAN), [terfilter, nomorHalaman]);
 
   const chips = saringanAktif({ keadaan, harga: hargaF, lain: lainF, satuan: satuanF, jenis, nonaktif }, LABEL_CHIP);
@@ -96,9 +98,9 @@ export default function WarehouseInventory() {
                 : <Ubin judul="Belum dikelompokkan" angka={grup.find((g) => g.kode === "BELUM")?.total ?? 0} testid="ubin-kelompok" onClick={(grup.find((g) => g.kode === "BELUM")?.total ?? 0) > 0 ? () => pilihKelompok("BELUM") : undefined} />}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 px-1" data-testid="perhatian">
-              <span className="text-[12px] text-ink3 max-sm:hidden" data-testid="ringkasan-ringkas">{atas.adaStok} ada stok{atas.nonaktif > 0 && <> · {atas.nonaktif} nonaktif disembunyikan</>}<span className="hidden" data-testid="n-terdaftar">{ringkas.terdaftar}</span></span>
+              <span className="text-[12px] stok-t2 max-sm:hidden" data-testid="ringkasan-ringkas">{atas.adaStok} ada stok{atas.nonaktif > 0 && <> · {atas.nonaktif} nonaktif disembunyikan</>}<span className="hidden" data-testid="n-terdaftar">{ringkas.terdaftar}</span></span>
               {atas.minus > 0 && <button type="button" onClick={() => pilihPerhatian({ keadaan: "MINUS" })} data-testid="perhatian-minus" className="inline-flex min-h-11 items-center gap-1 rounded-full bg-redbg px-3 text-[12px] font-semibold text-red sm:min-h-8"><strong>{atas.minus}</strong> saldo minus</button>}
-              {atas.belumDiketahui > 0 && <button type="button" onClick={() => pilihPerhatian({ keadaan: "BELUM_ADA_CATATAN" })} data-testid="perhatian-belum" title="Belum ada catatan stok — bukan berarti habis" className="inline-flex min-h-11 items-center gap-1 rounded-full bg-inset px-3 text-[12px] font-semibold text-ink2 sm:min-h-8"><strong>{atas.belumDiketahui}</strong> belum diketahui</button>}
+              {atas.belumDiketahui > 0 && <button type="button" onClick={() => pilihPerhatian({ keadaan: "BELUM_ADA_CATATAN" })} data-testid="perhatian-belum" title="Belum ada catatan stok — bukan berarti habis" className="inline-flex min-h-11 items-center gap-1 rounded-full bg-inset px-3 text-[12px] font-semibold stok-t2 sm:min-h-8"><strong>{atas.belumDiketahui}</strong> belum diketahui</button>}
               {atas.hargaBelum !== null && <button type="button" onClick={() => pilihPerhatian({ keadaan: "ADA", harga: "BELUM" })} data-testid="perhatian-ada-stok-tanpa-harga" className="inline-flex min-h-11 items-center rounded-full bg-orangebg px-3 text-[12px] font-semibold text-orange sm:min-h-8">Ada stok, belum ada harga</button>}
             </div>
           </section>
@@ -106,10 +108,10 @@ export default function WarehouseInventory() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
-            <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
+            <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 stok-t2" aria-hidden />
             <input type="search" value={cari} onChange={(e) => ubahF("q", e.target.value)} placeholder="Cari bahan, kode, vendor…" aria-label="Cari bahan di semua kelompok: kode, nama, atau vendor" data-testid="cari-bahan"
               autoFocus={typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches}
-              className="h-11 w-full rounded-2xl bg-surface pl-11 pr-4 text-[14px] text-ink shadow-card outline-none placeholder:text-ink3 focus-visible:ring-2 focus-visible:ring-accent/50" />
+              className="h-11 w-full rounded-2xl bg-surface pl-11 pr-4 text-[14px] text-ink shadow-card outline-none stok-ph focus-visible:ring-2 focus-visible:ring-accent/50" />
           </div>
           <PanelSaringan jumlah={chips.length} onAturUlang={aturUlangSaringan}>
             <PilihanSaringan label="Keadaan stok">
@@ -139,7 +141,7 @@ export default function WarehouseInventory() {
               <select value={jenis} onChange={(e) => ubahF("jenis", e.target.value)} disabled={!!String(cari).trim()} aria-label="Jenis persediaan" data-testid="saring-jenis" className={cn(kelasSelect, "disabled:opacity-50")}>
                 {FILTER_JENIS.map((x) => <option key={x.key} value={x.key}>{x.label}{x.key ? jenisBahan(x.key) : ""}</option>)}
               </select>
-              {String(cari).trim() && <span className="mt-1 block text-[11.5px] text-ink3">Saat mencari, jenis dan kelompok tidak menyaring.</span>}
+              {String(cari).trim() && <span className="mt-1 block text-[11.5px] stok-t2">Saat mencari, jenis dan kelompok tidak menyaring.</span>}
             </PilihanSaringan>
             <label className="flex min-h-11 items-center gap-2.5 rounded-xl text-[13.5px] text-ink"><input type="checkbox" checked={nonaktif} onChange={(e) => ubahF("nonaktif", e.target.checked ? "1" : "")} data-testid="tampilkan-nonaktif" className="h-5 w-5 accent-[var(--accent)]" /> Tampilkan bahan nonaktif</label>
           </PanelSaringan>
@@ -157,14 +159,19 @@ export default function WarehouseInventory() {
         {grup.length > 0 && (
           <section aria-label="Pilih kelompok bahan" className="space-y-1.5">
             <KelompokBahanNav kelompok={grup} dipilih={kelompok} onPilih={pilihKelompok} jumlahSemua={ringkas?.aktif} />
-            {String(cari).trim() && kelompok && <p className="m-0 px-1 text-[12px] text-ink3" data-testid="cakupan" data-mode={cakupan.mode}>{cakupan.teks}</p>}
+            {String(cari).trim() && kelompok && <p className="m-0 px-1 text-[12px] stok-t2" data-testid="cakupan" data-mode={cakupan.mode}>{cakupan.teks}</p>}
           </section>
         )}
 
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
-        <div className="flex items-center justify-between gap-2 px-1 text-[12.5px] text-ink3">
+        <div className="flex items-center justify-between gap-2 px-1 text-[12.5px] stok-t2">
           <span data-testid="jumlah-tampil">{terfilter ? `${terfilter.length} bahan tampil` : "Memuat…"}</span>
+          {terfilter && terfilter.length > 0 && (hasil.minus + hasil.belumDiketahui + hasil.nolTerverifikasi + hasil.nolPergerakan + (hasil.hargaBelum ?? 0)) > 0 && (
+            <span className="hidden min-w-0 flex-1 truncate sm:block" data-testid="rincian-hasil" title="Dihitung dari seluruh hasil saringan, bukan hanya halaman ini">
+              {[hasil.minus > 0 && `${hasil.minus} saldo minus`, hasil.belumDiketahui > 0 && `${hasil.belumDiketahui} belum diketahui`, hasil.nolTerverifikasi > 0 && `${hasil.nolTerverifikasi} nol terverifikasi`, hasil.nolPergerakan > 0 && `${hasil.nolPergerakan} nol menurut pergerakan`, hasil.hargaBelum > 0 && `${hasil.hargaBelum} belum ada harga`].filter(Boolean).join(" · ")}
+            </span>
+          )}
           {adaPembatas && <button type="button" onClick={kembaliSemua} data-testid="kembali-semua" className="inline-flex min-h-11 items-center rounded-xl px-2 font-semibold text-accent hover:bg-accentbg sm:min-h-8">Tampilkan semua bahan</button>}
         </div>
 
@@ -176,8 +183,8 @@ export default function WarehouseInventory() {
           tampilBantuan={kosong && adaPembatas ? <Button variant="secondary" size="sm" onClick={kembaliSemua} className="mt-1 h-11 rounded-xl px-4">Tampilkan semua bahan</Button> : null} />
 
         {ringkas && (
-          <details className="rounded-card bg-surface px-4 py-1 text-[12px] text-ink2 shadow-card" data-testid="rincian-ringkasan">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center font-semibold text-ink3">Rincian angka dan catatan sumber</summary>
+          <details className="rounded-card bg-surface px-4 py-1 text-[12px] stok-t2 shadow-card" data-testid="rincian-ringkasan">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center font-semibold stok-t2">Rincian angka dan catatan sumber</summary>
             <div className="flex flex-wrap gap-x-5 gap-y-1 pb-1">
               <span><strong className="text-ink">{ringkas.terdaftar}</strong> bahan terdaftar</span>
               <span><strong className="text-ink">{ringkas.ada}</strong> ada stok</span>
@@ -191,7 +198,7 @@ export default function WarehouseInventory() {
               <li>• {k.reorder}.</li>
               {(grup.find((g) => g.kode === "BELUM")?.total ?? 0) > 0 && <li>• {grup.find((g) => g.kode === "BELUM").total} bahan belum dikelompokkan: itemGroup-nya kosong atau berisi bahan campuran — perlu keputusan manual (tidak ditebak dari nama).</li>}
             </ul>
-            <p className="m-0 flex items-start gap-1 pb-2 text-ink3" data-testid="catatan-sumber"><Info size={12} className="mt-px shrink-0" aria-hidden /> {data.catatan}</p>
+            <p className="m-0 flex items-start gap-1 pb-2 stok-t2" data-testid="catatan-sumber"><Info size={12} className="mt-px shrink-0" aria-hidden /> {data.catatan}</p>
           </details>
         )}
       </PageBody>

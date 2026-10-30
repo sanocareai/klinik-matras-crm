@@ -1,0 +1,8 @@
+/* KONTRAS teks sekunder Stok & Lokasi + drawer bahan (Okt 2026). Hanya kelas milik layar ini — TIDAK mengubah token tema global dan tidak memengaruhi workspace lain.
+   Token global --text-secondary/-tertiary (60%/40% di tema terang) terlalu pucat untuk teks kecil (kode bahan, satuan, judul kolom, placeholder, harga belum diisi). Nilai di bawah memenuhi WCAG AA (≥ 4.5:1) di kedua tema.
+   Terang: teks 74% (≈ 7:1 di atas putih), placeholder 64% (≈ 5:1). Gelap: teks 74% di atas #1C1C1E (≈ 9:1), placeholder 66% (≈ 7:1). */
+.stok-t2 { color: rgba(29, 29, 31, 0.74); }
+.stok-ph::placeholder { color: rgba(29, 29, 31, 0.64); opacity: 1; }
+[data-theme="dark"] .stok-t2 { color: rgba(245, 245, 247, 0.74); }
+[data-theme="dark"] .stok-ph::placeholder,
+[data-theme="dark"] .glass-division input.stok-ph::placeholder { color: rgba(245, 245, 247, 0.66) !important; opacity: 1; } /* aturan placeholder kaca di delivery-dark.css memakai !important (0,3,2): dibalas pada selektor lebih spesifik, hanya untuk elemen bertanda .stok-ph; berkas global tidak diubah */

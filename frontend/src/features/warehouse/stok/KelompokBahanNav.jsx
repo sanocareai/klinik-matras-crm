@@ -11,8 +11,8 @@ export default function KelompokBahanNav({ kelompok = [], dipilih = "", onPilih,
       <ul className="m-0 flex list-none flex-nowrap gap-1 overflow-x-auto rounded-2xl bg-inset p-1 sm:flex-wrap sm:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <li>
           <button type="button" onClick={() => onPilih("")} aria-pressed={dipilih === ""} data-testid="kelompok-semua"
-            className={cn(butir, dipilih === "" ? "bg-surface font-semibold text-ink shadow-card" : "text-ink2 hover:bg-hovertint")}>
-            Semua <span className="text-[11.5px] tabular-nums text-ink3">{jumlahSemua != null ? jumlahSemua : "—"}</span>
+            className={cn(butir, dipilih === "" ? "bg-surface font-semibold text-ink shadow-card" : "stok-t2 hover:bg-hovertint")}>
+            Semua <span className="text-[11.5px] tabular-nums stok-t2">{jumlahSemua != null ? jumlahSemua : "—"}</span>
           </button>
         </li>
         {kelompok.map((k) => {
@@ -21,10 +21,10 @@ export default function KelompokBahanNav({ kelompok = [], dipilih = "", onPilih,
           return (
             <li key={k.kode}>
               <button type="button" onClick={() => onPilih(k.kode)} aria-pressed={aktif} data-testid={`kelompok-${k.kode}`} data-total={k.total} title={`${k.label}: ${rincian}`}
-                className={cn(butir, aktif ? "bg-surface font-semibold text-ink shadow-card" : peringatan ? "text-orange hover:bg-hovertint" : "text-ink2 hover:bg-hovertint", kosong && !aktif && "opacity-60")}>
+                className={cn(butir, aktif ? "bg-surface font-semibold text-ink shadow-card" : peringatan ? "text-orange hover:bg-hovertint" : "stok-t2 hover:bg-hovertint", kosong && !aktif && "opacity-60")}>
                 {peringatan && Ikon && <Ikon size={13} aria-hidden />}
                 {k.label}
-                <span className={cn("text-[11.5px] tabular-nums", peringatan ? "text-orange" : "text-ink3")} data-testid="kelompok-total">{k.total}</span>
+                <span className={cn("text-[11.5px] tabular-nums", peringatan ? "text-orange" : "stok-t2")} data-testid="kelompok-total">{k.total}</span>
               </button>
             </li>
           );

@@ -68,3 +68,18 @@ export function ringkasanAtas(ringkas, opsi, adaHarga) {
     hargaBelum: adaHarga && opsi ? opsi.harga.BELUM ?? 0 : null,
   };
 }
+
+/**
+ * Rincian SELURUH hasil saringan (bukan hanya 25 baris halaman yang tampil): jumlah total, per status singkat, dan — bila peta harga tersedia (izin) — yang belum ada harga berlaku.
+ * Semua dihitung dari baris yang sama dengan daftar (`terfilter`), jadi angka tidak berubah saat berpindah halaman.
+ */
+export function ringkasHasil(rows, peta = null) {
+  const o = { total: rows.length, minus: 0, belumDiketahui: 0, nolTerverifikasi: 0, nolPergerakan: 0, terpesanPenuh: 0, menipis: 0, hargaBelum: peta ? 0 : null };
+  for (const r of rows) {
+    const k = statusRingkas(r).kode;
+    if (k === "MINUS") o.minus++; else if (k === "BELUM_DIKETAHUI") o.belumDiketahui++; else if (k === "NOL_TERVERIFIKASI") o.nolTerverifikasi++;
+    else if (k === "NOL_PERGERAKAN") o.nolPergerakan++; else if (k === "TERPESAN_PENUH") o.terpesanPenuh++; else if (k === "MENIPIS") o.menipis++;
+    if (peta && !hargaBaris(peta, r.materialId)?.ada) o.hargaBelum++;
+  }
+  return o;
+}
