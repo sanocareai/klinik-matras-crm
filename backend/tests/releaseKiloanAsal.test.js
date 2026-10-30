@@ -46,3 +46,13 @@ test("smoke production: baca-saja TANPA token, D1 belum berjalan, isi catatan id
   assert.ok(!/terapkanKoreksiKiloan|method: "POST".*terapkan.*token/.test(smoke.replace(/"POST", "\/api\/production\/catatan-historis\/koreksi-kiloan\/terapkan", \{ manifest: \[\]/, "")), "smoke tidak menerapkan D1");
   assert.ok(script.includes("BASE_KILOAN_N=%q") && script.includes('-e BASE_KILOAN_N="$BASE_KILOAN_N"'), "garis dasar KILOAN diteruskan ke smoke");
 });
+
+test("blok Node yang tertanam di skrip (REHNODE rehearsal dan NODE smoke) valid secara sintaks (galat 'await' di fungsi non-async tertangkap SEBELUM rehearsal VPS, bukan sesudah)", () => {
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TEMP ?? process.env.TMPDIR ?? "/tmp"), "kla-blok-"));
+  for (const [nama, buka, tutup] of [["rehearsal", "<<'REHNODE'", "\nREHNODE\n"], ["smoke", "<<'NODE'", "\nNODE\n"]]) {
+    const i = script.indexOf(buka); assert.ok(i > 0, nama); const a = script.indexOf("\n", i) + 1; const b = script.indexOf(tutup, a); assert.ok(b > a, nama);
+    const f = path.join(tmp, `${nama}.mjs`); fs.writeFileSync(f, script.slice(a, b));
+    const r = spawnSync(process.execPath, ["--check", f], { encoding: "utf8" }); assert.equal(r.status, 0, `${nama}: ${r.stderr}`);
+  }
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
