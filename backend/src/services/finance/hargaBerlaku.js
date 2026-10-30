@@ -77,7 +77,7 @@ export async function keadaanHarga(db, materialId, at = new Date()) {
   return { berlaku: pilih(aktif, t), terjadwal: aktif.filter((x) => new Date(x.effectiveFrom) > t), terbaru: aktif[aktif.length - 1] ?? null };
 }
 
-const TEKS_STATUS_PO = Object.freeze({ DISETUJUI: "belum diterima", DITERIMA_SEBAGIAN: "diterima sebagian", SELESAI: "sudah diterima", DIBATALKAN: "PO dibatalkan — harga tetap berlaku sampai diubah" });
+const TEKS_STATUS_PO = Object.freeze({ DRAFT: "belum diterima", DISETUJUI: "belum diterima", DITERIMA_SEBAGIAN: "diterima sebagian", SELESAI: "sudah diterima", DIBATALKAN: "PO dibatalkan — harga tetap berlaku sampai diubah" });
 /** Teks sumber untuk tampilan: status PO dibaca SAAT INI (baris harga append-only tidak diubah ketika PO diterima/dibatalkan). */
 export const teksSumberPO = (nomor, statusPO) => `Dari PO ${nomor} — ${TEKS_STATUS_PO[statusPO] ?? "belum diterima"}`;
 /** Menambah status PO & teks sumber ke baris tampilan yang bersumber PO (mutasi: kembalikan daftar yang sama). */
@@ -156,7 +156,7 @@ export async function hargaUntukPergerakan(db, p, sel) {
 const tampilBaris = (x, { diganti, aktifId, sekarang }) => ({
   id: x.id, jenis: x.jenis, harga: Number(x.unitPrice), satuan: x.satuan, berlakuMulai: x.effectiveFrom, hargaLama: x.previousPrice == null ? null : Number(x.previousPrice),
   alasan: x.reason, catatan: x.note, catatanBukti: x.evidenceNote, labelBukti: labelDari(x), teksLabelBukti: LABEL_BUKTI[labelDari(x)],
-  diperbaikiOleh: null, menggantikan: x.correctsId, sumber: x.impact?.sumber === "PO" ? { jenis: "PO", poId: x.impact.poId ?? null, poNumber: x.impact.poNumber ?? null, revisi: x.impact.revisi ?? 0, hargaBeli: x.impact.hargaBeli ?? null, satuanBeli: x.impact.satuanBeli ?? null, faktor: x.impact.faktor ?? null } : null, dibuatOleh: x.createdById, dibuatPada: x.createdAt,
+  diperbaikiOleh: null, menggantikan: x.correctsId, sumber: x.impact?.sumber === "PO" ? { jenis: "PO", poId: x.impact.poId ?? null, poNumber: x.impact.poNumber ?? null, barisPO: x.impact.barisPO ?? null, aksi: x.impact.aksi ?? null, pelakuId: x.impact.pelakuId ?? null, revisi: x.impact.revisi ?? 0, hargaBeli: x.impact.hargaBeli ?? null, satuanBeli: x.impact.satuanBeli ?? null, faktor: x.impact.faktor ?? null } : null, dibuatOleh: x.createdById, dibuatPada: x.createdAt,
   status: diganti.has(x.id) ? "DIGANTI_KOREKSI" : x.id === aktifId ? "BERLAKU_SEKARANG" : new Date(x.effectiveFrom) > sekarang ? "TERJADWAL" : "BERAKHIR_DIGANTI_HARGA_BARU",
 });
 

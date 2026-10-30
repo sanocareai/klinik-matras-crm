@@ -12,11 +12,11 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
-import ModalSetujuiPO from "@/features/finance/PratinjauHargaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
 import { StatusEmpatPO, RiwayatPembayaranPO, PanelKelompokPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
+import { petaBarisHarga, teksDampakBaris, ringkasDampak, ringkasHasilSimpan, STATUS_HARGA_PO } from "@/features/finance/hargaDariPOLogic.js";
 import { barisLainDariForm, barisBaruUntukCek, masalahDariCek, masalahDariGalat, jenisMasalah, teksPerbedaan } from "@/features/finance/purchaseOrderLogic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang, tanggalPendek,
@@ -170,7 +170,7 @@ export default function FinancePurchaseOrders() {
           kunci={form.kunci}
           po={form.po}
           onClose={() => setForm(null)}
-          onSaved={async (id) => { setForm(null); await muat({ diam: true }); setDetailId(id); }}
+          onSaved={async (id, info) => { setForm(null); await muat({ diam: true }); setDetailId(id); if (info) setPesan(info); }}
         />
       )}
       {detailId && (
@@ -425,6 +425,8 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
   const [galat, setGalat] = useState("");
   const [barangBaru, setBarangBaru] = useState(null); // { baris, awal?, autoPeriksa? } — modal Buat Barang Baru untuk baris ke-n
   const [masalah, setMasalah] = useState({}); // { [nomorBaris]: masalah barang mirip } — tanda + aksi penyelesaian pada baris terkait
+  const [pra, setPra] = useState(null); // pratinjau dampak Harga Berlaku (baca-saja; tidak mengubah harga)
+  const [masalahHarga, setMasalahHarga] = useState({}); // { [nomorBaris]: pesan } dari server saat simpan
   const barisRef = useRef({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setBaris = (i, patch) => { setMasalah({}); setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) })); };
@@ -436,6 +438,22 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
     api.getMaterials({ active: "true" }).then((m) => setMaterials(Array.isArray(m) ? m : [])).catch(() => {});
   }, []);
 
+  // Pratinjau dampak Harga Berlaku, ditunda 500 ms setelah isian berhenti berubah. Hanya MEMBACA: harga berubah saat PO BERHASIL DISIMPAN.
+  useEffect(() => {
+    const adaIsi = f.lines.some((l) => (l.materialId || l.materialBaru) && Number(l.unitPrice) > 0);
+    if (!adaIsi) { setPra(null); return undefined; }
+    let batal = false;
+    const t = setTimeout(() => {
+      const lines = f.lines.map((l) => (l.materialBaru
+        ? { materialBaru: { nama: l.materialBaru.nama, satuanStok: l.materialBaru.satuanStok, satuanBeli: l.materialBaru.satuanBeli, faktorKonversi: l.materialBaru.faktorKonversi }, unitPrice: Number(l.unitPrice) }
+        : { materialId: l.materialId, unitPrice: Number(l.unitPrice), ...(l.satuanBeli && l.faktorKonversi && { satuanBeli: l.satuanBeli, faktorKonversi: Number(l.faktorKonversi) }) }));
+      api.pratinjauHargaPO({ poId: po?.id ?? null, lines }).then((r) => { if (!batal) setPra(r); }).catch(() => { if (!batal) setPra(null); });
+    }, 500);
+    return () => { batal = true; clearTimeout(t); };
+  }, [f.lines, po?.id]);
+  const petaHarga = useMemo(() => petaBarisHarga(pra), [pra]);
+  const dampak = ringkasDampak(pra);
+
   const bahan = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const unitMap = useMemo(() => new Map(materials.map((m) => [m.id, m.unit])), [materials]);
   const galatForm = galatFormulir(f, unitMap) || galatTermin(termin);
@@ -444,7 +462,7 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
   const jumlahBaru = daftarBarangBaru(f.lines).length;
 
   async function simpan() {
-    setGalat(""); setMasalah({});
+    setGalat(""); setMasalah({}); setMasalahHarga({});
     try {
       const body = bodyDariForm({ ...f, termin });
       // Periksa SEMUA barang baru sekaligus (urutan sama dengan penyimpanan) supaya masalah tampil di baris terkait dengan aksi penyelesaian — bukan pesan galat di bawah.
@@ -457,8 +475,9 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
         if (nomor.length > 0) { setMasalah(ms); setGalat(`${nomor.length} baris perlu diselesaikan dulu (baris ${nomor.join(", ")}) — lihat tanda dan tombol pada baris tersebut. PO belum disimpan.`); keBaris(nomor[0]); return; }
       }
       const hasil = mengubah ? await api.updatePurchaseOrder(po.id, body) : await api.createPurchaseOrder(body, `po-${kunci}`);
-      await onSaved(hasil.id);
+      await onSaved(hasil.id, ringkasHasilSimpan(hasil.hargaDariPO));
     } catch (e) {
+      if (e?.data?.hargaDariPO && Number.isInteger(e.data.baris)) { setMasalahHarga({ [e.data.baris]: e.message }); setGalat(`Baris ${e.data.baris} perlu diperbaiki dulu — PO belum disimpan dan Harga Berlaku tidak berubah.`); keBaris(e.data.baris); return; }
       const ms = masalahDariGalat(e);
       if (ms) { setMasalah({ [ms.baris]: ms }); setGalat(`Baris ${ms.baris} perlu diselesaikan dulu — lihat tanda dan tombol pada baris tersebut. PO belum disimpan.`); keBaris(ms.baris); }
       else setGalat(e.message || "Gagal menyimpan PO");
@@ -474,12 +493,18 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
       footer={
         <div className="flex w-full flex-col gap-2">
           {(galat || (galatForm && f.supplierId)) && <p role="alert" data-testid="galat-po" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{galat || galatForm}</p>}
+          <div data-testid="dampak-harga-ringkas" role="status" className={cn("rounded-lg px-3 py-2 text-[12px] leading-snug", dampak.menahan ? "bg-redbg text-red" : "bg-inset text-ink2")}>
+            <p className="m-0"><b className="text-ink">Harga Berlaku otomatis.</b> {dampak.teks || "Saat PO berhasil disimpan, harga bahan yang berubah menjadi Harga Berlaku."}</p>
+            <details className="mt-1"><summary className="cursor-pointer font-medium text-ink max-sm:min-h-6">Apa dampaknya?</summary>
+              <p className="m-0 mt-1">Begitu PO ini berhasil disimpan, harga bahan yang berubah langsung menjadi Harga Berlaku operasional (HPP kerja) dengan sumber nomor PO ini. Tidak menambah stok, tidak mengubah nilai persediaan/jurnal Finance, dan tidak menghitung ulang pemakaian lama. Isian yang belum disimpan tidak mengubah harga. Menyetujui atau membatalkan PO tidak menulis atau mengembalikan harga.</p>
+            </details>
+          </div>
           {jumlahBaru > 0 && <p data-testid="info-barang-baru" className="text-[12px] text-ink2">{jumlahBaru} barang baru akan dibuat di master material saat draf ini disimpan.</p>}
           <div className="flex items-center justify-between gap-3">
             <span className="text-[12.5px] text-ink2">Total <strong className="tabular-nums text-ink">{formatUang(total)}</strong></span>
             <div className="flex gap-2">
               <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-              <TombolAksi disabled={!!galatForm} onClick={simpan}>{mengubah ? "Simpan Perubahan" : "Simpan Draf"}</TombolAksi>
+              <TombolAksi disabled={!!galatForm || dampak.menahan} onClick={simpan}>{mengubah ? "Simpan Perubahan" : "Simpan Draf"}</TombolAksi>
             </div>
           </div>
         </div>
@@ -514,7 +539,7 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
               const kv = infoKonversi(l, unitStok);
               const satuanBeli = l.materialBaru ? (l.materialBaru.satuanBeli || l.materialBaru.satuanStok) : (l.satuanBeli || unitStok);
               return (
-                <div key={i} ref={(el) => { barisRef.current[i + 1] = el; }} className={cn("rounded-lg border p-2.5", masalah[i + 1] ? "border-orange" : "border-line")} data-testid="baris-po" data-masalah={masalah[i + 1] ? jenisMasalah(masalah[i + 1]) : undefined}>
+                <div key={i} ref={(el) => { barisRef.current[i + 1] = el; }} className={cn("rounded-lg border p-2.5", masalah[i + 1] || masalahHarga[i + 1] || petaHarga[i + 1]?.masalah ? "border-orange" : "border-line")} data-testid="baris-po" data-masalah={masalah[i + 1] ? jenisMasalah(masalah[i + 1]) : undefined}>
                   {l.materialBaru ? (
                     <div className="min-w-0 rounded-lg bg-surface px-3 py-2" data-testid="barang-baru">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -598,6 +623,10 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
                       {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "") && <p data-testid="pratinjau-pendamping" className="mt-1 text-[12px] font-medium text-accent">Tampil di PO: {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "")}</p>}
                     </details>
                   )}
+                  {(masalahHarga[i + 1] || petaHarga[i + 1]) && (() => {
+                    const ph = petaHarga[i + 1]; const pesan = masalahHarga[i + 1] || teksDampakBaris(ph); const st = STATUS_HARGA_PO[ph?.status]; const bermasalah = !!masalahHarga[i + 1] || !!ph?.masalah;
+                    return <p data-testid="dampak-harga-baris" data-status={ph?.status ?? "GAGAL"} role={bermasalah ? "alert" : "status"} className={cn("mt-1.5 flex flex-wrap items-start gap-1.5 text-[12px] leading-relaxed", bermasalah ? "text-red" : "text-ink2")}>{st && !masalahHarga[i + 1] && <Badge variant={st.varian}>{st.teks}</Badge>}<span className="min-w-0 flex-1 basis-48">{pesan}</span></p>;
+                  })()}
                   {masalah[i + 1] && <PanelMasalahBaris m={masalah[i + 1]} onPakai={(id) => setBaris(i, { materialId: id, materialBaru: null, satuanBeli: "", faktorKonversi: "" })} onPeriksa={() => setBarangBaru({ baris: i, awal: l.materialBaru, autoPeriksa: true })} onHapus={() => hapusBaris(i)} />}
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span className="text-[12px] text-ink2">Subtotal <strong className="tabular-nums text-ink">{formatUang(subtotal(l))}</strong></span>
@@ -631,7 +660,7 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
 function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
   const [po, setPo] = useState(null);
   const [galat, setGalat] = useState("");
-  const [dialog, setDialog] = useState(null); // "batal" | "revisi" | "setujui"
+  const [dialog, setDialog] = useState(null); // "batal" | "revisi"
   const [infoHarga, setInfoHarga] = useState("");
   const [faktur, setFaktur] = useState(null); // { editBillId? } — formulir faktur
   const [setujuiFaktur, setSetujuiFaktur] = useState(null); // evaluasi faktur yang butuh catatan tinjauan harga
@@ -675,7 +704,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
         footer={
           po && aksi ? (
             <div className="flex w-full flex-col gap-2">
-              {infoHarga && <p role="status" data-testid="info-harga-po" className="rounded-lg bg-greenbg px-3 py-2 text-[12.5px] leading-snug text-green">{infoHarga}</p>}
+              {infoHarga && <p role="status" data-testid="info-harga-po" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-ink">{infoHarga}</p>}
               {galat && <p role="alert" data-testid="galat-detail-po" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p>}
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button variant="neutral" onClick={() => bukaPdf(false)} disabled={!!sibukPdf} data-testid="po-pdf-lihat" className="max-sm:min-h-11 max-sm:px-4"><Eye size={14} /> {sibukPdf === "lihat" ? "Membuat…" : "Pratinjau PDF"}</Button>
@@ -686,9 +715,9 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
                 {aksi.revisi && <Button variant="neutral" onClick={() => setDialog("revisi")} className="max-sm:min-h-11 max-sm:px-4"><ListChecks size={14} /> Revisi jumlah</Button>}
                 {aksi.ubah && <Button variant="neutral" onClick={() => onUbah(po)} className="max-sm:min-h-11 max-sm:px-4"><Pencil size={14} /> Ubah draf</Button>}
                 {aksi.setujui && (
-                  <Button onClick={() => setDialog("setujui")} data-testid="tombol-setujui-po" className="max-sm:min-h-11 max-sm:px-4">
+                  <TombolAksi confirmText={`Setujui ${po.poNumber} senilai ${formatUang(po.totalDipesan)}? Setelah disetujui, Gudang bisa membuat Penerimaan dari PO ini dan harga tidak bisa diubah lagi. Harga Berlaku sudah diperbarui saat PO disimpan; menyetujui tidak menulis harga lagi.`} onClick={() => jalankan(() => api.approvePurchaseOrder(po.id))}>
                     <CheckCircle2 size={14} /> Setujui
-                  </Button>
+                  </TombolAksi>
                 )}
               </div>
             </div>
@@ -738,9 +767,6 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
           onClose={() => setTolakFaktur(null)}
           onSubmit={async (alasan) => { try { await api.rejectFinanceBill(tolakFaktur.billId, alasan); setTolakFaktur(null); await segarkan(); } catch (e) { setGalat(e.message || "Gagal menolak faktur"); } }}
         />
-      )}
-      {dialog === "setujui" && po && (
-        <ModalSetujuiPO po={po} onClose={() => setDialog(null)} onDisetujui={async (baru, ringkas) => { setPo(baru); setInfoHarga(ringkas); setDialog(null); await onChanged(); }} />
       )}
       {dialog === "batal" && po && (
         <ModalAlasan

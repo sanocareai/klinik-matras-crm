@@ -1,5 +1,5 @@
 // BARANG MIRIP pada Purchase Order Baru (Finance): varian JELAS berbeda tidak dipaksa alasan duplikasi; yang benar-benar sama diblokir dan diarahkan ke katalog; yang ambigu butuh keputusan;
-// duplikat antar-baris dalam satu PO ditunjuk per baris; klik ganda dan penyimpanan bersamaan tetap konsisten; membuat SKU/PO TIDAK menambah stok, jurnal, atau Harga Berlaku.
+// duplikat antar-baris dalam satu PO ditunjuk per baris; klik ganda dan penyimpanan bersamaan tetap konsisten; membuat SKU/PO TIDAK menambah stok atau jurnal (Harga Berlaku operasional otomatis dari PO sejak 30 Okt 2026).
 import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -42,7 +42,7 @@ test("B1. DELAPAN VARIAN MSB R58 dalam satu PO tersimpan TANPA konfirmasi/alasan
   const r = await w.a.post(SIMPAN, po(w, DELAPAN.map((n, i) => baris(n, 10 + i, 150_000, { kodeSupplier: `MSB-${i + 1}` }))));
   assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.lines.length, 8);
   const j1 = await jejak(); assert.equal(j1.material, j0.material + 8); assert.equal(j1.po, 1); assert.equal(j1.katalog, 8); assert.equal(j1.origin, 8);
-  assert.equal(j1.stok, 0); assert.equal(j1.jurnal, 0); assert.equal(j1.baris, 0); assert.equal(j1.harga, 0, "tidak membuat Harga Berlaku operasional");
+  assert.equal(j1.stok, 0); assert.equal(j1.jurnal, 0); assert.equal(j1.baris, 0); assert.equal(j1.harga, 8, "aturan Owner 30 Okt: menyimpan PO otomatis memberi Harga Berlaku pertama untuk tiap barang baru (satu per bahan)"); assert.equal(await testPrisma.materialHargaBerlaku.count({ where: { reason: { startsWith: "Otomatis dari PO" } } }), 8);
   const asal = await testPrisma.finMaterialSkuOrigin.findMany({ include: { material: true } });
   assert.ok(asal.every((o) => o.duplicateOverrideReason === null && o.duplicateCandidates === null), "tidak ada override duplikat yang dipaksakan");
   assert.ok(asal.some((o) => Array.isArray(o.initialData?.varianSerupa) && o.initialData.varianSerupa.length >= 1), "varian serupa dicatat sebagai informasi");
@@ -113,12 +113,12 @@ test("B7. DUA PENGGUNA menyimpan barang yang sama BERSAMAAN (urutan baris berlaw
   assert.equal(lomba.filter((x) => x.status === 201).length, 1, JSON.stringify(lomba.map((x) => x.status))); assert.ok(lomba.every((x) => [201, 409].includes(x.status))); assert.equal(await testPrisma.material.count({ where: { name: { contains: "ita", mode: "insensitive" } } }), 1);
 });
 
-test("B8. aturan tetap: Finance non-Admin tidak bisa membuat SKU/cek-duplikat-po; membuat katalog/PO tidak menambah stok atau mengubah Harga Berlaku; PO draf tidak membuat jurnal", async () => {
+test("B8. aturan tetap: Finance non-Admin tidak bisa membuat SKU/cek-duplikat-po; membuat katalog/PO tidak menambah stok atau mengubah Harga Berlaku; PO draf tidak membuat jurnal; Harga Berlaku otomatis dari PO (aturan Owner)", async () => {
   const w = await dunia(); const fin = await createTestUser({ roles: ["FINANCE"] }); const f = makeClient(server.baseUrl, fin.token);
   assert.equal((await f.post(CEK_PO, { supplierId: w.supplier.id, barisBaru: [] })).status, 403); assert.equal((await f.post(SIMPAN, po(w, [baris(MSB("120X200X4CM"))]))).status, 403);
   const j0 = await jejak(); const r = await w.a.post(SIMPAN, po(w, DELAPAN.slice(0, 3).map((n) => baris(n)))); assert.equal(r.status, 201);
-  const j1 = await jejak(); assert.equal(j1.stok, j0.stok); assert.equal(j1.jurnal, j0.jurnal); assert.equal(j1.harga, j0.harga);
-  assert.equal(await testPrisma.materialHargaBerlaku.count(), 0);
+  const j1 = await jejak(); assert.equal(j1.stok, j0.stok); assert.equal(j1.jurnal, j0.jurnal); assert.equal(j1.harga, j0.harga + 3, "tiga barang baru ⇒ tiga Harga Berlaku pertama dari PO (aturan Owner 30 Okt)");
+  assert.equal(await testPrisma.materialHargaBerlaku.count(), 3);
 });
 
 test("B9. DELAPAN MATERIAL YANG SUDAH ADA (BUS-008..015) tetap utuh: PO yang mengulang namanya (juga ejaan lain) ditolak per baris dan diarahkan ke kodenya; tidak dibuat ulang, diganti kode, digabung, atau dihapus; varian baru di sebelahnya tetap bisa disimpan", async () => {
