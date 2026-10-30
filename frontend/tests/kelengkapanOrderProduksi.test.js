@@ -72,22 +72,22 @@ test("pesanGalatPernyataan: kode server → kalimat jelas; kode tak dikenal mema
 test("pengawatan daftar: hitungan dari server, filter+periode+urutan dikirim ke daftar DAN ekspor (satu paramDaftar), hitungan dimuat ulang setelah reload, buka drawer tidak menulis", () => {
   const p = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   assert.ok(p.includes("api.getKelengkapanHitung(paramHitung)"), "hitungan dari server");
-  assert.ok(/kelengkapan, urut, \.\.\.\(galatPeriode/.test(p) && p.includes("parameterDaftar({"), "paramDaftar memuat kelengkapan, urut, periode");
+  assert.ok(/kelengkapan, urut, [.][.][.]rentang/.test(p) && p.includes("parameterDaftar({"), "paramDaftar memuat kelengkapan, urut, periode");
   assert.ok(p.includes("api.eksporOrderProduksiXlsx({ displayStatus: displayParam, ...paramDaftar"), "ekspor memakai paramDaftar yang sama");
   assert.ok(p.includes("setVersiHitung((v) => v + 1)"), "hitungan diperbarui setelah data dilengkapi");
   assert.ok(!/paramHitung = useMemo\(\(\) => \(\{[^}]*kelengkapan/.test(p), "hitungan TIDAK dibatasi oleh pilihan kelengkapan sendiri");
-  assert.ok(p.includes("validasiPeriode(dari, sampai)") && p.includes("galatPeriode ? {}"), "periode tidak valid tidak dikirim diam-diam");
+  assert.ok(p.includes("useHubRange(periodeDariUrl, periodeKeUrl)") && p.includes("paramPeriode(periode)"), "periode dari pemilih standar (URL), dikirim lewat paramPeriode");
   assert.ok(p.includes('<KelengkapanBaris row={u} onLengkapi={bukaLengkapi}'), "label per baris + Lengkapi");
   assert.ok(p.includes("const bukaLengkapi = (u, sasaran) => { setFokusPanel("), "Lengkapi hanya membuka drawer");
   assert.ok(!/api\.(nyatakanTanpaBahan|cabutTanpaBahan)/.test(p), "daftar tidak menulis");
-  assert.ok(p.includes("setKelengkapan([]); setDari(\"\"); setSampai(\"\")"), "Hapus filter ikut membersihkan kelengkapan dan periode");
+  assert.ok(p.includes("setKelengkapan([]); setPeriode(periodeSemuaWaktu())"), "Hapus filter ikut membersihkan kelengkapan dan periode");
 });
 
 test("pengawatan filter: server menghitung; dasar tanggal dinyatakan; akses ke riwayat; ikon info; aria-pressed; target ≥44px di HP", () => {
   const f = src("features", "production", "KelengkapanFilter.jsx");
   assert.ok(f.includes("aria-pressed={on}") && f.includes("InfoToggleButton"), "toggle tersedia + ikon info");
   assert.ok(f.includes("DASAR_PERIODE_TEKS") && f.includes('data-testid="dasar-periode"'), "dasar tanggal periode dinyatakan");
-  assert.ok(f.includes('data-testid="periode-dari"') && f.includes('data-testid="periode-sampai"') && f.includes('data-testid="urutan-daftar"'), "periode + urutan");
+  assert.ok(f.includes('data-testid="periode-picker"') && f.includes("<DateRangePicker value={periode} onChange={onPeriode} showCompare={false} />") && f.includes('data-testid="urutan-daftar"'), "pemilih periode standar + urutan");
   assert.ok(f.includes("URUTAN_DAFTAR.map") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani");
   assert.ok(f.includes('data-testid="kel-lihat-riwayat"') && f.includes("hitung.riwayat.unik"), "akses ke unit Terkirim berkekurangan");
   assert.ok(f.includes("max-sm:min-h-[44px]"), "target sentuh HP");

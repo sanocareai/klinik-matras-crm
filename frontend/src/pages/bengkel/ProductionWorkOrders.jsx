@@ -6,6 +6,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { bisaCatatBahan } from "@/lib/roles.js";
+import { useHubRange } from "@/hooks/useHubParam.js";
 const bacaPengguna = () => { try { return JSON.parse(localStorage.getItem("user")); } catch { return null; } };
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -18,7 +19,7 @@ import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx
 import OrderProduksiPanel from "@/features/production/OrderProduksiPanel.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
-import { KERJA_FILTER, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, validasiPeriode, kunciKelengkapan } from "@/features/production/orderProduksiModel.js";
+import { KERJA_FILTER, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, kunciKelengkapan, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu } from "@/features/production/orderProduksiModel.js";
 import KelengkapanFilter from "@/features/production/KelengkapanFilter.jsx";
 import KelengkapanBaris from "@/features/production/KelengkapanBaris.jsx";
 
@@ -41,7 +42,8 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? DISPLAY_STATUS_TABS.filter((t) => t.key !== "TERKIRIM") : DISPLAY_STATUS_TABS;
   const [kerja, setKerja] = useState("");
   const [kelengkapan, setKelengkapan] = useState([]); // penyaring cepat (gabungan/OR) — dihitung server
-  const [dari, setDari] = useState(""); const [sampai, setSampai] = useState(""); // periode = tanggal order masuk (unit dibuat)
+  const [periode, setPeriode] = useHubRange(periodeDariUrl, periodeKeUrl); // periode = tanggal order masuk (unit dibuat); pemilih standar app, tersimpan di URL, diterapkan saat Terapkan
+  const rentang = useMemo(() => paramPeriode(periode), [periode]); const dari = rentang.dari ?? ""; const sampai = rentang.sampai ?? "";
   const [urut, setUrut] = useState("terbaru");
   const [hitung, setHitung] = useState(null); const [hitungMemuat, setHitungMemuat] = useState(false); const [versiHitung, setVersiHitung] = useState(0); const hitungReq = useRef(0);
   const [cari, setCari] = useState(() => { try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; } }); // ?q= dari tautan "Lengkapi" (Laporan Produksi)
@@ -73,10 +75,9 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     if (scope === "aktif") return ACTIVE_KEYS.join(",");
     return undefined;
   }, [tab, scope]);
-  const galatPeriode = useMemo(() => validasiPeriode(dari, sampai), [dari, sampai]); // periode tidak valid TIDAK dikirim diam-diam: galat ditampilkan
-  const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [], kelengkapan, urut, ...(galatPeriode ? {} : { dari: dari || undefined, sampai: sampai || undefined }) }), [qDebounced, kerja, kelengkapan, urut, dari, sampai, galatPeriode]);
+  const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [], kelengkapan, urut, ...rentang }), [qDebounced, kerja, kelengkapan, urut, rentang]);
   // hitungan kelengkapan: lingkup + pencarian + status kerja + periode (TANPA pilihan kelengkapan itu sendiri), seluruh unit yang cocok di server
-  const paramHitung = useMemo(() => ({ displayStatus: displayParam, q: qDebounced || undefined, statusKerja: kerja || undefined, ...(galatPeriode ? {} : { dari: dari || undefined, sampai: sampai || undefined }) }), [displayParam, qDebounced, kerja, dari, sampai, galatPeriode]);
+  const paramHitung = useMemo(() => ({ displayStatus: displayParam, q: qDebounced || undefined, statusKerja: kerja || undefined, ...rentang }), [displayParam, qDebounced, kerja, rentang]);
   useEffect(() => {
     const id = ++hitungReq.current; setHitungMemuat(true);
     api.getKelengkapanHitung(paramHitung).then((h) => { if (id === hitungReq.current) setHitung(bacaHitungKelengkapan(h)); }).catch(() => { if (id === hitungReq.current) setHitung(null); }).finally(() => { if (id === hitungReq.current) setHitungMemuat(false); });
@@ -196,7 +197,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
         </div>
 
         <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])}
-          dari={dari} sampai={sampai} onDari={setDari} onSampai={setSampai} galatPeriode={galatPeriode} urut={urut} onUrut={setUrut} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
+          periode={periode} onPeriode={setPeriode} urut={urut} onUrut={setUrut} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
 
         {error && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-btn bg-redbg px-3 py-2.5 text-[13px] text-red">
@@ -208,7 +209,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
           {kosong ? (
             <EmptyState icon={ClipboardList} title="Tidak ada unit yang cocok"
               description={adaFilter ? "Tidak ada unit dengan filter ini. Ubah kata kunci, tab status order, atau status kerja." : "Belum ada unit di lingkup ini."}
-              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setKelengkapan([]); setDari(""); setSampai(""); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus filter</Button> : null} />
+              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus filter</Button> : null} />
           ) : (
             <>
               <TableWrap className="hidden lg:block">

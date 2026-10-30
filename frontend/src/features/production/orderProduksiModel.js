@@ -1,3 +1,6 @@
+import { makeRange } from "../../lib/dateRange.js";
+import { rangeDariParams, paramsDariRange } from "./laporan/laporanModel.js";
+
 // Order Produksi (adopsi Admin) — model MURNI untuk daftar, panel fokus, dan editor rencana bahan (diuji node --test, tanpa React/DOM).
 //
 // TIGA SUMBU STATUS yang dikirim server di `row.adopsi` (backend/src/lib/domain/productionWorkStatus.js) — klien TIDAK menurunkannya sendiri:
@@ -134,6 +137,17 @@ export function validasiPeriode(dari, sampai) {
   if (dari && sampai && dari > sampai) return "Tanggal awal tidak boleh lebih besar dari tanggal akhir.";
   return "";
 }
+// ── periode (komponen DateRangePicker standar app, sama dengan Order CRM) ──
+/** Bawaan = "Semua waktu" (tanpa batas tanggal) — sama dengan perilaku sebelum pemilih tanggal diganti. */
+export const PERIODE_BAWAAN = "all_time";
+/** Periode "Semua waktu" (reset). */
+export const periodeSemuaWaktu = () => makeRange(PERIODE_BAWAAN);
+/** Periode dari ?preset=&dari=&sampai=&n= (tidak valid / kosong → Semua waktu). */
+export const periodeDariUrl = (params) => rangeDariParams(params, PERIODE_BAWAAN);
+/** Tulis periode ke query (kunci lain dipertahankan; Semua waktu = kunci periode dibuang). */
+export const periodeKeUrl = (params, range) => paramsDariRange(params, range, PERIODE_BAWAAN);
+/** Parameter API dari periode: tanggal kalender WIB inklusif (server memotong hari WIB; hari terakhir ikut penuh). Semua waktu = tanpa parameter. */
+export function paramPeriode(range) { return range?.from && range?.to ? { dari: range.from, sampai: range.to } : {}; }
 /** Teks periode untuk label ("1 Okt 2026 – 15 Okt 2026" / "sejak …" / "sampai …"). */
 export function teksPeriode(dari, sampai, fmt = (x) => x) {
   if (!dari && !sampai) return "Semua tanggal";
