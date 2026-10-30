@@ -19,7 +19,7 @@ const TPL_P = "scripts/templates/release-penjadwalan-langsung";
 const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`,
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/verifikasi-hotfix.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const FILE_TETAP = [OUT, GENERATOR, ...TPL_FILES];
-const CAND_BRANCH = "feat/kelengkapan-filter-sederhana-on-c6d44226";
+const CAND_BRANCH = "feat/kelengkapan-filter-sederhana-on-c063779c";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
