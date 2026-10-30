@@ -1,0 +1,22 @@
+# RILIS "LAPORAN PRODUKSI TERPADU" (menu KPI & Laporan → 4 tab: Ringkasan · Biaya per Order · Kinerja Produksi · Bahan & Gudang): WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Backend (aditif, BACA-SAJA): rute baru /api/production-v2/laporan/{meta,ringkasan,biaya-order,biaya-order/:orderId,kinerja,bahan-gudang,export} dipasang lewat SATU baris di productionExperience.js; cakupan = semua unit non-batal (bukan hanya
+#     kohort rencana V2). Nominal (Rp) hanya untuk pemegang finance:read, diputuskan di server. Laporan KPI lama (/production-v2/reports/*) TIDAK dihapus (dipakai "Ringkasan Saya").
+#   • Aturan data: HPP Bahan = HPP operasional dari harga BEKU (pemakaian lama tidak dihitung ulang dengan harga terbaru); "selesai" dipisah menjadi posisi saat ini / kejadian bertanggal / tanpa tanggal tercatat (tidak ditebak ke tren);
+#     lingkup Biaya per Order bawaan PENUH (order tanpa pemakaian tidak hilang); PIC = penugasan (bukan pekerja aktual) dengan cakupan; SANO GUARD ber-snapshot resmi IKUT dihitung + gap biaya perakitan/potensi hitung ganda.
+#   • Frontend: halaman baru + DateRangePicker standar (lib/dateRange.js: impor relatif, tanpa perubahan perilaku); Order Produksi menerima ?q= dari tombol "Lengkapi". Tombol Export mengikuti tab, periode, filter.
+#   • Rilis ini TIDAK membuat atau mengubah data bisnis: tidak ada tulis ke stok, Material Issue, harga, biaya beku, jurnal, unit, pernyataan, run, jadwal, atau status. Smoke pasca-switch hanya membaca.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; konsistensi antar tab, lingkup penuh, selesai posisi/bertanggal, PIC penugasan, SANO GUARD, waktu respons, ekspor, izin, tanpa jejak tulis);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (angka API = hitungan langsung dari tabel; izin 401/403; data identik).
+#   • PENGUNCIAN: kunci deploy BERSAMA (release-deploy-bersama.lock) + kunci sendiri diambil ATOMIK sebelum memeriksa kunci/proses lain; kepemilikan ditentukan oleh proses (perangkat:inode fd 7/9), BUKAN nama berkas; diperiksa di fase 0,
+#     sebelum migrasi/persiapan akhir, dan tepat sebelum switch. Rehearsal MENGUJI logika ini (kunci sendiri/lain, bagian kritis, baseline bergeser) lalu gerbang fase 7 pada production nyata tanpa switch.
+#     Skrip rilis lain yang belum memakai kunci bersama TIDAK terlindungi dua arah (lihat laporan cakupan).
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi / berkas tambahan / proses
+#     berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip. Gerbang disk (minimal 5 GiB) TIDAK diturunkan.
+#
+#   cat scripts/release-laporan-produksi.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/lpr.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/lpr.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/lpr.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/lprr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/lpr.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/lpr.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru, tanpa data baru). Rollback hanya mengembalikan halaman KPI & Laporan lama (kohort V2); tidak ada data yang berubah.
+# (dibangkitkan oleh scripts/gen-release-laporan-produksi.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-laporan-produksi/* + pustaka scripts/lib/{rehearsal,smoke}-laporan-produksi.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)
