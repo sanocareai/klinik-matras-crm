@@ -1535,6 +1535,10 @@ export const api = {
   getAtribusiIklan: (params) => request("/atribusi/iklan" + buildQuery(params)),
   // Performa Akuisisi per sumber (ADMIN, baca-saja): label CRM per sumber + Meta atribusi terbukti/biaya. dari/sampai kosong = 30 hari penuh berakhir kemarin.
   getAtribusiSumber: (params) => request("/atribusi/iklan/sumber" + buildQuery(params)),
+  // Kesehatan capture touch, daftar referensi Ad→Ad Set→Campaign (+Ad ID belum terpetakan), dan ekspor ID iklan (ADMIN, baca-saja) — dipakai panel "Kesehatan & referensi" di Marketing → Meta.
+  getAtribusiKesehatan: () => request("/atribusi/iklan/kesehatan"),
+  getAtribusiReferensi: () => request("/atribusi/iklan/referensi"),
+  getAtribusiEksporId: () => request("/atribusi/iklan/ekspor-id"),
   // Fase 3 (Okt 2026): spend harian per Ad ID, target KPI, monitoring (ADMIN). Impor spend dryRun-default; sistem tidak mengubah iklan/budget.
   // Biaya iklan tingkat SUMBER (ADMIN): input manual harian / total rentang (+ audit append-only). dryRun:true = hanya rencana. Tidak menyentuh spend per Ad, campaign, atau budget Meta.
   getBiayaSumber: (params) => request("/atribusi/iklan/biaya-sumber" + buildQuery(params)),

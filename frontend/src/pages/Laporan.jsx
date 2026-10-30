@@ -13,9 +13,7 @@ import RingkasanTab from "@/features/laporan/components/RingkasanTab.jsx";
 import PerformaTimTab from "@/features/laporan/components/PerformaTimTab.jsx";
 import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
 import SalesReportTab from "@/features/laporan/components/SalesReportTab.jsx";
-import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
-import IklanCampaignTab from "@/features/laporan/components/IklanCampaignTab.jsx";
-import AkuisisiTab from "@/features/laporan/components/AkuisisiTab.jsx";
+import MarketingTab from "@/features/laporan/components/MarketingTab.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: workbook export (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -27,9 +25,9 @@ import AkuisisiTab from "@/features/laporan/components/AkuisisiTab.jsx";
 // "Sales" ditaruh persis setelah "Ringkasan" (25 Agustus 2026, permintaan
 // owner) — laporan sales (fokus penjualan) jadi tab kedua yang paling sering
 // dibuka, bukan di ujung.
-// "Iklan" (Okt 2026): laporan CRM per campaign dari touch Ad ID (/api/atribusi/iklan); memuat datanya sendiri, tidak ikut rentang halaman ini.
-// "Akuisisi" (Okt 2026): Performa Akuisisi per sumber (/api/atribusi/iklan/sumber); memuat datanya sendiri dengan SATU filter periode miliknya.
-const TABS = ["Ringkasan", "Sales", "Traffic", "Akuisisi", "Iklan", "Performa Tim", "Pipeline"];
+// "Marketing" (Okt 2026) MENGGANTIKAN tab Traffic + Akuisisi + Iklan: ringkasan semua sumber → detail sumber → Meta campaign → ad set → ad. Memuat laporan atribusinya sendiri
+// dengan SATU filter periode (halaman ini); tren/pola lead memakai data traffic yang sudah dimuat di bawah. URL lama ?tab=Traffic|Akuisisi|Iklan dipetakan ke Marketing (lihat marketingLogic#petaTab).
+const TABS = ["Ringkasan", "Sales", "Marketing", "Performa Tim", "Pipeline"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -43,7 +41,6 @@ export default function Laporan() {
   const [searchParams, setSearchParams] = useSearchParams();
   const dariUrl = useMemo(() => bacaUrlLaporan(searchParams, TABS), [searchParams]);
   const tab = dariUrl.tab || "Ringkasan";
-  const sumberId = tab === "Akuisisi" ? dariUrl.sumber : null;
   // Default "Hari ini" (26 Agustus 2026, permintaan owner) — konsisten
   // dengan Dashboard yang sudah lama begini. Charts otomatis ikut per JAM
   // untuk rentang 1 hari (lihat seriesWindow() di routes/analytics.js).
@@ -57,22 +54,39 @@ export default function Laporan() {
   // memperbarui path tab sehingga klik Sales/Traffic/Akuisisi/Iklan tidak berpindah (bug 28 Okt 2026). Pola sama dengan TabbedHub.
   const tabsCtx = useOptionalTabs();
   const location = useLocation();
+  // Keadaan Marketing yang tersimpan di URL (sumber, urutan, kolom, banding, drilldown Meta, peringkat, umur) — dibaca dari URL, diubah lewat ubahMarketing.
+  const marketingKini = useMemo(() => ({ sumber: dariUrl.sumber, urut: dariUrl.urut, kolom: dariUrl.kolom, banding: dariUrl.banding, level: dariUrl.level, campaign: dariUrl.campaign, adset: dariUrl.adset, rank: dariUrl.rank, umur: dariUrl.umur }), [dariUrl]);
   const perbaruiUrl = useCallback((patch, { ganti = true } = {}) => {
     const p = tulisUrlLaporan(searchParams, {
-      tab: patch.tab ?? tab, range: patch.range ?? range, sumber: patch.sumber === undefined ? sumberId : patch.sumber,
+      tab: patch.tab ?? tab, range: patch.range ?? range, marketing: patch.marketing === undefined ? ((patch.tab ?? tab) === "Marketing" ? marketingKini : {}) : patch.marketing,
     });
     if (tabsCtx?.replaceActivePath) {
       const q = p.toString();
-      tabsCtx.replaceActivePath(location.pathname + (q ? `?${q}` : ""));
+      const tujuan = location.pathname + (q ? `?${q}` : "");
+      // Navigasi Marketing (buka sumber/campaign/ad set) harus bisa ditutup dengan tombol Back, padahal replaceActivePath hanya REPLACE: tambahkan SATU entri riwayat dulu
+      // (pushState), lalu replaceActivePath mengisi isinya (tab + router). Sinkron balik saat Back ada di efek popstate di bawah. Perubahan lain (periode, urutan, kolom) tetap replace.
+      if (!ganti) { try { window.history.pushState(window.history.state, "", tujuan); } catch { /* riwayat tidak tersedia: tetap replace */ } }
+      tabsCtx.replaceActivePath(tujuan);
     } else {
       setSearchParams(p, { replace: ganti });
     }
-  }, [searchParams, setSearchParams, tab, range, sumberId, tabsCtx, location.pathname]);
-  const setTab = useCallback((t) => perbaruiUrl({ tab: t, sumber: null }, { ganti: false }), [perbaruiUrl]);
+  }, [searchParams, setSearchParams, tab, range, marketingKini, tabsCtx, location.pathname]);
+  const setTab = useCallback((t) => perbaruiUrl({ tab: t, marketing: {} }, { ganti: false }), [perbaruiUrl]);
   const setRange = useCallback((r) => { setRangeLokal(r); perbaruiUrl({ range: r }); }, [perbaruiUrl]);
-  // Buka detail satu sumber di tab Akuisisi (dari kartu/tabel Akuisisi atau dari tab Traffic) — push, jadi tombol Back menutup detail; periode tetap sama.
-  const pilihSumber = useCallback((id) => perbaruiUrl({ tab: "Akuisisi", sumber: id || null }, { ganti: false }), [perbaruiUrl]);
-  const kembaliSumber = useCallback(() => perbaruiUrl({ sumber: null }, { ganti: false }), [perbaruiUrl]);
+  // Ubah keadaan Marketing di URL. Navigasi (sumber, drilldown) = push sehingga tombol Back menutup detail; urutan/kolom/peringkat = replace. Periode selalu dipertahankan.
+  const ubahMarketing = useCallback((patch, opsi = {}) => {
+    const navigasi = "sumber" in patch || "level" in patch;
+    perbaruiUrl({ tab: "Marketing", marketing: { ...marketingKini, ...patch } }, { ganti: opsi.ganti ?? !navigasi });
+  }, [perbaruiUrl, marketingKini]);
+  // Back/Forward browser pada halaman ini: router mengganti URL-nya, tetapi path TAB (yang dibaca halaman) harus disamakan — hanya bila URL kembali ke Laporan.
+  useEffect(() => {
+    if (!tabsCtx?.replaceActivePath) return undefined;
+    const sinkron = () => { if (window.location.pathname === location.pathname) tabsCtx.replaceActivePath(window.location.pathname + window.location.search); };
+    window.addEventListener("popstate", sinkron);
+    return () => window.removeEventListener("popstate", sinkron);
+  }, [tabsCtx, location.pathname]);
+  // URL lama (?tab=Traffic|Akuisisi|Iklan) → ganti ke bentuk kanonik Marketing sekali (replace), periode dipertahankan.
+  useEffect(() => { if (dariUrl.tabLama) perbaruiUrl({ tab: "Marketing", marketing: marketingKini }, { ganti: true }); }, [dariUrl.tabLama]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [overview, setOverview] = useState(null);
   const [summary, setSummary]   = useState(null);
@@ -99,6 +113,7 @@ export default function Laporan() {
   const [sourceDetail, setSourceDetail] = useState(null);
   const [loading, setLoading]   = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [versiRefresh, setVersiRefresh] = useState(0);   // menyegarkan juga laporan atribusi tab Marketing
 
   const loadData = useCallback(async () => {
     // Preset "Semua" sengaja mengirim from/to kosong (= tanpa filter tanggal),
@@ -198,14 +213,12 @@ export default function Laporan() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading}>
+          <button className="btn btn-ghost btn-sm" onClick={() => { loadData(); setVersiRefresh((v) => v + 1); }} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
-          {tab !== "Iklan" && tab !== "Akuisisi" && (
-            <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
-              <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
-            </button>
-          )}
+          <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
+            <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
+          </button>
           <DateRangePicker value={range} onChange={setRange} />
         </div>
       </div>
@@ -218,16 +231,11 @@ export default function Laporan() {
         </TabsList>
 
         <div style={{ paddingTop: 24 }}>
-          {tab === "Akuisisi" || tab === "Iklan" ? (
-            // Dua tab ini memuat datanya sendiri dengan periode global di atas; tidak ikut skeleton agar state tab (urutan, panel, drilldown) tidak hilang saat filter berubah.
-            <>
-              <TabsContent value="Akuisisi">
-                <AkuisisiTab range={range} onUbahRentang={setRange} sumberId={sumberId} onPilihSumber={pilihSumber} onKembaliSumber={kembaliSumber} onBukaIklan={() => setTab("Iklan")} />
-              </TabsContent>
-              <TabsContent value="Iklan">
-                <IklanCampaignTab range={range} onUbahRentang={setRange} />
-              </TabsContent>
-            </>
+          {tab === "Marketing" ? (
+            // Marketing memuat laporan atribusinya sendiri dengan periode global di atas; tidak ikut skeleton agar state (urutan, drilldown, bagian yang dibuka) tidak hilang saat data traffic dimuat ulang.
+            <TabsContent value="Marketing">
+              <MarketingTab range={range} onUbahRentang={setRange} url={dariUrl} onUbah={ubahMarketing} traffic={traffic} memuatTraffic={loading} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} versiRefresh={versiRefresh} />
+            </TabsContent>
           ) : loading ? (
             <div className="flex flex-col gap-5">
               <KpiRowSkeleton />
@@ -250,10 +258,6 @@ export default function Laporan() {
                   grossTotalPerusahaan={summary?.uang?.grossValue}
                   onExport={handleExport} range={range}
                 />
-              </TabsContent>
-
-              <TabsContent value="Traffic">
-                <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} onBukaAkuisisi={pilihSumber} />
               </TabsContent>
 
               <TabsContent value="Performa Tim">

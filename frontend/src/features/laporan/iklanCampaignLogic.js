@@ -116,8 +116,8 @@ export function jejak(level, nama) {
 
 export const STATUS_BIAYA_LABEL = {
   BELUM_TERHUBUNG: { teks: "Belum tersambung", tip: "Spend Meta belum ada di sistem (impor CSV atau sinkronisasi API belum berjalan).", nada: "netral" },
-  DATA_BELUM_MATANG: { teks: "Data belum matang", tip: "Sebagian lead belum cukup umur; closing dan revenue masih bertambah.", nada: "peringatan" },
-  BELUM_ADA_KONVERSI: { teks: "Belum ada konversi", tip: "Ada spend tetapi belum ada lead/closing sebagai penyebut.", nada: "netral" },
+  DATA_BELUM_MATANG: { teks: "Data belum matang", tip: "Sebagian lead belum cukup umur; hasil order/pembayaran masih bertambah.", nada: "peringatan" },
+  BELUM_ADA_KONVERSI: { teks: "Belum ada konversi", tip: "Ada spend tetapi belum ada lead/customer lunas sebagai penyebut.", nada: "netral" },
   MAPPING_BELUM_ADA: { teks: "Mapping belum ada", tip: "Ad ID belum punya referensi Ad → Ad Set → Campaign (atau lead UNKNOWN).", nada: "peringatan" },
   DATA_TERLAMBAT: { teks: "Data terlambat", tip: "Spend terbaru tertinggal; rentang meminta hari yang belum ada datanya.", nada: "peringatan" },
   TANPA_SPEND_DI_RENTANG: { teks: "Tanpa spend di rentang", tip: "Tidak ada baris spend untuk entitas ini pada rentang yang dipilih.", nada: "netral" },
@@ -174,9 +174,9 @@ export function statusBiayaLaporan(lap) {
 
 export const KOLOM_TARGET = [
   { k: "maxCpl", label: "Maks. CPL acquisition (Rp)", rupiah: true }, { k: "maxCostPerQualifiedLead", label: "Maks. cost per qualified lead (Rp)", rupiah: true },
-  { k: "maxCostPerCustomerOrder", label: "Maks. cost per customer ber-order (Rp)", rupiah: true }, { k: "maxCpaClosing", label: "Maks. CPA closing utama (Rp)", rupiah: true },
+  { k: "maxCostPerCustomerOrder", label: "Maks. cost per customer ber-order (Rp)", rupiah: true }, { k: "maxCpaClosing", label: "Maks. CPA customer lunas (ledger) (Rp)", rupiah: true },
   { k: "minBookedRoas", label: "Min. booked ROAS (×)" }, { k: "minCashRoas", label: "Min. cash ROAS (×)" },
-  { k: "minAcquisitionLeads", label: "Min. jumlah acquisition lead", int: true }, { k: "minClosings", label: "Min. jumlah closing", int: true },
+  { k: "minAcquisitionLeads", label: "Min. jumlah acquisition lead", int: true }, { k: "minClosings", label: "Min. jumlah customer lunas (ledger)", int: true },
   { k: "minCohortAgeDays", label: "Min. umur kohort (hari)", int: true }, { k: "maxSpamSharePercent", label: "Maks. share spam (%)" },
 ];
 

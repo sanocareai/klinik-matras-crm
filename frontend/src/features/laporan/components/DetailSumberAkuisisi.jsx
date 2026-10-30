@@ -25,7 +25,7 @@ const Bagian = ({ judul, tip, children, className }) => (
 );
 const Sel = ({ c }) => <span className={c.kosong ? "text-ink3" : ""}>{c.teks}</span>;
 
-export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBukaIklan }) {
+export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBukaIklan, tanpaJejak = false, sisipanAtas = null }) {
   const b = s.biaya || {};
   const organik = s.jenis === "ORGANIK";
   const jalur = jalurRincian(s.id);
@@ -36,10 +36,10 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
   const sementara = sementaraTeks(b);
   return (
     <div className="flex flex-col gap-4" data-testid="detail-sumber">
-      <nav aria-label="Jejak" className="flex flex-wrap items-center gap-1 text-[13px]">
+      {!tanpaJejak && <nav aria-label="Jejak" className="flex flex-wrap items-center gap-1 text-[13px]">
         <button type="button" className="inline-flex items-center gap-1 text-accent hover:underline" onClick={onKembali}><ArrowLeft size={14} /> Semua sumber</button>
         <ChevronRight size={14} className="text-ink3" /><span className="text-ink3">Akuisisi</span><ChevronRight size={14} className="text-ink3" /><span className="font-semibold text-ink" aria-current="page">{s.label}</span>
-      </nav>
+      </nav>}
 
       <div className="flex flex-wrap items-center gap-3">
         <LogoSumber id={s.id} size={48} />
@@ -49,6 +49,9 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
         </div>
         {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil (&lt; {s.ambangSampel} lead)</Badge>}
       </div>
+
+      {sisipanAtas}
+      {sisipanAtas && <h3 className="-mb-2 text-[15px] font-semibold text-ink">Ringkasan label CRM <span className="t-secondary text-[12.5px] font-normal">· basis berbeda dari atribusi campaign di atas — jangan dipertukarkan</span></h3>}
 
       <div className="grid gap-3 md:grid-cols-2">
         <Bagian judul="Funnel lead → lunas" tip="Customer unik. Lead = semua customer berlabel sumber ini yang dibuat di periode (spam ikut terhitung); lead sah = bukan spam/internal/B2B/karyawan. Ber-order ≠ sudah membayar.">
@@ -105,7 +108,7 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
       <Bagian judul="Rincian lebih dalam" className="gap-2">
         <p className="text-[12.5px] text-ink2">{jalur.penjelasan}</p>
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          {jalur.campaign && <button type="button" className="btn btn-primary btn-sm" onClick={onBukaIklan}>Lihat per campaign → ad set → ad</button>}
+          {jalur.campaign && onBukaIklan && <button type="button" className="btn btn-primary btn-sm" onClick={onBukaIklan}>Lihat per campaign → ad set → ad</button>}
           <Link className="btn btn-ghost btn-sm" to={`/customers?source=${encodeURIComponent(LABEL_PELANGGAN[s.id] || "OTHER")}${qs}`}><ExternalLink size={13} /> Daftar customer sumber ini</Link>
         </div>
         {s.id === "META" && kc && (

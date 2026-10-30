@@ -101,7 +101,7 @@ export default function KelolaBiayaIklan({ open, onOpenChange, periode, hariIni,
 
         {tab === "DETAIL_AD" ? (
           <div className="flex flex-col gap-2">
-            <p>Impor CSV Ads Manager level <b>Ad</b> (jalur yang sama dengan tab Iklan). Detail Ad per hari <b>diutamakan</b> atas biaya manual di tingkat sumber — keduanya tidak pernah dijumlah.</p>
+            <p>Impor CSV Ads Manager level <b>Ad</b> (jalur yang sama dengan Marketing → Meta (Impor spend)). Detail Ad per hari <b>diutamakan</b> atas biaya manual di tingkat sumber — keduanya tidak pernah dijumlah.</p>
             <ImporSpend onSelesai={() => { muatDaftar(); onTersimpan?.(); }} />
           </div>
         ) : (

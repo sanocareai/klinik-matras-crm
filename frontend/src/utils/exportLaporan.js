@@ -562,7 +562,8 @@ const SHEET_PER_TAB = {
     ["Ringkasan", d.summary && sheetRingkasan(d)],
     ["Kota",      d.summary?.topCities?.length && sheetKota(d)],
   ],
-  Traffic:   (d) => [
+  // Tab Marketing (menggantikan Traffic): export XLSX = sheet Traffic (tren/jam/respons/sumber) + Rincian Iklan (kreatif/tautan). Tabel sumber & Meta punya tombol Ekspor CSV sendiri di halamannya.
+  Marketing: (d) => [
     ["Traffic",       d.traffic && sheetTraffic(d)],
     ["Rincian Iklan", d.sourceDetail?.data?.length && sheetRincianIklan(d)],
   ],

@@ -1,8 +1,10 @@
-// Logika murni SATU periode laporan untuk tab Akuisisi / Iklan (dan URL-nya). Tanpa React, tanpa dayjs, tanpa timezone perangkat: semua tanggal adalah string "YYYY-MM-DD" (kalender WIB).
+// Logika murni SATU periode laporan untuk tab Marketing (dulu Traffic / Akuisisi / Iklan) dan URL-nya. Tanpa React, tanpa dayjs, tanpa timezone perangkat: semua tanggal adalah string "YYYY-MM-DD" (kalender WIB).
 //
 // MASALAH YANG DIPERBAIKI (26 Okt 2026): filter global Laporan memilih 1–26 Okt, tetapi tab Akuisisi memegang state sendiri (30 hari berakhir kemarin = 26 Sep–25 Okt) dan tab Iklan state sendiri lagi
 // (7 hari) → tiga periode berbeda di satu halaman. Sekarang SATU state (range di Laporan.jsx) dibaca semua tab; URL (?tab&dari&sampai&sumber) mencerminkannya sehingga refresh, tombol Back, dan
 // berpindah tab tidak mengubah periode.
+
+import { petaTab, TAB_MARKETING, urutSumberValid, URUT_SUMBER_BAWAAN, kriteriaMetaValid, KRITERIA_META_BAWAAN, normalisasiJalurMeta, MODE_KOLOM, umurValid } from "./marketingLogic.js";
 
 export const MAKS_HARI_PERIODE = 93;   // sama dengan batas server (/sumber, /iklan)
 const TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -41,27 +43,61 @@ export function saranRentang(hariIni) {
 }
 
 // ── URL ↔ state ──────────────────────────────────────────────────────────────────────────────────────────────────────
-/** Baca ?tab&dari&sampai&sumber. Nilai tak valid → null (diabaikan, tidak pernah melempar). */
+// Kunci milik tab Marketing (semua opsional; nilai bawaan TIDAK ditulis agar URL bersih): sumber (detail sumber), urut (urutan tabel sumber), kolom (ringkas|lengkap),
+// banding (=1, bandingkan periode sebelumnya), level/campaign/adset (drilldown Meta), rank (kriteria peringkat Meta), umur (kohort Meta).
+const KUNCI_MARKETING = ["sumber", "urut", "kolom", "banding", "level", "campaign", "adset", "rank", "umur"];
+/**
+ * Baca ?tab&dari&sampai&(kunci Marketing). Nilai tak valid → null/bawaan (diabaikan, tidak pernah melempar).
+ * URL LAMA tetap berlaku: ?tab=Traffic|Akuisisi|Iklan dipetakan ke Marketing (Akuisisi membawa ?sumber=; Iklan → sumber=META) — periode dipertahankan.
+ */
 export function bacaUrlLaporan(search, tabsValid = []) {
   const p = search instanceof URLSearchParams ? search : new URLSearchParams(search || "");
-  const tab = p.get("tab"); const dari = p.get("dari"), sampai = p.get("sampai"); const sumber = p.get("sumber");
+  const dari = p.get("dari"), sampai = p.get("sampai"); const sumber = p.get("sumber");
   const punyaRentang = tglValid(dari) && tglValid(sampai) && dari <= sampai;
+  const sumberValid = sumber && /^[A-Z_]{2,16}$/.test(sumber) ? sumber : null;
+  const peta = petaTab(p.get("tab"), sumberValid, tabsValid);
+  const marketing = peta.tab === TAB_MARKETING;
+  const jalur = normalisasiJalurMeta({ level: p.get("level"), campaign: p.get("campaign"), adset: p.get("adset") });
   return {
-    tab: tab && tabsValid.includes(tab) ? tab : null,
+    tab: peta.tab, tabLama: !!peta.tab && peta.tab !== p.get("tab"),
     dari: punyaRentang ? dari : null, sampai: punyaRentang ? sampai : null,
-    sumber: sumber && /^[A-Z_]{2,16}$/.test(sumber) ? sumber : null,
+    sumber: marketing ? peta.sumber : null,
+    urut: marketing && urutSumberValid(p.get("urut")) ? p.get("urut") : URUT_SUMBER_BAWAAN,
+    kolom: marketing && MODE_KOLOM.includes(p.get("kolom")) ? p.get("kolom") : "ringkas",
+    banding: marketing && p.get("banding") === "1",
+    level: marketing && peta.sumber === "META" ? jalur.level : "campaign",
+    campaign: marketing && peta.sumber === "META" ? jalur.campaign : null,
+    adset: marketing && peta.sumber === "META" ? jalur.adset : null,
+    rank: marketing && kriteriaMetaValid(p.get("rank")) ? p.get("rank") : KRITERIA_META_BAWAAN,
+    umur: marketing && umurValid(p.get("umur")) ? p.get("umur") : "semua",
   };
 }
 
 /**
- * Salin parameter lain apa adanya; hanya kunci milik kita (tab/dari/sampai/sumber) yang ditulis ulang.
- * Tab 'Ringkasan' (bawaan) tidak ditulis agar URL lama tetap bersih. Tanpa batas ('Semua') → dari/sampai dihapus. sumber hanya bermakna di tab Akuisisi.
+ * Salin parameter lain apa adanya; hanya kunci milik kita (tab/dari/sampai + kunci Marketing) yang ditulis ulang.
+ * Tab 'Ringkasan' (bawaan) tidak ditulis agar URL lama tetap bersih. Tanpa batas ('Semua') → dari/sampai dihapus. Kunci Marketing hanya bermakna di tab Marketing; nilai bawaan dihapus.
+ * `marketing` = { sumber, urut, kolom, banding, level, campaign, adset, rank, umur }; `sumber` di argumen utama tetap diterima (kompatibel).
  */
-export function tulisUrlLaporan(search, { tab, range, sumber }) {
+export function tulisUrlLaporan(search, { tab, range, sumber, marketing = {} }) {
   const p = new URLSearchParams(search instanceof URLSearchParams ? search.toString() : search || "");
   if (tab && tab !== "Ringkasan") p.set("tab", tab); else p.delete("tab");
   if (range?.from && range?.to) { p.set("dari", range.from); p.set("sampai", range.to); } else { p.delete("dari"); p.delete("sampai"); }
-  if (sumber && tab === "Akuisisi") p.set("sumber", sumber); else p.delete("sumber");
+  for (const k of KUNCI_MARKETING) p.delete(k);
+  if (tab === TAB_MARKETING) {
+    const m = { sumber, ...marketing };
+    if (m.sumber) p.set("sumber", m.sumber);
+    if (m.urut && m.urut !== URUT_SUMBER_BAWAAN && urutSumberValid(m.urut)) p.set("urut", m.urut);
+    if (m.kolom === "lengkap") p.set("kolom", "lengkap");
+    if (m.banding) p.set("banding", "1");
+    if (m.sumber === "META") {
+      const j = normalisasiJalurMeta(m);
+      if (j.level !== "campaign") p.set("level", j.level);
+      if (j.campaign) p.set("campaign", j.campaign);
+      if (j.adset) p.set("adset", j.adset);
+      if (m.rank && m.rank !== KRITERIA_META_BAWAAN && kriteriaMetaValid(m.rank)) p.set("rank", m.rank);
+      if (m.umur && m.umur !== "semua" && umurValid(m.umur)) p.set("umur", m.umur);
+    }
+  }
   return p;
 }
 export const samaRentang = (a, b) => (a?.from ?? null) === (b?.from ?? null) && (a?.to ?? null) === (b?.to ?? null);
@@ -75,7 +111,7 @@ export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK
 
 /** Apa yang bisa dibuka lebih dalam dari satu sumber — hanya yang datanya ADA (tidak ada tabel palsu). */
 export function jalurRincian(id) {
-  if (id === "META") return { campaign: true, penjelasan: "Rincian campaign → ad set → ad tersedia di tab Iklan (touch iklan terbukti + pemetaan Ad ID)." };
+  if (id === "META") return { campaign: true, penjelasan: "Rincian campaign → ad set → ad tersedia di atas (touch iklan terbukti + pemetaan Ad ID)." };
   if (id === "TIKTOK") return { campaign: false, penjelasan: "TikTok belum punya data per campaign/ad di sistem (tidak ada touch klik per iklan). Yang tersedia: label CRM + biaya sumber yang diinput manual." };
   return { campaign: false, penjelasan: "Sumber organik/lainnya tidak punya campaign atau biaya iklan yang dialokasikan." };
 }
