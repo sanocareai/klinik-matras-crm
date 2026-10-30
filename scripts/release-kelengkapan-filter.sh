@@ -27,7 +27,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;; esac; done
-CAND_BRANCH="${CAND_BRANCH:-feat/kelengkapan-filter-sederhana-on-c063779c}"
+CAND_BRANCH="${CAND_BRANCH:-feat/kelengkapan-filter-sederhana-on-60b5df10}"
 CAND_REF="refs/remotes/origin/cand-kf"
 BUNDLE="${BUNDLE:-}"
 ALLOWED_RE='^(frontend/src/features/production/KelengkapanBagian\.jsx|frontend/src/features/production/KelengkapanBaris\.jsx|frontend/src/features/production/KelengkapanFilter\.jsx|frontend/src/features/production/orderProduksiModel\.js|frontend/src/hooks/useHubParam\.js|frontend/src/pages/bengkel/ProductionWorkOrders\.jsx|frontend/tests/kelengkapanFilterSederhana\.test\.js|frontend/tests/kelengkapanOrderProduksi\.test\.js|frontend/tests/orderProduksiAdopsi\.test\.js|frontend/tests/releaseKelengkapanFilter\.test\.js|scripts/gen-release-kelengkapan-filter\.cjs|scripts/release-kelengkapan-filter\.sh|scripts/templates/release-kelengkapan-filter/build-only\.txt|scripts/templates/release-kelengkapan-filter/container-baru\.txt|scripts/templates/release-kelengkapan-filter/fitur-dist\.txt|scripts/templates/release-kelengkapan-filter/header\.txt|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt|scripts/templates/release-penjadwalan-langsung/verifikasi-hotfix\.txt)$'
@@ -250,11 +250,11 @@ for s1 in "Bahan perlu dicek"; do
   [ -n "$(grep -lF -- "$s1" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -z "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru MASIH memuat tampilan lama: ${s1}"
 done
-for s2 in "Data order kurang" "Laporan Produksi" "Tidak ada unit yang cocok" "Ada stok" "Stok belum diketahui" "Nol menurut pergerakan" "Saldo minus" "Koreksi saldo" "Ubah harga" "Harga Berlaku (HPP operasional)" "Belum ada harga berlaku" "Pilih meja" "Belum dijadwalkan" "Tambah pemakaian" "Riwayat dan dokumen pemakaian" "Tanpa pengeluaran stok" "Beranda Gudang" "Pengeluaran Material" "Konfirmasi Barang Jadi" "Tampilkan semua bahan" "Saringan aktif" "Ada stok, belum ada harga"; do
+for s2 in "Data order kurang" "Laporan Produksi" "Tidak ada unit yang cocok" "Ada stok" "Stok belum diketahui" "Nol menurut pergerakan" "Saldo minus" "Koreksi saldo" "Ubah harga" "Harga Berlaku (HPP operasional)" "Belum ada harga berlaku" "Pilih meja" "Belum dijadwalkan" "Tambah pemakaian" "Riwayat dan dokumen pemakaian" "Tanpa pengeluaran stok" "Beranda Gudang" "Pengeluaran Material" "Konfirmasi Barang Jadi" "Tampilkan semua bahan" "Saringan aktif" "Ada stok, belum ada harga" "Harga Berlaku otomatis" "Pembaruan Harga Berlaku otomatis dari PO sedang dimatikan" "Tidak ada konversi satuan"; do
   [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
 done
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): filter Kelengkapan baru ada, chip lama hilang, 22 teks fitur live (Order Produksi, Laporan Produksi, redesain Stok & Lokasi, Koreksi Saldo, Harga Berlaku, pemakaian, Gudang) tetap ada"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): filter Kelengkapan baru ada, chip lama hilang, 25 teks fitur live (Order Produksi, Laporan Produksi, redesain Stok & Lokasi, Harga Berlaku otomatis dari PO, Koreksi Saldo, Harga Berlaku, pemakaian, Gudang) tetap ada"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
 OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"; n=0
