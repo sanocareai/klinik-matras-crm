@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import { Link } from "react-router-dom";
-import { DATA_ORDER_BELUM_DINILAI_TEKS, KELENGKAPAN_BUKAN, pesanGalatPernyataan, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { DATA_ORDER_BELUM_DINILAI_TEKS, KELENGKAPAN_BUKAN, labelKelengkapan, pesanGalatPernyataan, waktuWib } from "@/features/production/orderProduksiModel.js";
 
 // KELENGKAPAN DATA unit (drawer Order Produksi) — klasifikasi yang SAMA dengan daftar/filter/ekspor (server: adopsi.kelengkapan). Membuka bagian ini TIDAK menulis apa pun.
 // Satu-satunya tulisan di sini: pernyataan eksplisit "unit ini tanpa bahan baru" (alasan wajib, tercatat atas nama pengguna) — hanya bila unit memang selesai tanpa bahan, bukan tebakan sistem.
@@ -15,9 +15,9 @@ function BarisKekurangan({ it }) {
   return (
     <li className="space-y-1" data-testid="kelengkapan-baris" data-kunci={it.key}>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="orange" className="normal-case tracking-normal">{it.label}</Badge>
+        <Badge variant="orange" className="normal-case tracking-normal">{labelKelengkapan(it.key, it.label)}</Badge>
         <span className="min-w-0 flex-1 text-[13px] text-ink2">{it.alasan[0]?.teks}</span>
-        {it.alasan.length > 1 && <InfoToggleButton info={info} label={`Semua alasan ${it.label}`} />}
+        {it.alasan.length > 1 && <InfoToggleButton info={info} label={`Semua alasan ${labelKelengkapan(it.key, it.label)}`} />}
       </div>
       {it.alasan.length > 1 && (
         <InfoToggleIsi info={info}>
@@ -75,7 +75,7 @@ function FormNyatakan({ unitId, unitCode, onDone }) {
       <label className="block text-[12px] font-medium text-ink3" htmlFor="pernyataan-alasan">Alasan (wajib, minimal 5 huruf)</label>
       <textarea id="pernyataan-alasan" rows={2} value={alasan} onChange={(e) => { setAlasan(e.target.value); setGalat(""); setKonfirmasi(false); }} className="w-full rounded-btn border border-line bg-surface px-3 py-2 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" data-testid="pernyataan-alasan" placeholder="Mis. Hanya servis jahitan, tanpa bahan tambahan" />
       {galat && <p role="alert" className="m-0 text-[12.5px] text-red" data-testid="pernyataan-galat">{galat}</p>}
-      {konfirmasi && <p className="m-0 rounded-btn bg-surface px-3 py-2 font-medium text-ink" data-testid="pernyataan-konfirmasi">Simpan pernyataan ini atas nama Anda? Unit {unitCode} tidak lagi tampil sebagai “Bahan belum dicatat”.</p>}
+      {konfirmasi && <p className="m-0 rounded-btn bg-surface px-3 py-2 font-medium text-ink" data-testid="pernyataan-konfirmasi">Simpan pernyataan ini atas nama Anda? Unit {unitCode} tidak lagi tampil sebagai “Belum ada catatan bahan”.</p>}
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="neutral" size="sm" className="min-h-[44px]" onClick={() => { setBuka(false); setKonfirmasi(false); setGalat(""); }} disabled={sibuk}>Batal</Button>
         {!konfirmasi

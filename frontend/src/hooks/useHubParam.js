@@ -7,6 +7,12 @@ import { pickParam, withParam } from "@/lib/hubTabs.js";
 // butuh filter ringan TANPA bilah tab terpisah. Klik memakai replace (tanpa riwayat Back). Nilai tak dikenal jatuh ke default.
 function useOptionalTabs() { try { return useTabs(); } catch { return null; } }
 
+// Beberapa hook menulis kunci URL BERBEDA dalam satu tick (mis. "Hapus filter" mereset periode lalu jenis masalah). Tiap penulisan berangkat dari location.search yang SAMA (belum diperbarui),
+// sehingga yang kedua akan menimpa yang pertama. Query yang sedang tertunda dicatat per-tick supaya penulisan berikutnya melanjutkan dari hasil sebelumnya; dibuang di microtask berikutnya.
+const tertunda = { dari: null, search: null };
+const basisSearch = (loc) => (tertunda.dari === loc.pathname + loc.search && tertunda.search !== null ? tertunda.search : loc.search);
+const catatTertunda = (loc, qs) => { tertunda.dari = loc.pathname + loc.search; tertunda.search = qs; Promise.resolve().then(() => { tertunda.dari = null; tertunda.search = null; }); };
+
 export function useHubParam(param, validKeys, defaultKey) {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
@@ -36,7 +42,29 @@ export function useHubRange(baca, tulis) {
   const set = (next) => {
     setValue(next);
     if (tabsCtx?.replaceActivePath) {
-      const qs = tulis(new URLSearchParams(location.search), next).toString();
+      const qs = tulis(new URLSearchParams(basisSearch(location)), next).toString();
+      catatTertunda(location, qs ? `?${qs}` : "");
+      tabsCtx.replaceActivePath(qs ? `${location.pathname}?${qs}` : location.pathname);
+    } else setParams((p) => tulis(p, next), { replace: true });
+  };
+  return [value, set];
+}
+
+// Jenis masalah Kelengkapan (Order Produksi) di URL (?masalah=semua | ?masalah=catatan,periksa): bertahan saat muat ulang dan pindah tab dalam-app; kunci URL lain dipertahankan.
+// `baca(params)` -> array kunci kelengkapan, `tulis(params, kunci[])` -> URLSearchParams. Perubahan memakai replace (tanpa riwayat Back).
+export function useHubMasalah(baca, tulis) {
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const tabsCtx = useOptionalTabs();
+  const dariUrl = baca(params);
+  const kunci = dariUrl.join(",");
+  const [value, setValue] = useState(dariUrl);
+  useEffect(() => { setValue(dariUrl); }, [kunci]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (next) => {
+    setValue(next);
+    if (tabsCtx?.replaceActivePath) {
+      const qs = tulis(new URLSearchParams(basisSearch(location)), next).toString();
+      catatTertunda(location, qs ? `?${qs}` : "");
       tabsCtx.replaceActivePath(qs ? `${location.pathname}?${qs}` : location.pathname);
     } else setParams((p) => tulis(p, next), { replace: true });
   };

@@ -12,7 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8");
 
 test("empat penyaring cepat berlabel pendek, urut tetap, dengan penjelasan yang memuat batasnya", () => {
-  assert.deepEqual(KELENGKAPAN_FILTER.map((k) => k.label), ["Bahan belum dicatat", "Bahan perlu dicek", "HPP belum lengkap", "Data order kurang"]);
+  assert.deepEqual(KELENGKAPAN_FILTER.map((k) => k.label), ["Belum ada catatan bahan", "Bahan perlu diperiksa", "Biaya bahan belum lengkap", "Data order kurang"]);
   assert.deepEqual(KELENGKAPAN_KEYS, ["BAHAN_BELUM_DICATAT", "BAHAN_PERLU_DICEK", "HPP_BELUM_LENGKAP", "DATA_ORDER_KURANG"]);
   const bantu = Object.fromEntries(KELENGKAPAN_FILTER.map((k) => [k.key, k.bantu]));
   assert.match(bantu.BAHAN_BELUM_DICATAT, /belum tiba atau belum dikerjakan tidak dihitung/);
@@ -85,7 +85,7 @@ test("pengawatan daftar: hitungan dari server, filter+periode+urutan dikirim ke 
 
 test("pengawatan filter: server menghitung; dasar tanggal dinyatakan; akses ke riwayat; ikon info; aria-pressed; target ≥44px di HP", () => {
   const f = src("features", "production", "KelengkapanFilter.jsx");
-  assert.ok(f.includes("aria-pressed={on}") && f.includes("InfoToggleButton"), "toggle tersedia + ikon info");
+  assert.ok(f.includes("aria-pressed={semuaAktif}") && f.includes("InfoToggleButton"), "toggle tersedia + ikon info");
   assert.ok(f.includes("DASAR_PERIODE_TEKS") && f.includes('data-testid="dasar-periode"'), "dasar tanggal periode dinyatakan");
   assert.ok(f.includes('data-testid="periode-picker"') && f.includes("<DateRangePicker value={periode} onChange={onPeriode} showCompare={false} />") && f.includes('data-testid="urutan-daftar"'), "pemilih periode standar + urutan");
   assert.ok(f.includes("URUTAN_DAFTAR.map") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani");
