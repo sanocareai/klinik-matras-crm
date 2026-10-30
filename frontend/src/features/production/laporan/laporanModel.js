@@ -20,18 +20,20 @@ export function tabAktif(kunci, tabs) { const k = normalisasiTab(kunci); return 
 
 // ── periode <-> URL ─────────────────────────────────────────────────────────
 const KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const tanggalValid = (v) => KEY_RE.test(v ?? "") && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)); // pola benar DAN tanggal nyata (sama dengan validasi server)
 /** Baca periode dari ?preset=&dari=&sampai=&n=. Tidak valid / kosong → 30 hari terakhir (preset standar app). */
-export function rangeDariParams(params) {
+export function rangeDariParams(params, bawaan = "last_30_days") {
   const get = (k) => (typeof params?.get === "function" ? params.get(k) : params?.[k]) ?? null;
   const preset = get("preset"); const dari = get("dari"); const sampai = get("sampai");
-  if (preset === "custom" && KEY_RE.test(dari ?? "") && KEY_RE.test(sampai ?? "")) return makeCustomRange(dari, sampai);
+  if (preset === "custom" && tanggalValid(dari) && tanggalValid(sampai)) return makeCustomRange(dari, sampai);
   if (preset && preset !== "custom" && PRESET_BY_ID[preset]) { const n = Number(get("n")) || 30; return makeRange(preset, { n }); }
-  return makeRange("last_30_days");
+  return makeRange(bawaan);
 }
 /** Tulis periode ke URLSearchParams (mengganti kunci periode saja; kunci lain dipertahankan). */
-export function paramsDariRange(params, range) {
+export function paramsDariRange(params, range, bawaan = null) {
   const out = new URLSearchParams(params);
   for (const k of ["preset", "dari", "sampai", "n"]) out.delete(k);
+  if (bawaan && range?.preset === bawaan) return out; // periode bawaan tidak ditulis ke URL (tautan tetap bersih)
   if (range?.preset === "custom") { out.set("preset", "custom"); out.set("dari", range.from); out.set("sampai", range.to); }
   else if (range?.preset) { out.set("preset", range.preset); if (PRESET_BY_ID[range.preset]?.parametrized) out.set("n", String(range.n ?? 30)); }
   return out;

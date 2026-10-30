@@ -1,14 +1,15 @@
 import React from "react";
-import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import { cn } from "@/lib/utils.js";
 import { DASAR_PERIODE_TEKS, KELENGKAPAN_BUKAN, KELENGKAPAN_FILTER, URUTAN_DAFTAR } from "@/features/production/orderProduksiModel.js";
 
 // Penyaring cepat KELENGKAPAN + periode + urutan untuk Order Produksi. Jumlah per kategori dan total unik datang dari SERVER atas SELURUH unit yang cocok (bukan halaman yang dimuat).
 // Satu unit boleh ada di beberapa kategori → jumlah per kategori boleh melebihi total unik; total gabungan menghitung unit unik.
-export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, onBersih, dari, sampai, onDari, onSampai, galatPeriode, urut, onUrut, scope, onLihatRiwayat }) {
+export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, onBersih, periode, onPeriode, urut, onUrut, scope, onLihatRiwayat }) {
   const info = useInfoToggle();
+  const infoPeriode = useInfoToggle();
   const belumDinilai = hitung?.dataOrder?.belumDinilai ?? 0;
   const adaRiwayat = scope !== "riwayat" && !!onLihatRiwayat && (hitung?.riwayat?.unik ?? 0) > 0;
   return (
@@ -38,24 +39,20 @@ export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, 
       </InfoToggleIsi>
 
       <div className="flex flex-wrap items-end gap-3" data-testid="periode-urutan">
-        <label className="text-[12px] font-medium text-ink3">Order masuk dari
-          <input type="date" value={dari} onChange={(e) => onDari(e.target.value)} aria-label="Order masuk dari tanggal" data-testid="periode-dari" aria-invalid={!!galatPeriode}
-            className="mt-0.5 block h-11 rounded-btn border border-line bg-surface px-2 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
-        </label>
-        <label className="text-[12px] font-medium text-ink3">sampai
-          <input type="date" value={sampai} onChange={(e) => onSampai(e.target.value)} aria-label="Order masuk sampai tanggal" data-testid="periode-sampai" aria-invalid={!!galatPeriode}
-            className="mt-0.5 block h-11 rounded-btn border border-line bg-surface px-2 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
-        </label>
-        {(dari || sampai) && <Button variant="ghost" size="sm" className="min-h-[44px]" data-testid="periode-hapus" onClick={() => { onDari(""); onSampai(""); }}>Hapus periode</Button>}
+        <div className="text-[12px] font-medium text-ink3" data-testid="periode-blok">
+          <span className="flex items-center gap-1">Periode order masuk <InfoToggleButton info={infoPeriode} label="Dasar tanggal periode" /></span>
+          <div className="mt-0.5" data-testid="periode-picker"><DateRangePicker value={periode} onChange={onPeriode} showCompare={false} /></div>
+        </div>
         <label className="text-[12px] font-medium text-ink3">Urutan
           <select value={urut} onChange={(e) => onUrut(e.target.value)} aria-label="Urutan daftar" data-testid="urutan-daftar"
             className="mt-0.5 block h-11 rounded-btn border border-line bg-surface px-2 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30">
             {URUTAN_DAFTAR.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
           </select>
         </label>
-        <p className="m-0 flex items-center gap-1 pb-3 text-[12px] text-ink3" data-testid="dasar-periode"><Info size={12} aria-hidden /> Dasar tanggal: {DASAR_PERIODE_TEKS}</p>
       </div>
-      {galatPeriode && <p role="alert" className="m-0 text-[12.5px] text-red" data-testid="periode-galat">{galatPeriode}</p>}
+      <InfoToggleIsi info={infoPeriode}>
+        <p className="m-0" data-testid="dasar-periode">Dasar tanggal: {DASAR_PERIODE_TEKS}. Hari dihitung menurut WIB dan tanggal akhir ikut penuh (sampai 23.59 WIB). "Semua waktu" = tanpa batas tanggal. Periode berlaku sama untuk daftar, jumlah kelengkapan, Aktif/Semua/Riwayat, dan Excel.</p>
+      </InfoToggleIsi>
       {adaRiwayat && (
         <p className="m-0 text-[12.5px] text-ink2" data-testid="kel-riwayat">
           {hitung.riwayat.unik} unit Terkirim juga berkekurangan.{" "}
