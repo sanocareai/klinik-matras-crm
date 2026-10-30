@@ -44,7 +44,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [dari, setDari] = useState(""); const [sampai, setSampai] = useState(""); // periode = tanggal order masuk (unit dibuat)
   const [urut, setUrut] = useState("terbaru");
   const [hitung, setHitung] = useState(null); const [hitungMemuat, setHitungMemuat] = useState(false); const [versiHitung, setVersiHitung] = useState(0); const hitungReq = useRef(0);
-  const [cari, setCari] = useState("");
+  const [cari, setCari] = useState(() => { try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; } }); // ?q= dari tautan "Lengkapi" (Laporan Produksi)
   const [qDebounced, setQDebounced] = useState("");
   const [rows, setRows] = useState(null);
   const [meta, setMeta] = useState({ total: 0, hasMore: false, page: 0, counts: {} });
