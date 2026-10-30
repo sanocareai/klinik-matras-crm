@@ -64,3 +64,11 @@ test("HITUNG BARIS pra/pasca switch mencakup stok, biaya beku, harga, Material I
   const cs = script.split("\n").find((l) => l.startsWith('COUNT_SQL="')) ?? "";
   for (const t of ["stock_movements", "stock_movement_biaya_operasional", "material_harga_berlaku", "material_issues", "fin_journal_entries", "units", "unit_material_declarations", "production_runs_v2", "production_unit_schedules", "unit_custody_handoffs_v2", "production_unit_work_progress"]) assert.ok(cs.includes(t), t);
 });
+
+test("COUNT_SQL setelah dievaluasi bash tetap memuat tabel \"Order\" berkutip (tanpa kutip, Postgres menolak: kata kunci ORDER)", { skip: !punyaBash }, () => {
+  const baris = script.split("\n").find((l) => l.startsWith('COUNT_SQL="'));
+  const r = spawnSync("bash", ["-c", `${baris}\nprintf '%s' "$COUNT_SQL"`], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes('from "Order" union'), r.stdout.slice(0, 400));
+  assert.ok(!/from Order\b/.test(r.stdout), "tidak boleh ada 'from Order' tanpa kutip");
+});
