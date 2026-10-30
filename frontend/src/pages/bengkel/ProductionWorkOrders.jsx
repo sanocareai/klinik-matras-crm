@@ -209,7 +209,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
           {kosong ? (
             <EmptyState icon={ClipboardList} title="Tidak ada unit yang cocok"
               description={adaFilter ? "Tidak ada unit dengan filter ini. Ubah kata kunci, tab status order, atau status kerja." : "Belum ada unit di lingkup ini."}
-              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus filter</Button> : null} />
+              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus semua filter</Button> : null} />
           ) : (
             <>
               <TableWrap className="hidden lg:block">
