@@ -9,7 +9,9 @@
 // tidak bisa bilang "salah di mana" (PRD §8.1).
 
 import express from "express";
+import multer from "multer";
 import { MaterialUnit, MaterialCategory } from "@prisma/client";
+import { denganUrlFoto, olahFoto, tulisFoto, bacaFoto, hapusBerkasFoto, FotoBahanError, BATAS_BYTE } from "../services/fotoBahan.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
@@ -74,7 +76,7 @@ inventoryRouter.get("/materials", requireAnyPermission(P.INVENTORY_READ, P.UNIT_
     // ?untuk=produksi → pilihan bahan Produksi: tanpa "Perlengkapan Stok" (SKU Gudang-saja). Material lama (kind NULL) tetap tampil.
     if (req.query.untuk === "produksi") where.OR = [{ kind: null }, { kind: { not: "PERLENGKAPAN_STOK" } }];
     const materials = await prisma.material.findMany({ where, orderBy: { code: "asc" } });
-    res.json(materials);
+    res.json(materials.map(denganUrlFoto));
   } catch (err) {
     handleErr(err, res);
   }
@@ -100,7 +102,7 @@ inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (
         reorderQty: reorderQty != null && reorderQty !== "" ? Number(reorderQty) : null,
       },
     });
-    res.status(201).json(material);
+    res.status(201).json(denganUrlFoto(material));
   } catch (err) {
     handleErr(err, res);
   }
@@ -149,7 +151,93 @@ inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), as
       }
       return updated;
     });
-    res.json(material);
+    res.json(denganUrlFoto(material));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// ── Foto bahan (Okt 2026) ───────────────────────────────────────────────
+// Izin SAMA dengan mengubah data bahan (INVENTORY_WRITE). Foto tidak menyentuh stok/ledger/harga/valuasi: hanya photo_file + photo_updated_at, dengan jejak audit MATERIAL_UPDATED
+// (field `foto`: nama berkas lama → baru). Berkas baru ditulis dulu; berkas lama dihapus SETELAH baris DB berhasil diperbarui (gagal di tengah tidak meninggalkan bahan tanpa foto).
+const unggahFoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: BATAS_BYTE, files: 1 } }).single("foto");
+function terimaFoto(req, res, next) {
+  unggahFoto(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: `Foto terlalu besar (maksimal ${BATAS_BYTE / 1024 / 1024} MB). Perkecil foto lalu coba lagi.` });
+    return res.status(400).json({ error: "Unggahan foto gagal dibaca. Pilih satu foto (kolom 'foto')." });
+  });
+}
+
+async function simpanFotoBaru(req, existing, hasil) {
+  await tulisFoto(hasil);
+  let lama = null;
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const cur = await tx.material.findUnique({ where: { id: existing.id }, select: { photoFile: true } });
+      lama = cur?.photoFile ?? null;
+      const u = await tx.material.update({ where: { id: existing.id }, data: { photoFile: hasil.nama, photoUpdatedAt: new Date() } });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.MATERIAL, entityId: existing.id, eventType: EVENT_TYPES.MATERIAL_UPDATED, actorId: req.user.id,
+        metadata: { code: existing.code, changes: { foto: { from: lama, to: hasil.nama } } },
+      });
+      return u;
+    });
+    if (lama) await hapusBerkasFoto(lama);
+    return updated;
+  } catch (e) {
+    await hapusBerkasFoto(hasil.nama);
+    throw e;
+  }
+}
+
+// PUT /api/inventory/materials/:id/photo — multipart, kolom `foto`. Menggantikan foto lama bila ada.
+inventoryRouter.put("/materials/:id/photo", requirePermission(P.INVENTORY_WRITE), terimaFoto, async (req, res) => {
+  try {
+    const existing = await prisma.material.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Material tidak ditemukan" });
+    if (!req.file?.buffer?.length) throw new FotoBahanError("Pilih foto terlebih dahulu");
+    const hasil = await olahFoto(req.file.buffer, existing.id);
+    res.json(denganUrlFoto(await simpanFotoBaru(req, existing, hasil)));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/inventory/materials/:id/photo/rotate { derajat: 90 | 180 | 270 } — putar foto yang sudah tersimpan (searah jarum jam).
+inventoryRouter.post("/materials/:id/photo/rotate", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const existing = await prisma.material.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Material tidak ditemukan" });
+    if (!existing.photoFile) throw new FotoBahanError("Bahan ini belum punya foto", 409);
+    const derajat = Number(req.body?.derajat);
+    if (![90, 180, 270].includes(derajat)) throw new FotoBahanError("Sudut putar harus 90, 180, atau 270 derajat");
+    const hasil = await olahFoto(await bacaFoto(existing.photoFile), existing.id, { putar: derajat });
+    res.json(denganUrlFoto(await simpanFotoBaru(req, existing, hasil)));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// DELETE /api/inventory/materials/:id/photo — hapus foto (bahan kembali tanpa foto). Idempoten: tanpa foto = 200 tanpa perubahan.
+inventoryRouter.delete("/materials/:id/photo", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const existing = await prisma.material.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Material tidak ditemukan" });
+    let lama = null;
+    const updated = await prisma.$transaction(async (tx) => {
+      const cur = await tx.material.findUnique({ where: { id: existing.id }, select: { photoFile: true } });
+      lama = cur?.photoFile ?? null;
+      if (!lama) return existing;
+      const u = await tx.material.update({ where: { id: existing.id }, data: { photoFile: null, photoUpdatedAt: new Date() } });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.MATERIAL, entityId: existing.id, eventType: EVENT_TYPES.MATERIAL_UPDATED, actorId: req.user.id,
+        metadata: { code: existing.code, changes: { foto: { from: lama, to: null } } },
+      });
+      return u;
+    });
+    if (lama) await hapusBerkasFoto(lama);
+    res.json(denganUrlFoto(updated));
   } catch (err) {
     handleErr(err, res);
   }

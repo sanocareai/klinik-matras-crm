@@ -42,3 +42,7 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
 const TMP_RECEIPTS = fs.mkdtempSync(path.join(os.tmpdir(), "km-receipts-"));
 process.env.FINANCE_RECEIPTS_DIR = TMP_RECEIPTS;
 process.on("exit", () => { try { fs.rmSync(TMP_RECEIPTS, { recursive: true, force: true }); } catch { /* sudah hilang */ } });
+// Foto bahan (services/fotoBahan.js): tes TIDAK PERNAH menulis ke backend/data/material-photos — selalu folder sementara, dihapus saat proses selesai.
+const TMP_FOTO_BAHAN = fs.mkdtempSync(path.join(os.tmpdir(), "km-foto-bahan-"));
+process.env.FOTO_BAHAN_DIR = TMP_FOTO_BAHAN;
+process.on("exit", () => { try { fs.rmSync(TMP_FOTO_BAHAN, { recursive: true, force: true }); } catch { /* sudah hilang */ } });

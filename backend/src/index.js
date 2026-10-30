@@ -130,6 +130,7 @@ import { startStaffBroadcastWorker } from "./services/staffBroadcastWorker.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 import { startSalesRiskIntentClassificationJob } from "./services/salesRisk/intentClassificationJob.js";
 import { startWeeklyNarrativeJob } from "./services/qualityScorer/weeklyNarrative.js";
+import { FOTO_BAHAN_DIR } from "./services/fotoBahan.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -166,6 +167,7 @@ const routeSheetsDir = path.join(__dirname, "../data/route-sheets");
 const driverAppBundlesDir = path.join(__dirname, "../data/driver-app-bundles");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
+mkdirSync(FOTO_BAHAN_DIR, { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
 mkdirSync(jobPhotosDir,  { recursive: true });
 mkdirSync(paymentProofsDir, { recursive: true });
@@ -222,6 +224,8 @@ app.use("/media/route-prep-proofs", prepProofPathRouter); // bukti Checklist Per
 app.use("/media/production-evidence", productionEvidencePathRouter); // bukti tahap produksi V2: Bearer+reader cohort atau URL bertanda-tangan // bukti pembayaran: Bearer atau URL bertanda-tangan (S5)
 app.use("/media/unit-photo", productionUnitPhotoPathRouter); // P9B.1 foto identitas unit: Bearer+reader cohort atau URL bertanda-tangan (pola sama dengan production-evidence)
 app.use("/media/products", express.static(productsDir));
+// Foto bahan (Gudang): nama berkas acak + tidak pernah ditimpa (unggahan baru = nama baru) → aman di-cache lama. Foto bahan bukan data sensitif (sama dengan /media/products).
+app.use("/media/material-photos", express.static(FOTO_BAHAN_DIR, { maxAge: "30d", immutable: true, index: false, dotfiles: "deny" }));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
 app.use("/media/route-sheets", express.static(routeSheetsDir));

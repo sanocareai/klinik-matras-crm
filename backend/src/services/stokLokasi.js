@@ -7,6 +7,7 @@
 import { computeStockSnapshot } from "./inventoryLedger.js";
 import { kelompokDariItemGroup, ringkasKelompok } from "../constants/kelompokBahan.js";
 import { klasifikasiSaldo, nolTerverifikasiPer, LABEL_KEADAAN_SALDO } from "./keadaanSaldo.js";
+import { urlFoto, urlThumb } from "./fotoBahan.js";
 
 export const KEADAAN = Object.freeze({
   ADA: "ADA", MENIPIS: "MENIPIS", TERPESAN_PENUH: "TERPESAN_PENUH", NOL_TERHITUNG: "NOL_TERHITUNG", MINUS: "MINUS", BELUM_ADA_CATATAN: "BELUM_ADA_CATATAN", NONAKTIF: "NONAKTIF",
@@ -53,10 +54,11 @@ export async function stokLokasi(db) {
     computeStockSnapshot(db),
     db.$queryRaw`SELECT material_id AS "materialId", COUNT(*)::int AS n FROM stock_movements GROUP BY material_id`,
     db.$queryRaw`SELECT DISTINCT ON (material_id) material_id AS "materialId", location, created_at AS "waktu" FROM stock_movements WHERE type = 'RECEIPT' AND qty > 0 ORDER BY material_id, created_at DESC`,
-    db.material.findMany({ select: { id: true, itemGroup: true } }),
+    db.material.findMany({ select: { id: true, itemGroup: true, photoFile: true } }),
     nolTerverifikasiPer(db),
   ]);
   const nGrup = new Map(grup.map((g) => [g.id, g.itemGroup ?? null]));
+  const nFoto = new Map(grup.map((g) => [g.id, g.photoFile ?? null]));
   const nJumlah = new Map(jumlah.map((x) => [x.materialId, x.n]));
   const nLokasi = new Map(lokasi.map((x) => [x.materialId, x]));
   const rows = dasar.map((r) => {
@@ -75,6 +77,7 @@ export async function stokLokasi(db) {
       lokasiTerakhir: lok ? { lokasi: lok.location, waktu: lok.waktu, catatan: "Lokasi penerimaan terakhir (bukan saldo per lokasi)" } : null,
       sumberAngka: n > 0 ? { jenis: "LEDGER", jumlahPergerakan: n, pergerakanTerakhir: r.lastMovementAt, teks: `Ledger pergerakan: ${n} pergerakan, terakhir ${r.lastMovementAt ? new Date(r.lastMovementAt).toISOString().slice(0, 10) : "—"}` } : { jenis: "BELUM_ADA", jumlahPergerakan: 0, pergerakanTerakhir: null, teks: "Belum ada pergerakan stok untuk bahan ini" },
       catatanData: r.dataNote ?? null,
+      fotoUrl: urlFoto(nFoto.get(r.materialId)), fotoThumbUrl: urlThumb(nFoto.get(r.materialId)), // foto bahan (null = belum ada foto); bukan data stok/harga
     };
   });
   return { rows, ringkasan: ringkasStok(rows), kelompok: ringkasKelompok(rows), catatan: "Saldo dihitung dari ledger pergerakan. Sistem tidak menyimpan saldo per lokasi; lokasi yang tampil adalah lokasi penerimaan terakhir." };

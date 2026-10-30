@@ -5317,6 +5317,9 @@ model Material {
   // SKU baru dari Purchase Order (Okt 2026) — semua nullable; material lama TIDAK terisi (tidak ditebak).
   // kind: BAHAN_PRODUKSI (tersedia di katalog Produksi) | PERLENGKAPAN_STOK (hanya Gudang; tidak jadi bahan BOM Produksi). NULL = material lama (perilaku lama).
   kind          String?  @map("kind") @db.VarChar(24)
+  // Foto bahan (Okt 2026): nama berkas WebP di data/material-photos (thumbnail = <nama>-t.webp). NULL = belum ada foto. Foto bukan data stok/harga: tidak menyentuh ledger, valuasi, atau HPP.
+  photoFile      String?   @map("photo_file") @db.VarChar(80)
+  photoUpdatedAt DateTime? @map("photo_updated_at")
   specification String?
   storageHint   String?  @map("storage_hint")
   createdVia    String?  @map("created_via") @db.VarChar(20)
