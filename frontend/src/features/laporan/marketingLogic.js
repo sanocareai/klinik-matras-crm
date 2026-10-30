@@ -93,7 +93,7 @@ export function jejakMeta(jalur, grup) {
 // ── TABEL SUMBER ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Kolom utama selalu tampil di desktop; tambahan lewat pilihan kolom (?kolom=lengkap). Mobile memakai kartu (ringkas + detail yang dapat dibuka).
 export const KOLOM_SUMBER = Object.freeze([
-  { id: "lead", label: "Lead", utama: true }, { id: "berOrder", label: "Ber-order", utama: true }, { id: "lunas", label: "Lunas", utama: true },
+  { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "berOrder", label: "Ber-order", utama: true }, { id: "lunas", label: "Lunas", utama: true },
   { id: "nilai", label: "Nilai order", utama: true }, { id: "uang", label: "Uang bersih", utama: true }, { id: "spend", label: "Biaya iklan", utama: true },
   { id: "konversi", label: "Konversi", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
   { id: "spam", label: "Spam", utama: false }, { id: "membayar", label: "Membayar", utama: false }, { id: "konversiNonSpam", label: "Konversi non-spam", utama: false },
@@ -112,7 +112,7 @@ export function kartuRingkas(lap) {
   const bayar = statusMembayar(lap); const bb = t.berbayar;
   const spend = selTotalBerbayar(bb, "spend"); const rb = ringkasBiayaBerbayar(lap);
   return [
-    { id: "lead", judul: "Total lead", nilai: angka(t.lead), sub: `${angka(t.leadSah)} sah · ${angka(t.spam)} spam`, tip: "Customer baru dibuat di periode, semua sumber pemasaran. Spam ikut terhitung (sama dengan penyebut konversi utama); lead sah = bukan spam/staf/karyawan." },
+    { id: "lead", judul: "Total lead (termasuk spam)", nilai: angka(t.lead), sub: `${angka(t.leadSah)} sah · ${angka(t.spam)} spam`, tip: "Customer baru dibuat di periode, semua sumber pemasaran. Spam ikut terhitung (sama dengan penyebut konversi utama); lead sah = bukan spam/staf/karyawan." },
     { id: "berOrder", judul: "Customer ber-order", nilai: angka(t.berOrder), sub: `dari ${angka(t.leadSah)} lead sah`, tip: "Customer unik dengan ≥ 1 order eligible. Ber-order BUKAN berarti sudah membayar." },
     { id: "lunas", judul: "Customer lunas", nilai: bayar.lengkap ? angka(t.lunas) : `≥ ${angka(t.lunas)}`, sub: bayar.lengkap ? "terbukti ledger" : "terbukti ledger · batas bawah", tip: "Customer unik yang ledger pembayarannya (setelah refund disetujui) menutup seluruh tagihan. Bukan status LUNAS di CRM.", peringatan: !bayar.lengkap },
     { id: "nilai", judul: "Nilai order", nilai: rupiah(t.nilaiOrderSaatIni), sub: "kohort lead · nilai saat ini", tip: "Σ nilai order eligible kohort lead periode ini. Bukan uang diterima dan bukan laba." },
@@ -181,19 +181,31 @@ const cel = (v) => {
   if (typeof v !== "number" && /^[=+\-@\t\r]/.test(t)) t = "'" + t;   // cegah formula injection di Excel
   return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
 };
-export function buatCsvMeta(lap, kriteriaId = KRITERIA_META_BAWAAN) {
-  if (!lap) return "";
+/** Waktu hitung laporan Meta (cutoff pembayaran = semua pembayaran ledger sah sampai saat ini), dalam WIB. null bila server tidak menyebutnya. */
+export function cutoffMetaWib(lap) {
+  const t = lap?.dihitungPada; if (!t) return null;
+  const d = new Date(t); if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + 7 * 3600e3).toISOString().replace("T", " ").slice(0, 19) + " WIB";
+}
+export const BASIS_LAPORAN = "Customer baru menurut tanggal lead masuk (WIB); hasil order/pembayaran dihitung sampai waktu evaluasi";
+export const KOLOM_META_EKSPOR = ["Peringkat", "Status", "Nama", "ID", "Lead CTWA terbukti (termasuk spam)", "Spam", "Customer ber-order", "Customer membayar", "Customer lunas (ledger)", "Nilai order (Rp)", "Uang diterima bersih (Rp)", "Spend (Rp)", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS"];
+/** Baris ekspor Meta (CSV dan XLSX memakai ini): kolom = tabel di layar; null tetap null (CSV: sel kosong, XLSX: "—"), tidak pernah 0. */
+export function barisMeta(lap, kriteriaId = KRITERIA_META_BAWAAN) {
   const { baris, kriteria } = urutkanMeta(lap.grup || [], kriteriaId);
   const p = lap.rentangLead || {};
-  const meta = [["Periode lead (WIB)", `${p.dari ?? ""} s/d ${p.sampai ?? ""}`], ["Level", p.level ?? ""], ["Urut", kriteria.label],
+  const meta = [["Basis laporan", BASIS_LAPORAN], ["Dasar atribusi", "Atribusi CTWA terbukti per Ad ID (bukan label CRM)"], ["Periode lead (WIB)", `${p.dari ?? ""} s/d ${p.sampai ?? ""}`], ["Evaluasi pembayaran sampai", cutoffMetaWib(lap) || ""], ["Level", p.level ?? ""], ["Urut", kriteria.label],
     ["Definisi", "Ber-order, membayar, dan lunas (ledger) adalah tiga metrik terpisah; nilai order bukan uang diterima; null dikosongkan"]];
-  const kolom = ["Peringkat", "Status", "Nama", "ID", "Lead", "Spam", "Customer ber-order", "Customer membayar", "Customer lunas (ledger)", "Nilai order (Rp)", "Uang diterima bersih (Rp)", "Spend (Rp)", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS"];
   const isi = baris.map(({ g, peringkat }) => {
     const lvl = g.level; const ent = lvl === "campaign" ? g.campaign : lvl === "adset" ? g.adSet : g.ad;
     const b = g.biaya || {};
     return [peringkat ?? "", g.status, g.status === "MAPPED" ? ent?.nama ?? "" : "", g.status === "MAPPED" ? ent?.id ?? "" : (g.ad?.id ?? ""), g.lead?.unik, g.lead?.spam, g.customerDenganOrder, g.customerPernahMembayar, g.closingUtama?.customerLunasTerbuktiLedger,
       g.bookedValue, g.uangBersihLedger, b.spend, b.cpa, b.cpa == null ? alasanKosong(b.alasanNull?.cpa) : "", b.bookedRoas, b.cashRoas];
   });
+  return { meta, kolom: KOLOM_META_EKSPOR, isi };
+}
+export function buatCsvMeta(lap, kriteriaId = KRITERIA_META_BAWAAN) {
+  if (!lap) return "";
+  const { meta, kolom, isi } = barisMeta(lap, kriteriaId);
   return [...meta.map((r) => r.map(cel).join(",")), "", kolom.map(cel).join(","), ...isi.map((r) => r.map(cel).join(","))].join("\r\n") + "\r\n";
 }
 export const namaBerkasCsvMeta = (lap) => `marketing-meta-${lap?.rentangLead?.level ?? "campaign"}-${lap?.rentangLead?.dari ?? "x"}_${lap?.rentangLead?.sampai ?? "x"}.csv`;

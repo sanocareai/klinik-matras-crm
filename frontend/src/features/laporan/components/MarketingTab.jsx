@@ -16,7 +16,7 @@ import DetailSumberMarketing from "./marketing/DetailSumberMarketing.jsx";
 // Satu tab pengganti Traffic + Akuisisi + Iklan. Periode = filter global Laporan (SATU state, juga di URL). Sumber data (semua baca-saja, service existing):
 //   /atribusi/iklan/sumber → kartu + tabel semua sumber + detail sumber   |   /atribusi/iklan → Meta campaign → ad set → ad   |   /analytics/traffic (dimuat Laporan) → tren + pola jam/respons + label sumber
 // Pembacaan laporan atribusi dijalankan BERURUTAN (penjaga server: satu perhitungan sekaligus). Tidak ada perhitungan paralel di klien.
-export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffic, memuatTraffic, sourceDetail, rangeParams, versiRefresh = 0 }) {
+export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffic, memuatTraffic, sourceDetail, rangeParams, versiRefresh = 0, onData = null }) {
   const hariIni = useMemo(() => todayWIB().format("YYYY-MM-DD"), []);
   const periode = useMemo(() => periodeTab(range, hariIni), [range, hariIni]);
   const [lap, setLap] = useState(null);
@@ -27,16 +27,27 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
   const [versi, setVersi] = useState(0);
   const [kelola, setKelola] = useState(false);
   const cacheMeta = useRef(new Map());
+  const tokenLap = useRef(0);          // permintaan terbaru menang; hasil permintaan lama dibuang
+  const kunciLap = useRef(null);        // periode/filter milik `lap` yang sedang tampil
 
   const muat = useCallback(async () => {
-    if (!periode.ok) { setLap(null); setGalat(null); return; }
+    const token = ++tokenLap.current; const basi = () => token !== tokenLap.current;
+    if (!periode.ok) { kunciLap.current = null; setLap(null); setGalat(null); setMemuat(false); return; }
+    const kunci = `${periode.dari}|${periode.sampai}`;   // banding hanya menambah selisih pada periode yang sama: angka lama tetap sah selama dimuat ulang
+    if (kunciLap.current !== kunci) { kunciLap.current = null; setLap(null); }   // angka periode lama tidak boleh tampil di bawah banner periode baru
     setMemuat(true); setGalat(null);
-    try { setLap(await berurutan(() => api.getAtribusiSumber({ dari: periode.dari, sampai: periode.sampai, ...(url.banding ? { pembanding: "1" } : {}) }))); }
-    catch (e) { setLap(null); setGalat({ pesan: pesanGalat(e, "Gagal memuat laporan Marketing."), ditolak: e?.status === 403 || e?.status === 401 }); }
-    finally { setMemuat(false); }
+    try {
+      const r = await berurutan(() => api.getAtribusiSumber({ dari: periode.dari, sampai: periode.sampai, ...(url.banding ? { pembanding: "1" } : {}) }), { batal: basi });
+      if (basi()) return;
+      kunciLap.current = kunci; setLap(r);
+    } catch (e) {
+      if (basi() || e?.dibatalkan) return;
+      kunciLap.current = null; setLap(null); setGalat({ pesan: pesanGalat(e, "Gagal memuat laporan Marketing."), ditolak: e?.status === 403 || e?.status === 401 });
+    } finally { if (!basi()) setMemuat(false); }
   }, [periode.ok, periode.dari, periode.sampai, url.banding]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { muat(); }, [muat, versi]);
+  useEffect(() => () => { tokenLap.current += 1; }, []);
 
   // Laporan Meta tingkat campaign: bahan butir kualitas data (UNKNOWN/UNMAPPED/spend Meta) dan cache untuk detail Meta. Dimuat SETELAH laporan sumber (berurutan).
   const q = useMemo(() => kueriIklan({ range, level: "campaign" }), [range]);
@@ -47,10 +58,13 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
     const ada = cacheMeta.current.get(kunci);
     if (ada) { setIklan(ada); setIklanGalat(null); return undefined; }
     setIklan(null); setIklanGalat(null);
-    berurutan(() => api.getAtribusiIklan(q)).then((r) => { cacheMeta.current.set(kunci, r); if (!batal) setIklan(r); }).catch((e) => { if (!batal) setIklanGalat(pesanGalat(e, "gagal dimuat")); });
+    berurutan(() => api.getAtribusiIklan(q), { batal: () => batal }).then((r) => { cacheMeta.current.set(kunci, r); if (!batal) setIklan(r); }).catch((e) => { if (!batal && !e?.dibatalkan) setIklanGalat(pesanGalat(e, "gagal dimuat")); });
     return () => { batal = true; };
   }, [lap, periode.ok, kunci, q]);
 
+  // Data yang sedang tampil dibagikan ke tombol Export Laporan (XLSX) supaya berkas = layar (periode, urutan, cutoff sama); null saat belum ada.
+  useEffect(() => { onData?.(lap ? { lap, iklan, urut: url.urut, rank: url.rank } : null); }, [lap, iklan, url.urut, url.rank, onData]);
+  useEffect(() => () => onData?.(null), [onData]);
   const segarkan = useCallback(() => { cacheMeta.current.clear(); setVersi((v) => v + 1); }, []);
   // Tombol Refresh milik halaman Laporan (kanan atas) juga menyegarkan laporan atribusi Marketing — satu tombol, bukan dua.
   useEffect(() => { if (versiRefresh > 0) segarkan(); }, [versiRefresh, segarkan]);
@@ -58,7 +72,7 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
   const pilihSumber = (id) => onUbah({ sumber: id, level: "campaign", campaign: null, adset: null }, { ganti: false });
   const kembali = () => onUbah({ sumber: null, level: "campaign", campaign: null, adset: null }, { ganti: false });
   function ekspor() {
-    const csv = buatCsvAkuisisi(lap); if (!csv) return;
+    const csv = buatCsvAkuisisi(lap, { urut: url.urut }); if (!csv) return;
     const u = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = u; a.download = namaBerkasCsv(lap); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
   }

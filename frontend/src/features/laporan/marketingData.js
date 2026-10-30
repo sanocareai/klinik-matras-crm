@@ -3,10 +3,18 @@
 let rantai = Promise.resolve();
 const tidur = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function berurutan(kerja, { coba = 4, jeda = 1200 } = {}) {
+export const galatDibatalkan = () => Object.assign(new Error("Permintaan dibatalkan (periode/filter berganti)."), { dibatalkan: true });
+export const COBA_BAWAAN = 4;   // total percobaan (1 awal + 3 ulang) → jeda 1,2 s + 2,4 s + 3,6 s; setelah itu galat 429 ditampilkan, tidak ada loop tanpa batas
+
+/**
+ * Jalankan `kerja` setelah pekerjaan sebelumnya selesai. `batal()` (opsional) = true bila hasilnya sudah tidak diperlukan (periode/filter berganti):
+ * pekerjaan basi TIDAK dijalankan/diulang, sehingga antrean tidak menumpuk dan permintaan terbaru tidak menunggu yang basi.
+ */
+export function berurutan(kerja, { coba = COBA_BAWAAN, jeda = 1200, batal = null } = {}) {
   const jalankan = async () => {
     let terakhir;
     for (let i = 0; i < coba; i++) {
+      if (batal?.()) throw galatDibatalkan();
       try { return await kerja(); }
       catch (e) {
         terakhir = e;

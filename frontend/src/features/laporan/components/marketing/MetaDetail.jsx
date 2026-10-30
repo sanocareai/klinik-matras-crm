@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronRight, Copy, Download, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -17,7 +17,7 @@ const angka = (n) => (n == null ? "—" : Number(n).toLocaleString("id-ID"));
 const rp = (n) => (n == null ? "—" : formatRupiah(n));
 const LABEL_LEVEL = { campaign: "Campaign", adset: "Ad Set", ad: "Ad" };
 const TIP = {
-  lead: "Customer baru (nomor unik) dibuat di rentang ini dan punya touch iklan CTWA pertama yang terbukti. Termasuk spam.",
+  lead: "Customer baru (nomor unik) dibuat di rentang ini dan punya touch iklan CTWA pertama yang terbukti (bukan label CRM). Termasuk spam.",
   berOrder: "Customer unik dengan ≥ 1 order eligible (bukan batal/pending, bukan penjualan karyawan). Ber-order BUKAN berarti sudah membayar.",
   membayar: "Customer unik dengan ≥ 1 pembayaran sah di ledger (DP atau lunas). Batas bawah bila ledger parsial. Tidak tersedia pada tampilan kohort umur.",
   lunas: "Customer unik yang ledger-nya (setelah refund disetujui) menutup seluruh tagihan — closing utama. Bukan status LUNAS di CRM.",
@@ -60,18 +60,22 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
   const q = useMemo(() => kueriIklan({ range, level: jalur.level, campaignId: jalur.campaign, adSetId: jalur.adset }), [range, jalur.level, jalur.campaign, jalur.adset]);
   const kunci = JSON.stringify(q);
 
+  const token = useRef(0);   // permintaan terbaru menang; hasil lama (periode/level/campaign sudah berganti) dibuang
   const muat = useCallback(async (paksa = false) => {
-    if (!periode.ok) { setLap(null); setGalat(null); return; }
+    const sendiri = ++token.current; const basi = () => sendiri !== token.current;
+    if (!periode.ok) { setLap(null); setGalat(null); setMemuat(false); return; }
     const ada = !paksa && cache?.current?.get(kunci);
-    if (ada) { setLap(ada); setGalat(null); return; }
-    setMemuat(true); setGalat(null);
+    if (ada) { setLap(ada); setGalat(null); setMemuat(false); return; }
+    setLap(null); setMemuat(true); setGalat(null);
     try {
-      const r = await berurutan(() => api.getAtribusiIklan(q));
+      const r = await berurutan(() => api.getAtribusiIklan(q), { batal: basi });
+      if (basi()) return;
       cache?.current?.set(kunci, r); setLap(r);
-    } catch (e) { setLap(null); setGalat(pesanGalat(e, "Gagal memuat laporan Meta.")); }
-    finally { setMemuat(false); }
+    } catch (e) { if (basi() || e?.dibatalkan) return; setLap(null); setGalat(pesanGalat(e, "Gagal memuat laporan Meta.")); }
+    finally { if (!basi()) setMemuat(false); }
   }, [periode.ok, kunci, q, cache]);
   useEffect(() => { muat(false); }, [muat, versi]);
+  useEffect(() => () => { token.current += 1; }, []);
   useEffect(() => { onMuat?.(lap); }, [lap, onMuat]);
 
   const grupUmur = useMemo(() => (lap?.grup || []).map((g) => terapkanUmur(g, umur)), [lap, umur]);
@@ -94,7 +98,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
     <section id="meta-campaign" aria-label="Meta campaign, ad set, dan ad" className="flex flex-col gap-3" data-testid="meta-detail">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h3 className="text-[16px] font-semibold text-ink">{jalur.level === "campaign" ? "Per campaign" : jalur.level === "adset" ? "Per ad set" : "Per ad"} <span className="t-secondary text-[12.5px] font-normal">· atribusi iklan terbukti (CTWA)</span></h3>
+          <h3 className="text-[16px] font-semibold text-ink">{jalur.level === "campaign" ? "Per campaign" : jalur.level === "adset" ? "Per ad set" : "Per ad"} <span className="t-secondary text-[12.5px] font-normal">· atribusi CTWA terbukti — bukan label CRM</span></h3>
           <p className="t-secondary text-[12px]">Satu customer baru = satu campaign (touch iklan pertama yang terbukti). Reaktivasi dan touch lanjutan tidak menambah lead.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -134,7 +138,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
               <tr className="border-b border-line">
                 <Th kiri className="w-8">#</Th>
                 <Th kiri className="min-w-[170px] bg-surface md:sticky md:left-0 md:z-10 md:min-w-[230px]">{LABEL_LEVEL[jalur.level]}</Th>
-                <Th tip={TIP.lead}>Lead</Th><Th tip={TIP.berOrder}>Ber-order</Th><Th tip={TIP.membayar}>Membayar</Th><Th tip={TIP.lunas}>Lunas (ledger)</Th>
+                <Th tip={TIP.lead}>Lead CTWA terbukti</Th><Th tip={TIP.berOrder}>Ber-order</Th><Th tip={TIP.membayar}>Membayar</Th><Th tip={TIP.lunas}>Lunas (ledger)</Th>
                 <Th tip={TIP.nilai}>Nilai order</Th><Th tip={TIP.uang}>Uang bersih</Th><Th tip={TIP.spend}>Spend</Th><Th tip={TIP.cpa}>CPA lunas</Th><Th tip={TIP.roasb}>Booked ROAS</Th><Th tip={TIP.roasc}>Cash ROAS</Th>
                 {lengkap && <><Th tip="Spam vs bukan spam dari lead baru.">Spam / Bukan</Th><Th tip="Pernah ditandai PROSPECT/TRANSACTION/REVIEWED — manual oleh sales, bukan 'qualified lead'.">Prospek</Th><Th>Order DP</Th><Th tip="Customer dengan order berstatus LUNAS di CRM (status tersimpan). Belum tentu ada bukti uang di ledger.">Lunas CRM</Th>
                   <Th tip="Customer lama yang klik iklan lagi — bukan lead baru.">Reaktivasi</Th><Th tip="Touch berikutnya dari customer yang sudah diakuisisi; kredit tetap pada touch pertama.">Assisted</Th><Th tip="Hasil percakapan versi Meta; BUKAN lead CRM.">Konv. platform</Th><Th>Biaya / konv.</Th><Th>CPL</Th><Th>Cost / qualified</Th><Th>Cost / cust. order</Th></>}

@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { STAGE_LABELS, ORDER_STATUS_LABELS, SOURCE_LABELS } from "./format.js";
+import { sheetMarketing, sheetMetaCtwa } from "./marketingXlsx.js";
 
 // ═══ EXPORT LAPORAN — WORKBOOK MULTI-SHEET ════════════════════════════════
 // Menggantikan export lama yang menulis 6 baris "Metrik | Nilai" ke satu sheet
@@ -23,61 +24,8 @@ import { STAGE_LABELS, ORDER_STATUS_LABELS, SOURCE_LABELS } from "./format.js";
 // baris kosong, urutan) — bukan dari font.
 // FMT/num/rp/pct/SheetBuilder/judul di-EXPORT (30 September 2026) supaya export Excel lain (mis.
 // utils/exportArmadaLaporan.js) memakai pola angka-asli yang sama, bukan menduplikasi/mengarang ulang.
-export const FMT = {
-  rp:    '"Rp"#,##0',
-  int:   "#,##0",
-  pct:   '0.0"%"',
-  pct0:  '0"%"',
-  menit: '#,##0" mnt"',
-};
-
-// Angka yang boleh kosong. `null` ditulis sebagai "—" (teks) supaya beda jelas
-// dari 0 — "belum ada datanya" dan "nol" adalah dua hal berbeda di laporan.
-export function num(v, z = FMT.int) {
-  return v == null || Number.isNaN(v) ? "—" : { v: Number(v), z };
-}
-export const rp  = (v) => num(v, FMT.rp);
-export const pct = (v) => num(v, FMT.pct);
-
-export class SheetBuilder {
-  constructor() { this.aoa = []; this.fmts = []; }
-
-  // cells: nilai biasa, atau { v, z } untuk nilai + number format.
-  row(cells = []) {
-    const r = this.aoa.length;
-    const out = cells.map((c, i) => {
-      if (c && typeof c === "object" && "v" in c) {
-        if (c.z) this.fmts.push({ r, c: i, z: c.z });
-        return c.v;
-      }
-      return c;
-    });
-    this.aoa.push(out);
-    return this;
-  }
-
-  blank() { return this.row([]); }
-  rows(list) { list.forEach((r) => this.row(r)); return this; }
-
-  build(widths) {
-    const ws = XLSX.utils.aoa_to_sheet(this.aoa);
-    for (const f of this.fmts) {
-      const addr = XLSX.utils.encode_cell({ r: f.r, c: f.c });
-      if (ws[addr]) ws[addr].z = f.z;
-    }
-    if (widths) ws["!cols"] = widths.map((w) => ({ wch: w }));
-    return ws;
-  }
-}
-
-export function judul(sb, teks, periode) {
-  sb.row([teks]);
-  sb.row([`Periode: ${periode}`]);
-  sb.row([`Dibuat: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB`]);
-  sb.row(["Zona waktu: WIB (UTC+7). Basis tanggal tiap angka: lihat sheet \"Definisi Angka\"."]);
-  sb.blank();
-  return sb;
-}
+import { FMT, num, rp, pct, SheetBuilder, judul } from "./sheetBuilder.js";
+export { FMT, num, rp, pct, SheetBuilder, judul };
 
 // ── Sheet 1: Ringkasan Eksekutif ──────────────────────────────────────────
 function sheetRingkasan({ periode, summary, perf }) {
@@ -367,16 +315,18 @@ const STATUS_LABEL = { spike: "SPIKE", drop: "DROP", normal: "Normal" };
 
 function sheetTraffic({ periode, traffic }) {
   const sb = new SheetBuilder();
-  judul(sb, "TRAFFIC LEAD", periode);
+  judul(sb, "TRAFFIC LEAD (LEGACY — TANPA SPAM)", periode);
+  sb.row(["Sheet legacy: hanya lead BUKAN spam dan bukan B2B/penjualan karyawan. BUKAN \"Total lead (termasuk spam)\" di sheet \"Marketing\"; selisihnya = spam."]);
+  sb.blank();
 
-  sb.row(["Total lead masuk", num(traffic.totalLeads)]);
+  sb.row(["Total lead masuk (tanpa spam)", num(traffic.totalLeads)]);
   sb.row(["Periode sebelumnya", num(traffic.prevTotalLeads)]);
   sb.row(["Pertumbuhan", traffic.growthPct != null ? num(traffic.growthPct, FMT.pct0) : "—"]);
   sb.row(["Lead teridentifikasi sumbernya", num(traffic.atribusi?.teridentifikasi),
     traffic.atribusi?.rate != null ? num(traffic.atribusi.rate, FMT.pct) : "—"]);
   sb.blank();
   sb.row(["CATATAN: 1 lead = 1 nomor WA unik yang pertama kali chat (dibuat otomatis dari webhook)."]);
-  sb.row(["Termasuk salah sambung/spam — belum ada mekanisme menandai lead sampah."]);
+  sb.row(["Lead SPAM, staf internal, dan B2B/penjualan karyawan TIDAK dihitung di sheet ini."]);
   sb.blank();
 
   // ── Deret harian ──
@@ -450,7 +400,7 @@ function sheetTraffic({ periode, traffic }) {
 // kebetulan sedang difilter di layar".
 function sheetRincianIklan({ periode, sourceDetail }) {
   const sb = new SheetBuilder();
-  judul(sb, "RINCIAN PER IKLAN", periode);
+  judul(sb, "RINCIAN PER IKLAN (LEGACY — BASIS LABEL CRM)", periode);
 
   sb.row(["Basis periode: SEMUA order dari lead yang MASUK pada periode ini"]);
   sb.row(["(termasuk yang baru closing belakangan) — beda dengan Ringkasan/Dashboard"]);
@@ -562,10 +512,12 @@ const SHEET_PER_TAB = {
     ["Ringkasan", d.summary && sheetRingkasan(d)],
     ["Kota",      d.summary?.topCities?.length && sheetKota(d)],
   ],
-  // Tab Marketing (menggantikan Traffic): export XLSX = sheet Traffic (tren/jam/respons/sumber) + Rincian Iklan (kreatif/tautan). Tabel sumber & Meta punya tombol Ekspor CSV sendiri di halamannya.
+  // Tab Marketing: sheet "Marketing" = laporan sumber di layar (periode, urutan, cutoff sama dengan layar); "Meta CTWA" = campaign terbukti; dua sheet legacy (Traffic, Rincian Iklan) tetap, berlabel jelas.
   Marketing: (d) => [
-    ["Traffic",       d.traffic && sheetTraffic(d)],
-    ["Rincian Iklan", d.sourceDetail?.data?.length && sheetRincianIklan(d)],
+    ["Marketing",     d.marketing?.lap && sheetMarketing(d)],
+    ["Meta CTWA",     d.marketing?.iklan?.grup && sheetMetaCtwa(d)],
+    ["Traffic (legacy)",       d.traffic && sheetTraffic(d)],
+    ["Rincian Iklan (legacy)", d.sourceDetail?.data?.length && sheetRincianIklan(d)],
   ],
   // "Percakapan" + "Penjualan" digabung jadi tab "Performa Tim" (25 Agustus
   // 2026) — export-nya TETAP 2 sheet terpisah (fungsi sheetPercakapan/
@@ -588,9 +540,9 @@ const SHEET_PER_TAB = {
  */
 export function exportLaporanWorkbook({
   periode, namaFile, tab,
-  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak,
+  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak, marketing,
 }) {
-  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak };
+  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak, marketing };
   const wb = XLSX.utils.book_new();
 
   const builder = SHEET_PER_TAB[tab];

@@ -10,6 +10,9 @@ import {
   kolomTampil, KOLOM_SUMBER, buatCsvMeta, KRITERIA_META_BAWAAN,
 } from "../src/features/laporan/marketingLogic.js";
 
+
+
+
 const TABS = ["Ringkasan", "Sales", "Marketing", "Performa Tim", "Pipeline"];
 const DARI = "dari=2026-10-01&sampai=2026-10-26";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -179,7 +182,7 @@ test("ekspor CSV Meta: kolom ber-order/membayar/lunas terpisah; null dikosongkan
   const lap = { rentangLead: { dari: "2026-10-01", sampai: "2026-10-10", level: "campaign" }, grup: [grup("A", { campaign: { id: "A", nama: "=HYPERLINK(1)" }, customerDenganOrder: 3, customerPernahMembayar: 2, closingUtama: { customerLunasTerbuktiLedger: 1 } }), grup("U", { status: "UNMAPPED", ad: { id: "52699999999999" } })] };
   const csv = buatCsvMeta(lap, "customer_ber_order");
   assert.match(csv, /Customer ber-order,Customer membayar,Customer lunas \(ledger\)/); assert.match(csv, /'=HYPERLINK\(1\)/); assert.match(csv, /UNMAPPED/); assert.match(csv, /SPEND TIDAK LENGKAP|spend belum lengkap|spend tidak lengkap/i);
-  const baris = csv.trim().split("\r\n"); assert.equal(baris.length, 4 + 1 + 1 + 2, "4 meta + kosong + header + 2 baris");
+  const baris = csv.trim().split("\r\n"); assert.equal(baris.length, 7 + 1 + 1 + 2, "7 meta + kosong + header + 2 baris");
   assert.equal(buatCsvMeta(null), "");
 });
 

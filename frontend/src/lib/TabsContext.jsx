@@ -212,6 +212,11 @@ export function useTabs() {
   return v;
 }
 
+// Id tab shell pemilik halaman ini (null di luar sistem tab). Dipakai halaman yang menandai entri riwayat browser miliknya (lihat Laporan.jsx).
+export function useTabId() {
+  return useContext(TabIdCtx);
+}
+
 export function TabIdProvider({ id, children }) {
   return <TabIdCtx.Provider value={id}>{children}</TabIdCtx.Provider>;
 }

@@ -11,7 +11,7 @@ import LogoSumber from "../LogoSumber.jsx";
 // Peringkat semua sumber (label CRM). Desktop: tabel (kolom utama; tambahan via "Kolom lengkap"). Mobile: kartu ringkas yang dapat dibuka. Klien hanya menampilkan/mengurutkan angka server.
 // Sumber tanpa hasil TETAP tampil (lead 0 bukan dihilangkan). Biaya organik = "tidak tersedia", bukan Rp0. Konversi UTAMA = ber-order ÷ TOTAL lead (termasuk spam); non-spam kolom terpisah.
 export const TIP = {
-  lead: "Customer baru dibuat di periode dengan label sumber itu. Spam ikut terhitung; lead sah = bukan spam/internal/B2B/karyawan.",
+  lead: "TOTAL lead berlabel sumber itu (label CRM): customer baru dibuat di periode. Spam ikut terhitung; lead sah = bukan spam/internal/B2B/karyawan.",
   spam: "Persentase lead sumber ini yang ditandai SPAM. Diagnostik kualitas targeting — bukan penalti.",
   berOrder: "Customer unik dengan ≥ 1 order eligible (bukan batal/pending, bukan penjualan karyawan). Ber-order BUKAN berarti sudah membayar.",
   membayar: "Customer dengan ≥ 1 pembayaran sah di ledger. Batas bawah: pembayaran di luar sistem tidak terlihat.",

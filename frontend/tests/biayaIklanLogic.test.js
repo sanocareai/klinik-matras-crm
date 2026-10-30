@@ -97,7 +97,7 @@ test("CSV ekspor = layar: periode, cutoff, dasar, nilai order ≠ pembayaran ber
   const wa = baris[kepala + 3]; assert.ok(wa.startsWith('"WA, ""Langsung"""')); assert.match(wa, /Biaya tidak tersedia,,biaya tidak tersedia,,,biaya tidak tersedia,/);
   const total = baris.find((l) => l.startsWith("TOTAL (semua sumber)")); assert.match(total, /9000000,3500000/, "total memakai pembayaran BERSIH");
   const bb = baris.find((l) => l.startsWith("TOTAL sumber berbayar")); assert.match(bb, /Ada sumber belum lengkap/); assert.ok(!/,0,/.test(bb.replace(/,150,|,4,/g, "")) || true);
-  assert.equal(namaBerkasCsv(lap), "akuisisi-2026-10-01_2026-10-25.csv"); assert.equal(buatCsvAkuisisi(null), "");
+  assert.equal(namaBerkasCsv(lap), "marketing-sumber-2026-10-01_2026-10-25.csv"); assert.equal(buatCsvAkuisisi(null), "");
   assert.ok(csv.endsWith("\r\n"));
 });
 

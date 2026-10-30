@@ -45,6 +45,7 @@ export default function PolaLeadRespons({ traffic, rangeParams }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="t-secondary text-[12px]" data-testid="pola-basis">Semua angka di bagian ini menghitung lead TANPA spam dan tanpa B2B/penjualan karyawan — bukan “Total lead (termasuk spam)” di kartu.</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           index={0} label="Rata-rata per Hari"
@@ -89,7 +90,7 @@ export default function PolaLeadRespons({ traffic, rangeParams }) {
           : "Berapa lama customer menunggu dibalas, menurut jam dia chat"}
       >
         <div className="mb-3 flex gap-1 rounded-btn bg-inset p-1" style={{ width: "fit-content" }}>
-          {[["volume", "Volume Lead"], ["respons", "Waktu Respons"]].map(([k, label]) => (
+          {[["volume", "Volume lead (tanpa spam)"], ["respons", "Waktu Respons"]].map(([k, label]) => (
             <button
               key={k} onClick={() => setMode(k)}
               className={cn(

@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
-import { useTabs } from "@/lib/TabsContext.jsx";
+import { useTabs, useTabVisibility, useTabId } from "@/lib/TabsContext.jsx";
 import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
@@ -34,6 +34,13 @@ const TABS = ["Ringkasan", "Sales", "Marketing", "Performa Tim", "Pipeline"];
 const namaFile = (r) => (r?.from && r?.to ? `${r.from}-${r.to}` : "semua");
 
 function useOptionalTabs() { try { return useTabs(); } catch { return null; } }
+// Tab shell lain boleh membiarkan Laporan tetap terpasang (hidden). replaceActivePath selalu menulis ke tab AKTIF, jadi efek yang memanggilnya hanya boleh jalan saat tab ini yang aktif.
+function useTabIniAktif() { try { return useTabVisibility(); } catch { return true; } }
+function useIdTab() { try { return useTabId(); } catch { return null; } }
+// Penanda kepemilikan entri riwayat: tiap entri yang dibuat/ditempati halaman ini diberi id tab shell-nya, sehingga Back/Forward hanya menyinkronkan entri MILIK tab ini.
+// Tanpa ini, Back dari tab shell lain membawa URL entri tab Laporan lain dan menimpa path tab yang sedang aktif.
+const PENANDA = "tabShellId";
+const tandaiRiwayat = (id) => { if (id == null) return; try { window.history.replaceState({ ...(window.history.state || {}), [PENANDA]: id }, ""); } catch { /* riwayat tidak tersedia */ } };
 
 export default function Laporan() {
   // SATU sumber state untuk tab, periode, dan detail sumber Akuisisi: URL (?tab&dari&sampai&sumber). Refresh, tombol Back, berpindah tab, dan membuka detail sumber tidak mengubah periode.
@@ -53,6 +60,8 @@ export default function Laporan() {
   // Di dalam shell bertab, halaman membaca lokasi milik TAB (TabbedContent), bukan URL browser — setSearchParams saja tidak
   // memperbarui path tab sehingga klik Sales/Traffic/Akuisisi/Iklan tidak berpindah (bug 28 Okt 2026). Pola sama dengan TabbedHub.
   const tabsCtx = useOptionalTabs();
+  const tabIniAktif = useTabIniAktif();
+  const idTab = useIdTab();
   const location = useLocation();
   // Keadaan Marketing yang tersimpan di URL (sumber, urutan, kolom, banding, drilldown Meta, peringkat, umur) — dibaca dari URL, diubah lewat ubahMarketing.
   const marketingKini = useMemo(() => ({ sumber: dariUrl.sumber, urut: dariUrl.urut, kolom: dariUrl.kolom, banding: dariUrl.banding, level: dariUrl.level, campaign: dariUrl.campaign, adset: dariUrl.adset, rank: dariUrl.rank, umur: dariUrl.umur }), [dariUrl]);
@@ -65,12 +74,13 @@ export default function Laporan() {
       const tujuan = location.pathname + (q ? `?${q}` : "");
       // Navigasi Marketing (buka sumber/campaign/ad set) harus bisa ditutup dengan tombol Back, padahal replaceActivePath hanya REPLACE: tambahkan SATU entri riwayat dulu
       // (pushState), lalu replaceActivePath mengisi isinya (tab + router). Sinkron balik saat Back ada di efek popstate di bawah. Perubahan lain (periode, urutan, kolom) tetap replace.
-      if (!ganti) { try { window.history.pushState(window.history.state, "", tujuan); } catch { /* riwayat tidak tersedia: tetap replace */ } }
+      if (!ganti) { try { window.history.pushState({ ...(window.history.state || {}), [PENANDA]: idTab }, "", tujuan); } catch { /* riwayat tidak tersedia: tetap replace */ } }
       tabsCtx.replaceActivePath(tujuan);
+      tandaiRiwayat(idTab);   // replaceActivePath mengganti objek state router: pasang lagi penanda pada entri ini
     } else {
       setSearchParams(p, { replace: ganti });
     }
-  }, [searchParams, setSearchParams, tab, range, marketingKini, tabsCtx, location.pathname]);
+  }, [searchParams, setSearchParams, tab, range, marketingKini, tabsCtx, location.pathname, idTab]);
   const setTab = useCallback((t) => perbaruiUrl({ tab: t, marketing: {} }, { ganti: false }), [perbaruiUrl]);
   const setRange = useCallback((r) => { setRangeLokal(r); perbaruiUrl({ range: r }); }, [perbaruiUrl]);
   // Ubah keadaan Marketing di URL. Navigasi (sumber, drilldown) = push sehingga tombol Back menutup detail; urutan/kolom/peringkat = replace. Periode selalu dipertahankan.
@@ -80,13 +90,29 @@ export default function Laporan() {
   }, [perbaruiUrl, marketingKini]);
   // Back/Forward browser pada halaman ini: router mengganti URL-nya, tetapi path TAB (yang dibaca halaman) harus disamakan — hanya bila URL kembali ke Laporan.
   useEffect(() => {
-    if (!tabsCtx?.replaceActivePath) return undefined;
-    const sinkron = () => { if (window.location.pathname === location.pathname) tabsCtx.replaceActivePath(window.location.pathname + window.location.search); };
+    if (!tabsCtx?.replaceActivePath || !tabIniAktif) return undefined;
+    const sinkron = () => {
+      // Hanya entri bertanda tab INI yang disinkronkan; entri tab lain/tanpa tanda dibiarkan agar path tab aktif tidak tertimpa.
+      if (idTab == null || window.history.state?.[PENANDA] !== idTab) return;
+      if (window.location.pathname === location.pathname) tabsCtx.replaceActivePath(window.location.pathname + window.location.search);
+    };
     window.addEventListener("popstate", sinkron);
     return () => window.removeEventListener("popstate", sinkron);
-  }, [tabsCtx, location.pathname]);
+  }, [tabsCtx, location.pathname, tabIniAktif, idTab]);
+  // Back/Forward yang mendarat di entri milik tab Laporan yang sedang di BACKGROUND: aktifkan tab itu (isinya path tab yang tersimpan) alih-alih menimpa tab aktif.
+  useEffect(() => {
+    if (!tabsCtx?.switchTab || tabIniAktif || idTab == null) return undefined;
+    const ke = () => { if (window.history.state?.[PENANDA] === idTab) tabsCtx.switchTab(idTab); };
+    window.addEventListener("popstate", ke);
+    return () => window.removeEventListener("popstate", ke);
+  }, [tabsCtx, tabIniAktif, idTab]);
+  // Entri riwayat yang sedang ditempati tab ini (saat dibuka/diaktifkan atau URL-nya berubah) diberi penanda.
+  useEffect(() => {
+    if (!tabIniAktif || idTab == null) return;
+    if (window.location.pathname + window.location.search === location.pathname + location.search) tandaiRiwayat(idTab);
+  }, [tabIniAktif, idTab, location.pathname, location.search]);
   // URL lama (?tab=Traffic|Akuisisi|Iklan) → ganti ke bentuk kanonik Marketing sekali (replace), periode dipertahankan.
-  useEffect(() => { if (dariUrl.tabLama) perbaruiUrl({ tab: "Marketing", marketing: marketingKini }, { ganti: true }); }, [dariUrl.tabLama]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (dariUrl.tabLama && tabIniAktif) perbaruiUrl({ tab: "Marketing", marketing: marketingKini }, { ganti: true }); }, [dariUrl.tabLama, tabIniAktif]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [overview, setOverview] = useState(null);
   const [summary, setSummary]   = useState(null);
@@ -113,6 +139,9 @@ export default function Laporan() {
   const [sourceDetail, setSourceDetail] = useState(null);
   const [loading, setLoading]   = useState(false);
   const [exporting, setExporting] = useState(false);
+  const tokenData = useRef(0);
+  const marketingRef = useRef(null);   // data Marketing yang sedang tampil, untuk Export XLSX
+  const simpanMarketing = useCallback((d) => { marketingRef.current = d; }, []);
   const [versiRefresh, setVersiRefresh] = useState(0);   // menyegarkan juga laporan atribusi tab Marketing
 
   const loadData = useCallback(async () => {
@@ -123,6 +152,7 @@ export default function Laporan() {
     const params = toApiParams(range);
     const setengahJadi = (!!range.from) !== (!!range.to);
     if (setengahJadi) return;
+    const token = ++tokenData.current; const basi = () => token !== tokenData.current;   // ganti periode saat request berjalan: hasil lama dibuang
     setLoading(true);
     try {
       const [ov, sm, pf, fn, sr, vl, rts, tr, lsd, srBulanIni] = await Promise.all([
@@ -146,6 +176,7 @@ export default function Laporan() {
         // pakai preset "this_month", BUKAN `params`/`range` yang sedang aktif.
         api.getSalesReport(toApiParams(makeRange("this_month"))).catch(() => null),
       ]);
+      if (basi()) return;
       setOverview(ov);
       setSummary(sm);
       setPerf(pf);
@@ -165,9 +196,9 @@ export default function Laporan() {
         }))
       );
     } catch (e) {
-      console.error("Gagal muat laporan:", e);
+      if (!basi()) console.error("Gagal muat laporan:", e);
     } finally {
-      setLoading(false);
+      if (!basi()) setLoading(false);
     }
   }, [range]);
 
@@ -195,6 +226,7 @@ export default function Laporan() {
         periode: formatRangeText(range),
         namaFile: `laporan-${tab.toLowerCase()}-${namaFile(range)}`,
         summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak,
+        marketing: tab === "Marketing" ? marketingRef.current : null,
       });
     } catch (e) {
       alert(e.message || "Gagal membuat file export.");
@@ -234,7 +266,7 @@ export default function Laporan() {
           {tab === "Marketing" ? (
             // Marketing memuat laporan atribusinya sendiri dengan periode global di atas; tidak ikut skeleton agar state (urutan, drilldown, bagian yang dibuka) tidak hilang saat data traffic dimuat ulang.
             <TabsContent value="Marketing">
-              <MarketingTab range={range} onUbahRentang={setRange} url={dariUrl} onUbah={ubahMarketing} traffic={traffic} memuatTraffic={loading} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} versiRefresh={versiRefresh} />
+              <MarketingTab range={range} onUbahRentang={setRange} url={dariUrl} onUbah={ubahMarketing} traffic={loading ? null : traffic} memuatTraffic={loading} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} versiRefresh={versiRefresh} onData={simpanMarketing} />
             </TabsContent>
           ) : loading ? (
             <div className="flex flex-col gap-5">

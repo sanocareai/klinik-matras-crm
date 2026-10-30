@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils.js";
 import ChartCard from "../ChartCard.jsx";
 
 // Tren lead harian (pindahan dari tab Traffic). Sumber: GET /analytics/traffic → daily. Lead harian TANPA spam dan tanpa B2B/penjualan karyawan (definisi server);
-// beda dari kartu "Total lead" yang memuat spam — selisihnya direkonsiliasi di bagian Kualitas data (rekonLead).
+// beda dari kartu "Total lead (termasuk spam)" — selisihnya direkonsiliasi di bagian Kualitas data (rekonLead).
 function TrafficTip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const p = payload[0]?.payload;
@@ -15,7 +15,7 @@ function TrafficTip({ active, payload, label }) {
   return (
     <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
       <p className="t-caption mb-1">{formatTanggalPendek(label)}</p>
-      <p className="text-[13px] font-semibold text-ink">{p.value} lead</p>
+      <p className="text-[13px] font-semibold text-ink">{p.value} lead tanpa spam</p>
       {p.baseline != null && (
         <p className="t-secondary mt-0.5 text-[11px]">
           Normal: {p.lower}–{p.upper} (rata-rata {p.baseline})
@@ -42,8 +42,8 @@ export default function TrenLeadChart({ traffic }) {
   return (
     <ChartCard
       index={1}
-      title="Tren lead harian"
-      description="Lead tanpa spam, per hari (WIB). Pita abu = rentang normal (rata-rata 7 hari sebelumnya ± 2 standar deviasi); hari berjalan belum lengkap."
+      title="Tren lead harian (tanpa spam)"
+      description="Hanya lead BUKAN spam dan bukan B2B/penjualan karyawan, per hari (WIB) — lebih kecil dari “Total lead (termasuk spam)” di kartu; selisihnya ada di Kualitas data. Pita abu = rentang normal (rata-rata 7 hari sebelumnya ± 2 standar deviasi); hari berjalan belum lengkap."
       empty={daily.length === 0 ? "Belum ada data lead pada periode ini." : null}
     >
         <ResponsiveContainer width="100%" height={260}>
@@ -78,7 +78,7 @@ export default function TrenLeadChart({ traffic }) {
                   : <TrendingDown size={13} className="shrink-0 text-red" />}
                 <span className="font-medium text-ink">{formatTanggalPendek(a.bucket)}</span>
                 <span className={cn("font-semibold tabular-nums", a.status === "spike" ? "text-green" : "text-red")}>
-                  {a.value} lead ({a.deltaPct > 0 ? "+" : ""}{a.deltaPct}%)
+                  {a.value} lead tanpa spam ({a.deltaPct > 0 ? "+" : ""}{a.deltaPct}%)
                 </span>
                 <span className="t-secondary text-[11px]">vs normal ±{a.baseline}</span>
               </div>

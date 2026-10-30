@@ -97,7 +97,7 @@ const klikTeks = async (page, selector, t) => { const h = await page.evaluateHan
     // Ekspor CSV sumber
     fs.readdirSync(DL).forEach((f) => fs.unlinkSync(path.join(DL, f)));
     await page.click('[data-testid="ekspor-sumber"]'); await tidur(1500);
-    const csv1 = fs.readdirSync(DL).find((f) => /^akuisisi-.*\.csv$/.test(f));
+    const csv1 = fs.readdirSync(DL).find((f) => /^marketing-sumber-.*\.csv$/.test(f));
     const isi1 = csv1 ? fs.readFileSync(path.join(DL, csv1), "utf8") : "";
     ok("Ekspor CSV sumber: berkas terunduh, memuat total lead & nilai order sesuai layar", !!csv1 && isi1.includes("TOTAL (semua sumber)") && isi1.includes(String(k.lead)) && isi1.includes(String(k.nilaiOrder)), csv1);
 
