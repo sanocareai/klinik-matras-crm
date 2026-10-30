@@ -1,0 +1,6 @@
+# UJI LOGIKA di atas ARSIP KANDIDAT (sebelum switch; node saja, tanpa jaringan/DB/produksi): pemetaan URL lama (?tab=Traffic|Akuisisi|Iklan → Marketing, periode dipertahankan), keadaan navigasi Marketing di URL
+# (sumber/level/campaign/ad set/urutan/peringkat/umur), peringkat Meta, kartu & rekonsiliasi lead, ekspor CSV/XLSX (periode, basis, cutoff, null bukan nol), antrean baca (429 terbatas, permintaan basi dilewati).
+( cd "$NEW_DIR/frontend" && node --test --test-reporter=tap tests/periodeLaporan.test.js tests/marketingLogic.test.js tests/marketingEkspor.test.js tests/marketingData.test.js tests/akuisisiLogic.test.js tests/biayaIklanLogic.test.js ) > "$BK_DIR/uji-logika.log" 2>&1 || { tail -n 30 "$BK_DIR/uji-logika.log"; die "uji logika Marketing gagal pada arsip kandidat (produksi tidak berubah)"; }
+UJI_LULUS="$(grep -E '^# pass ' "$BK_DIR/uji-logika.log" | awk '{print $3}')"; UJI_GAGAL="$(grep -E '^# fail ' "$BK_DIR/uji-logika.log" | awk '{print $3}')"
+[ "$UJI_GAGAL" = "0" ] && [ "${UJI_LULUS:-0}" -ge 40 ] || die "uji logika: lulus=${UJI_LULUS:-?} gagal=${UJI_GAGAL:-?} (butuh gagal=0 dan lulus>=40)"
+ok "uji logika pada arsip kandidat: ${UJI_LULUS} lulus, 0 gagal (URL lama → Marketing, navigasi, ekspor, antrean 429)"

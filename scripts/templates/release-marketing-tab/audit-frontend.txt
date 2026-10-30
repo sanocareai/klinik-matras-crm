@@ -1,0 +1,17 @@
+# AUDIT PERUBAHAN FRONTEND SEJAK BASELINE — ancestry saja tidak cukup. Kandidat harus memuat TEPAT perubahan yang diaudit, bukan sekadar turunan baseline.
+AUDIT_FE="$BK_DIR/audit-frontend.txt"
+sg -c core.quotepath=false diff --no-renames --name-status "$BASE_SHA" "$DEPLOY_SHA" -- frontend | LC_ALL=C sort -k2 > "$AUDIT_FE.status"
+sg -c core.quotepath=false diff --no-renames --numstat "$BASE_SHA" "$DEPLOY_SHA" -- frontend | LC_ALL=C sort -k3 > "$AUDIT_FE.numstat"
+[ -s "$AUDIT_FE.status" ] || die "tidak ada perubahan frontend vs baseline"
+DIHAPUS="$(awk '$1 == "D" { print $2 }' "$AUDIT_FE.status" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+[ "$DIHAPUS" = "$FRONTEND_DELETED_EXPECT" ] || die "berkas frontend yang DIHAPUS bukan tepat tiga tab lama (${DIHAPUS})"
+awk '$1 != "A" && $1 != "M" && $1 != "D" { bad=1 } END { exit bad ? 1 : 0 }' "$AUDIT_FE.status" || die "ada perubahan frontend selain tambah/ubah/hapus (rename/mode) — berhenti"
+FE_SHA="$(sg -c core.quotepath=false diff --no-renames --no-color --no-ext-diff --binary --full-index "$BASE_SHA" "$DEPLOY_SHA" -- frontend | sha256sum | cut -c1-64)"
+[ "$FE_SHA" = "$FRONTEND_DIFF_SHA" ] || die "SIDIK JARI diff frontend (${FE_SHA:0:16}) != yang diaudit (${FRONTEND_DIFF_SHA:0:16}) — isi frontend berubah sejak audit; bangkitkan ulang skrip setelah audit ulang"
+{
+  echo "baseline=${BASE_SHA} kandidat=${DEPLOY_SHA} sidik-jari-diff-frontend=${FE_SHA}"
+  echo "berkas berubah: $(wc -l < "$AUDIT_FE.status" | tr -d ' ') (tambah $(awk '$1=="A"' "$AUDIT_FE.status" | wc -l | tr -d ' '), ubah $(awk '$1=="M"' "$AUDIT_FE.status" | wc -l | tr -d ' '), hapus $(awk '$1=="D"' "$AUDIT_FE.status" | wc -l | tr -d ' '))"
+  awk '{ ins += $1; del += $2 } END { printf "baris: +%d -%d\n", ins, del }' "$AUDIT_FE.numstat"
+  echo "--- status"; cat "$AUDIT_FE.status"; echo "--- numstat"; cat "$AUDIT_FE.numstat"
+} > "$AUDIT_FE"
+ok "audit frontend: $(wc -l < "$AUDIT_FE.status" | tr -d ' ') berkas; hanya 3 tab lama dihapus; sidik jari isi diff ${FE_SHA:0:16} == yang diaudit (rincian: ${AUDIT_FE})"

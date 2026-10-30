@@ -135,7 +135,8 @@ test("kartu ringkas: enam kartu; biaya iklan tidak lengkap = '—' dengan alasan
   assert.deepEqual(k.map((x) => x.id), ["lead", "berOrder", "lunas", "nilai", "uang", "biaya"]);
   const biaya = k.find((x) => x.id === "biaya"); assert.equal(biaya.nilai, "—"); assert.equal(biaya.kosong, true); assert.match(biaya.sub, /spend belum lengkap|belum lengkap/i);
   const lunas = k.find((x) => x.id === "lunas"); assert.match(lunas.nilai, /^≥ 3$/); assert.equal(lunas.peringatan, true);
-  assert.match(k.find((x) => x.id === "lead").sub, /90 sah · 8 spam/);
+  assert.match(k.find((x) => x.id === "lead").sub, /90 sah · 8 spam/); assert.match(k.find((x) => x.id === "lead").judul, /Total lead \(termasuk spam\)/);
+  assert.match(k.find((x) => x.id === "berOrder").sub, /^12% dari total lead \(termasuk spam\)$/, "penyebut konversi utama eksplisit (total lead termasuk spam), bukan lead sah");
   for (const x of k) assert.ok(!/closing/i.test(`${x.judul} ${x.sub} ${x.tip}`), `label ambigu 'Closing' pada kartu ${x.id}`);
   const lengkap = kartuRingkas(LAP({ total: { berbayar: { sumber: ["META"], lengkap: true, belumLengkap: [], spend: 5_000_000, cpa: 1_666_667, bookedRoas: 7.2, cashRoas: 1.8, sementara: false } }, atas: { status: { ledger: { orderEligible: 10, orderBerLedger: 10, persen: 100 } } } }));
   assert.equal(lengkap.find((x) => x.id === "biaya").nilai, "Rp5.000.000"); assert.equal(lengkap.find((x) => x.id === "lunas").nilai, "3");

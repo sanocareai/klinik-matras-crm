@@ -1,0 +1,22 @@
+
+# RILIS FRONTEND-SAJA "tab Marketing" (Laporan) — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image, TANPA perubahan campaign/budget/Meta.
+# Isi: tab Laporan "Marketing" menggantikan Traffic + Akuisisi + Iklan (ringkasan semua sumber → detail sumber → Meta campaign → ad set → ad); URL lama ?tab=Traffic|Akuisisi|Iklan dialihkan ke Marketing
+# dengan periode yang sama; label "Total lead (termasuk spam)" vs "Tren lead harian (tanpa spam)"; ekspor CSV/XLSX = layar (periode, basis, cutoff, null bukan nol); request basi dibuang; Back/Forward per tab shell.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif (BASE_SHA, argumen 2). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# AUDIT PERUBAHAN FRONTEND SEJAK BASELINE (ancestry saja tidak cukup): daftar berkas (nama + status), tepat daftar frontend/src yang diaudit, berkas yang dihapus = tepat tiga tab lama,
+#   dan SIDIK JARI isi diff `frontend/` (sha256 dari git diff --full-index BASE..DEPLOY) = nilai yang diaudit saat skrip dibangkitkan; satu baris tambahan di berkas mana pun mengubah sidik jari → berhenti.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah; sidik jari diff frontend berbeda;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru atau masih memuat teks tab lama; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0;
+#                URL lama / endpoint Marketing / aset gagal smoke; .env atau hitungan data berubah.
+#
+#   git bundle create /tmp/mkt.bundle <BASE_SHA>..feat/marketing-tab-terpadu ; scp ke server /tmp/mkt.bundle        (atau tanpa BUNDLE: fetch dari origin setelah branch di-push)
+#   cat scripts/release-marketing-tab.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/mkt.sh'
+#   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/mkt.bundle bash /tmp/mkt.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/mkt.bundle bash /tmp/mkt.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/mkt.bundle bash /tmp/mkt.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh (hanya setelah persetujuan)
+#   ssh ubuntu@43.133.152.6 'bash /tmp/mkt.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'                                 # kembali ke baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-marketing-tab.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-marketing-tab/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN edit manual)

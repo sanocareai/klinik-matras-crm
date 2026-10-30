@@ -18,6 +18,7 @@ export function sheetMarketing({ periode, marketing }) {
   sb.row(["Evaluasi pembayaran sampai", teksCutoff(lap) || "—"]);
   sb.row(["Urut menurut", (urut && METRIK_BY_ID[urut]?.label) || "urutan server"]);
   sb.row(["Definisi", "Nilai order = nilai order eligible saat ini; pembayaran bersih = ledger − refund disetujui; bukan laba. \"—\" = tidak tersedia (bukan 0)."]);
+  if (!marketing.iklan?.grup) sb.row(["Catatan", "Sheet \"Meta CTWA\" tidak disertakan: laporan Meta belum termuat atau gagal dimuat saat ekspor."]);
   sb.blank();
   sb.row(KOLOM_XLSX_MARKETING);
   const daftar = urut && METRIK_BY_ID[urut] ? urutkan(lap.sumber || [], urut) : (lap.sumber || []);

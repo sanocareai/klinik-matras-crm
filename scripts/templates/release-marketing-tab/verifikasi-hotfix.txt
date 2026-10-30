@@ -1,0 +1,15 @@
+# hotfix performa backend HARUS tetap ada: di container baru dan byte-identik dengan snapshot baseline (rilis ini tidak mengubah backend sama sekali)
+docker exec "$CID_NEW" test -f /app/src/middleware/cacheSingkat.js || die "hotfix HILANG: cacheSingkat.js tidak ada di container baru"
+docker exec "$CID_NEW" sh -c 'grep -q "JOIN LATERAL" /app/src/routes/conversations.js && grep -q "JOIN LATERAL" /app/src/routes/analytics.js && grep -q "cacheSingkat(30_000)" /app/src/routes/analytics.js' || die "hotfix HILANG: query LATERAL / cacheSingkat tidak ada di container baru"
+for hf in backend/src/routes/analytics.js backend/src/routes/conversations.js backend/src/middleware/cacheSingkat.js backend/src/routes/attributionAds.js; do
+  [ "$(git hash-object --no-filters "$NEW_DIR/$hf")" = "$(sg rev-parse "${BASE_SHA}:${hf}")" ] || die "backend berubah/hilang: ${hf} di release baru != snapshot baseline"
+done
+# perbaikan tab shell di Laporan (useOptionalTabs) tetap ada pada kode frontend baru
+grep -q useOptionalTabs "$NEW_DIR/frontend/src/pages/Laporan.jsx" || die "perbaikan tab shell HILANG: Laporan.jsx baru tanpa useOptionalTabs"
+ok "hotfix performa tetap ada (4 berkas backend == snapshot baseline; container baru memuat LATERAL + cacheSingkat); Laporan.jsx memuat perbaikan tab shell"
+# performa memadai: health beberapa kali + query LATERAL baca-saja pada produksi
+PERF_H="$(for i in 1 2 3 4 5; do curl -fsS -o /dev/null -w '%{time_total}\n' --max-time 10 "${INTERNAL_URL}/api/health"; done | tr '\n' ' ')"
+LAT_SQL='SELECT COUNT(*) FROM "Conversation" c JOIN LATERAL (SELECT direction FROM "Message" WHERE "conversationId" = c.id ORDER BY "createdAt" DESC LIMIT 1) m ON TRUE WHERE m.direction = '"'"'INBOUND'"'"
+T0=$(date +%s%N); psql_live -At -c "$LAT_SQL" >/dev/null || die "query LATERAL baca-saja gagal"; T1=$(date +%s%N)
+LAT_MS=$(( (T1 - T0) / 1000000 )); [ "$LAT_MS" -lt 15000 ] || die "query LATERAL lambat (${LAT_MS} ms)"
+ok "performa: health(detik)=${PERF_H}; query 'belum dibalas' (LATERAL, baca-saja) ${LAT_MS} ms"

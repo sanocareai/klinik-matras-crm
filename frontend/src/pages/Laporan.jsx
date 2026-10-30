@@ -210,6 +210,7 @@ export default function Laporan() {
   // bagian — lihat utils/exportLaporan.js.
   // `extra.rekonSales` (tab Sales): payload rekonsiliasi Sales–Finance yang SAMA dengan yang tampil di layar — berkas = layar.
   async function handleExport(extra) {
+    if (tab === "Marketing" && !marketingRef.current?.lap) { alert("Laporan Marketing belum selesai dimuat — tunggu sampai angka tampil, lalu Export lagi."); return; }
     const rekonSales = extra && !extra.nativeEvent && extra.rekonSales ? extra.rekonSales : null;
     setExporting(true);
     try {

@@ -105,7 +105,8 @@ const catat = (metrik, api, layar, csv, xlsx, db) => rekap.push({ metrik, api, l
     await tunggu(page, '[data-testid="tabel-meta"] tbody tr', 90000); await tidur(1500);
     const totalMeta = await teks(page, '[data-testid="total-meta"]');
     const angkaTot = (totalMeta || "").match(/-?[\d.]+/g) || [];
-    ok("Meta: baris total di layar memuat lead terbukti = API", num(angkaTot[0]) === jt.leadUnik || new RegExp(String(jt.leadUnik.toLocaleString("id-ID"))).test(totalMeta || ""), totalMeta);
+    if (meta.grup.length === 0) ok("Meta: periode sebelum atribusi tersimpan → keadaan kosong jujur (bukan 0 palsu per campaign), API 0 lead terbukti", jt.leadUnik === 0 && /Belum ada lead dengan touch iklan/.test(await teks(page, '[data-testid="tabel-meta"]') || ""), `atribusi sejak ${meta.atribusi?.attributionStartWib}`);
+    else ok("Meta: baris total di layar memuat lead terbukti = API", num(angkaTot[0]) === jt.leadUnik || new RegExp(String(jt.leadUnik.toLocaleString("id-ID"))).test(totalMeta || ""), totalMeta);
     const baM = await page.$$eval('[data-testid^="baris-meta-"]', (r) => r.map((x) => ({ id: x.dataset.testid, t: [...x.querySelectorAll("td")].map((c) => c.textContent.trim()) })));
     const jumlahBaris = meta.grup.length;
     ok("Meta: jumlah baris layar = grup API (UNMAPPED/UNKNOWN ikut)", baM.length === jumlahBaris, `${baM.length} vs ${jumlahBaris}`);

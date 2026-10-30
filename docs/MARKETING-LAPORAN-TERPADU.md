@@ -10,7 +10,7 @@ URL lama: `?tab=Traffic` → Marketing; `?tab=Akuisisi[&sumber=X]` → Marketing
 ## Peta fitur lama → baru
 | Lama | Posisi baru |
 |---|---|
-| Traffic · Total Lead Masuk | Kartu "Total lead" (service /sumber, memuat spam) + butir rekonsiliasi di Kualitas data |
+| Traffic · Total Lead Masuk | Kartu "Total lead (termasuk spam)" (service /sumber) + butir rekonsiliasi di Kualitas data |
 | Traffic · Rata-rata/hari, Hari tidak normal, Jam tersibuk, Respons rata-rata | Marketing → "Pola lead & respons" (dapat dibuka) |
 | Traffic · Tren harian + pita baseline | Grafik "Tren lead harian" (di ringkasan) |
 | Traffic · Peta hari × jam, Jam tersibuk, Jam rawan | Pola lead & respons |
@@ -18,7 +18,7 @@ URL lama: `?tab=Traffic` → Marketing; `?tab=Akuisisi[&sumber=X]` → Marketing
 | Traffic · Sumber Lead (bar + tautan daftar customer) | Tabel semua sumber; detail sumber → "Daftar customer sumber ini" |
 | Traffic · Performa per Platform (legacy CPA/ROAS/Nilai per lead) | Detail sumber → "Kreatif & tautan (basis label CRM)" (RincianKreatif, sumber terisi awal) |
 | Traffic · Rincian per Iklan (kreatif/tautan) | Idem |
-| Traffic · Export XLSX | Tombol "Export Marketing" (sheet Traffic + Rincian Iklan, tidak berubah) |
+| Traffic · Export XLSX | Tombol "Export Marketing": sheet baru Marketing + Meta CTWA (= layar); sheet Traffic dan Rincian Iklan dipertahankan sebagai "(legacy)" berlabel |
 | Akuisisi · 4 kartu + 6 kartu uang | Satu baris 6 kartu ringkas |
 | Akuisisi · kartu sumber (mobile) / tabel perbandingan | Tabel semua sumber (desktop) + kartu (mobile); kolom utama + "Kolom lengkap" |
 | Akuisisi · sorotan server, urutan, Bandingkan, Ekspor CSV | Badge sorotan di tabel, pilih urutan, tombol Bandingkan, Ekspor CSV sumber |
@@ -47,8 +47,30 @@ Server hanya mengizinkan satu perhitungan laporan atribusi sekaligus (429 SEDANG
 ## Back browser di shell bertab
 `replaceActivePath` hanya replace; navigasi Marketing menambah satu entri riwayat (pushState) lalu mengisi tab; `popstate` menyinkronkan path tab. Berlaku hanya di halaman Laporan.
 
-## Validasi
-Lihat laporan akhir. Harness: `frontend/qa-harness/marketing-server.mjs` (backend asli + DB fixture terisolasi), `marketing-rekon-api.cjs`, `marketing-browser.cjs` (Chrome, 64 pemeriksaan).
+## Label lead (satu istilah = satu penyebut)
+| Tampilan | Penyebut / basis | Termasuk spam? |
+|---|---|---|
+| Kartu & tabel "Total lead (termasuk spam)" (label CRM, `/atribusi/iklan/sumber`) | customer baru dibuat di periode (WIB), tanpa B2B/penjualan karyawan | ya |
+| "Lead sah" (sub-kartu, kolom lengkap) | total lead − spam − staf internal/profil karyawan | tidak |
+| Konversi utama | ber-order ÷ **total lead (termasuk spam)**; konversi non-spam kolom terpisah | — |
+| "Tren lead harian (tanpa spam)", "Pola lead & respons", "Volume lead (tanpa spam)" (`/analytics/traffic`) | customer dibuat di periode, **tanpa spam** dan tanpa B2B/penjualan karyawan | tidak |
+| Detail Meta "Lead CTWA terbukti (termasuk spam)" (`/atribusi/iklan`) | customer baru dengan touch CTWA pertama terbukti per Ad ID — **bukan label CRM** | ya |
+Setiap detail memisahkan "Ringkasan label CRM" dari "atribusi CTWA terbukti — bukan label CRM".
+
+## Ekspor (CSV dan XLSX = layar)
+- **CSV sumber** (`marketing-sumber-<dari>_<sampai>.csv`): periode, evaluasi pembayaran sampai (cutoff server), dasar sumber, basis laporan, urutan yang terlihat; baris dalam urutan layar; null = sel kosong + kolom alasan; kolom "Total lead (termasuk spam)".
+- **CSV Meta** (`marketing-meta-<level>-…csv`): basis, dasar "Atribusi CTWA terbukti per Ad ID (bukan label CRM)", periode, cutoff = waktu hitung server (WIB), level, urutan; kolom "Lead CTWA terbukti (termasuk spam)"; UNMAPPED/UNKNOWN ikut (UNKNOWN tidak dikreditkan).
+- **XLSX** ("Export Marketing"): sheet `Marketing` (laporan sumber = layar), `Meta CTWA` (campaign terbukti; bila laporan Meta belum termuat, ada catatan di sheet Marketing), lalu dua sheet **legacy** berlabel: `Traffic (legacy)` ("TRAFFIC LEAD (LEGACY — TANPA SPAM)") dan `Rincian Iklan (legacy)` ("BASIS LABEL CRM"). null → "—" (bukan 0); 0 nyata tetap 0. Tombol ekspor menolak bila laporan belum termuat.
+
+## Navigasi, request, dan riwayat
+- Permintaan basi dibuang: tiap pemuatan (sumber, Meta, traffic Laporan) memakai token "terbaru menang"; angka periode lama tidak tampil di bawah banner periode baru; antrean `berurutan()` melewati pekerjaan basi (tidak dikirim, tidak diulang) sehingga tidak menumpuk. 429: maksimal 4 percobaan (jeda 1,2 → 2,4 → 3,6 dtk), lalu pesan galat + "Coba lagi"; tidak ada loop.
+- Riwayat per tab shell: entri riwayat yang dibuat/ditempati Laporan diberi `tabShellId`. Back/Forward hanya menyinkronkan entri milik tab itu; entri tab Laporan lain mengaktifkan tab pemiliknya (tidak menimpa tab aktif). Efek yang memanggil `replaceActivePath` (menulis ke tab AKTIF) hanya jalan bila tab Laporan itu yang aktif (kanonikalisasi URL lama, popstate).
+
+## Validasi (30 Okt 2026)
+Harness: `frontend/qa-harness/` — `marketing-server.mjs` (fixture), `marketing-prodcopy-server.mjs` (SALINAN backup produksi), `marketing-rekon-salinan-db.cjs`, `marketing-rekon-api.cjs`, `marketing-browser-salinan.cjs` (API↔layar↔CSV↔XLSX↔DB), `marketing-navigasi.cjs` (navigasi), `marketing-browser.cjs` (regresi 64 pemeriksaan, fixture), `serve-dist.mjs` (menyajikan dist hasil build).
+- Tes logika frontend: `tests/marketingLogic|marketingEkspor|marketingData|periodeLaporan|akuisisiLogic|biayaIklanLogic.test.js`.
+- Navigasi (37 pemeriksaan, dev server DAN dist hasil build): URL langsung ke level Ad + refresh; Back/Forward dalam Marketing; Back/Forward dari tab shell lain; dua tab Laporan berstate berbeda; URL lama di tab background; ganti periode saat request berjalan; hasil lama tidak menimpa; 429 terbatas.
+- Rekonsiliasi pada salinan backup produksi (`pre-laporan-produksi-66c8beef-20261030_135646.sql.gz`, sha256 cocok, dipulihkan ke DB lokal `km_prodcopy_20261030_test`; produksi tidak ditulis): 3 periode × 41 pemeriksaan.
 
 ## Rilis & rollback (belum dilakukan)
-Frontend-saja: rilis lewat skrip rilis frontend-saja bergerbang (pola 382027ef/drw.sh): bangun dist dari worktree bersih, gerbang kode-live. Rollback: `dist` rilis sebelumnya (tag rollback skrip). Tidak ada migrasi/data yang dibalik.
+Frontend-saja: `scripts/release-marketing-tab.sh` (dibangkitkan `scripts/gen-release-marketing-tab.cjs --base <BASELINE_LIVE>`; JANGAN edit manual). Gerbang: identitas kode live (isi, bukan marker), allowlist, **audit perubahan frontend** (daftar berkas, tepat 3 tab lama dihapus, sidik jari diff `frontend/`), backend/compose identik, build di release dir baru, uji logika pada arsip kandidat, bundel baru memuat tampilan baru + bundel lama kehilangan teks tab lama + fitur live tetap ada, aset lama dibawa, switch dist saja (image sama), smoke URL lama/baru + endpoint Marketing (401) + aset, `.env`/hitungan data identik, RestartCount=0. Mode: `--preflight-only`, `--build-only`, rilis penuh, `--rollback` (kembali ke folder release baseline, image sama). Tidak ada migrasi/data yang dibalik.

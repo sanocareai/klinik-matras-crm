@@ -18,6 +18,7 @@ async function buka(browser, siapa, rute, { lebar = 1440, tinggi = 900, hp = fal
   await page.evaluateOnNewDocument((token, user, awalTabs) => { try { localStorage.setItem("token", token); localStorage.setItem("user", JSON.stringify(user)); if (awalTabs && !sessionStorage.getItem("__awal")) { localStorage.setItem("open-tabs:v1", awalTabs); sessionStorage.setItem("__awal", "1"); } } catch (e) {} }, T[siapa].token, T[siapa].user, awal);
   page.galat = []; page.on("pageerror", (e) => page.galat.push(String(e).slice(0, 200)));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|favicon|net::ERR|404|401|403|429|WebSocket|socket\.io/i.test(m.text())) page.galat.push("console: " + m.text().slice(0, 160)); });
+  await page.setBypassServiceWorker(true).catch(() => {});   // build produksi mendaftarkan service worker: fetch-nya lolos dari intersepsi permintaan halaman
   page.ctxId = ctx.id; page.permintaan = [];
   page.on("request", (r) => { if (/\/api\/(atribusi|analytics)/.test(r.url())) page.permintaan.push({ url: r.url().replace(/^https?:\/\/[^/]+/, ""), t: Date.now() }); });
   const client = await page.createCDPSession(); await client.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: DL, eventsEnabled: true, browserContextId: ctx.id }).catch(() => {});

@@ -1,0 +1,16 @@
+# SMOKE PASCA-RILIS (baca-saja, tanpa token): URL lama dan baru Laporan menyajikan SPA dengan bundel BARU (200); endpoint yang dipakai Marketing hidup (401 tanpa token, bukan 404/5xx);
+# aset ber-hash bundel baru 200; aset lama masih 200. Pengalihan URL lama → Marketing terjadi di klien dan sudah diuji pada arsip kandidat (uji logika) + browser nyata sebelum rilis.
+for q in "tab=Marketing" "tab=Marketing&sumber=META&level=adset&campaign=1&adset=1" "tab=Traffic" "tab=Akuisisi&sumber=TIKTOK" "tab=Iklan"; do
+  SC="$(curl -s -o "$BK_DIR/smoke-laporan.html" -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/laporan?${q}&dari=2026-10-01&sampai=2026-10-10")"
+  [ "$SC" = "200" ] || die "smoke: /laporan?${q} -> ${SC} (harus 200)"
+  grep -q "$NEW_INDEX" "$BK_DIR/smoke-laporan.html" || die "smoke: /laporan?${q} tidak menyajikan bundel baru ${NEW_INDEX}"
+done
+ok "smoke URL: /laporan dengan tab=Marketing (+detail Meta), Traffic, Akuisisi, Iklan -> 200 dan bundel baru ${NEW_INDEX}"
+for ep in /api/atribusi/iklan/sumber /api/atribusi/iklan /api/atribusi/iklan/kesehatan /api/atribusi/iklan/referensi /api/atribusi/iklan/ekspor-id /api/analytics/traffic /api/analytics/lead-source-detail; do
+  EC="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}${ep}")"
+  [ "$EC" = "401" ] || die "smoke: ${ep} tanpa token -> ${EC} (harus 401: endpoint hidup dan tertutup)"
+done
+ok "smoke API Marketing: sumber, campaign/ad set/ad, kesehatan, referensi, ekspor-id, traffic, lead-source-detail tanpa token = 401"
+CHUNKS="$(grep -oE 'assets/[A-Za-z0-9_.-]+\.js' "$NEW_DIR/frontend/dist/index.html" | sort -u | head -5)"
+for a in $CHUNKS; do [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/${a}")" = "200" ] || die "smoke: aset ${a} bukan 200"; done
+ok "smoke aset: aset bundel baru yang dirujuk index.html = 200"
