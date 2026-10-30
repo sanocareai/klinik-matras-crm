@@ -269,7 +269,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Teks yang HANYA ada di tampilan baru (tidak boleh ada di dist aktif); teks tab lama yang HARUS hilang (ada di dist aktif, tidak di dist baru); fitur live yang HARUS ada di KEDUANYA.
-for s0 in "Total lead (termasuk spam)" "Tren lead harian (tanpa spam)" "Pola lead & respons" "Kesehatan & referensi" "Kreatif & tautan" "Customer lunas (ledger)" "marketing-sumber-" "Lead CTWA terbukti"; do
+for s0 in "Total lead (termasuk spam)" "Tren lead harian (tanpa spam)" "Pola lead & respons" "Kesehatan & referensi" "Kreatif & tautan" "Customer lunas (ledger)" "marketing-sumber-" "Lead CTWA terbukti" "Meta CTWA" "Kualitas data"; do
   [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks tampilan baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat tampilan baru: ${s0}"
 done
@@ -277,11 +277,11 @@ for s1 in "Perbandingan sumber" "Tabel perbandingan sumber" "Jejak drilldown" "C
   [ -n "$(grep -lF -- "$s1" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks tab lama '${s1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -z "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru MASIH memuat teks tab lama: ${s1}"
 done
-for s2 in "Kelola biaya iklan" "Rincian per Iklan" "Performa per Platform" "Hari Tidak Normal" "Jam Paling Rawan" "Peta Traffic: Hari × Jam" "Atribusi label CRM" "Meta CTWA" "Kualitas data" "Rencana Produksi" "Beranda Gudang" "Koreksi saldo"; do
+for s2 in "Kelola biaya iklan" "Rincian per Iklan" "Performa per Platform" "Hari Tidak Normal" "Jam Paling Rawan" "Peta Traffic: Hari × Jam" "Atribusi label CRM" "Impor spend" "Target KPI" "UNMAPPED" "Rencana Produksi" "Beranda Gudang" "Koreksi saldo"; do
   [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
 done
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): 8 teks Marketing baru ada, 4 teks tab lama hilang, 12 teks fitur live (biaya iklan, rincian kreatif, pola jam, Meta, Rencana Produksi, Gudang) tetap ada"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): 10 teks Marketing baru ada, 4 teks tab lama hilang, 13 teks fitur live (biaya iklan, impor spend, target KPI, UNMAPPED, rincian kreatif, pola jam, Rencana Produksi, Gudang) tetap ada"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
 OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"; n=0
