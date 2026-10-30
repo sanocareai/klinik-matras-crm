@@ -12,6 +12,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
+import ModalSetujuiPO from "@/features/finance/PratinjauHargaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
 import { StatusEmpatPO, RiwayatPembayaranPO, PanelKelompokPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
@@ -630,7 +631,8 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
 function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
   const [po, setPo] = useState(null);
   const [galat, setGalat] = useState("");
-  const [dialog, setDialog] = useState(null); // "batal" | "revisi"
+  const [dialog, setDialog] = useState(null); // "batal" | "revisi" | "setujui"
+  const [infoHarga, setInfoHarga] = useState("");
   const [faktur, setFaktur] = useState(null); // { editBillId? } — formulir faktur
   const [setujuiFaktur, setSetujuiFaktur] = useState(null); // evaluasi faktur yang butuh catatan tinjauan harga
   const [tolakFaktur, setTolakFaktur] = useState(null);
@@ -673,6 +675,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
         footer={
           po && aksi ? (
             <div className="flex w-full flex-col gap-2">
+              {infoHarga && <p role="status" data-testid="info-harga-po" className="rounded-lg bg-greenbg px-3 py-2 text-[12.5px] leading-snug text-green">{infoHarga}</p>}
               {galat && <p role="alert" data-testid="galat-detail-po" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p>}
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button variant="neutral" onClick={() => bukaPdf(false)} disabled={!!sibukPdf} data-testid="po-pdf-lihat" className="max-sm:min-h-11 max-sm:px-4"><Eye size={14} /> {sibukPdf === "lihat" ? "Membuat…" : "Pratinjau PDF"}</Button>
@@ -683,9 +686,9 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
                 {aksi.revisi && <Button variant="neutral" onClick={() => setDialog("revisi")} className="max-sm:min-h-11 max-sm:px-4"><ListChecks size={14} /> Revisi jumlah</Button>}
                 {aksi.ubah && <Button variant="neutral" onClick={() => onUbah(po)} className="max-sm:min-h-11 max-sm:px-4"><Pencil size={14} /> Ubah draf</Button>}
                 {aksi.setujui && (
-                  <TombolAksi confirmText={`Setujui ${po.poNumber} senilai ${formatUang(po.totalDipesan)}? Setelah disetujui, Gudang bisa membuat Penerimaan dari PO ini dan harga tidak bisa diubah lagi.`} onClick={() => jalankan(() => api.approvePurchaseOrder(po.id))}>
+                  <Button onClick={() => setDialog("setujui")} data-testid="tombol-setujui-po" className="max-sm:min-h-11 max-sm:px-4">
                     <CheckCircle2 size={14} /> Setujui
-                  </TombolAksi>
+                  </Button>
                 )}
               </div>
             </div>
@@ -736,13 +739,16 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
           onSubmit={async (alasan) => { try { await api.rejectFinanceBill(tolakFaktur.billId, alasan); setTolakFaktur(null); await segarkan(); } catch (e) { setGalat(e.message || "Gagal menolak faktur"); } }}
         />
       )}
+      {dialog === "setujui" && po && (
+        <ModalSetujuiPO po={po} onClose={() => setDialog(null)} onDisetujui={async (baru, ringkas) => { setPo(baru); setInfoHarga(ringkas); setDialog(null); await onChanged(); }} />
+      )}
       {dialog === "batal" && po && (
         <ModalAlasan
           judul={`Batalkan ${po.poNumber}`}
-          deskripsi="PO yang dibatalkan tidak bisa dibuatkan Penerimaan lagi. Tidak ada stok atau jurnal yang berubah."
+          deskripsi="PO yang dibatalkan tidak bisa dibuatkan Penerimaan lagi. Tidak ada stok atau jurnal yang berubah. Harga Berlaku yang sudah diperbarui dari PO ini TIDAK dikembalikan otomatis dan riwayatnya tetap ada."
           label="Alasan pembatalan" tombol="Batalkan PO" galat={galat}
           onClose={() => setDialog(null)}
-          onSubmit={(alasan) => jalankan(() => api.cancelPurchaseOrder(po.id, alasan))}
+          onSubmit={(alasan) => jalankan(async () => { const r = await api.cancelPurchaseOrder(po.id, alasan); setInfoHarga(r.peringatanHarga || ""); return r; })}
         />
       )}
       {dialog === "revisi" && po && (

@@ -27,7 +27,8 @@ const hariIni = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice
 async function dunia() {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   const fin = await createTestUser({ roles: ["FINANCE"] });
-  const admin = await createTestUser({ roles: ["ADMIN"] });
+  // Admin Finance (seperti akun produksi yang menyetujui PO): ADMIN + FINANCE. Persetujuan PO yang MENGUBAH Harga Berlaku butuh izin harga berlaku (Finance/Owner) — lihat hargaDariPO.integration.test.js.
+  const admin = await createTestUser({ roles: ["ADMIN", "FINANCE"] });
   const gudang = await createTestUser({ roles: ["WAREHOUSE"] });
   const produksi = await createTestUser({ roles: ["PRODUCTION_LEAD"] });
   const f = makeClient(server.baseUrl, fin.token);

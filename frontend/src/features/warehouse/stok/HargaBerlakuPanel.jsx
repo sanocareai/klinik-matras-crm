@@ -84,6 +84,7 @@ export default function HargaBerlakuPanel({ materialId }) {
                 <div className="flex flex-wrap items-center gap-1.5"><b className="tabular-nums text-ink">{rp(r.harga)}</b><span className="text-ink3">/ {r.satuan}</span>
                   {r.jenis === "KOREKSI" && <Badge variant="orange">Koreksi</Badge>}<Badge variant={st.varian}>{st.teks}</Badge><Badge variant={varianBukti(r.labelBukti)}>{r.teksLabelBukti}</Badge></div>
                 <div className="mt-0.5 text-ink3">Mulai {tanggalJam(r.berlakuMulai)} · {r.hargaLama != null ? `harga lama ${rp(r.hargaLama)} · ` : ""}dicatat {tanggalJam(r.dibuatPada)} oleh {r.dibuatOlehNama ?? "—"}</div>
+                {r.sumber?.teks && <div className="text-ink2" data-testid="sumber-riwayat-harga">Sumber: {r.sumber.teks}{r.sumber.hargaBeli != null && r.sumber.satuanBeli ? ` (di PO: ${r.sumber.hargaBeli.toLocaleString("id-ID")} / ${r.sumber.satuanBeli}${r.sumber.faktor ? `, 1 ${r.sumber.satuanBeli} = ${r.sumber.faktor} ${r.satuan}` : ""})` : ""}</div>}
                 <div className="text-ink2">Alasan: {r.alasan}{r.catatanBukti ? ` · bukti: ${r.catatanBukti}` : ""}</div>
                 {d.bolehUbah && r.status !== "DIGANTI_KOREKSI" && <button type="button" className="mt-1 min-h-6 text-[11.5px] font-medium text-accent hover:underline max-sm:min-h-11" onClick={() => setModal({ jenis: "koreksi", baris: r })} data-testid="koreksi-baris">Koreksi salah input historis (tindakan khusus)</button>}
               </li>

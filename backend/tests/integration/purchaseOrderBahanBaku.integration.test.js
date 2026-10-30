@@ -26,7 +26,8 @@ const hariIni = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice
 async function dunia({ qty = 10 } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   const fin = await createTestUser({ roles: ["FINANCE"] });
-  const admin = await createTestUser({ roles: ["ADMIN"] });
+  // Admin Finance (seperti akun produksi yang menyetujui PO): ADMIN + FINANCE. Persetujuan PO yang MENGUBAH Harga Berlaku butuh izin harga berlaku (Finance/Owner) — lihat hargaDariPO.integration.test.js.
+  const admin = await createTestUser({ roles: ["ADMIN", "FINANCE"] });
   const gudang = await createTestUser({ roles: ["WAREHOUSE"] });
   const f = makeClient(server.baseUrl, fin.token);
   const a = makeClient(server.baseUrl, admin.token);
@@ -375,6 +376,11 @@ test("izin: Gudang & Sales tidak bisa menyentuh PO Finance; Akuntan membuat tapi
   assert.equal(dibuat.status, 201);
   assert.equal((await akuntan.post(`/api/finance/purchase-orders/${dibuat.body.id}/approve`, {})).status, 403);
   assert.equal((await penyetuju.post("/api/finance/purchase-orders", body)).status, 403);
+  // Penyetuju murni (APPROVER) tidak punya izin harga berlaku: PO yang mengubah harga ditolak 403 dan tetap draf; PO tanpa perubahan harga boleh disetujuinya.
+  const tolakHarga = await penyetuju.post(`/api/finance/purchase-orders/${dibuat.body.id}/approve`, {});
+  assert.equal(tolakHarga.status, 403); assert.equal(tolakHarga.body.code, "HARGA_PO_BUTUH_IZIN_HARGA");
+  const t0 = new Date(Date.now() - 60_000);
+  await testPrisma.materialHargaBerlaku.create({ data: { materialId: w.lem.id, jenis: "HARGA", unitPrice: String(HARGA), satuan: "KG", effectiveFrom: t0, createdAt: t0, reason: "Harga awal uji", idempotencyKey: `uji-sama-${randomUUID()}` } });
   assert.equal((await penyetuju.post(`/api/finance/purchase-orders/${dibuat.body.id}/approve`, {})).status, 200);
   assert.equal((await akuntan.post(`/api/finance/purchase-orders/${dibuat.body.id}/revisi-jumlah`, { lineId: dibuat.body.lines[0].id, qty: 2, reason: "x" })).status, 403);
 

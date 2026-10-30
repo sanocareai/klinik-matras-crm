@@ -15,6 +15,7 @@ import { Decimal } from "./money.js";
 import { validasiPendamping, pendampingPO, PendampingError } from "../../lib/domain/pendamping.js";
 import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError, kunciAdvisoryNama } from "./skuBaru.js";
 import { DEFINISI_PROGRES, hitungProgresPO, ringkasProgresPO } from "./progresPO.js";
+import { terapkanHargaPO, hargaBersumberPO, hargaDariPoAktif } from "./hargaDariPO.js";
 
 export class PurchaseOrderError extends Error {
   constructor(message, statusCode = 400, code = null) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -194,7 +195,12 @@ export async function ubahDraf(tx, { id, body, userId, bolehOverride = false, bo
   return po.id;
 }
 
-export async function setujuiPO(tx, { id, userId }) {
+/**
+ * Setujui PO. HARGA BERLAKU OTOMATIS (hargaDariPO.js): di transaksi yang SAMA, harga tiap bahan menjadi Harga Berlaku operasional efektif saat ini, lewat layanan resmi.
+ * Konflik harga/satuan, pratinjau yang berubah, atau penyetuju tanpa izin harga ⇒ galat dan PO TETAP DRAF (tidak ada setengah berhasil). `keluaran.hargaDariPO` diisi hasilnya untuk respons/riwayat.
+ * hashPratinjauHarga: hash dari pratinjau yang dilihat penyetuju (UI selalu mengirim; API lama tanpa hash tetap bekerja kecuali HARGA_DARI_PO_STRICT=1).
+ */
+export async function setujuiPO(tx, { id, userId, bolehEditHarga = false, hashPratinjauHarga = null, lewatiBahan = [], keluaran = null }) {
   const po = await kunciDanMuat(tx, id);
   if (po.status !== "DRAFT") throw gagal(`PO ini sudah berstatus ${po.status}`, 409);
   // Validasi ulang isi saat disetujui: supplier/katalog bisa berubah sejak draf dibuat.
@@ -202,13 +208,18 @@ export async function setujuiPO(tx, { id, userId }) {
     supplierId: po.supplierId, orderDate: po.orderDate, expectedDate: po.expectedDate,
     lines: po.lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), unitPrice: l.unitPrice, ...(l.purchaseUnit && { satuanBeli: l.purchaseUnit, faktorKonversi: l.conversionFactor.toString() }) })),
   }, { userId });
+  let hargaDariPO = null;
+  if (hargaDariPoAktif()) {
+    const strict = process.env.HARGA_DARI_PO_STRICT === "1";
+    hargaDariPO = await terapkanHargaPO(tx, { poId: po.id, aktor: { id: userId }, bolehEditHarga, hashPratinjau: hashPratinjauHarga, wajibHash: strict, lewatiBahan });
+  }
   await tx.finPurchaseOrder.update({ where: { id: po.id }, data: { status: "DISETUJUI", approvedAt: new Date(), approvedById: userId } });
   // Harga terakhir Katalog Supplier = informasi saja (tidak menyentuh PO lama, stok, atau biaya). Dicatat saat PO menjadi komitmen.
   await catatHargaTerakhir(tx, { purchaseOrderId: po.id, tanggal: po.orderDate, userId });
-  await catat(tx, po, "DISETUJUI", userId);
+  await catat(tx, po, "DISETUJUI", userId, hargaDariPO?.aktif ? { metadata: { hargaDariPO: { diterapkan: hargaDariPO.diterapkan, dilewati: hargaDariPO.dilewati, tidakBerubah: hargaDariPO.tidakBerubah } } } : {});
+  if (keluaran) keluaran.hargaDariPO = hargaDariPO;
   return po.id;
 }
-
 export async function batalkanPO(tx, { id, reason, userId, bolehBatalkanDisetujui }) {
   const alasan = reason?.trim();
   if (!alasan) throw gagal("Alasan pembatalan wajib diisi");
@@ -226,10 +237,12 @@ export async function batalkanPO(tx, { id, reason, userId, bolehBatalkanDisetuju
       throw gagal(`Masih ada penerimaan berjalan untuk PO ini (${berjalan.map((r) => r.receiptNumber).join(", ")}). Minta Gudang menolak/menyelesaikannya dulu.`, 409);
     }
   }
+  // Harga Berlaku yang bersumber PO ini TIDAK dihapus/dikembalikan (bisa sudah dipakai atau sudah ada harga lebih baru): hanya dicatat di riwayat PO agar penyetuju tahu harus memeriksanya.
+  const hargaPO = po.status === "DISETUJUI" ? await hargaBersumberPO(tx, po.id) : [];
   await tx.finPurchaseOrder.update({ where: { id: po.id }, data: { status: "DIBATALKAN", cancelledAt: new Date(), cancelReason: alasan } });
   // Uang muka yang sudah dibayar untuk PO ini TIDAK dihapus/dibalik oleh pembatalan PO (kas keluar nyata): dicatat di riwayat dan ditampilkan sebagai "perlu dikembalikan atau dialihkan".
   const dp = await tx.finPurchase.aggregate({ where: { purchaseOrderId: po.id, status: "DIBAYAR", category: { code: "UANG_MUKA_PEMBELIAN" } }, _sum: { amount: true }, _count: true });
-  await catat(tx, po, "DIBATALKAN", userId, { note: alasan, metadata: { statusSebelumnya: po.status, ...(dp._count > 0 && { uangMukaDibayar: String(dp._sum.amount), jumlahUangMuka: dp._count, peringatan: "Uang muka perlu dikembalikan atau dialihkan" }) } });
+  await catat(tx, po, "DIBATALKAN", userId, { note: alasan, metadata: { statusSebelumnya: po.status, ...(hargaPO.length && { hargaBerlakuDariPO: hargaPO, catatanHarga: "Harga Berlaku dari PO ini TIDAK dikembalikan otomatis; periksa dan ubah manual bila perlu." }), ...(dp._count > 0 && { uangMukaDibayar: String(dp._sum.amount), jumlahUangMuka: dp._count, peringatan: "Uang muka perlu dikembalikan atau dialihkan" }) } });
   return po.id;
 }
 

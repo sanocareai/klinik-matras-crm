@@ -2214,7 +2214,8 @@ export const api = {
   getKatalogSupplier: (params = {}) => request(`/finance/purchase-orders/katalog-supplier${qsFinance(params)}`),
   createPurchaseOrder: (data, idempotencyKey = mutationKey("po")) => request("/finance/purchase-orders", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   updatePurchaseOrder: (id, data) => request(`/finance/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  approvePurchaseOrder: (id) => request(`/finance/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify({}) }),
+  approvePurchaseOrder: (id, body = {}) => request(`/finance/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
+  pratinjauHargaPO: (id) => request(`/finance/purchase-orders/${id}/pratinjau-harga`),
   cancelPurchaseOrder: (id, reason) => request(`/finance/purchase-orders/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   revisiJumlahPurchaseOrder: (id, data) => request(`/finance/purchase-orders/${id}/revisi-jumlah`, { method: "POST", body: JSON.stringify(data) }),
   // Faktur supplier atas PO (Fase 2): pencocokan per baris. Persetujuan lewat approveFinanceBill(id, { catatanTinjauanHarga }).

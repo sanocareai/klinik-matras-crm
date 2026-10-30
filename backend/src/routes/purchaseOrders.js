@@ -14,6 +14,9 @@ import { wajibUuid } from "../lib/uuidParam.js";
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
+import { rencanaHargaPO, hargaDariPoAktif, ATURAN_TEKS } from "../services/finance/hargaDariPO.js";
+// Siapa yang boleh menyetujui PO yang MENGUBAH Harga Berlaku: pemegang finance:harga_berlaku:edit (Finance + Owner; keputusan Owner). Opsi HARGA_DARI_PO_IZIN=approve melonggarkannya ke semua pemegang finance:approve (Admin, APPROVER) — HANYA atas keputusan Owner.
+const bolehMenyetujuiHarga = (user) => hasPermission(user, P.FINANCE_HARGA_BERLAKU_EDIT) || process.env.HARGA_DARI_PO_IZIN === "approve";
 import { bangunViewPO, namaBerkasPO } from "../services/finance/purchaseOrderDocument.js";
 import { renderPurchaseOrderPdf } from "../services/purchaseOrderPdf.js";
 import { pratinjauDuplikat, cekDuplikatPO, daftarKatalog, bacaAsalSku, perbaikiSku } from "../services/finance/skuBaru.js";
@@ -224,9 +227,28 @@ purchaseOrderFinanceRouter.patch("/:id", requirePermission(P.FINANCE_POST), asyn
   } catch (e) { handleFinanceError(e, res); }
 });
 
+// PRATINJAU HARGA BERLAKU DARI PO (baca-saja): harga lama → baru per bahan, konflik, dan hash yang dikirim saat menyetujui. PO yang sudah tidak draf: tampilkan hasil yang TERCATAT saat persetujuan (bukan hitungan baru).
+purchaseOrderFinanceRouter.get("/:id/pratinjau-harga", requirePermission(P.FINANCE_READ), wajibUuid(), async (req, res) => {
+  try {
+    const po = await prisma.finPurchaseOrder.findUnique({ where: { id: req.params.id }, select: { id: true, poNumber: true, status: true } });
+    if (!po) return res.status(404).json({ error: "PO tidak ditemukan" });
+    const aktif = hargaDariPoAktif();
+    if (po.status !== "DRAFT") {
+      const ev = await prisma.finPurchaseOrderEvent.findFirst({ where: { purchaseOrderId: po.id, type: "DISETUJUI" }, orderBy: { createdAt: "desc" }, select: { metadata: true, createdAt: true } });
+      return res.json({ po, aktif, draf: false, tercatat: ev?.metadata?.hargaDariPO ?? null, catatan: ev?.metadata?.hargaDariPO ? "Hasil yang dicatat saat PO disetujui." : "Tidak ada pembaruan Harga Berlaku yang tercatat untuk PO ini (disetujui sebelum fitur ini, atau tidak ada perubahan).", aturan: ATURAN_TEKS });
+    }
+    if (!aktif) return res.json({ po, aktif, draf: true, aturan: ATURAN_TEKS, baris: [], ringkas: { bahan: 0, akanMengubahHarga: 0, konflik: 0 }, catatan: "Pembaruan Harga Berlaku otomatis dari PO sedang dimatikan." });
+    res.json({ draf: true, bolehSetujuiHarga: bolehMenyetujuiHarga(req.user), ...(await rencanaHargaPO(prisma, po.id)) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// Setujui PO: persetujuan + Harga Berlaku otomatis SATU transaksi (gagal ⇒ tetap draf). Body: { hashPratinjau?, lewatiBahan?: [materialId] } — UI selalu mengirim hash dari pratinjau yang dilihat penyetuju.
 purchaseOrderFinanceRouter.post("/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
-    await jalankan(res, (tx) => setujuiPO(tx, { id: req.params.id, userId: req.user.id }));
+    const keluaran = {};
+    const id = await prisma.$transaction((tx) => setujuiPO(tx, { id: req.params.id, userId: req.user.id, bolehEditHarga: bolehMenyetujuiHarga(req.user), hashPratinjauHarga: req.body?.hashPratinjau ?? null, lewatiBahan: req.body?.lewatiBahan ?? [], keluaran }), { timeout: 30000, maxWait: 10000 });
+    const po = await bentukPO(prisma, id, { harga: true });
+    res.json({ ...po, riwayat: await daftarRiwayat(prisma, id), hargaDariPO: keluaran.hargaDariPO ?? null });
   } catch (e) { handleFinanceError(e, res); }
 });
 
@@ -234,10 +256,15 @@ purchaseOrderFinanceRouter.post("/:id/approve", requirePermission(P.FINANCE_APPR
 // pembatalan tagihan/pembelian yang sudah disetujui). Izin yang kurang dijawab 403 oleh service, setelah status PO diketahui.
 purchaseOrderFinanceRouter.post("/:id/cancel", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    await jalankan(res, (tx) => batalkanPO(tx, {
+    const id = await prisma.$transaction((tx) => batalkanPO(tx, {
       id: req.params.id, reason: req.body?.reason, userId: req.user.id,
       bolehBatalkanDisetujui: hasPermission(req.user, P.FINANCE_ADMIN),
     }));
+    const po = await bentukPO(prisma, id, { harga: true });
+    const riwayat = await daftarRiwayat(prisma, id);
+    // Harga Berlaku yang bersumber PO ini TIDAK dikembalikan/dihapus; pembatalan hanya mencatat apakah harga itu masih berlaku agar Finance memeriksanya.
+    const harga = [...riwayat].reverse().find((r) => r.type === "DIBATALKAN")?.metadata?.hargaBerlakuDariPO ?? null;
+    res.json({ ...po, riwayat, hargaBerlakuDariPO: harga, ...(harga?.length && { peringatanHarga: "Harga Berlaku yang diperbarui dari PO ini TIDAK dikembalikan otomatis. Periksa dan ubah manual (Stok → bahan → Ubah harga) bila perlu." }) });
   } catch (e) { handleFinanceError(e, res); }
 });
 
