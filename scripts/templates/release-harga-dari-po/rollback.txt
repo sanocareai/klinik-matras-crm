@@ -1,0 +1,10 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT hotfix performa dan fitur live lain (gerbang kode live membuktikan kode di container == folder == baseline diset sebelum rilis).
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Web (frontend/dist) dikembalikan bersama folder release sebelumnya. Kode lama: Simpan PO tidak lagi menulis Harga Berlaku; endpoint /purchase-orders/pratinjau-harga hilang; formulir PO kembali tanpa baris dampak harga.
+Saklar tanpa rollback: set HARGA_DARI_PO=0 di backend/.env lalu recreate backend (penyimpanan PO tetap berfungsi, penulisan harga berhenti) — keputusan terpisah, bukan bagian skrip ini.
+Baris Harga Berlaku yang sudah tertulis dari PO (alasan "Otomatis dari PO ...", kunci "po-harga:...") TIDAK dihapus oleh rollback (append-only) dan tetap berlaku; mengubahnya = Ubah harga resmi atas keputusan Owner.
+Stok, Material Issue, valuasi Finance, biaya beku, jurnal, unit, pernyataan, jadwal/Run, dan status tidak disentuh oleh rilis ini: tidak ada yang perlu dibalik.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (termasuk PO yang disimpan pengguna); gunakan hanya atas keputusan Owner.

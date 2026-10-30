@@ -1,0 +1,22 @@
+# RILIS "HARGA BERLAKU OTOMATIS DARI PO" (Finance → Purchase Order → Baru/Ubah draf; Gudang → Stok → Harga Berlaku → Riwayat): WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Aturan (keputusan Owner 30 Okt 2026): harga bahan pada baris PO menjadi Harga Berlaku operasional SAAT PO BERHASIL DISIMPAN (draf baru dan ubah draf), lewat layanan Harga Berlaku resmi, di TRANSAKSI YANG SAMA dengan penyimpanan PO. Isian yang belum
+#     disimpan tidak mengubah harga. Tidak ada izin harga tambahan dan tidak ada dialog persetujuan harga (cukup izin menyimpan PO, finance:post); dampak dijelaskan di formulir (harga lama → baru per baris, di baris terkait).
+#   • Hanya baris yang harga/satuan/faktornya BERUBAH yang menulis (ubah jumlah, simpan ulang, klik ganda/retry tidak menimpa harga yang lebih baru). Persetujuan PO TIDAK menulis ulang harga dan TIDAK mengembalikan harga lebih baru; pembatalan PO
+#     TIDAK menghapus riwayat dan TIDAK mengembalikan harga secara buta. Ubah harga manual dan harga terjadwal tetap berjalan. Konversi satuan hanya dengan faktor sah (pembulatan maks 4 desimal ditampilkan sebelum simpan); konflik harga bahan yang
+#     sama dan faktor tidak sah ditolak di barisnya, tanpa tulisan sebagian. Saklar darurat HARGA_DARI_PO=0 menghentikan penulisan harga tanpa mematikan penyimpanan PO.
+#   • Rilis ini TIDAK memproses PO historis, TIDAK menambah/mengubah stok, valuasi Finance, jurnal, biaya beku operasional, atau pemakaian lama, dan TIDAK membuat PO/harga percobaan di production. Efek nyata baru terjadi saat pengguna menyimpan PO.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore: harga tertulis saat simpan, tanpa izin harga, klik ganda/retry, ubah jumlah/harga draf, harga lebih baru tidak tertimpa, persetujuan/pembatalan,
+#     harga terjadwal, konflik/konversi tidak sah tanpa tulisan sebagian, saklar =0, izin, stok/valuasi/jurnal identik, seluruh baris Harga Berlaku lama identik); build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch.
+#   • PENGUNCIAN: kunci deploy BERSAMA (release-deploy-bersama.lock) + kunci sendiri diambil ATOMIK sebelum memeriksa kunci/proses lain; kepemilikan ditentukan oleh proses (perangkat:inode fd 7/9), BUKAN nama berkas; diperiksa di fase 0,
+#     sebelum persiapan akhir, dan tepat sebelum switch. Rehearsal MENGUJI logika ini (kunci sendiri/lain, bagian kritis, baseline bergeser) lalu gerbang fase 7 pada production nyata tanpa switch.
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi / berkas tambahan / proses
+#     berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip. Gerbang disk (minimal 5 GiB) TIDAK diturunkan.
+#
+#   cat scripts/release-harga-dari-po.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/hpo.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/hpo.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/hpo.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/hpor.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/hpo.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/hpo.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Rollback mengembalikan perilaku lama (PO tidak menulis Harga Berlaku). Baris Harga Berlaku yang SUDAH tertulis dari PO tetap ada (append-only, riwayat tidak dihapus)
+# dan tetap berlaku sampai diubah lewat Ubah harga; pembalikan harga adalah keputusan Owner (Ubah harga/koreksi resmi), bukan bagian rollback kode.
+# (dibangkitkan oleh scripts/gen-release-harga-dari-po.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-harga-dari-po/* + pustaka scripts/lib/{rehearsal,smoke}-harga-dari-po.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)
