@@ -5,6 +5,6 @@ import base from "../vite.config.js";
 const api = process.env.QA_API || "http://127.0.0.1:4010";
 // cacheDir di luar node_modules: node_modules proyek ini hanya junction BACA-SAJA ke salinan dependensi lain (disk penuh saat QA), jangan menulis ke sana.
 export default mergeConfig(base, {
-  cacheDir: process.env.QA_CACHE || "C:/tmp/km-koreksi-qa/vite-cache",
+  cacheDir: process.env.QA_CACHE || "C:/tmp/km-stok-redesign-qa/vite-cache",
   server: { port: Number(process.env.QA_PORT || 5190), strictPort: true, proxy: { "/api": { target: api, changeOrigin: true, configure: (proxy) => { proxy.on("error", () => {}); proxy.on("proxyReq", (req) => req.on("error", () => {})); } }, "/uploads": api, "/media": api } },
 });

@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { ISTILAH, TEKS_DRAWER, labelStatusStok, teksAngkaStok } from "../stok/drawerBahanLogic.js";
 import { api } from "@/api.js";
 import RiwayatReferensiBahan from "./RiwayatReferensiBahan.jsx";
+import IkonBahan from "../stok/IkonBahan.jsx";
+import { tampilHargaDaftar } from "../stok/koreksiSaldoLogic.js";
+import { riwayatLokasi } from "../stok/stokLogic.js";
 import HargaBerlakuPanel from "../stok/HargaBerlakuPanel.jsx";
 import KoreksiSaldoPanel from "../stok/KoreksiSaldoPanel.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -42,7 +45,7 @@ function Baris({ label, children }) {
   );
 }
 
-export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
+export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null, onClose, onEdit, onChanged }) {
   const [movements, setMovements] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -88,42 +91,51 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
   }
 
   const satuanTeks = UNIT_LABEL[item.unit] || item.unit;
+  const ringkasHargaHeader = hargaPeta ? tampilHargaDaftar(hargaPeta, materialId) : null; // sama dengan kolom harga di daftar; tanpa izin Finance = tidak tampil; belum ada = bukan Rp0
+  const lokasiTerima = baris ? riwayatLokasi(baris) : null;
   const adaReferensi = item.referenceUnitCost != null || item.referenceStockValue != null;
 
   return (
     <Dialog.Root open={!!item} onOpenChange={(o) => (o ? null : onClose())}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[200] bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        {/* Desktop: panel kanan membulat. HP: lembar dari bawah (92% tinggi layar), nyaman disentuh. */}
         <Dialog.Content
           aria-label="Detail item inventory"
           aria-describedby={undefined}
-          className="fixed right-0 top-0 z-[201] flex h-full w-full flex-col bg-surface shadow-2xl outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-right sm:w-[460px]"
+          data-testid="drawer-bahan"
+          className="fixed z-[201] flex flex-col bg-base shadow-2xl outline-none data-[state=open]:animate-in max-sm:inset-x-0 max-sm:bottom-0 max-sm:h-[92dvh] max-sm:rounded-t-3xl max-sm:slide-in-from-bottom sm:right-0 sm:top-0 sm:h-full sm:w-[480px] sm:rounded-l-3xl sm:slide-in-from-right"
         >
-          {/* Awal: nama bahan + satuan (kode sebagai keterangan), status, tutup */}
-          <div className="flex shrink-0 items-start gap-2 border-b border-line px-4 py-3">
+          {/* Awal (transparansi halus): ikon kelompok, nama + kode/satuan, status, harga ringkas, tutup */}
+          <div className="flex shrink-0 items-start gap-3 rounded-t-3xl bg-surface/85 px-4 pb-3 pt-4 backdrop-blur-xl sm:rounded-tl-3xl sm:rounded-tr-none">
+            <IkonBahan kode={baris?.kelompok?.kode} ukuran="lg" />
             <div className="min-w-0 flex-1">
-              <Dialog.Title className="m-0 text-[15px] font-bold leading-snug text-ink" data-testid="drawer-nama">{item.name}</Dialog.Title>
-              <p className="m-0 mt-0.5 truncate text-[11.5px] text-ink3" data-testid="drawer-kode-satuan">{item.code} · satuan {satuanTeks}</p>
+              <Dialog.Title className="m-0 text-[18px] font-bold leading-snug text-ink" data-testid="drawer-nama">{item.name}</Dialog.Title>
+              <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink3" data-testid="drawer-kode-satuan">{item.code} · satuan {satuanTeks}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Badge variant={status.tone} className="shrink-0" data-testid="status-stok" data-status={status.key}>{status.label}</Badge>
+                {baris?.kelompok?.label && <span className="rounded-full bg-inset px-2.5 py-0.5 text-[11.5px] font-medium text-ink2" data-testid="drawer-kelompok">{baris.kelompok.label}</span>}
+                {ringkasHargaHeader && <span className={`text-[12.5px] ${ringkasHargaHeader.ada ? "font-semibold text-ink" : "italic text-ink3"}`} data-testid="header-harga">{ringkasHargaHeader.ada ? `Rp${Number(ringkasHargaHeader.harga).toLocaleString("id-ID", { maximumFractionDigits: 4 })} / ${ringkasHargaHeader.satuan}` : ringkasHargaHeader.teks}</span>}
+              </div>
             </div>
-            <Badge variant={status.tone} className="mt-0.5 shrink-0" data-testid="status-stok" data-status={status.key}>{status.label}</Badge>
-            <Dialog.Close aria-label="Tutup" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11">
+            <Dialog.Close aria-label="Tutup" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-inset text-ink2 hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11">
               <X size={16} />
             </Dialog.Close>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
             {/* Kartu Stok: Tersedia (angka utama), Saldo dan Dipesan (pendukung), peringatan + tombol Koreksi saldo / Riwayat */}
-            <section className="rounded-btn border border-border p-3" aria-label="Stok bahan" data-testid="kartu-stok">
+            <section className="rounded-card bg-surface p-4 shadow-card" aria-label="Stok bahan" data-testid="kartu-stok">
               <div className="flex items-center gap-1.5">
-                <div className="min-w-0 flex-1 text-[10px] font-bold uppercase tracking-wide text-ink3">{ISTILAH.tersedia}</div>
+                <div className="min-w-0 flex-1 text-[13px] font-semibold text-ink2">{ISTILAH.tersedia}</div>
                 <InfoToggleButton info={infoStok} label="cara hitung stok" />
               </div>
-              <div className="mt-0.5 text-[26px] font-extrabold leading-none tabular-nums text-ink" data-testid="stok-tersedia">
+              <div className="mt-1 text-[34px] font-extrabold leading-none tabular-nums text-ink" data-testid="stok-tersedia">
                 {teksAngkaStok(item.available, keadaan, (n) => formatQty(n, item.unit))}
               </div>
-              <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
-                <div className="flex gap-1.5"><dt className="text-ink3">{ISTILAH.saldo}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid="stok-saldo">{teksAngkaStok(item.balance, keadaan, (n) => formatQty(n, item.unit))}</dd></div>
-                <div className="flex gap-1.5"><dt className="text-ink3">{ISTILAH.dipesan}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
+              <dl className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-inset px-3 py-2 text-[12.5px]">
+                <div><dt className="text-[11.5px] text-ink3">{ISTILAH.saldo}</dt><dd className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="stok-saldo">{teksAngkaStok(item.balance, keadaan, (n) => formatQty(n, item.unit))}</dd></div>
+                <div><dt className="text-[11.5px] text-ink3">{ISTILAH.dipesan}</dt><dd className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
               </dl>
               <InfoToggleIsi info={infoStok}><p className="m-0" data-testid="rumus-stok">{ISTILAH.rumusStok}</p></InfoToggleIsi>
               <KoreksiSaldoPanel materialId={materialId} onChanged={onChanged} onKeadaan={setKeadaan} />
@@ -132,7 +144,7 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
             <HargaBerlakuPanel materialId={materialId} />
 
             {item.dataNote && (
-              <div className="mt-3 flex items-start gap-2 rounded-md border border-orange/30 bg-orange/10 px-3 py-2" data-testid="data-belum-lengkap">
+              <div className="flex items-start gap-2 rounded-card bg-orangebg px-4 py-3" data-testid="data-belum-lengkap">
                 <TriangleAlert size={14} className="mt-0.5 shrink-0 text-orange" aria-hidden />
                 <p className="m-0 text-[11.5px] leading-relaxed text-ink2">
                   <span className="font-semibold text-orange">Data belum lengkap: </span>
@@ -142,7 +154,7 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
             )}
 
             {/* Bagian terlipat dengan judul jelas */}
-            <div className="mt-4 border-b border-line">
+            <div className="rounded-card bg-surface px-4 shadow-card [&>details:first-child]:border-t-0">
               {adaReferensi && (
                 <Lipat judul="Harga dan nilai stok referensi lama" testid="lipat-referensi-harga">
                   <dl className="m-0 divide-y divide-line">
@@ -186,6 +198,8 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                   <Baris label="Supplier terakhir">
                     {supplierTerakhir || <span className="text-ink3">Belum ada penerimaan</span>}
                   </Baris>
+                  {baris?.kelompok?.label && <Baris label="Kelompok">{baris.kelompok.kode === "BELUM" ? <span className="text-orange">Belum dikelompokkan</span> : baris.kelompok.label}</Baris>}
+                  <Baris label="Riwayat penerimaan">{lokasiTerima ? <span data-testid="drawer-riwayat-penerimaan" title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini.">{lokasiTerima.teks.replace("Terakhir diterima di ", "")}</span> : <span className="text-ink3">tidak ada riwayat</span>}</Baris>
                   <Baris label="Sub-kategori">
                     {item.itemGroup || <span className="text-ink3">—</span>}
                   </Baris>
@@ -239,13 +253,13 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
             </div>
           </div>
 
-          <div className="shrink-0 border-t border-line p-3">
+          <div className="shrink-0 bg-surface/85 p-3 backdrop-blur-xl max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             {error && <p className="mb-2 text-[12px] text-red">{error}</p>}
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" className="flex-1 max-sm:min-h-11" onClick={() => onEdit(item)}>
+              <Button variant="secondary" size="sm" className="h-11 flex-1 rounded-xl" onClick={() => onEdit(item)}>
                 <Pencil size={14} /> Edit Item
               </Button>
-              <Button variant="ghost" size="sm" className="max-sm:min-h-11" onClick={toggleAktif} disabled={busy}>
+              <Button variant="neutral" size="sm" className="h-11 rounded-xl" onClick={toggleAktif} disabled={busy}>
                 {busy && <Loader2 size={14} className="animate-spin" />}
                 {item.active ? "Nonaktifkan" : "Aktifkan"}
               </Button>

@@ -78,10 +78,10 @@ test("kontrol status: pilihan hanya dari server (tampilan.pipeline.pindah), tida
 test("Stok & Lokasi: navigasi kelompok sebagai pintu masuk; ringkasan tidak mendominasi; query URL; kelompok dari server (bukan tebakan di layar)", () => {
   const s = baca("pages/warehouse/WarehouseInventory.jsx"); const n = baca("features/warehouse/stok/KelompokBahanNav.jsx");
   assert.match(s, /<KelompokBahanNav/); assert.match(s, /useFilterDaftar\(PATH, KUNCI\)/); assert.match(s, /KUNCI = \["kelompok", "jenis", "q", "keadaan", "nonaktif", "semua", "harga", "lain", "satuan"\]/); assert.match(s, /data\?\.kelompok/);
-  assert.match(s, /data-testid="kembali-semua"/); assert.match(s, /data-testid="perhatian-kelompok"/); assert.match(s, /<details[^>]*data-testid="rincian-ringkasan"/);
+  assert.match(s, /data-testid="kembali-semua"/); assert.match(s, /<DaftarBahan/); assert.match(s, /<details[^>]*data-testid="rincian-ringkasan"/);
   assert.doesNotMatch(s, /<details[^>]*\bopen=/, "rincian angka tertutup secara default (ringkasan tidak mendominasi)");
   assert.doesNotMatch(s + n, /itemGroup\s*[=!]==?|\.nama\.(includes|match)|toLowerCase\(\)\.includes\("(busa|kain)/i, "layar tidak menebak kelompok dari nama");
-  assert.match(n, /grid-cols-2/); assert.match(n, /aria-pressed/); assert.match(n, /belum ada bahan/);
+  assert.match(n, /flex-wrap/); assert.match(n, /aria-pressed/); assert.match(n, /belum ada bahan/); // Okt 2026: pilihan kelompok ringkas (segmen dengan jumlah), bukan kartu grid
   assert.match(s, /max-sm:min-h-11/);
 });
 

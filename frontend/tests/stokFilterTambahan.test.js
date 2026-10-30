@@ -63,6 +63,7 @@ test("opsi saringan: kunci unik dan berawal dari 'semua'", () => {
 test("halaman Stok & Lokasi memasang saringan baru dan menyimpannya di URL", () => {
   const src = fs.readFileSync(path.join(dir, "../src/pages/warehouse/WarehouseInventory.jsx"), "utf8").replace(/\r\n/g, "\n");
   assert.match(src, /const KUNCI = \[[^\]]*"harga", "lain", "satuan"\]/);
-  for (const id of ["saring-harga", "saring-lain", "saring-satuan", "atur-ulang-saringan", "perhatian-ada-stok-tanpa-harga"]) assert.ok(src.includes(`data-testid="${id}"`), id);
-  assert.match(src, /\{harga && \(\s*<select value=\{hargaF\}/, "saringan harga hanya tampil bila data harga tersedia (izin Finance)");
+  for (const id of ["saring-harga", "saring-lain", "saring-satuan", "perhatian-ada-stok-tanpa-harga"]) assert.ok(src.includes(`data-testid="${id}"`), id);
+  assert.ok(fs.readFileSync(path.join(dir, "../src/features/warehouse/stok/PanelSaringan.jsx"), "utf8").includes('data-testid="atur-ulang-saringan"'), "atur ulang ada di panel Filter");
+  assert.match(src, /\{harga && \(\s*<PilihanSaringan label="Harga berlaku">\s*<select value=\{hargaF\}/, "saringan harga hanya tampil bila data harga tersedia (izin Finance)");
 });

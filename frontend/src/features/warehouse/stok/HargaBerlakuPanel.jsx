@@ -40,9 +40,9 @@ export default function HargaBerlakuPanel({ materialId }) {
   const adaFinance = !!d.nilaiPersediaanFinance || !!d.pembanding.biayaPerolehanGRTerakhir || !!d.pembanding.referensiAgustus;
 
   return (
-    <section className="mt-4 rounded-btn border border-line p-3" aria-label="Harga berlaku bahan" data-testid="panel-harga-berlaku">
+    <section className="rounded-card bg-surface p-4 shadow-card" aria-label="Harga berlaku bahan" data-testid="panel-harga-berlaku">
       <div className="flex items-center gap-1.5">
-        <h4 className="m-0 min-w-0 flex-1 text-[11px] font-bold uppercase tracking-wide text-ink3">{TEKS.judul}</h4>
+        <h4 className="m-0 min-w-0 flex-1 text-[13px] font-semibold text-ink2">{TEKS.judul}</h4>
         <InfoToggleButton info={info} label="Harga Berlaku (HPP operasional)" />
       </div>
       <InfoToggleIsi info={info}>
@@ -52,7 +52,7 @@ export default function HargaBerlakuPanel({ materialId }) {
 
       <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         {h
-          ? <div className="text-[22px] font-extrabold leading-none tabular-nums text-ink" data-testid="harga-berlaku">{tampil.angka}<span className="ml-1 text-[12px] font-semibold text-ink2">/ {tampil.satuan}</span></div>
+          ? <div className="text-[30px] font-extrabold leading-none tabular-nums text-ink" data-testid="harga-berlaku">{tampil.angka}<span className="ml-1 text-[12px] font-semibold text-ink2">/ {tampil.satuan}</span></div>
           : <div className="text-[18px] font-bold leading-none text-ink3" data-testid="belum-ada-harga">{tampil.angka}</div>}
         {h && <Badge variant={varianBukti(h.labelBukti)} data-testid="label-bukti">{h.teksLabelBukti}</Badge>}
       </div>
@@ -68,8 +68,8 @@ export default function HargaBerlakuPanel({ materialId }) {
       {pesan && <p className="mt-2 text-[11.5px] text-green" role="status" data-testid="pesan-tersimpan">{pesan}</p>}
       {galat && <p className="mt-2 text-[11.5px] text-red" role="alert">{galat}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
-        {d.bolehUbah && <Button size="sm" onClick={() => setModal({ jenis: "ubah" })} className="max-sm:min-h-11" data-testid="tombol-ubah-harga"><Pencil size={13} /> Ubah harga</Button>}
-        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="max-sm:min-h-11" data-testid="tombol-riwayat-harga"><History size={13} /> Riwayat ({d.jumlahRiwayat})</Button>
+        {d.bolehUbah && <Button size="sm" onClick={() => setModal({ jenis: "ubah" })} className="h-11 flex-1 rounded-xl sm:flex-none" data-testid="tombol-ubah-harga"><Pencil size={13} /> Ubah harga</Button>}
+        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="h-11 rounded-xl" data-testid="tombol-riwayat-harga"><History size={13} /> Riwayat ({d.jumlahRiwayat})</Button>
         {adaPenerapan && <Button size="sm" variant="secondary" onClick={() => setModal({ jenis: "penerapan" })} className="max-sm:min-h-11" data-testid="tombol-penerapan">Beri harga ke pemakaian lama{d.penerapanAktif ? " · ada pengajuan" : ""}</Button>}
       </div>
 

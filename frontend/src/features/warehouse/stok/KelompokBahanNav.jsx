@@ -1,41 +1,30 @@
 import React from "react";
-import { AlertTriangle, Box, Boxes, Cable, Droplets, Layers, Scissors, Spline, TreePine, Wrench, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils.js";
+import { IKON_KELOMPOK } from "./IkonBahan.jsx";
 
-// NAVIGASI KELOMPOK BAHAN (Stok & Lokasi, UX Gudang Tahap 3) — kartu kelompok sebagai pintu masuk, bukan sekadar saringan. Angka datang dari server (data.kelompok): total (aktif), diketahui
-// (punya catatan stok), minus, belum diketahui (BUKAN habis), dan nonaktif. Kelompok kosong tetap tampil jujur ("belum ada bahan"). "Belum dikelompokkan" = bahan yang itemGroup-nya tidak jelas
-// atau kosong — butuh keputusan manual, TIDAK ditebak dari nama.
-const IKON = { BUSA: Layers, KAIN: Scissors, BENANG: Spline, PEGAS: Cable, KAYU: TreePine, LEM_KIMIA: Droplets, AKSESORI: Wrench, LAINNYA: Box, BELUM: AlertTriangle };
-
+// PILIHAN KELOMPOK BAHAN (Stok & Lokasi) — kontrol segmen ringkas dengan jumlah, bukan kartu besar penuh teks. Angka datang dari server (data.kelompok.total = bahan aktif per kelompok) dan kelompok
+// berasal dari tabel eksplisit di server (itemGroup), TIDAK ditebak dari nama. "Belum dikelompokkan" tetap tampil (amber) bila ada. Kelompok kosong tetap tampil dan jujur ("belum ada bahan").
 export default function KelompokBahanNav({ kelompok = [], dipilih = "", onPilih, jumlahSemua, className }) {
+  const butir = "inline-flex shrink-0 whitespace-nowrap min-h-11 items-center gap-1.5 rounded-xl px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/50 sm:min-h-9";
   return (
     <nav aria-label="Kelompok bahan" className={className} data-testid="nav-kelompok">
-      <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0 sm:grid-cols-3 lg:grid-cols-5">
-        <li className="contents">
+      <ul className="m-0 flex list-none flex-nowrap gap-1 overflow-x-auto rounded-2xl bg-inset p-1 sm:flex-wrap sm:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <li>
           <button type="button" onClick={() => onPilih("")} aria-pressed={dipilih === ""} data-testid="kelompok-semua"
-            className={cn("flex min-h-[78px] flex-col justify-between rounded-btn border px-3 py-2.5 text-left transition-colors max-sm:min-h-[84px]", dipilih === "" ? "border-accent bg-accentbg" : "border-line bg-surface hover:bg-hovertint")}>
-            <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink"><LayoutGrid size={14} aria-hidden /> Semua kelompok</span>
-            <span className="text-[11px] text-ink3">{jumlahSemua != null ? `${jumlahSemua} bahan aktif` : "—"}</span>
+            className={cn(butir, dipilih === "" ? "bg-surface font-semibold text-ink shadow-card" : "text-ink2 hover:bg-hovertint")}>
+            Semua <span className="text-[11.5px] tabular-nums text-ink3">{jumlahSemua != null ? jumlahSemua : "—"}</span>
           </button>
         </li>
         {kelompok.map((k) => {
-          const Ikon = IKON[k.kode] ?? Boxes; const aktif = dipilih === k.kode; const kosong = k.total === 0 && k.nonaktif === 0; const peringatan = k.kode === "BELUM" && k.total > 0;
+          const Ikon = IKON_KELOMPOK[k.kode]; const aktif = dipilih === k.kode; const kosong = k.total === 0 && k.nonaktif === 0; const peringatan = k.kode === "BELUM" && k.total > 0;
+          const rincian = kosong ? "belum ada bahan" : `${k.diketahui} diketahui${k.minus > 0 ? ` · ${k.minus} minus` : ""}${k.belumDiketahui > 0 ? ` · ${k.belumDiketahui} belum diketahui` : ""}${k.nonaktif > 0 ? ` · ${k.nonaktif} nonaktif` : ""}`;
           return (
-            <li key={k.kode} className="contents">
-              <button type="button" onClick={() => onPilih(k.kode)} aria-pressed={aktif} data-testid={`kelompok-${k.kode}`} data-total={k.total}
-                className={cn("flex min-h-[78px] flex-col justify-between rounded-btn border px-3 py-2.5 text-left transition-colors max-sm:min-h-[84px]", aktif ? "border-accent bg-accentbg" : peringatan ? "border-orange bg-orangebg/40 hover:bg-orangebg/70" : "border-line bg-surface hover:bg-hovertint", kosong && !aktif && "opacity-70")}>
-                <span className="flex items-center justify-between gap-1">
-                  <span className={cn("flex items-center gap-1.5 text-[12.5px] font-semibold", peringatan ? "text-orange" : "text-ink")}><Ikon size={14} aria-hidden /> {k.label}</span>
-                  <span className="text-[18px] font-bold tabular-nums leading-none text-ink" data-testid="kelompok-total">{k.total}</span>
-                </span>
-                <span className="mt-1 block text-[11px] leading-snug text-ink3" data-testid="kelompok-rincian">
-                  {kosong ? "belum ada bahan" : <>
-                    {k.diketahui} diketahui
-                    {k.minus > 0 && <> · <span className="font-semibold text-red">{k.minus} minus</span></>}
-                    {k.belumDiketahui > 0 && <> · {k.belumDiketahui} belum diketahui</>}
-                    {k.nonaktif > 0 && <> · {k.nonaktif} nonaktif</>}
-                  </>}
-                </span>
+            <li key={k.kode}>
+              <button type="button" onClick={() => onPilih(k.kode)} aria-pressed={aktif} data-testid={`kelompok-${k.kode}`} data-total={k.total} title={`${k.label}: ${rincian}`}
+                className={cn(butir, aktif ? "bg-surface font-semibold text-ink shadow-card" : peringatan ? "text-orange hover:bg-hovertint" : "text-ink2 hover:bg-hovertint", kosong && !aktif && "opacity-60")}>
+                {peringatan && Ikon && <Ikon size={13} aria-hidden />}
+                {k.label}
+                <span className={cn("text-[11.5px] tabular-nums", peringatan ? "text-orange" : "text-ink3")} data-testid="kelompok-total">{k.total}</span>
               </button>
             </li>
           );

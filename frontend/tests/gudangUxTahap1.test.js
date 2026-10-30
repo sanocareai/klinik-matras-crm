@@ -157,7 +157,8 @@ test("Teks pengguna tidak memuat istilah teknis reversal/idempotensi di layar ba
 test("Tata letak sempit: target sentuh min-h-11, kartu/daftar bergantian dengan tabel, tanpa lebar tetap yang memaksa gulir", () => {
   for (const f of ["pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseInventory.jsx", "features/warehouse/aksi/AksiDokumen.jsx", "features/warehouse/penerimaan/TabelPerItem.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
   assert.match(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /md:hidden/);
-  assert.match(baca("pages/warehouse/WarehouseInventory.jsx"), /md:hidden/);
+  // Redesain Stok & Lokasi (Okt 2026): satu susunan responsif (grid md:) menggantikan dua DOM tabel/kartu bergantian.
+  assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /md:grid-cols-\[/); assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /max-sm:min-h-11/);
 });
 
 test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebagai riwayat penerimaan (bukan lokasi stok saat ini)", () => {
@@ -169,8 +170,10 @@ test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebaga
   const l = riwayatLokasi({ lokasiTerakhir: { lokasi: "RAK-A1", waktu: "2026-10-12T03:00:00Z" } });
   assert.match(l.teks, /^Terakhir diterima di RAK-A1/);
   const s = baca("pages/warehouse/WarehouseInventory.jsx");
-  assert.match(s, /Riwayat penerimaan/); assert.match(s, /bukan lokasi stok saat ini/); assert.doesNotMatch(s, />Lokasi terakhir</); assert.doesNotMatch(s, />Lokasi</);
-  assert.match(s, /sel-riwayat-lokasi/); assert.match(s, /data-jenis=/);
+  // Redesain (Okt 2026): riwayat penerimaan pindah dari kolom daftar ke drawer (Detail bahan); tetap diberi label "Riwayat penerimaan" dan "bukan lokasi stok saat ini".
+  const dr = baca("features/warehouse/components/ItemDetailDrawer.jsx");
+  assert.match(dr, /Riwayat penerimaan/); assert.match(dr, /bukan lokasi stok saat ini/); assert.doesNotMatch(s + dr, />Lokasi terakhir</); assert.doesNotMatch(s + dr, />Lokasi</);
+  assert.match(dr, /drawer-riwayat-penerimaan/); assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /data-jenis=/);
 });
 
 test("Pemulihan dokumen: Batalkan catatan tiba / Pulihkan / Buat penerimaan baru tersedia di halaman detail dengan alasan; jejak dengan tautan; tanpa Hapus/Undo", () => {

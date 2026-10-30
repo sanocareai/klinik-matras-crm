@@ -38,8 +38,8 @@ export default function KoreksiSaldoPanel({ materialId, onChanged, onKeadaan = n
         </p>
       ))}
       <div className="flex flex-wrap items-center gap-2">
-        {d.izin.bolehMengajukan && <Button size="sm" onClick={() => setModal(true)} disabled={!!aktif} title={aktif ? "Selesaikan atau batalkan koreksi yang berjalan dulu" : undefined} className="max-sm:min-h-11" data-testid="tombol-koreksi-saldo"><Scale size={13} /> Koreksi saldo</Button>}
-        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="max-sm:min-h-11" data-testid="tombol-riwayat-koreksi"><History size={13} /> Riwayat ({d.riwayat.length})</Button>
+        {d.izin.bolehMengajukan && <Button size="sm" onClick={() => setModal(true)} disabled={!!aktif} title={aktif ? "Selesaikan atau batalkan koreksi yang berjalan dulu" : undefined} className="h-11 w-full rounded-xl" data-testid="tombol-koreksi-saldo"><Scale size={13} /> Koreksi saldo</Button>}
+        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="h-11 rounded-xl" data-testid="tombol-riwayat-koreksi"><History size={13} /> Riwayat ({d.riwayat.length})</Button>
         <InfoToggleButton info={info} label="aturan koreksi saldo" />
       </div>
       <InfoToggleIsi info={info}>
