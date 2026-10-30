@@ -18,7 +18,8 @@ const TPL = "scripts/templates/release-stok-saringan";
 const TPL_P = "scripts/templates/release-penjadwalan-langsung";
 const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`,
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/verifikasi-hotfix.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
-const FILE_TETAP = [OUT, GENERATOR, ...TPL_FILES];
+const LIB_SIDIK = "scripts/lib/sidik-data.sh"; // pembanding sidik jari hitungan data (pesan masuk sah bukan perubahan akibat deploy)
+const FILE_TETAP = [OUT, GENERATOR, ...TPL_FILES, LIB_SIDIK];
 const CAND_BRANCH = "feat/stok-saringan-lengkap-on-47a02286";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
@@ -41,6 +42,11 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   potong('# RILIS FRONTEND-SAJA "satu pintu masuk Gudang"', "set -Eeuo pipefail", blokTeks(blok, "header") + "\n");
   r('CAND_BRANCH="${CAND_BRANCH:-fix/gudang-pintu-masuk}"', `CAND_BRANCH="\${CAND_BRANCH:-${CAND_BRANCH}}"`);
   r('CAND_REF="refs/remotes/origin/cand-gpm"', 'CAND_REF="refs/remotes/origin/cand-stk"');
+  // pembanding sidik jari: lima hitungan bisnis IDENTIK; pesan WhatsApp boleh NAIK (pesan masuk sah), tidak boleh turun (scripts/lib/sidik-data.sh = satu sumber)
+  { const L0 = s.split("\n"); const iF = L0.findIndex((l) => l.startsWith("FP_SQL=")); must(iF > 0, "FP_SQL"); L0.splice(iF, 0, lf(blok["sidik-data"]).trimEnd()); s = L0.join("\n"); }
+  r('FP_1="$(psql_live -At -c "$FP_SQL")"; [ "$FP_1" = "$FP_0" ] || die "hitungan data BERUBAH selama rilis: sebelum=${FP_0} sesudah=${FP_1}"',
+    'FP_1="$(psql_live -At -c "$FP_SQL")"; FP_INFO="$(bandingkan_sidik_data "$FP_0" "$FP_1")" || die "hitungan data BERUBAH selama rilis: sebelum=${FP_0} sesudah=${FP_1}"; [ -z "$FP_INFO" ] || ok "${FP_INFO}"');
+  r('hitungan data identik ${FP_1}', 'hitungan data bisnis identik (sebelum ${FP_0}; sesudah ${FP_1}; hanya pesan masuk sah boleh bertambah)');
   const L = s.split("\n"); const ia = L.findIndex((l) => l.startsWith("ALLOWED_RE=")); must(ia > 0 && L[ia + 1].startsWith("FRONTEND_SRC_EXPECT="), "ALLOWED_RE");
   L[ia] = `ALLOWED_RE='^(${berkas.map(esc).join("|")})$'`; L[ia + 1] = `FRONTEND_SRC_EXPECT="${fe}"`; s = L.join("\n");
   r('--preflight-only) MODE=preflight;; --rollback) MODE=rollback;;', '--preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;;');
@@ -89,6 +95,7 @@ function main() {
   const { list, belumGabung } = berkasBerbeda(base);
   must(!belumGabung, `HEAD belum memuat ${base}: gabungkan baseline live terlebih dulu`);
   const blok = Object.fromEntries(TPL_FILES.map((f) => [path.basename(f, ".txt"), fs.readFileSync(path.join(REPO, f), "utf8")]));
+  blok["sidik-data"] = fs.readFileSync(path.join(REPO, LIB_SIDIK), "utf8");
   const hasil = bangkitkan({ baseScript: git(["show", `HEAD:${BASE_SCRIPT}`]), blok, berkasList: list });
   const keluar = path.join(REPO, OUT);
   if (cek) {
