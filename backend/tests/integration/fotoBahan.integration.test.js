@@ -10,7 +10,8 @@ import sharp from "sharp";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
-import { FOTO_BAHAN_DIR, namaThumb, NAMA_VALID } from "../../src/services/fotoBahan.js";
+import { FOTO_BAHAN_DIR, namaThumb, NAMA_VALID, SIGN_PURPOSE } from "../../src/services/fotoBahan.js";
+import { signFile } from "../../src/lib/mediaSigning.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -32,6 +33,7 @@ async function json(token, method, url, body) {
 }
 // Baca lewat buffer (bukan sharp(path)): di Windows sharp menahan gagang berkas sehingga unlink/cleanup gagal EPERM.
 const metaDi = (nama) => sharp(fs.readFileSync(path.join(FOTO_BAHAN_DIR, nama))).metadata();
+const namaDari = (url) => new URL(url, "http://x").pathname.split("/").pop();
 const berkas = () => (fs.existsSync(FOTO_BAHAN_DIR) ? fs.readdirSync(FOTO_BAHAN_DIR).sort() : []);
 const dbFoto = async (id) => (await testPrisma.$queryRaw`SELECT photo_file AS f, photo_updated_at AS t FROM materials WHERE id = ${id}::uuid`)[0];
 const efek = async () => ({
@@ -45,9 +47,9 @@ test("unggah foto: 200, WebP ≤1280 tanpa metadata + thumbnail 192, DB terisi, 
   const sebelum = await efek();
   const r = await kirim(g.token, m.id, await jpeg(3000, 2000));
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.match(r.body.fotoUrl, /^\/media\/material-photos\/.+\.webp$/); assert.match(r.body.fotoThumbUrl, /-t\.webp$/);
+  assert.match(r.body.fotoUrl, /^\/api\/inventory\/foto-bahan\/[^?]+\.webp\?exp=\d+&sig=[0-9a-f]{64}$/); assert.match(r.body.fotoThumbUrl, /-t\.webp\?exp=\d+&sig=[0-9a-f]{64}$/);
   assert.equal(r.body.photoFile, undefined, "nama berkas mentah tidak ikut respons");
-  const f = berkas(); assert.equal(f.length, 2); const nama = path.basename(r.body.fotoUrl); assert.ok(NAMA_VALID.test(nama)); assert.deepEqual(f, [nama, namaThumb(nama)].sort());
+  const f = berkas(); assert.equal(f.length, 2); const nama = namaDari(r.body.fotoUrl); assert.ok(NAMA_VALID.test(nama)); assert.deepEqual(f, [nama, namaThumb(nama)].sort());
   const utama = await metaDi(nama); assert.equal(utama.format, "webp"); assert.equal(Math.max(utama.width, utama.height), 1280); assert.equal(utama.exif, undefined, "metadata dibuang");
   const th = await metaDi(namaThumb(nama)); assert.deepEqual([th.width, th.height], [192, 192]);
   assert.equal((await dbFoto(m.id)).f, nama);
@@ -69,13 +71,13 @@ test("EXIF orientasi diikuti: foto 400×200 berorientasi 6 jadi potret 200×400"
   const g = await akun(["WAREHOUSE"]); const m = await createTestMaterial({ code: "FB-3", name: "Orientasi" });
   const buf = await sharp(await jpeg(400, 200)).withMetadata({ orientation: 6 }).jpeg().toBuffer();
   const r = await kirim(g.token, m.id, buf); assert.equal(r.status, 200, JSON.stringify(r.body));
-  const meta = await metaDi(path.basename(r.body.fotoUrl)); assert.deepEqual([meta.width, meta.height], [200, 400]);
+  const meta = await metaDi(namaDari(r.body.fotoUrl)); assert.deepEqual([meta.width, meta.height], [200, 400]);
 });
 
 test("ganti foto: berkas lama (utama + thumbnail) dihapus, nama baru, audit from→to; foto kecil tidak diperbesar", async () => {
   const g = await akun(["WAREHOUSE"]); const m = await createTestMaterial({ code: "FB-4", name: "Ganti" });
-  const a = await kirim(g.token, m.id, await jpeg(600, 400)); const namaA = path.basename(a.body.fotoUrl);
-  const b = await kirim(g.token, m.id, await jpeg(500, 500), { nama: "baru.png", tipe: "image/png" }); const namaB = path.basename(b.body.fotoUrl);
+  const a = await kirim(g.token, m.id, await jpeg(600, 400)); const namaA = namaDari(a.body.fotoUrl);
+  const b = await kirim(g.token, m.id, await jpeg(500, 500), { nama: "baru.png", tipe: "image/png" }); const namaB = namaDari(b.body.fotoUrl);
   assert.notEqual(namaA, namaB); assert.deepEqual(berkas(), [namaB, namaThumb(namaB)].sort(), "hanya foto baru yang tersisa");
   assert.equal((await metaDi(namaB)).width, 500, "tidak diperbesar");
   const audit = await auditFoto(m.id); assert.equal(audit.length, 2); assert.deepEqual(audit[1].metadata.changes.foto, { from: namaA, to: namaB });
@@ -84,17 +86,17 @@ test("ganti foto: berkas lama (utama + thumbnail) dihapus, nama baru, audit from
 test("putar: 90° menukar dimensi, nama baru, berkas lama hilang; sudut tak sah 400; tanpa foto 409", async () => {
   const g = await akun(["WAREHOUSE"]); const m = await createTestMaterial({ code: "FB-5", name: "Putar" });
   assert.equal((await json(g.token, "POST", `/api/inventory/materials/${m.id}/photo/rotate`, { derajat: 90 })).status, 409);
-  const a = await kirim(g.token, m.id, await jpeg(600, 300)); const namaA = path.basename(a.body.fotoUrl);
+  const a = await kirim(g.token, m.id, await jpeg(600, 300)); const namaA = namaDari(a.body.fotoUrl);
   assert.equal((await json(g.token, "POST", `/api/inventory/materials/${m.id}/photo/rotate`, { derajat: 45 })).status, 400);
   assert.equal((await json(g.token, "POST", `/api/inventory/materials/${m.id}/photo/rotate`, {})).status, 400);
   const r = await json(g.token, "POST", `/api/inventory/materials/${m.id}/photo/rotate`, { derajat: 90 }); assert.equal(r.status, 200, JSON.stringify(r.body));
-  const namaB = path.basename(r.body.fotoUrl); assert.notEqual(namaB, namaA); assert.deepEqual(berkas(), [namaB, namaThumb(namaB)].sort());
+  const namaB = namaDari(r.body.fotoUrl); assert.notEqual(namaB, namaA); assert.deepEqual(berkas(), [namaB, namaThumb(namaB)].sort());
   const meta = await metaDi(namaB); assert.deepEqual([meta.width, meta.height], [300, 600]);
 });
 
 test("hapus foto: berkas hilang, kolom null, audit; hapus kedua idempoten tanpa audit tambahan", async () => {
   const g = await akun(["WAREHOUSE"]); const m = await createTestMaterial({ code: "FB-6", name: "Hapus" });
-  const a = await kirim(g.token, m.id, await jpeg(300, 300)); const namaA = path.basename(a.body.fotoUrl);
+  const a = await kirim(g.token, m.id, await jpeg(300, 300)); const namaA = namaDari(a.body.fotoUrl);
   const d = await json(g.token, "DELETE", `/api/inventory/materials/${m.id}/photo`); assert.equal(d.status, 200); assert.equal(d.body.fotoUrl, null);
   assert.deepEqual(berkas(), []); assert.equal((await dbFoto(m.id)).f, null);
   assert.equal((await json(g.token, "DELETE", `/api/inventory/materials/${m.id}/photo`)).status, 200);
@@ -103,7 +105,7 @@ test("hapus foto: berkas hilang, kolom null, audit; hapus kedua idempoten tanpa 
 
 test("penolakan tidak mengubah apa pun: bukan gambar, GIF beranimasi tak perlu, terlalu kecil, tanpa berkas, > 10 MB", async () => {
   const g = await akun(["WAREHOUSE"]); const m = await createTestMaterial({ code: "FB-7", name: "Tolak" });
-  const a = await kirim(g.token, m.id, await jpeg(300, 300)); const namaA = path.basename(a.body.fotoUrl);
+  const a = await kirim(g.token, m.id, await jpeg(300, 300)); const namaA = namaDari(a.body.fotoUrl);
   const kasus = [
     ["bukan gambar", await kirim(g.token, m.id, Buffer.from("ini teks biasa, bukan gambar"), { nama: "x.jpg", tipe: "image/jpeg" }), 400],
     ["PDF menyamar", await kirim(g.token, m.id, Buffer.from("%PDF-1.4 fake"), { nama: "x.pdf", tipe: "application/pdf" }), 400],

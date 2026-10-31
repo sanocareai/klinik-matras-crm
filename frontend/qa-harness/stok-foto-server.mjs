@@ -1,4 +1,4 @@
-// QA FOTO BAHAN (turunan stok-redesign-server.mjs; + penyajian statis /media/material-photos seperti index.js produksi) — QA Redesain Stok & Lokasi — server backend ASLI (buildTestApp, tanpa penjadwal) di atas database SANDBOX terisolasi (nama wajib mengandung "test"), dengan data uji deterministik.
+// QA FOTO BAHAN (turunan stok-redesign-server.mjs; foto disajikan oleh router produksi /api/inventory/foto-bahan lewat buildTestApp, bertanda-tangan) — QA Redesain Stok & Lokasi — server backend ASLI (buildTestApp, tanpa penjadwal) di atas database SANDBOX terisolasi
 // SEMUA bahan berkode "SBX-…" = DATA SANDBOX (bukan transaksi/produksi). Mencakup: stok ada / menipis / terpesan penuh / nol menurut pergerakan / nol terverifikasi / minus / belum ada catatan,
 // harga ada / belum ada / terjadwal, bahan nonaktif, belum dikelompokkan, dan >25 bahan agar halaman berikutnya ikut teruji.
 //   TEST_DATABASE_URL=postgresql://klinik:klinik123@localhost:55443/km_stok_redesign_qa_test JWT_SECRET=… PORT=4010 OUT=C:/tmp/km-stok-redesign-qa node frontend/qa-harness/stok-redesign-server.mjs
@@ -7,8 +7,6 @@ import fs from "node:fs"; import path from "node:path";
 import { testPrisma, truncateAll } from "../../backend/tests/integration/setup/testDb.js";
 import { createTestUser, createTestMaterial } from "../../backend/tests/integration/setup/fixtures.js";
 import { buildTestApp } from "../../backend/tests/integration/setup/testApp.js";
-import express from "../../backend/node_modules/express/index.js";
-import { FOTO_BAHAN_DIR } from "../../backend/src/services/fotoBahan.js";
 
 const PORT = Number(process.env.PORT || 4010); const OUT = process.env.OUT || "C:/tmp/km-stok-redesign-qa";
 fs.mkdirSync(OUT, { recursive: true });
@@ -63,6 +61,5 @@ for (let i = 1; i <= 38; i++) { const m = await mk(`paku${i}`, `PAKU-${String(i)
 
 fs.writeFileSync(path.join(OUT, "ids.json"), JSON.stringify(id, null, 2));
 const app = buildTestApp();
-app.use("/media/material-photos", express.static(FOTO_BAHAN_DIR, { maxAge: "30d", immutable: true, index: false, dotfiles: "deny" }));
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 app.listen(PORT, "127.0.0.1", () => console.log(`[qa-stok] server siap di http://127.0.0.1:${PORT} — DB ${process.env.TEST_DATABASE_URL.split("/").pop()}`));

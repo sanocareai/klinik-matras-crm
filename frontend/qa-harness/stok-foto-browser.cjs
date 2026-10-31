@@ -45,7 +45,7 @@ const tinggiTombol = (page, s) => page.evaluate((x) => { const e = [...document.
     const input = await G.$('[data-testid="input-foto"]'); await input.uploadFile(gbr.besar);
     await ada(G, '[data-testid="foto-bahan"]', 40000); await tidur(800);
     const d1 = await dimGambar(G, '[data-testid="foto-bahan"]');
-    ok("unggah foto 3000×2000: tampil di drawer, gambar termuat, sisi terpanjang 1280 (diproses server)", d1 && d1.w === 1280 && d1.h === 853 && /^\/media\/material-photos\/.+\.webp$/.test(d1.src), JSON.stringify(d1));
+    ok("unggah foto 3000×2000: tampil di drawer, gambar termuat, sisi terpanjang 1280 (diproses server)", d1 && d1.w === 1280 && d1.h === 853 && /^\/api\/inventory\/foto-bahan\/[^?]+\.webp\?exp=\d+&sig=[0-9a-f]{64}$/.test(d1.src), JSON.stringify(d1));
     ok("tombol berubah: Ganti foto + Putar + Hapus", /Ganti foto/.test(await teks(G, '[data-testid="foto-unggah"]')) && !!(await G.$('[data-testid="foto-putar"]')) && !!(await G.$('[data-testid="foto-hapus"]')));
     ok("header drawer memakai foto (thumbnail) menggantikan ikon", !!(await G.$('[data-testid="drawer-bahan"] [data-testid="ikon-bahan"][data-foto="1"]')));
     ok("stok dan harga di drawer TIDAK berubah setelah unggah", (await teks(G, '[data-testid="stok-tersedia"]')) === stokSebelum && (await teks(G, '[data-testid="header-harga"]')) === hargaSebelum, `${stokSebelum} | ${hargaSebelum}`);
@@ -54,7 +54,7 @@ const tinggiTombol = (page, s) => page.evaluate((x) => { const e = [...document.
     // daftar ikut berubah
     await G.keyboard.press("Escape"); await hilang(G, '[data-testid="drawer-bahan"]'); await tidur(1200);
     const thumbDaftar = await dimGambar(G, 'button[data-testid="baris-stok"] [data-foto="1"] img');
-    ok("daftar: baris bahan menampilkan thumbnail 192×192 (bukan ikon)", thumbDaftar && thumbDaftar.w === 192 && thumbDaftar.h === 192 && /-t\.webp$/.test(thumbDaftar.src), JSON.stringify(thumbDaftar));
+    ok("daftar: baris bahan menampilkan thumbnail 192×192 (bukan ikon)", thumbDaftar && thumbDaftar.w === 192 && thumbDaftar.h === 192 && /-t\.webp\?exp=\d+&sig=[0-9a-f]{64}$/.test(thumbDaftar.src), JSON.stringify(thumbDaftar));
     await jepret(G, "c-daftar-berfoto");
 
     // muat ulang: foto bertahan

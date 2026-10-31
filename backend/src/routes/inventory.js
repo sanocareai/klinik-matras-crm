@@ -11,6 +11,7 @@
 import express from "express";
 import multer from "multer";
 import { MaterialUnit, MaterialCategory } from "@prisma/client";
+import { materialPhotoPathRouter } from "./materialPhotoMedia.js";
 import { denganUrlFoto, olahFoto, tulisFoto, bacaFoto, hapusBerkasFoto, FotoBahanError, BATAS_BYTE } from "../services/fotoBahan.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
@@ -20,6 +21,9 @@ import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventor
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const inventoryRouter = express.Router();
+// Foto bahan (media): SEBELUM requireAuth karena <img src> tak bisa mengirim header — router ini mengotentikasi sendiri (Bearer berizin baca bahan ATAU URL bertanda-tangan berumur pendek), hanya GET dengan nama berkas ketat.
+// Dipasang di sini (bukan di index.js) supaya index.js — yang dipatok tes kontrak — tidak berubah.
+inventoryRouter.use("/foto-bahan", materialPhotoPathRouter);
 inventoryRouter.use(requireAuth);
 
 class InventoryError extends Error {
@@ -169,13 +173,20 @@ function terimaFoto(req, res, next) {
   });
 }
 
-async function simpanFotoBaru(req, existing, hasil) {
+// Kunci baris bahan (FOR UPDATE) lalu baca nama foto saat ini: unggah/putar/hapus serentak untuk bahan yang sama berjalan berurutan, jadi tidak ada berkas yatim dan yang dihapus selalu foto sebelumnya.
+async function kunciFotoBahan(tx, materialId) {
+  const [baris] = await tx.$queryRaw`SELECT photo_file AS "photoFile" FROM materials WHERE id = ${materialId}::uuid FOR UPDATE`;
+  return baris?.photoFile ?? null;
+}
+
+// `diharapkan` (hanya untuk putar): foto yang dibaca sebelum diolah. Bila saat dikunci foto sudah berganti, putar DIBATALKAN (409) — tidak menimpa foto yang lebih baru dengan hasil putar foto lama.
+async function simpanFotoBaru(req, existing, hasil, { diharapkan } = {}) {
   await tulisFoto(hasil);
   let lama = null;
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      const cur = await tx.material.findUnique({ where: { id: existing.id }, select: { photoFile: true } });
-      lama = cur?.photoFile ?? null;
+      lama = await kunciFotoBahan(tx, existing.id);
+      if (diharapkan !== undefined && lama !== diharapkan) throw new FotoBahanError("Foto bahan ini baru saja berubah. Muat ulang lalu coba lagi.", 409);
       const u = await tx.material.update({ where: { id: existing.id }, data: { photoFile: hasil.nama, photoUpdatedAt: new Date() } });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.MATERIAL, entityId: existing.id, eventType: EVENT_TYPES.MATERIAL_UPDATED, actorId: req.user.id,
@@ -183,10 +194,10 @@ async function simpanFotoBaru(req, existing, hasil) {
       });
       return u;
     });
-    if (lama) await hapusBerkasFoto(lama);
+    if (lama) await hapusBerkasFoto(lama, existing.id);
     return updated;
   } catch (e) {
-    await hapusBerkasFoto(hasil.nama);
+    await hapusBerkasFoto(hasil.nama, existing.id); // hanya berkas BARU milik unggahan ini; foto lama tidak disentuh
     throw e;
   }
 }
@@ -212,8 +223,8 @@ inventoryRouter.post("/materials/:id/photo/rotate", requirePermission(P.INVENTOR
     if (!existing.photoFile) throw new FotoBahanError("Bahan ini belum punya foto", 409);
     const derajat = Number(req.body?.derajat);
     if (![90, 180, 270].includes(derajat)) throw new FotoBahanError("Sudut putar harus 90, 180, atau 270 derajat");
-    const hasil = await olahFoto(await bacaFoto(existing.photoFile), existing.id, { putar: derajat });
-    res.json(denganUrlFoto(await simpanFotoBaru(req, existing, hasil)));
+    const hasil = await olahFoto(await bacaFoto(existing.photoFile, existing.id), existing.id, { putar: derajat });
+    res.json(denganUrlFoto(await simpanFotoBaru(req, existing, hasil, { diharapkan: existing.photoFile })));
   } catch (err) {
     handleErr(err, res);
   }
@@ -226,8 +237,7 @@ inventoryRouter.delete("/materials/:id/photo", requirePermission(P.INVENTORY_WRI
     if (!existing) return res.status(404).json({ error: "Material tidak ditemukan" });
     let lama = null;
     const updated = await prisma.$transaction(async (tx) => {
-      const cur = await tx.material.findUnique({ where: { id: existing.id }, select: { photoFile: true } });
-      lama = cur?.photoFile ?? null;
+      lama = await kunciFotoBahan(tx, existing.id);
       if (!lama) return existing;
       const u = await tx.material.update({ where: { id: existing.id }, data: { photoFile: null, photoUpdatedAt: new Date() } });
       await recordActivity(tx, {
@@ -236,7 +246,7 @@ inventoryRouter.delete("/materials/:id/photo", requirePermission(P.INVENTORY_WRI
       });
       return u;
     });
-    if (lama) await hapusBerkasFoto(lama);
+    if (lama) await hapusBerkasFoto(lama, existing.id);
     res.json(denganUrlFoto(updated));
   } catch (err) {
     handleErr(err, res);

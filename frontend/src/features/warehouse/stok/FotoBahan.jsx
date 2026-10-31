@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Camera, ImagePlus, Loader2, RotateCw, Trash2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
@@ -31,6 +31,8 @@ export default function FotoBahan({ materialId, nama, fotoUrl, onUbah }) {
   const [galat, setGalat] = useState("");
   const [konfirmasiHapus, setKonfirmasiHapus] = useState(false);
   const ada = !!fotoUrl;
+  const [gagalMuat, setGagalMuat] = useState(false); // tautan foto bertanda-tangan berumur pendek: bila kedaluwarsa/berkas hilang, tampilkan petunjuk (bukan gambar rusak)
+  useEffect(() => { setGagalMuat(false); }, [fotoUrl]);
 
   async function jalankan(jenis, kerja) {
     setSibuk(jenis); setGalat("");
@@ -56,7 +58,9 @@ export default function FotoBahan({ materialId, nama, fotoUrl, onUbah }) {
 
       {ada ? (
         <a href={fotoUrl} target="_blank" rel="noreferrer" className="mt-2 flex max-h-72 items-center justify-center overflow-hidden rounded-xl bg-inset" aria-label={`Buka foto ${nama ?? "bahan"} ukuran penuh`}>
-          <img src={fotoUrl} alt={`Foto ${nama ?? "bahan"}`} className="max-h-72 w-full object-contain" data-testid="foto-bahan" loading="lazy" decoding="async" />
+          {gagalMuat
+            ? <span className="px-4 py-10 text-center text-[12.5px] stok-t2" data-testid="foto-gagal-muat">Foto belum bisa dimuat. Muat ulang halaman untuk menampilkannya lagi.</span>
+            : <img src={fotoUrl} alt={`Foto ${nama ?? "bahan"}`} className="max-h-72 w-full object-contain" data-testid="foto-bahan" loading="lazy" decoding="async" onError={() => setGagalMuat(true)} />}
         </a>
       ) : (
         <button type="button" onClick={() => input.current?.click()} disabled={kunci} data-testid="foto-kosong"

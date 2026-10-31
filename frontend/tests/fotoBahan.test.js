@@ -54,7 +54,7 @@ test("pemasangan: API klien memakai rute foto, drawer memuat FotoBahan, daftar &
   const ikon = baca("src/features/warehouse/stok/IkonBahan.jsx");
   assert.match(ikon, /onError=\{\(\) => setRusak\(true\)\}/); assert.match(ikon, /IKON_KELOMPOK\[kode\]/);
   const komp = baca("src/features/warehouse/stok/FotoBahan.jsx");
-  for (const id of ["kartu-foto", "foto-unggah", "foto-putar", "foto-hapus", "foto-hapus-ya", "foto-kosong", "input-foto", "foto-galat"]) assert.ok(komp.includes(`data-testid="${id}"`), `testid ${id}`);
+  for (const id of ["kartu-foto", "foto-unggah", "foto-putar", "foto-hapus", "foto-hapus-ya", "foto-kosong", "input-foto", "foto-galat", "foto-gagal-muat"]) assert.ok(komp.includes(`data-testid="${id}"`), `testid ${id}`);
   assert.match(komp, /accept="image\/\*"/); assert.match(komp, /Konfirmasi hapus foto/);
   assert.match(komp, /Tidak mengubah stok, harga, atau nilai persediaan/);
 });
