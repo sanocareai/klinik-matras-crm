@@ -64,3 +64,18 @@ test("Kedua tab: Laporan.jsx memanggil komponen dengan prop yang sama; endpoint 
   assert.match(halaman, /api\.getAnalyticsPipelineVelocity\(params\)/); assert.match(halaman, /api\.getResponseTimeSeries\(params\)/);
   assert.doesNotMatch(css, /font-family/); assert.doesNotMatch(css, /!important/);
 });
+
+test("Pipeline: kolom 'Rasio antar tahap' — pembilang/penyebut dari kode, Spam tidak dibandingkan, tooltip menolak tafsir perpindahan/antarperiode", () => {
+  assert.ok(pl.includes("Rasio antar tahap <InfoTooltip"), "judul kolom");
+  assert.doesNotMatch(pl, /vs sebelumnya/);
+  assert.match(pl, /item\.stage !== "SPAM" && prev && prev\.count > 0 \? Math\.round\(\(item\.count \/ prev\.count\) \* 100\) : null/);
+  for (const k of ["pembilang", "penyebut", "BUKAN tingkat perpindahan pelanggan antar tahap", "BUKAN perubahan antarperiode", "Spam bukan kelanjutan tahap Reviewed", "280 di Prospek ÷ 310 di New = 90%"]) assert.ok(pl.includes(k), k);
+  assert.match(pl, /\$\{item\.count\.toLocaleString\("id-ID"\)\} ÷ \$\{prev\.count\.toLocaleString\("id-ID"\)\}/, "title sel memuat angka pembilang ÷ penyebut");
+  assert.match(css, /100px 156px/);
+});
+
+test("Performa Tim: kolom memakai judul lengkap 'Menggantung' (tooltip definisi tetap); nol tanpa chip 'Aman'", () => {
+  assert.match(pt, /label: "Menggantung",\s+title: "Menggantung: dia pegang/);
+  assert.doesNotMatch(pt, /label: "Mengg\./);
+  assert.doesNotMatch(pt, />Aman</);
+});

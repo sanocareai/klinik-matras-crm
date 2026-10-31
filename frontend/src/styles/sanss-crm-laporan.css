@@ -436,7 +436,7 @@
 }
 
 /* Pipeline: kolom grid posisi lebih lebar untuk header "vs sebelumnya"; angka Performa Tim sejajar dengan teks header (ikon tooltip ± 18px) */
-.crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(190px, 1.5fr) 72px minmax(140px, 2fr) 100px 124px; }
+.crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(190px, 1.5fr) 72px minmax(140px, 2fr) 100px 156px; }
 @container ss (max-width: 560px) { .crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(0, 1fr) auto; } }
 .crm-lap .crm-pt-tabel tbody td, .crm-lap .crm-pt-tabel tfoot td { padding-right: 30px; }
 

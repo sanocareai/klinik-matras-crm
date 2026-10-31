@@ -27,7 +27,7 @@ const STATUS_LABEL = { OPEN: "Terbuka", PENDING: "Pending", RESOLVED: "Selesai" 
 const KOLOM_PERFORMA = [
   { k: "handledOwn", label: "Ditangani",  title: "Percakapan yang DIA KLAIM/PEGANG SENDIRI dari awal pada periode terpilih (tidak termasuk warisan Ambil Alih)" },
   { k: "handledTakeover", label: "Warisan", title: "Percakapan yang berpindah ke dia lewat Ambil/Ambil Alih dari sales lain — bukan tanggung jawab penanganan asli dia" },
-  { k: "stalled",    label: "Mengg.",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
+  { k: "stalled",    label: "Menggantung",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
   { k: "avgResponseMinutes", label: "Avg Respons", title: "Rata-rata jeda pesan pertama customer → balasan pertama" },
   { k: "slaBreach",  label: "SLA >1j",    title: "Balasan pertama >60 menit, DITAMBAH percakapan yang ditutup (RESOLVED) tanpa satu pun balasan sama sekali — supaya lead yang diabaikan total sampai ditutup tidak lolos dari radar" },
 ];

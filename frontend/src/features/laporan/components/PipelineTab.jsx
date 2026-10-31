@@ -55,7 +55,7 @@ function cariBottleneck(avgDaysInStage) {
 // stage ada di ../utils/stageInfo.js (dipakai juga kartu Sales per Stage).
 const INFO = {
   funnel: "Gambaran perjalanan pelanggan dari lead baru sampai transaksi. Tiap baris = satu stage: angka besar adalah jumlah pelanggan yang SEKARANG ada di stage itu, Rp di sebelahnya adalah nilai order pasti mereka (order Menunggu dan Dibatalkan tidak dihitung). Yang dihitung hanya pelanggan yang pertama kali masuk di periode terpilih.",
-  konversi: "Persentase = jumlah pelanggan di stage ini dibagi jumlah di stage sebelumnya (baris di atasnya). Contoh: 2 di Prospek dan 1 di Transaksi berarti 50%. Ini foto kondisi sekarang, bukan hitungan pelanggan yang benar-benar berpindah, jadi hanya patokan kasar. Tanda 0% muncul kalau stage sebelumnya kosong atau stage ini belum ada isinya.",
+    konversi: "Rasio antar tahap = jumlah pelanggan SAAT INI di tahap ini (pembilang) ÷ jumlah pelanggan saat ini di tahap pada baris tepat di atasnya (penyebut), dibulatkan ke persen. Contoh: 280 di Prospek ÷ 310 di New = 90%. Ini perbandingan dua jumlah pada saat ini — BUKAN tingkat perpindahan pelanggan antar tahap dan BUKAN perubahan antarperiode (perpindahan sesungguhnya ada di Pergerakan Pipeline). Bisa lebih dari 100% bila tahap ini lebih besar dari tahap di atasnya. Tanda “—” muncul bila baris di atasnya kosong, pada tahap pertama, dan pada Spam (Spam bukan kelanjutan tahap Reviewed, jadi tidak dibandingkan).",
   jumlah: "Jumlah pelanggan yang sekarang berada di stage itu.",
   nilai: "Total nilai order pasti milik pelanggan di stage itu. Order Menunggu (belum pasti) dan Dibatalkan tidak dihitung.",
   persen: "Porsi stage ini dari SELURUH pelanggan di periode terpilih (termasuk Spam). Rumus: jumlah di stage ini dibagi total semua stage. Semua baris kalau dijumlah = 100%.",
@@ -102,7 +102,7 @@ export default function PipelineTab({ funnel, velocity }) {
             <h3 className="t-card-title">Sales Pipeline Funnel</h3>
             <InfoTooltip text={INFO.funnel} />
             <span className="crm-pl-pil" data-jenis="posisi">Posisi saat ini</span>
-            <p className="crm-mk-deskripsi">Jumlah pelanggan &amp; konversi antar stage</p>
+            <p className="crm-mk-deskripsi">Jumlah pelanggan saat ini &amp; rasio antar tahap</p>
           </div>
           {funnel.length === 0 ? (
             <p className="crm-mk-kosong">Belum ada data pipeline.</p>
@@ -113,11 +113,12 @@ export default function PipelineTab({ funnel, velocity }) {
                 <span role="columnheader" className="crm-ss-kanan">Jumlah <InfoTooltip text={INFO.jumlah} /></span>
                 <span role="columnheader" className="crm-ss-kol-bar">Persentase <InfoTooltip text={INFO.persen} /></span>
                 <span role="columnheader" className="crm-ss-kanan">Total Nilai <InfoTooltip text={INFO.nilai} /></span>
-                <span role="columnheader" className="crm-ss-kanan">vs sebelumnya <InfoTooltip text={INFO.konversi} /></span>
+                <span role="columnheader" className="crm-ss-kanan">Rasio antar tahap <InfoTooltip text={INFO.konversi} /></span>
               </div>
               {funnel.map((item, i) => {
                 const prev = funnel[i - 1];
-                const conversion = prev && prev.count > 0 ? Math.round((item.count / prev.count) * 100) : null;
+                // Rasio antar tahap = jumlah tahap ini ÷ jumlah tahap di baris atasnya (rumus lama, tidak diubah). Spam bukan kelanjutan Reviewed → tidak dibandingkan (—).
+                const conversion = item.stage !== "SPAM" && prev && prev.count > 0 ? Math.round((item.count / prev.count) * 100) : null;
                 const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : "0";
                 return (
                   <div role="row" className="crm-ss-baris" key={item.stage} data-stage={item.stage}>
@@ -128,7 +129,7 @@ export default function PipelineTab({ funnel, velocity }) {
                       <b>{pct}%</b>
                     </span>
                     <span role="cell" className="crm-ss-nilai crm-ss-kanan" data-label="Nilai" title={formatRupiah(item.value)}>{formatRupiahShort(item.value)}</span>
-                    <span role="cell" className="crm-ss-mandek crm-ss-kanan" data-label="vs sebelumnya">{conversion != null ? `${conversion}%` : "—"}</span>
+                    <span role="cell" className="crm-ss-mandek crm-ss-kanan" data-label="Rasio antar tahap" title={conversion != null ? `${item.count.toLocaleString("id-ID")} ÷ ${prev.count.toLocaleString("id-ID")} (${item.label} ÷ ${prev.label}), jumlah saat ini` : item.stage === "SPAM" ? "Spam bukan kelanjutan tahap Reviewed — tidak dibandingkan" : "Tidak ada tahap pembanding (tahap pertama atau tahap di atasnya kosong)"}>{conversion != null ? `${conversion}%` : "—"}</span>
                   </div>
                 );
               })}
