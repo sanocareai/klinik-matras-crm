@@ -23,6 +23,7 @@ import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { captureInbound } from "../services/ctwaCapture.js";
 import { siapkanTouch, simpanPesanDenganTouch } from "../services/attribution/touchCapture.js";
+import { buatSekaliPerKunci } from "../utils/sekaliPerKunci.js";
 
 export const webhookRouter = express.Router();
 
@@ -242,7 +243,22 @@ async function downloadWithRetry(mediaInfo, messageId, session) {
 // pasti selesai proses beberapa saat kemudian), forward WAJIB coba unduh
 // ulang di titik itu — bukan diam-diam kirim placeholder teks "[Video]" ke
 // tujuan seolah videonya benar-benar terkirim.
-export async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType, session) {
+//
+// ANTI-DOBEL FILE (Okt 2026): WAHA mengirim 2 event ("message" + "message.any")
+// nyaris bersamaan untuk pesan yang sama. Cek idempotensi di awal handler
+// bersifat cek-lalu-simpan, jadi keduanya lolos, lalu masing-masing mengunduh
+// dan menulis file dengan nama acak berbeda — database hanya menerima satu
+// pesan (externalId unik), file lain jadi yatim (audit 21 Okt: 26.542 file /
+// 17 GB salinan byte-persis). Karena itu unduhan dijalankan SEKALI per
+// externalId: pemanggil kedua mendapat path file yang sama. Hasil gagal (null)
+// tidak diingat, jadi jalur "unduh ulang saat forward" tetap bisa mencoba lagi.
+const unduhMediaSekali = buatSekaliPerKunci({ ttlMs: 60_000, maksEntri: 500 });
+
+export function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType, session) {
+  return unduhMediaSekali(externalId, () => unduhDanSimpanMedia(mediaInfo, externalId, fallbackMime, mediaType, session));
+}
+
+async function unduhDanSimpanMedia(mediaInfo, externalId, fallbackMime, mediaType, session) {
   const downloaded = await downloadWithRetry(mediaInfo, externalId, session);
   if (!downloaded?.data) return null;
   const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
