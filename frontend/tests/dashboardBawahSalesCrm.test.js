@@ -39,6 +39,7 @@ test("Deal Pipeline: urutan tahap, sumber data, label, nilai tetap; bar mengikut
   for (const k of ['const TAHAP = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED"]', "api.getAnalyticsPipelineFunnel(params)", "STAGE_LABELS[s]", "formatRupiah(byStage[s]?.value ?? 0)"]) assert.ok(pipe.includes(k), k);
   assert.ok(pipe.includes("{s.count > 0 && <span className=\"crm-pipe-isi\""), "jumlah 0 tidak punya isian");
   assert.ok(pipe.includes("(s.count / maks) * 100") && pipe.includes("Math.max(1, ...stages.map((s) => s.count))"), "panjang bar = jumlah ÷ terbesar");
+  assert.ok(pipe.includes("width: `${(s.count / maks) * 100}%`") && !pipe.includes("Math.max(4"), "lebar = jumlah ÷ terbesar × 100% langsung, tanpa batas minimum");
   for (const c of ["crm-pipe-nama", "crm-pipe-jumlah", "crm-pipe-nilai"]) assert.ok(pipe.includes(c), c);
 });
 

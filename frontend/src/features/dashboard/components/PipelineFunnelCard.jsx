@@ -11,7 +11,7 @@ import { toApiParams } from "@/lib/dateRange.js";
 const TAHAP = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED"];
 
 // `ringkas` (OPSIONAL, default false — PipelineWidget memakai kartu ini dan TIDAK berubah): bar horizontal per tahap —
-// nama tahap, jumlah lead, nilai; panjang bar = jumlah lead ÷ jumlah terbesar; jumlah 0 → tanpa isian.
+// nama tahap, jumlah lead, nilai; panjang bar = jumlah lead ÷ jumlah terbesar × 100% (tanpa batas minimum); jumlah 0 → tanpa isian.
 export default function PipelineFunnelCard({ range, className, ringkas = false }) {
   const params = useMemo(() => toApiParams(range), [range]);
 
@@ -51,7 +51,7 @@ export default function PipelineFunnelCard({ range, className, ringkas = false }
               <span className="crm-pipe-jumlah">{s.count}</span>
               <span className="crm-pipe-nilai">{s.value}</span>
               <span className="crm-pipe-jalur" role="presentation">
-                {s.count > 0 && <span className="crm-pipe-isi" style={{ width: `${Math.max(4, (s.count / maks) * 100)}%` }} />}
+                {s.count > 0 && <span className="crm-pipe-isi" style={{ width: `${(s.count / maks) * 100}%` }} />}
               </span>
             </li>
           ))}
