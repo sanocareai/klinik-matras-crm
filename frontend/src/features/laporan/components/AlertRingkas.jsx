@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils.js";
 // Penjelasan lengkap (teks panjang aslinya) tidak dibuang — dibuka lewat tombol, jadi peringatan penting tetap
 // terlihat sekilas tanpa memenuhi layar. `tone`: "merah" (data hilang/salah) | "oranye" (perlu diperiksa).
 // Hanya styling di .crm-lap (styles/sanss-crm-laporan.css).
-export default function AlertRingkas({ tone = "oranye", judul, ringkas, children, bukaAwal = false, testid }) {
+// `aksi` (opsional) = { teks, onClick }: tombol di kanan yang membuka rincian di tempat lain (mis. panel Kualitas data) — alternatif dari `children`.
+export default function AlertRingkas({ tone = "oranye", judul, ringkas, children, bukaAwal = false, testid, aksi = null }) {
   const [buka, setBuka] = useState(bukaAwal);
   return (
     <div className="crm-lap-alert" data-tone={tone} data-testid={testid} role="alert">
@@ -23,6 +24,7 @@ export default function AlertRingkas({ tone = "oranye", judul, ringkas, children
             <ChevronDown size={14} className={cn("transition-transform", buka && "rotate-180")} aria-hidden="true" />
           </button>
         )}
+        {aksi && !children && <button type="button" className="crm-lap-alert-aksi" onClick={aksi.onClick}>{aksi.teks}<ChevronDown size={14} aria-hidden="true" /></button>}
       </div>
       {children && buka && <div className="crm-lap-alert-rincian">{children}</div>}
     </div>

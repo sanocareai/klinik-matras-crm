@@ -30,7 +30,7 @@ export function PecahAngka({ teks }) {
 }
 
 export default function KpiLap({
-  tone = "orders", ikon, label, numericValue, format, value, growth, compareLabel, sub, tooltip, onClick, className,
+  tone = "orders", ikon, label, numericValue, format, value, growth, compareLabel, sub, tooltip, onClick, className, testid,
 }) {
   const Ikon = IKON_KPI[ikon] || IKON_TONE[tone] || IkonTas;
   // Hook wajib tanpa syarat. Bila numericValue tidak ada, `value` statis yang tampil (mis. "—").
@@ -45,6 +45,7 @@ export default function KpiLap({
   return (
     <div
       data-kpi={tone}
+      data-testid={testid}
       data-len={String(tampil ?? "").length > 13 ? "l" : undefined}
       className={cn("crm-kpi-tile crm-lap-kpi", onClick && "crm-kpi-tile--klik", className)}
       onClick={onClick}

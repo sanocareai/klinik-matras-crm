@@ -258,3 +258,101 @@
 .crm-lap .crm-ss-tabel-sales tbody td:not(:nth-child(2)) { padding-right: 32px; }
 .crm-lap .crm-lap-baris--dua { align-items: stretch; }
 .crm-lap .crm-lap-grid-panel { grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); align-items: stretch; }
+
+/* ── 14. MARKETING (1 Nov 2026): KPI · metrik pendukung · [Tren lead | Kelengkapan Data] · Performa Sumber ─────────────────────── */
+.crm-lap .crm-lap-tab-isi { display: flex; flex-direction: column; gap: 20px; }
+.crm-lap .crm-lap-tab-isi > * { min-width: 0; }
+.crm-lap .crm-lap-metrik-catatan { flex-basis: 100%; font-size: 12px; line-height: 1.35; color: #9A4A00; }
+:root[data-theme="dark"] .crm-lap .crm-lap-metrik-catatan { color: #FFC38A; }
+.crm-lap .crm-lap-metrik-nilai[data-kosong="1"] { color: var(--text-tertiary); }
+.crm-lap .crm-mk-kepala { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 12px; }
+.crm-lap .crm-mk-deskripsi { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-tertiary); }
+.crm-lap .crm-mk-tren, .crm-lap .crm-mk-kel { align-self: stretch; }
+.crm-lap .crm-mk-kosong { margin: 0; padding: 24px 0 8px; text-align: center; font-size: 13.5px; color: var(--text-secondary); }
+
+/* Periode satu hari: satu nilai bertanggal, bukan grafik */
+.crm-lap .crm-mk-satu { display: flex; flex-direction: column; gap: 4px; padding: 8px 0 4px; }
+.crm-lap .crm-mk-satu-tanggal { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-mk-satu-nilai { margin: 0; font-size: 15px; color: var(--text-secondary); }
+.crm-lap .crm-mk-satu-nilai strong { font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.crm-lap .crm-mk-satu-sub { margin: 0; font-size: 13px; color: var(--text-tertiary); }
+.crm-lap .crm-mk-satu-sub--catatan { color: #9A4A00; font-weight: 600; }
+:root[data-theme="dark"] .crm-lap .crm-mk-satu-sub--catatan { color: #FFC38A; }
+
+/* Kelengkapan Data */
+.crm-lap .crm-mk-kel { display: flex; flex-direction: column; gap: 14px; }
+.crm-lap .crm-mk-kel .crm-mk-kepala { margin-bottom: 0; }
+.crm-lap .crm-mk-kel-ledger-label { display: flex; align-items: center; gap: 4px; margin: 0 0 6px; font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-mk-kel-bar-baris { display: flex; align-items: center; gap: 12px; }
+.crm-lap .crm-mk-kel-bar { flex: 1; height: 12px; border-radius: 999px; background: var(--bg-inset); overflow: hidden; }
+.crm-lap .crm-mk-kel-bar > span { display: block; height: 100%; border-radius: 999px; background: #3965FA; }
+.crm-lap .crm-mk-kel-bar > span[data-lengkap="1"] { background: #1F9D55; }
+.crm-lap .crm-mk-kel-persen { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.crm-lap .crm-mk-kel-teks { margin: 6px 0 0; font-size: 13px; line-height: 1.4; color: var(--text-tertiary); }
+.crm-lap .crm-mk-kel-daftar { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.crm-lap .crm-mk-kel-baris { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--hairline); }
+.crm-lap .crm-mk-kel-ikon { flex: 0 0 auto; margin-top: 2px; color: #146C2E; }
+.crm-lap .crm-mk-kel-baris[data-ok="0"] .crm-mk-kel-ikon { color: #C25E00; }
+:root[data-theme="dark"] .crm-lap .crm-mk-kel-ikon { color: #6EE7A0; }
+:root[data-theme="dark"] .crm-lap .crm-mk-kel-baris[data-ok="0"] .crm-mk-kel-ikon { color: #FFC38A; }
+.crm-lap .crm-mk-kel-judul { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin: 0; font-size: 14px; color: var(--text-primary); }
+.crm-lap .crm-mk-kel-nilai { font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-mk-kel-baris .crm-mk-kel-teks { margin-top: 2px; }
+.crm-lap .crm-mk-kel-info { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--bg-inset); font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+.crm-lap .crm-mk-kel-rincian {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: auto; padding: 8px 14px; border: 0; border-radius: 12px; cursor: pointer;
+  background: var(--bg-inset); font: inherit; font-size: 13px; font-weight: 700; color: var(--crm-primary-ink, #2F57E0);
+}
+
+/* Performa Sumber */
+.crm-lap .crm-mk-sumber-kepala { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; }
+.crm-lap .crm-mk-sumber-kepala .crm-mk-deskripsi { flex-basis: auto; margin-top: 4px; }
+.crm-lap .crm-mk-sumber-aksi { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.crm-lap .crm-mk-urut { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--text-secondary); }
+.crm-lap .crm-mk-select { min-width: 0; max-width: 240px; padding: 7px 10px; border: 0; border-radius: 10px; background: var(--bg-inset); font: inherit; font-size: 13px; color: var(--text-primary); }
+.crm-lap .crm-mk-tabel { width: 100%; min-width: 1060px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.crm-lap .crm-mk-tabel[data-lengkap="1"] { min-width: 1560px; }
+.crm-lap .crm-mk-tabel th, .crm-lap .crm-mk-tabel td { padding: 11px 14px; vertical-align: top; }
+.crm-lap .crm-mk-tabel thead th { padding-block: 10px; background: var(--bg-inset); font-size: 13px; font-weight: 600; text-align: right; white-space: nowrap; color: var(--text-secondary); vertical-align: bottom; }
+.crm-lap .crm-mk-tabel thead th:first-child { border-radius: 12px 0 0 12px; }
+.crm-lap .crm-mk-tabel thead th:last-child { border-radius: 0 12px 12px 0; }
+.crm-lap .crm-mk-th { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.crm-lap .crm-mk-tabel tbody tr { cursor: pointer; }
+.crm-lap .crm-mk-tabel tbody tr:hover > * { background: var(--bg-inset); }
+.crm-lap .crm-mk-tabel tbody tr:focus-visible { outline: 2px solid #3965FA; outline-offset: -2px; }
+.crm-lap .crm-mk-tabel tbody th, .crm-lap .crm-mk-tabel tbody td { border-bottom: 1px solid var(--hairline); color: var(--text-primary); font-weight: 500; background: var(--bg-surface); }
+.crm-lap .crm-mk-sel { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.crm-lap .crm-mk-sel--kosong { color: var(--text-tertiary); }
+.crm-lap .crm-mk-sel-kecil { font-size: 12px; }
+.crm-lap .crm-mk-sel-sub { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--text-tertiary); white-space: normal; }
+.crm-lap .crm-mk-tabel .crm-mk-kiri { position: sticky; left: 0; z-index: 1; text-align: left; min-width: 280px; }
+.crm-lap .crm-mk-tabel thead .crm-mk-kiri { z-index: 2; background: var(--bg-inset); }
+.crm-lap .crm-mk-panah { width: 28px; padding-left: 0; padding-right: 10px; color: var(--text-tertiary); text-align: right; }
+.crm-lap .crm-mk-sumber-sel { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-weight: 600; }
+.crm-lap .crm-mk-no { min-width: 16px; font-size: 13px; font-weight: 600; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.crm-lap .crm-mk-sumber-teks { display: flex; flex-direction: column; min-width: 0; }
+.crm-lap .crm-mk-sumber-nama { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.crm-lap .crm-mk-sumber-bukti { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
+.crm-lap .crm-mk-tabel tbody .crm-mk-total th, .crm-lap .crm-mk-tabel tbody .crm-mk-total td { border-top: 2px solid var(--hairline); border-bottom: 0; font-weight: 700; }
+.crm-lap .crm-mk-catatan { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-tertiary); }
+
+/* ── 15. PENYELARASAN MARKETING SETELAH PREVIEW ───────────────────────────────────────────────────────────── */
+.crm-lap .crm-mk-tabel { min-width: 1020px; }
+.crm-lap .crm-mk-tabel th, .crm-lap .crm-mk-tabel td { padding: 11px 10px; }
+.crm-lap .crm-mk-tabel thead th { white-space: normal; min-width: 96px; line-height: 1.25; }
+.crm-lap .crm-mk-tabel thead th.crm-mk-kiri { min-width: 250px; }
+.crm-lap .crm-mk-tabel .crm-mk-kiri { min-width: 250px; padding-left: 14px; }
+.crm-lap .crm-mk-sel { min-width: 104px; }
+.crm-lap .crm-mk-sel-sub { max-width: 150px; margin-left: auto; }
+.crm-lap .crm-mk-th { text-align: right; }
+.crm-lap .crm-mk-sumber-teks { flex: 1 1 130px; }
+.crm-lap .crm-mk-sumber-sel .crm-mk-no + span, .crm-lap .crm-mk-sumber-sel > span:nth-child(2) { flex: 0 0 auto; }
+/* Satu titik / data kosong: panel tren setinggi isinya (tidak meregang mengikuti panel Kelengkapan Data) */
+.crm-lap .crm-mk-tren.crm-mk-tren--ringkas { align-self: start; }
+@media (max-width: 639px) {
+  .crm-lap .crm-mk-tabel .crm-mk-kiri, .crm-lap .crm-mk-tabel thead th.crm-mk-kiri { min-width: 172px; max-width: 172px; padding-left: 10px; padding-right: 6px; }
+  .crm-lap .crm-mk-no { display: none; }
+  .crm-lap .crm-mk-sumber-sel { gap: 4px 8px; }
+  .crm-lap .crm-mk-sumber-teks { flex-basis: 80px; }
+  .crm-lap .crm-mk-sumber-aksi { width: 100%; }
+}

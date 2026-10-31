@@ -92,12 +92,12 @@ export function jejakMeta(jalur, grup) {
 
 // ── TABEL SUMBER ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Kolom utama selalu tampil di desktop; tambahan lewat pilihan kolom (?kolom=lengkap). Mobile memakai kartu (ringkas + detail yang dapat dibuka).
-// Kolom UTAMA (terlihat langsung di 1440 px): sumber, total lead, customer ber-order, customer lunas, konversi ber-order, CPA lunas. Sisanya lewat "Kolom lengkap" (?kolom=lengkap); mobile = kartu.
+// Kolom UTAMA (urutan dari hasil ke biaya, mudah dibandingkan): sumber, total lead, ber-order, lunas, konversi ber-order, nilai order, uang diterima bersih, biaya iklan, CPA lunas. Sisanya (spam, membayar, konversi non-spam, ROAS) lewat "Kolom lengkap" (?kolom=lengkap). Semua ukuran memakai tabel yang digulir di dalam panel (kolom Sumber menempel).
 export const KOLOM_SUMBER = Object.freeze([
   { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "berOrder", label: "Customer ber-order", utama: true }, { id: "lunas", label: "Customer lunas", utama: true },
-  { id: "konversi", label: "Konversi ber-order", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
+  { id: "konversi", label: "Konversi ber-order", utama: true }, { id: "nilai", label: "Nilai order", utama: true }, { id: "uang", label: "Uang diterima bersih", utama: true },
+  { id: "spend", label: "Biaya iklan", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
   { id: "spam", label: "Spam", utama: false }, { id: "membayar", label: "Membayar", utama: false }, { id: "konversiNonSpam", label: "Konversi non-spam", utama: false },
-  { id: "nilai", label: "Nilai order", utama: false }, { id: "uang", label: "Uang diterima bersih", utama: false }, { id: "spend", label: "Biaya iklan", utama: false },
   { id: "booked", label: "Booked ROAS", utama: false }, { id: "cash", label: "Cash ROAS", utama: false },
 ]);
 export const MODE_KOLOM = Object.freeze(["ringkas", "lengkap"]);

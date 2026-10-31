@@ -78,7 +78,7 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
   }
 
   return (
-    <div className="flex flex-col gap-4" data-testid="marketing-tab">
+    <div className="crm-lap-tab" data-testid="marketing-tab">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-[220px] flex-1">
           <BannerPeriode periode={periode} hariIni={hariIni} onUbahRentang={onUbahRentang} cutoff={teksCutoff(lap)} ringkas={!!terpilih} />
