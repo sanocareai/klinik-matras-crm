@@ -119,3 +119,12 @@ test("PWA tidak tersentuh oleh perubahan ini (konfigurasi, manifest, service wor
   const vite = baca("vite.config.js");
   assert.ok(vite.includes('display: "standalone"') && vite.includes("injectManifest") && !/stage-palette|sanss-crm-pipeline/.test(vite));
 });
+
+test("HP: toolbar ringkas — pencarian selalu terlihat, Sales/Mandek/Refresh sejajar, Refresh tombol ikon berlabel aksesibel, sentuh 44px, teks tidak diperkecil", () => {
+  const hp = css.slice(css.indexOf("@media (max-width: 767px) {", css.indexOf("6. HP")));
+  assert.ok(hp.includes(".crm-pipe-cari-wadah { flex: 1 1 100%;") && hp.includes(".crm-pipe-cari { height: 44px; }"));
+  assert.ok(hp.includes(".crm-pipe-refresh { width: 44px; height: 44px !important;") && hp.includes(".crm-pipe-refresh-teks { display: none; }"));
+  assert.ok(hp.includes(".crm-pipe-mandek { height: 44px !important;") && hp.includes("[aria-label=\"Filter sales person\"] { flex: 1 1 0;"));
+  assert.ok(halaman.includes('aria-label="Refresh papan pipeline"') && halaman.includes('<span className="crm-pipe-refresh-teks">Refresh</span>'));
+  assert.ok(!/font-size/.test(hp.slice(hp.indexOf("Toolbar HP"))), "blok toolbar HP tidak mengubah ukuran teks");
+});

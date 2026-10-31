@@ -96,4 +96,18 @@
 @media (max-width: 767px) {
   :root .app-shell.crm-skin .crm-pipe .crm-pipe-kolom { min-width: min(300px, 82vw); }
   :root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen { flex-wrap: wrap; }
+
+  /* Toolbar HP diringkas agar papan cepat terlihat: pencarian selalu terlihat (baris penuh); Sales + Mandek + Refresh
+     SEJAJAR satu baris. Refresh jadi tombol ikon (label aksesibel aria-label="Refresh papan pipeline"); semua kontrol
+     bertinggi 44px (area sentuh); ukuran teks tidak diubah. */
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-toolbar { gap: 8px; margin-bottom: 0; flex-wrap: wrap; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-cari-wadah { flex: 1 1 100%; min-width: 0; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-cari { height: 44px; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-toolbar > button[aria-label="Filter sales person"] { flex: 1 1 0; min-width: 0; max-width: none; height: 44px; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-mandek { height: 44px !important; flex: 0 0 auto; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-refresh { width: 44px; height: 44px !important; padding: 0; flex: 0 0 44px; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-refresh-teks { display: none; }
+  /* Header HP: tombol Export dan pengalih juga 44px. */
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-export { height: 44px; }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen > button { height: 36px; }
 }

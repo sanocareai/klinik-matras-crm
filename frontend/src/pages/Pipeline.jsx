@@ -488,8 +488,8 @@ export default function Pipeline() {
             >
               <AlertTriangle size={14} /> Mandek
             </Button>)}
-            <Button variant="ghost" size="sm" className="crm-pipe-refresh" onClick={loadBoard} disabled={loading}>
-              <RefreshCw size={14} /> Refresh
+            <Button variant="ghost" size="sm" className="crm-pipe-refresh" onClick={loadBoard} disabled={loading} aria-label="Refresh papan pipeline" title="Refresh">
+              <RefreshCw size={14} /> <span className="crm-pipe-refresh-teks">Refresh</span>
             </Button>
        </div>
        <PageErrorBoundary label="Pipeline">
