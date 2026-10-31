@@ -90,7 +90,7 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen, 
                 <p className="mt-0.5 truncate text-[11px] tabular-nums text-ink3">
                   {formatPhoneDisplay(c.phone) || (c.instagramHandle ? "@" + c.instagramHandle : "—")}
                 </p>
-                <Badge variant={stageVariant(c.pipelineStage)} className="crm-pel-stage mt-1.5" data-stage={c.pipelineStage}>
+                <Badge variant={stageVariant(c.pipelineStage)} className="crm-pel-stage mt-1.5">
                   {STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "—"}
                 </Badge>
               </div>

@@ -113,7 +113,7 @@ export default function CustomersTable({
         // Warna status lewat helper variant di utils/format.js — BUKAN hardcode inline (lihat CLAUDE.md §8).
         return (
           <TD key={k}>
-            <Badge variant={stageVariant(c.pipelineStage)} className="crm-pel-stage" data-stage={c.pipelineStage}>
+            <Badge variant={stageVariant(c.pipelineStage)} className="crm-pel-stage">
               {STAGE_LABELS[c.pipelineStage] || c.pipelineStage}
             </Badge>
           </TD>

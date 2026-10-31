@@ -18,6 +18,8 @@
 :root .app-shell.crm-skin .crm-pel .page-subtitle { margin-top: 4px; font-size: 15px; color: var(--text-secondary); }
 @media (max-width: 767px) {
   :root .app-shell.crm-skin .crm-pel .page-title { font-size: 26px; }
+  /* HP: Pelanggan Baru = tindakan pertama setelah judul/jumlah (selebar baris); Export & Kontak di bawahnya. */
+  :root .app-shell.crm-skin .crm-pel .crm-pel-utama { order: -1; width: 100%; }
   /* HP: toolbar dipadatkan jadi tiga baris sempit (tab, filter cepat, filter lanjutan) — tab tanpa ikon supaya tiga tab muat
      satu baris; chip dan filter menggeser ke samping (tanpa bilah gulir) alih-alih menumpuk ±330px sebelum daftar. */
   :root .app-shell.crm-skin .crm-pel .crm-pel-tabs { flex-wrap: nowrap; width: 100%; gap: 6px; }
@@ -117,22 +119,12 @@
 :root .app-shell.crm-skin .crm-pel .crm-pel-kontak { margin-top: 1px; color: var(--text-tertiary); }
 :root .app-shell.crm-skin .crm-pel .crm-pel-nilai { font-size: 14px; font-weight: 700; }
 
-/* Status pipeline: pill tanpa huruf kapital paksa, warna per tahap (kontras ≥ 4,5:1 di atas latarnya). */
+/* Status pipeline: HANYA bentuk pill (tanpa huruf kapital paksa). Warna TIDAK diatur di sini — tetap pemetaan bersama
+   STAGE_VARIANT (utils/format.js) lewat Badge, sama dengan halaman lain; palet tahap diselaraskan di fase Pipeline. */
 :root .app-shell.crm-skin .crm-pel .crm-pel-stage {
   text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 700;
   padding: 3px 9px; border-radius: 999px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-  background: var(--crm-soft); color: var(--crm-primary-ink);
 }
-:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="NEW"]         { background: #E3EAFF; color: #2347B8; }
-:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="PROSPECT"]    { background: #FFF1CC; color: #7A4B00; }
-:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="TRANSACTION"] { background: #ECE6FF; color: #5330B8; }
-:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="REVIEWED"]    { background: #DDF6E5; color: #11663A; }
-:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="SPAM"]        { background: #ECEDF5; color: #4A4C66; }
-:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="NEW"]         { background: rgba(110, 142, 255, 0.2); color: #B7C6FF; }
-:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="PROSPECT"]    { background: rgba(255, 196, 61, 0.18); color: #FFD97A; }
-:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="TRANSACTION"] { background: rgba(160, 130, 255, 0.2); color: #D3C6FF; }
-:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="REVIEWED"]    { background: rgba(60, 200, 120, 0.18); color: #9BE8BC; }
-:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="SPAM"]        { background: rgba(153, 183, 252, 0.12); color: #C6C9E3; }
 
 /* VIP: pill kecil lime-navy seperti aksen pertumbuhan, bukan biru yang sama dengan status. */
 :root .app-shell.crm-skin .crm-pel .crm-pel-vip { background: var(--crm-lime); color: var(--crm-on-lime); font-weight: 800; border-radius: 999px; padding: 2px 8px; }

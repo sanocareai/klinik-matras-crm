@@ -107,18 +107,15 @@ test("CSS: semua aturan di bawah .crm-skin .crm-pel; tanpa font/@import/url(); s
   assert.ok(baca("src/main.jsx").includes('import "./styles/sanss-crm-pelanggan.css";'));
 });
 
-// Kontras teks status (mode terang: warna solid; mode gelap: latar rgba di atas panel #17182F) ≥ 4,5:1.
-const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-const lum = ([r, g, b]) => { const t = [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]; };
-const rasio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-test("Kontras status pipeline ≥ 4,5:1 di mode terang dan gelap", () => {
-  const baris = [...css.matchAll(/(:root\[data-theme="dark"\] )?[^\n]*crm-pel-stage\[data-stage="(\w+)"\]\s*\{\s*background:\s*([^;]+);\s*color:\s*([^;]+);/g)];
-  assert.equal(baris.length, 10, "lima tahap × dua tema");
-  for (const [, gelap, tahap, bg, fg] of baris) {
-    let latar;
-    if (bg.startsWith("#")) latar = hex(bg);
-    else { const [r, g, b, a] = bg.match(/[\d.]+/g).map(Number); const panel = hex("#17182F"); latar = [r, g, b].map((v, i) => v * a + panel[i] * (1 - a)); }
-    const r = rasio(hex(fg.trim()), latar);
-    assert.ok(r >= 4.5, `${gelap ? "gelap" : "terang"} ${tahap}: ${r.toFixed(2)}`);
-  }
+test("Warna status pipeline = pemetaan bersama (STAGE_VARIANT lewat Badge); tidak ada pemetaan khusus Pelanggan", () => {
+  assert.ok(tabel.includes("stageVariant(c.pipelineStage)") && kartu.includes("stageVariant(c.pipelineStage)"));
+  assert.ok(!/data-stage/.test(tabel + kartu + cssTanpaKomentar), "tidak ada atribut/selektor warna per tahap");
+  const blok = cssTanpaKomentar.slice(cssTanpaKomentar.indexOf(".crm-pel-stage {"));
+  const aturan = blok.slice(0, blok.indexOf("}"));
+  assert.ok(!/(^|[;{s])(background|color)s*:/.test(aturan), "aturan .crm-pel-stage hanya bentuk, bukan warna");
+});
+
+test("HP: Pelanggan Baru = tindakan pertama setelah judul/jumlah (order -1, selebar baris); Export & Kontak di bawahnya", () => {
+  const hp = css.slice(css.indexOf("@media (max-width: 767px) {"));
+  assert.ok(hp.includes(".crm-pel-utama { order: -1; width: 100%; }"));
 });
