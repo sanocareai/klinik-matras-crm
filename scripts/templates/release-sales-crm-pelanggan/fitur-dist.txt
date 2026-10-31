@@ -1,0 +1,19 @@
+# Teks yang HANYA ada di halaman Pelanggan baru (tidak ada di dist aktif); teks fitur live yang HARUS ada di KEDUANYA (termasuk penanda rilis Dashboard dan kerangka bersama sebelumnya).
+for s0 in "crm-pel-tabel" "pelanggan-kolom:v1" "Kolom tambahan"; do
+  [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks Pelanggan baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat halaman Pelanggan baru: ${s0}"
+done
+# CSS: aturan halaman Pelanggan hanya di dist baru; lapisan Dashboard/tema/kerangka tetap ada di keduanya
+for c1 in ".crm-pel-tabel" ".crm-pel-bulk"; do
+  [ -z "$(grep -lF -- "$c1" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$c1" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru TIDAK memuat aturan Pelanggan ${c1}"
+done
+for c0 in ".crm-dash" ".crm-skin" ".crm-pipe-isi" ".crm-utama" ".crm-so-c" ".topbar-searchfield" ".sidebar-help-btn" ".crm-ws-menu" ".tab-chip-konteks"; do
+  [ -n "$(grep -lF -- "$c0" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$c0" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru KEHILANGAN ${c0}"
+done
+for s2 in "Sales Overview" "Deal Pipeline" "Top Performing Reps" "Needs Action" "Hot Leads" "Recent Activity" "Kasus Komplain Butuh Follow-up" "Lihat semua sales" "Buka Inbox" "Buka Pipeline" "crm-kpi-tile" "komplain perlu ditindaklanjuti" "sanss-crm-skin" "Tutup emoji" "inbox-page-head" "Nilai Penjualan Tim" "needs-action-daftar" "hot-leads-daftar" "aktivitas-toggle" "crm-pipe-baris" "crm-so-c" "crm-pipe-ikon" "topbar-searchfield" "sidebar-help-btn" "tab-chip-konteks" "Cari halaman atau menu" "workspace-switcher-ringkas"; do
+  [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): halaman Pelanggan baru (JS+CSS) ada, Dashboard/kerangka bersama tetap, 27 teks fitur live tetap"

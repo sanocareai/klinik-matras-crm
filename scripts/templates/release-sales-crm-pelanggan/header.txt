@@ -1,0 +1,24 @@
+# RILIS FRONTEND-SAJA "Sales CRM — Fase 2 halaman Pelanggan" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image.
+# Isi: halaman Pelanggan memakai lebar penuh setelah sidebar (padding 24px); header judul + jumlah di kiri, Pelanggan Baru = tindakan utama (HP: tindakan pertama), Export Excel & Kontak (.vcf) pendukung;
+# toolbar ringkas (tab tipe + filter cepat; pencarian + empat filter lanjutan + menu Kolom); tabel awal Pelanggan (nama + nomor), Pipeline, Sales, Kota, Order, Nilai Order — kolom lain (ID Order, Status Order, Keluhan,
+# Kesehatan, Tags, Tipe, Sumber) dapat dinyalakan lewat menu Kolom (preferensi per perangkat di localStorage); memilih baris (checkbox) terpisah dari profil (tombol Profil) dan chat (ikon + klik baris);
+# keadaan kosong/galat konsisten (EmptyState, Coba lagi). Ekspor Excel/Kontak, filter, sorting, pagination, seleksi massal, tujuan klik, data, dan hak akses TIDAK berubah (isi ekspor identik sebelum vs sesudah).
+# Warna status pipeline = pemetaan bersama STAGE_VARIANT (tidak ada pemetaan khusus Pelanggan). Semua gaya baru di bawah .crm-skin .crm-pel. Halaman lain dan fase Pipeline BUKAN bagian rilis ini.
+# PWA TIDAK berubah: manifest, service worker, index.html, vite.config.js, aset publik tidak ada di allowlist. Font tetap Manrope (tidak ada font-family/@import baru), logo SANSS asli dipertahankan.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif 022774c3 (Sales CRM kerangka bersama Fase 1). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-sales-crm-pelanggan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/scp1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scp1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scp1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scp1.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scp1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-sales-crm-pelanggan.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-sales-crm-pelanggan/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
