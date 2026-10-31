@@ -105,14 +105,14 @@ export function PerluDibereskan({ kualitas, navigate }) {
               <div className="fin-perlu-isi">
                 <p className="fin-perlu-label">{b.label}</p>
                 <p className="fin-perlu-ket">
-                  {tanpa ? "Data tidak dapat dimuat" : bersih ? "Tidak ada" : b.detailRupiah ? (b.detailRupiah.length > 1 ? b.detailRupiah.map((d) => `${d.label}: ${formatUang(d.nilai)}`).join(" · ") : b.detailRupiah[0].label) : b.keterangan}
+                  {tanpa ? "Data tidak dapat dimuat" : bersih ? (b.keteranganBersih ?? "Tidak ada") : b.detailRupiah ? (b.detailRupiah.length > 1 ? b.detailRupiah.map((d) => `${d.label}: ${formatUang(d.nilai)}`).join(" · ") : b.detailRupiah[0].label) : b.keterangan}
                 </p>
                 {!tanpa && !bersih && b.detailRupiah && <p className="fin-perlu-ket">Selisih pada tanggal acuan; positif = saldo pembukuan lebih tinggi dari saldo terkonfirmasi.</p>}
               </div>
               <p className="fin-perlu-nilai">{!tanpa && !bersih && b.nilai ? formatUang(b.nilai) : null}</p>
               <p className="fin-perlu-jumlah">
                 {tanpa ? <span className="fin-redup">{TANPA_DATA}</span>
-                  : bersih ? <span className="fin-ok"><CheckCircle2 size={15} aria-hidden="true" /> Aman</span>
+                  : bersih ? <span className="fin-ok"><CheckCircle2 size={15} aria-hidden="true" /> {b.labelBersih ?? "Aman"}</span>
                     : <span className={b.id === "selisih_rekening" ? "fin-galat" : "fin-perhatian"}>{angkaId(b.jumlah)} {b.satuanJumlah}</span>}
               </p>
               <Button variant="tertiary" size="sm" className="fin-perlu-aksi" onClick={() => navigate(b.tujuan)} aria-label={`Lihat rincian: ${b.label}`}>

@@ -175,3 +175,15 @@ test("kontras tabel/badge lama dibatasi ke .fin-ring (Finance), tanpa menyentuh 
   const dash = baca("src/pages/finance/FinanceDashboard.jsx");
   assert.ok(dash.includes("Piutang Paling Lama") && dash.includes("<TH sticky>Order</TH><TH>Pelanggan</TH><TH numeric>Sisa</TH><TH numeric>Umur</TH>"), "struktur tabel tak berubah");
 });
+
+test("selisih rekening bersih: label 'Tidak ada selisih tercatat' + penjelasan; kondisi tidak berubah (belum dikonfirmasi ≠ cocok)", () => {
+  const riil = { cutoffLabel: "x", rekening: [{ id: "a", name: "A", status: "SESUAI", selisih: 0 }, { id: "b", name: "Kas", status: "BELUM_DIKONFIRMASI", selisih: null }] };
+  const baris = susunPerluDibereskan(hitungKualitasData({ antrean: {}, catatan: {}, backfill: null, riil })).find((b) => b.id === "selisih_rekening");
+  assert.equal(baris.status, "bersih"); assert.equal(baris.jumlah, 0, "kondisi lama: hanya status SELISIH yang dihitung");
+  assert.equal(baris.labelBersih, "Tidak ada selisih tercatat");
+  assert.equal(baris.keteranganBersih, "Ini hanya menunjukkan selisih yang tercatat. Rekening yang belum dikonfirmasi dan dana yang sumbernya belum diketahui tetap perlu diperiksa.");
+  assert.ok(!/sama dengan saldo terkonfirmasi/.test(baris.keterangan), "tidak lagi menyiratkan semua saldo cocok");
+  const lain = susunPerluDibereskan(hitungKualitasData({ antrean: { lunasBelumDicatat: { jumlah: 0, total: 0 } }, catatan: { gapTerbuka: 0 }, backfill: { kelas: [{ kelas: "LAYAK", jumlah: 0, nilai: 0 }] }, riil }));
+  assert.ok(lain.filter((b) => b.id !== "selisih_rekening").every((b) => b.labelBersih === undefined), "label baru hanya untuk baris selisih rekening");
+  const p = baca("src/features/finance/RingkasanPanels.jsx"); assert.ok(p.includes('b.labelBersih ?? "Aman"') && p.includes("b.keteranganBersih"));
+});

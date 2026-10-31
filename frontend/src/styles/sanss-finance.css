@@ -235,3 +235,5 @@
 :root .app-shell.crm-skin .fin-detail-daftar > div { align-items: baseline; }
 :root .app-shell.crm-skin .fin-detail-daftar dd .fin-rek-sekunder { text-align: right; }
 :root[data-theme="dark"] .app-shell.crm-skin .fin-kpi-lime .fin-kpi-ubin { background: rgba(224, 255, 183, 0.18); color: #F1FFDD; }
+:root .app-shell.crm-skin .fin-perlu-jumlah .fin-ok { text-align: right; line-height: 1.3; }
+@media (max-width: 639px) { :root .app-shell.crm-skin .fin-perlu-jumlah { white-space: normal; max-width: 150px; } }

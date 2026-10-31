@@ -37,6 +37,12 @@ export function keadaanStrip(kualitas) {
   return kualitas.jumlahBermasalah > 0 ? "belumLengkap" : "sumberHilang";
 }
 
+/** Baris selisih rekening yang kondisinya bersih (tidak ada rekening berstatus SELISIH). BUKAN pernyataan bahwa semua saldo cocok: rekening belum dikonfirmasi dan dana tanpa sumber tidak termasuk. */
+export const TEKS_TANPA_SELISIH = Object.freeze({
+  label: "Tidak ada selisih tercatat",
+  penjelasan: "Ini hanya menunjukkan selisih yang tercatat. Rekening yang belum dikonfirmasi dan dana yang sumbernya belum diketahui tetap perlu diperiksa.",
+});
+
 // ─── Panel "Perlu dibereskan" ───────────────────────────────────────────────
 
 /**
@@ -66,7 +72,7 @@ export function susunPerluDibereskan(kualitas) {
   } else if (selisih.some((b) => b.jumlah === null)) {
     baris.push({ id: "selisih_rekening", label: "Selisih rekening yang perlu ditinjau", satuanJumlah: "rekening", jumlah: null, nilai: null, status: "tanpa-data", tujuan: "/finance/reconciliation", keterangan: "Data saldo terkonfirmasi tidak dapat dimuat." });
   } else {
-    baris.push({ id: "selisih_rekening", label: "Selisih rekening yang perlu ditinjau", satuanJumlah: "rekening", jumlah: 0, nilai: 0, status: "bersih", tujuan: "/finance/reconciliation", keterangan: "Saldo pembukuan sama dengan saldo terkonfirmasi pada tanggal acuan." });
+    baris.push({ id: "selisih_rekening", label: "Selisih rekening yang perlu ditinjau", satuanJumlah: "rekening", jumlah: 0, nilai: 0, status: "bersih", tujuan: "/finance/reconciliation", labelBersih: TEKS_TANPA_SELISIH.label, keteranganBersih: TEKS_TANPA_SELISIH.penjelasan, keterangan: TEKS_TANPA_SELISIH.penjelasan });
   }
   return baris;
 }
