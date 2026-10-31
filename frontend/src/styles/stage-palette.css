@@ -1,0 +1,38 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PALET TAHAP PIPELINE — SATU SUMBER WARNA (Fase Pipeline, 31 Okt 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Representasi tahap pipeline di Sales CRM: New = biru, Prospek/Potensi = amber, Scheduled/Transaksi = ungu,
+   Already Reviewed = hijau, Spam = abu netral. Dipakai lewat:
+     · Badge   → variant "stage-new" … "stage-spam" (components/ui/badge.jsx), dipetakan dari STAGE_VARIANT (utils/format.js)
+     · titik / bar / bidang kolom / ubin ikon → kelas `stage-<kunci>` (stageClass() di utils/format.js) atau atribut
+       data-stage="NEW|PROSPECT|TRANSACTION|REVIEWED|SPAM", lalu var(--stage-bg|fg|dot|field)
+   TIDAK ada salinan warna tahap di halaman lain. Warna workflow Order dan status pembayaran SENGAJA terpisah (makna
+   berbeda). Label, enum, urutan, dan definisi tahap tidak diubah — ini hanya warna.
+   Kontras: teks badge (--stage-fg di atas --stage-bg) ≥ 4,5:1 di terang dan gelap (dicek tes tests/stagePalette.test.js). */
+
+:root {
+  --stage-new-bg: #E3EAFF;         --stage-new-fg: #2347B8;         --stage-new-dot: #3965FA;         --stage-new-field: #EEF2FF;
+  --stage-prospect-bg: #FFF1CC;    --stage-prospect-fg: #7A4B00;    --stage-prospect-dot: #F2A20C;    --stage-prospect-field: #FFF7E3;
+  --stage-transaction-bg: #ECE6FF; --stage-transaction-fg: #5330B8; --stage-transaction-dot: #7B5CF0; --stage-transaction-field: #F3F0FF;
+  --stage-reviewed-bg: #DDF6E5;    --stage-reviewed-fg: #11663A;    --stage-reviewed-dot: #1FA663;    --stage-reviewed-field: #EAF8EF;
+  --stage-spam-bg: #ECEDF5;        --stage-spam-fg: #4A4C66;        --stage-spam-dot: #8A8DA8;        --stage-spam-field: #F1F2F7;
+}
+:root[data-theme="dark"] {
+  --stage-new-bg: rgba(110, 142, 255, 0.2);         --stage-new-fg: #B7C6FF;         --stage-new-dot: #7C9BFF;         --stage-new-field: rgba(110, 142, 255, 0.10);
+  --stage-prospect-bg: rgba(255, 196, 61, 0.18);    --stage-prospect-fg: #FFD97A;    --stage-prospect-dot: #FFC43D;    --stage-prospect-field: rgba(255, 196, 61, 0.09);
+  --stage-transaction-bg: rgba(160, 130, 255, 0.2); --stage-transaction-fg: #D3C6FF; --stage-transaction-dot: #A58BFF; --stage-transaction-field: rgba(160, 130, 255, 0.10);
+  --stage-reviewed-bg: rgba(60, 200, 120, 0.18);    --stage-reviewed-fg: #9BE8BC;    --stage-reviewed-dot: #4FD18C;    --stage-reviewed-field: rgba(60, 200, 120, 0.09);
+  --stage-spam-bg: rgba(153, 183, 252, 0.12);       --stage-spam-fg: #C6C9E3;        --stage-spam-dot: #8B8FB0;        --stage-spam-field: rgba(153, 183, 252, 0.07);
+}
+
+/* Pemetaan kunci → token (kelas atau atribut). Satu tempat. */
+.stage-new, [data-stage="NEW"]               { --stage-bg: var(--stage-new-bg);         --stage-fg: var(--stage-new-fg);         --stage-dot: var(--stage-new-dot);         --stage-field: var(--stage-new-field); }
+.stage-prospect, [data-stage="PROSPECT"]     { --stage-bg: var(--stage-prospect-bg);    --stage-fg: var(--stage-prospect-fg);    --stage-dot: var(--stage-prospect-dot);    --stage-field: var(--stage-prospect-field); }
+.stage-transaction, [data-stage="TRANSACTION"] { --stage-bg: var(--stage-transaction-bg); --stage-fg: var(--stage-transaction-fg); --stage-dot: var(--stage-transaction-dot); --stage-field: var(--stage-transaction-field); }
+.stage-reviewed, [data-stage="REVIEWED"]     { --stage-bg: var(--stage-reviewed-bg);    --stage-fg: var(--stage-reviewed-fg);    --stage-dot: var(--stage-reviewed-dot);    --stage-field: var(--stage-reviewed-field); }
+.stage-spam, [data-stage="SPAM"]             { --stage-bg: var(--stage-spam-bg);        --stage-fg: var(--stage-spam-fg);        --stage-dot: var(--stage-spam-dot);        --stage-field: var(--stage-spam-field); }
+
+/* Badge tahap (dipasang oleh badge.jsx) dan titik tahap. */
+.stage-chip { background: var(--stage-bg); color: var(--stage-fg); }
+.stage-dot { background: var(--stage-dot); }
+.stage-field { background: var(--stage-field); }

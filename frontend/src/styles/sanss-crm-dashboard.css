@@ -185,9 +185,12 @@
   --bar: #99B7FC;
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 12px; row-gap: 6px;
 }
-.crm-dash .crm-pipe-baris[data-stage="PROSPECT"]    { --bar: #6E8EFF; }
-.crm-dash .crm-pipe-baris[data-stage="TRANSACTION"] { --bar: #3965FA; }
-.crm-dash .crm-pipe-baris[data-stage="REVIEWED"]    { --bar: #2A47B8; }
+/* Warna tahap = palet tahap bersama (styles/stage-palette.css; atribut data-stage di <li> memasang --stage-dot) — bukan salinan warna. */
+.crm-dash .crm-pipe-baris[data-stage] { --bar: var(--stage-dot); }
+.crm-dash .crm-pipe-baris[data-stage] .crm-pipe-ikon.crm-ik-tile {
+  --ik-b: color-mix(in srgb, var(--stage-dot) 62%, #1B1B39);   /* detail glif (mis. centang) harus terbaca di atas bentuk putih */
+  --tile-bg: linear-gradient(145deg, color-mix(in srgb, var(--stage-dot) 88%, #1B1B39) 0%, color-mix(in srgb, var(--stage-dot) 70%, #1B1B39) 100%);
+}
 .crm-dash .crm-pipe-nama { font-size: 14px; font-weight: 700; color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crm-dash .crm-pipe-jumlah { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; min-width: 2ch; }
 .crm-dash .crm-pipe-nilai { font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text-secondary); text-align: right; min-width: 8.5em; }

@@ -273,13 +273,22 @@ export function orderStatusesForCategory(category) {
 // Hanya 4 hue (aturan Sano DS v2 §badge.jsx): orange = baru/butuh perhatian,
 // accent (biru) = sedang berjalan (4 stage tengah, sengaja SATU warna supaya
 // progres tidak terasa "loncat-loncat"), green = benar-benar berhasil.
+// REVISI Fase Pipeline (31 Okt 2026, permintaan Owner): palet tahap SATU SUMBER untuk Sales CRM — New biru, Prospek amber,
+// Scheduled/Transaksi ungu, Already Reviewed hijau, Spam abu netral. Warnanya ada di styles/stage-palette.css (token
+// --stage-*); di sini hanya kuncinya. Badge → variant "stage-*"; titik/bar/bidang/ikon → stageClass(stage) (kelas
+// "stage-new" …) atau atribut data-stage. JANGAN membuat salinan warna tahap di halaman lain. Warna workflow Order dan
+// status pembayaran (ORDER_STATUS_VARIANT, PAYMENT_STATUS_VARIANT) sengaja TERPISAH — maknanya berbeda.
 export const STAGE_VARIANT = {
-  NEW:         "warning", // oranye — baru masuk, belum diproses
-  PROSPECT:    "info",    // biru — sedang berjalan (negosiasi/follow up)
-  TRANSACTION: "success", // hijau — berhasil (pesan sudah dipastikan jadi order)
-  REVIEWED:    "success", // hijau — sama seperti TRANSACTION, cuma sudah lebih maju (kasih review publik). Tetap 4-hue, tidak nambah warna baru.
-  SPAM:        "neutral", // abu-abu — dikecualikan dari performa, bukan status "sedang berjalan"
+  NEW:         "stage-new",         // biru
+  PROSPECT:    "stage-prospect",    // amber
+  TRANSACTION: "stage-transaction", // ungu
+  REVIEWED:    "stage-reviewed",    // hijau
+  SPAM:        "stage-spam",        // abu netral
 };
+/** Kelas token warna tahap ("stage-new" …) untuk titik/bar/bidang; tahap tak dikenal → netral (Spam). */
+export const stageClass = (s) => STAGE_VARIANT[s] || "stage-spam";
+/** Warna titik/bar tahap sebagai var() CSS (untuk style inline, mis. grafik): var(--stage-new-dot) … */
+export const stageDotVar = (s) => `var(--${STAGE_VARIANT[s] || "stage-spam"}-dot)`;
 
 export const CONV_STATUS_LABELS = {
   OPEN:     "Terbuka",

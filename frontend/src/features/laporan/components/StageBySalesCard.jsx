@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { api } from "@/api.js";
 import { toApiParams } from "@/lib/dateRange.js";
-import { formatRupiahShort, STAGE_LABELS } from "@/utils/format.js";
+import { formatRupiahShort, STAGE_LABELS, stageDotVar } from "@/utils/format.js";
 import ProgressRing from "@/components/ui/progress-ring.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { STAGE_INFO } from "../utils/stageInfo.js";
@@ -17,13 +17,8 @@ import { STAGE_INFO } from "../utils/stageInfo.js";
 // Jumlah sales yang tampil sebelum "Tampilkan semua".
 const SALES_AWAL = 6;
 const STAGES = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED", "SPAM"];
-const STAGE_COLOR = {
-  NEW:         "var(--orange)",
-  PROSPECT:    "var(--accent)",
-  TRANSACTION: "var(--green)",
-  REVIEWED:    "color-mix(in srgb, var(--green) 55%, transparent)",
-  SPAM:        "var(--hairline)",
-};
+// Warna tahap = palet tahap bersama (styles/stage-palette.css) lewat stageDotVar() di utils/format.js — bukan salinan warna.
+const STAGE_COLOR = Object.fromEntries(STAGES.map((s) => [s, stageDotVar(s)]));
 
 // Penjelasan tiap bagian, bahasa sederhana untuk sales & owner (permintaan
 // owner 30 Sep 2026). STAGE_INFO dipakai bersama dgn tab Pipeline.

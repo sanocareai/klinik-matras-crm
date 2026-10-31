@@ -28,6 +28,12 @@ const badgeVariants = cva(
         brand:   "bg-accentbg text-accent",
         up:      "bg-greenbg text-green",
         down:    "bg-redbg text-red",
+        // Palet tahap pipeline (styles/stage-palette.css) — dipilih lewat stageVariant() di utils/format.js.
+        "stage-new":         "stage-chip stage-new",
+        "stage-prospect":    "stage-chip stage-prospect",
+        "stage-transaction": "stage-chip stage-transaction",
+        "stage-reviewed":    "stage-chip stage-reviewed",
+        "stage-spam":        "stage-chip stage-spam",
         // violet & ai dilipat ke accent — aturan satu accent.
         violet:  "bg-accentbg text-accent",
         ai:      "bg-accentbg text-accent",

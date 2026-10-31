@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { Download, RefreshCw, Search, X, AlertTriangle, LayoutGrid, List, UserRound } from "lucide-react";
+import { Download, RefreshCw, Search, X, AlertTriangle, LayoutGrid, List, UserRound, Users, Target, CalendarCheck, BadgeCheck, Ban } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import {
   formatRupiah, formatRupiahShort, STAGE_LABELS, PIPELINE_STAGES,
-  stageVariant, ORDER_STATUS_LABELS, orderStatusVariant,
+  stageVariant, stageClass, ORDER_STATUS_LABELS, orderStatusVariant,
 } from "../utils/format.js";
 import { useCountUp } from "../hooks/useCountUp.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -13,7 +13,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableEmptyRow } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
-import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/KanbanCard.jsx";
+import KanbanCard, { isStale } from "@/features/pipeline/components/KanbanCard.jsx";
 import OrderPipelineBoard from "@/features/pipeline/components/OrderPipelineBoard.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { rolesOf } from "@/lib/roles.js";
@@ -39,6 +39,9 @@ const STAGES = PIPELINE_STAGES.map((p) => p.value);
 // DOM + drag handler per kartu bikin halaman berat.
 const BATCH = 20;
 
+// Ikon header per tahap (tampilan saja; warna dari palet tahap bersama styles/stage-palette.css lewat kelas stage-*).
+const STAGE_IKON = { NEW: Users, PROSPECT: Target, TRANSACTION: CalendarCheck, REVIEWED: BadgeCheck, SPAM: Ban };
+
 // Total nilai per kolom, dengan count-up saat berubah. Dipisah jadi komponen
 // sendiri karena useCountUp adalah hook — tidak boleh dipanggil di dalam
 // loop .map() di komponen induk. Count-up ini yang membuat "dampak uang"
@@ -46,7 +49,7 @@ const BATCH = 20;
 function ColumnTotal({ value }) {
   const animated = useCountUp(value);
   return (
-    <span className="text-[13px] font-bold tabular-nums text-ink">
+    <span className="crm-pipe-total min-w-0 text-[17px] font-extrabold tabular-nums text-ink">
       {formatRupiah(Math.round(animated))}
     </span>
   );
@@ -378,7 +381,7 @@ export default function Pipeline() {
     // — itu yang mencegah board jadi absurd lebar di monitor ultra-wide,
     // bukan cap di container. Mode Tabel TETAP 1400px (tidak dilaporkan
     // bermasalah, dan tabel memang lebih enak dibaca tidak terlalu lebar).
-    <PageContainer className={viewMode === "papan" || modeOrder ? "max-w-none" : undefined}>
+    <PageContainer fluid className="crm-pipe">
       <PageHeader
         title="Pipeline"
         subtitle={
@@ -394,7 +397,7 @@ export default function Pipeline() {
                 bagus untuk drag antar stage, Tabel bagus untuk membandingkan
                 banyak pelanggan sekaligus (sort by nilai/hari-di-stage/kota). */}
             {/* Dasar pipeline: pelanggan (5 stage) atau order (status pengerjaan). */}
-            <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
+            <div className="crm-pipe-segmen flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
               {[["pelanggan", "Berdasarkan Pelanggan"], ["order", "Berdasarkan Order"]].map(([k, label]) => (
                 <button
                   key={k} type="button" onClick={() => setBasis(k)} aria-pressed={basis === k}
@@ -409,7 +412,7 @@ export default function Pipeline() {
               <span className="pr-1.5"><InfoTooltip text="Berdasarkan Pelanggan: pelanggan dikelompokkan menurut stage penjualan (New, Prospek, Transaksi, Reviewed, Spam) dan bisa digeser manual. Berdasarkan Order: pesanan dikelompokkan menurut status pengerjaannya (Menunggu, Diproses, Siap Kirim, Terkirim, Dibatalkan). Status order berubah otomatis mengikuti progres bengkel dan pengiriman, jadi tidak bisa digeser." /></span>
             </div>
             {!modeOrder && (
-            <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
+            <div className="crm-pipe-segmen flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
               <button
                 type="button"
                 onClick={() => setViewMode("papan")}
@@ -437,9 +440,20 @@ export default function Pipeline() {
             </div>
             )}
             <DateRangePicker value={range} onChange={setRange} />
+            {!modeOrder && (<Button variant="ghost" size="sm" className="crm-pipe-export" onClick={handleExport}>
+              <Download size={14} /> Export
+            </Button>)}
+          </>
+        }
+      />
+
+      <PageBody>
+       {/* Toolbar pencarian & filter — terpisah dari judul/tindakan utama (Fase Pipeline, 31 Okt 2026). Fungsi sama:
+           pencarian, filter Sales, Mandek, Refresh. */}
+       <div className="crm-pipe-toolbar flex flex-wrap items-center gap-2">
             {/* Pencarian di dalam board — tanpa ini satu-satunya cara menemukan
                 customer di kolom berisi ribuan kartu adalah scroll manual. */}
-            <div className="relative">
+            <div className="crm-pipe-cari-wadah relative">
               <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
               <input
                 type="search"
@@ -447,7 +461,7 @@ export default function Pipeline() {
                 onChange={(e) => setCari(e.target.value)}
                 placeholder="Cari nama, nomor, kota…"
                 aria-label="Cari pelanggan di pipeline"
-                className="h-8 w-48 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                className="crm-pipe-cari h-8 w-48 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
               {cari && (
                 <button
@@ -468,23 +482,16 @@ export default function Pipeline() {
               ariaLabel="Filter sales person"
             />
             {!modeOrder && (<Button
-              variant={hanyaMandek ? "primary" : "ghost"} size="sm"
+              variant={hanyaMandek ? "primary" : "ghost"} size="sm" className="crm-pipe-mandek"
               onClick={() => setHanyaMandek((v) => !v)}
               title="Tampilkan hanya deal yang tidak disentuh ≥14 hari"
             >
               <AlertTriangle size={14} /> Mandek
             </Button>)}
-            <Button variant="ghost" size="sm" onClick={loadBoard} disabled={loading}>
+            <Button variant="ghost" size="sm" className="crm-pipe-refresh" onClick={loadBoard} disabled={loading}>
               <RefreshCw size={14} /> Refresh
             </Button>
-            {!modeOrder && (<Button variant="ghost" size="sm" onClick={handleExport}>
-              <Download size={14} /> Export
-            </Button>)}
-          </>
-        }
-      />
-
-      <PageBody>
+       </div>
        <PageErrorBoundary label="Pipeline">
         {modeOrder ? (
           <OrderPipelineBoard range={range} cari={cari} filterSales={filterSales} />
@@ -549,7 +556,7 @@ export default function Pipeline() {
               // cuma sekali saat komponen Pipeline pertama mount (yang bisa
               // kejadian SEBELUM board render kalau data masih loading).
               ref={(el) => { boardScrollRef.current = el; if (el) el.scrollLeft = 0; }}
-              className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2"
+              className="crm-pipe-papan -mx-1 flex gap-4 overflow-x-auto px-1 pb-3"
             >
               {STAGES.map((stage) => {
                 const cards = getCards(stage);
@@ -560,34 +567,40 @@ export default function Pipeline() {
                 return (
                   <div
                     key={stage}
+                    data-stage={stage}
                     onDragOver={(e) => onDragOver(e, stage)}
                     onDragLeave={() => setDragOver(null)}
                     onDrop={(e) => onDrop(e, stage)}
                     className={cn(
-                      "flex min-w-[264px] max-w-[360px] flex-1 flex-col rounded-2xl p-2.5 transition-colors duration-150",
-                      dragOver === stage ? "bg-accentbg/70" : "border-transparent bg-inset/80"
+                      "crm-pipe-kolom flex min-w-[280px] max-w-[380px] flex-1 flex-col rounded-2xl p-3 transition-colors duration-150",
+                      dragOver === stage && "crm-pipe-kolom-drop"
                     )}
                   >
-                    <div className="flex items-center gap-2 px-0.5">
-                      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STAGE_DOT[stage] || "bg-ink3")} />
-                      <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink2">
+                    <div className="crm-pipe-kolom-kepala flex items-center gap-2.5">
+                      <span className="crm-pipe-ikon-tahap" aria-hidden="true">
+                        {React.createElement(STAGE_IKON[stage] || Users, { size: 18 })}
+                      </span>
+                      <span className="crm-pipe-nama-tahap min-w-0 flex-1 text-[15px] font-bold leading-tight text-ink" title={STAGE_LABELS[stage] || stage}>
                         {STAGE_LABELS[stage] || stage}
                       </span>
-                      <span className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-ink2">
+                      <span className="crm-pipe-hitung rounded-full px-2 py-0.5 text-[12px] font-bold tabular-nums">
                         {cards.length.toLocaleString("id-ID")}
                       </span>
                     </div>
-                    <div className="mb-2 mt-1 flex items-baseline justify-between gap-2 px-0.5">
-                      <ColumnTotal value={stageTotal(stage)} />
-                      {mandek > 0 && (
-                        <span className="shrink-0 text-[10px] font-semibold text-orange" title={`${mandek} deal tidak disentuh ≥14 hari`}>
-                          {mandek} mandek
-                        </span>
-                      )}
+                    <div className="mb-2.5 mt-2.5 px-0.5">
+                      <span className="crm-pipe-label-nilai block text-[12px] text-ink3">Total estimasi nilai</span>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <ColumnTotal value={stageTotal(stage)} />
+                        {mandek > 0 && (
+                          <span className="shrink-0 text-[11px] font-semibold text-orange" title={`${mandek} deal tidak disentuh ≥14 hari`}>
+                            {mandek} mandek
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Scroll vertikal PER KOLOM — inti perbaikan "long scroll". */}
-                    <div className="flex max-h-[calc(100vh-310px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
+                    <div className="flex max-h-[calc(100vh-330px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                       {tampil.map((card) => (
                         <KanbanCard
                           key={card.id}
@@ -613,8 +626,9 @@ export default function Pipeline() {
                       )}
 
                       {cards.length === 0 && (
-                        <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
-                          {adaFilter ? "Tidak ada yang cocok" : "Kosong"}
+                        <div className="crm-pipe-kosong flex min-h-24 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-4 text-center text-[12px] text-ink3">
+                          <span className="font-semibold text-ink2">{adaFilter ? "Tidak ada yang cocok" : "Kosong"}</span>
+                          <span>Seret kartu ke sini</span>
                         </div>
                       )}
                     </div>

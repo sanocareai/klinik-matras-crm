@@ -1,0 +1,99 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS SALES CRM — HALAMAN PIPELINE (Fase Pipeline, 31 Okt 2026, acuan: SANSS-Konsep-Pipeline.png)
+   ═══════════════════════════════════════════════════════════════════════════
+   Visual saja. Data, endpoint, drag & drop, aturan perpindahan tahap, filter, ekspor, tujuan klik, dan hak akses tidak
+   diubah. Semua aturan di bawah `:root .app-shell.crm-skin .crm-pipe` (halaman ini + tema Sales CRM). Warna TAHAP berasal
+   dari palet bersama (styles/stage-palette.css: --stage-bg/fg/dot/field via atribut data-stage / kelas stage-*); file ini
+   TIDAK mendefinisikan warna tahap. Tanpa font-family/@import: tetap Manrope (--font-ui). */
+
+/* ── 1. RUANG ───────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pipe { max-width: none; padding-inline: 24px; padding-bottom: 24px; }
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin .crm-pipe { padding-inline: 16px; padding-bottom: 16px; }
+}
+
+/* ── 2. HEADER: judul + tindakan utama ──────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pipe .page-title { font-size: 32px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; }
+:root .app-shell.crm-skin .crm-pipe .page-subtitle { margin-top: 4px; font-size: 15px; color: var(--text-secondary); }
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin .crm-pipe .page-title { font-size: 26px; }
+}
+/* Pengalih (Berdasarkan Pelanggan/Order, Papan/Tabel): kapsul putih, pilihan aktif biru solid. */
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen {
+  gap: 4px; padding: 4px; border-radius: 14px; background: var(--crm-panel); box-shadow: var(--crm-shadow);
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen > button { height: 32px; border-radius: 10px; padding-inline: 14px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen > button:hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen > button[aria-pressed="true"] { background: var(--crm-primary); color: #FFFFFF; box-shadow: none; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-export,
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-refresh,
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-mandek:not([class*="bg-accent"]) {
+  height: 40px; padding-inline: 14px; border-radius: 12px; background: var(--crm-panel); color: var(--text-primary);
+  box-shadow: var(--crm-shadow); font-weight: 600;
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-export:hover,
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-refresh:hover,
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-mandek:not([class*="bg-accent"]):hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-mandek[class*="bg-accent"] { height: 40px; padding-inline: 14px; border-radius: 12px; font-weight: 700; }
+
+/* ── 3. TOOLBAR: pencarian + filter, terpisah dari judul ────────────────── */
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-toolbar { gap: 10px; margin-bottom: 4px; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-cari-wadah { flex: 1 1 320px; min-width: 240px; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-cari { width: 100%; height: 40px; border-radius: 12px; background: var(--crm-panel); box-shadow: var(--crm-shadow); font-size: 14px; padding-left: 38px; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-cari-wadah > svg:first-child { left: 13px; width: 16px; height: 16px; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-toolbar > button[aria-label],
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-toolbar > [data-radix-collection-item] {
+  height: 40px; padding-inline: 14px; border: 0; border-radius: 12px; background: var(--crm-panel); color: var(--text-primary); box-shadow: var(--crm-shadow); font-weight: 600;
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-toolbar > button[aria-label][class*="bg-accentbg"] { background: var(--crm-soft); color: var(--crm-primary-ink); box-shadow: inset 0 0 0 1.5px var(--crm-primary); }
+
+/* ── 4. PAPAN: kolom berbidang warna lembut, lebar minimum nyaman ────────── */
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-papan { gap: 16px; padding-top: 6px; scroll-padding-inline: 4px; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kolom {
+  background: var(--stage-field); border-radius: 22px; padding: 14px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stage-dot) 14%, transparent);
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kolom-drop {
+  background: color-mix(in srgb, var(--stage-dot) 16%, var(--stage-field));
+  box-shadow: inset 0 0 0 2px var(--stage-dot);
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-ikon-tahap {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 12px; background: var(--stage-bg); color: var(--stage-fg);
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-nama-tahap { font-size: 16px; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-hitung { background: var(--stage-bg); color: var(--stage-fg); min-width: 28px; text-align: center; }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-label-nilai { color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-total { font-size: 18px; }
+
+/* Kartu: permukaan panel (putih terang / navy gelap), tanpa garis aksen kiri & halo kaca. */
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kartu {
+  background: var(--crm-panel); border: 0; border-radius: 16px; box-shadow: var(--crm-shadow);
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kartu:hover { box-shadow: var(--crm-shadow-pop); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kartu .crm-pipe-nomor { color: var(--text-tertiary); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kartu .crm-pipe-kaki { border-top-color: var(--hairline, rgba(27, 27, 57, 0.08)); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kartu p { margin-bottom: 0; }
+
+/* Penanda pesan belum dibaca: biru solid + putih (token --accent di mode gelap terlalu terang untuk teks putih). */
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-unread { background: var(--crm-primary); color: #FFFFFF; }
+
+/* Tahap kosong = area drop yang jelas: bingkai putus-putus warna tahap. */
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kosong {
+  border: 2px dashed color-mix(in srgb, var(--stage-dot) 55%, transparent);
+  background: color-mix(in srgb, var(--crm-panel) 55%, transparent);
+  color: var(--text-secondary);
+}
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kosong .text-ink2 { color: var(--text-primary); }
+:root .app-shell.crm-skin .crm-pipe .crm-pipe-kolom-drop .crm-pipe-kosong { background: var(--crm-panel); border-style: solid; }
+
+/* ── 5. TABEL ───────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pipe .dh-table { border-radius: 20px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-pipe .dh-table thead th { background: var(--bg-inset); color: var(--text-secondary); border-bottom: 0; font-size: 12px; font-weight: 700; padding-block: 14px; }
+:root .app-shell.crm-skin .crm-pipe .dh-table tbody td { padding-block: 13px; font-size: 14px; color: var(--text-primary); }
+
+/* ── 6. HP / LAYAR SEMPIT ───────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-kolom { min-width: min(300px, 82vw); }
+  :root .app-shell.crm-skin .crm-pipe .crm-pipe-segmen { flex-wrap: wrap; }
+}

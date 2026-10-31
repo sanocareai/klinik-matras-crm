@@ -1,6 +1,6 @@
 import React from "react";
 import { ChevronRight, Timer, ArrowRightLeft } from "lucide-react";
-import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
+import { formatRupiah, STAGE_LABELS, stageClass } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import ChartCard from "./ChartCard.jsx";
@@ -18,19 +18,7 @@ import Sparkline from "./Sparkline.jsx";
 // QUALIFIED/QUOTED/BOOKED/SCHEDULED digabung PROSPECT, COMPLETED/REVIEWED
 // digabung TRANSACTION. SPAM abu-abu netral — bukan "berhasil", bukan
 // "sedang berjalan", jadi dapat treatment visual sendiri.
-const STAGE_BG = {
-  NEW: "bg-inset", PROSPECT: "bg-inset",
-  TRANSACTION: "bg-greenbg", SPAM: "bg-inset",
-};
-// Bar progres per stage — accent, kecuali TRANSACTION yang semantik.
-const STAGE_BAR = {
-  NEW: "bg-accent", PROSPECT: "bg-accent",
-  TRANSACTION: "bg-green", SPAM: "bg-ink3",
-};
-const STAGE_DOT = {
-  NEW: "bg-orange", PROSPECT: "bg-accent",
-  TRANSACTION: "bg-green", SPAM: "bg-ink3",
-};
+// Warna tahap (bidang, bar, titik): SATU sumber — palet tahap bersama (styles/stage-palette.css) lewat stageClass() di utils/format.js.
 
 // "3.4" → "3,4 hari" · "0.5" → "12 jam" (di bawah 1 hari lebih enak dibaca
 // dalam jam). null → em-dash, JANGAN "0 hari" (0 berarti "instan", null
@@ -120,7 +108,7 @@ export default function PipelineTab({ funnel, velocity }) {
                   </div>
                 )}
                 <div
-                  className={`animate-fade-rise flex-1 rounded-2xl p-4 sm:min-w-0 ${STAGE_BG[item.stage] || "bg-inset"}`}
+                  className={`animate-fade-rise flex-1 rounded-2xl p-4 sm:min-w-0 ${stageClass(item.stage)} stage-field`}
                   style={{ animationDelay: `${i * 80}ms` }}
                 >
                   {/* Teks putih dihapus — kartu funnel sekarang permukaan
@@ -154,7 +142,7 @@ export default function PipelineTab({ funnel, velocity }) {
                   <tr key={item.stage} className="border-b border-line last:border-0">
                     <td className="px-3 py-3">
                       <span className="flex items-center gap-2 font-semibold text-ink">
-                        <span className={`h-2.5 w-2.5 rounded-full ${STAGE_DOT[item.stage] || "bg-ink3"}`} />
+                        <span className={`h-2.5 w-2.5 rounded-full ${stageClass(item.stage)} stage-dot`} />
                         {item.label}
                         <InfoTooltip text={STAGE_INFO[item.stage]} />
                       </span>
@@ -165,7 +153,7 @@ export default function PipelineTab({ funnel, velocity }) {
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-20 overflow-hidden rounded-full bg-inset">
                           <div
-                            className={`h-full rounded-full transition-[width] duration-700 ${STAGE_BAR[item.stage] || "bg-accent"}`}
+                            className={`h-full rounded-full transition-[width] duration-700 ${stageClass(item.stage)} stage-dot`}
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -211,7 +199,7 @@ export default function PipelineTab({ funnel, velocity }) {
             <div key={row.stage} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
               <div className="flex items-center gap-2 sm:contents">
                 <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold text-ink2 sm:w-32 sm:flex-none">
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STAGE_DOT[row.stage] || "bg-ink3"}`} />
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${stageClass(row.stage)} stage-dot`} />
                   <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
                   <InfoTooltip text={STAGE_INFO[row.stage]} />
                 </span>
@@ -227,7 +215,7 @@ export default function PipelineTab({ funnel, velocity }) {
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-inset sm:order-2 sm:w-auto sm:flex-1">
                 <div
-                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${STAGE_BAR[row.stage] || "bg-accent"}`}
+                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${stageClass(row.stage)} stage-dot`}
                   style={{ width: `${row.avgDays != null ? Math.max((row.avgDays / maxHari) * 100, 2) : 0}%` }}
                 />
               </div>

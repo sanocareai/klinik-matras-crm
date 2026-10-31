@@ -50,6 +50,8 @@ import "./styles/tailwind.css";
 // di-import terakhir, nilai DS v2 yang menang, sehingga ~3.000 baris CSS lama
 // ikut palet baru + dark mode tanpa ditulis ulang. Jangan pindahkan ke atas.
 import "./styles/tokens.css";
+// Palet tahap pipeline (satu sumber warna tahap; dipakai Badge, Pipeline, Dashboard, Laporan) — token global, tanpa dampak ke komponen lain.
+import "./styles/stage-palette.css";
 // SESUDAH tokens.css — lapisan tema gelap khusus Delivery Hub (D-045) yang
 // MENIMPA sebagian token/permukaan default di sana. Dikunci ganda ke
 // [data-theme="dark"] + [data-division="armada"], jadi light mode & modul
@@ -80,6 +82,8 @@ import "./styles/sanss-crm.css";
 import "./styles/sanss-crm-dashboard.css";
 // Halaman Pelanggan (Fase 2, 31 Okt 2026) — gaya khusus .crm-pel di bawah tema Sales CRM.
 import "./styles/sanss-crm-pelanggan.css";
+// Halaman Pipeline (Fase Pipeline, 31 Okt 2026) — gaya khusus .crm-pipe; warna tahap dari stage-palette.css.
+import "./styles/sanss-crm-pipeline.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

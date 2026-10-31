@@ -1,8 +1,8 @@
 import React from "react";
-import { MoreVertical, AlertTriangle } from "lucide-react";
+import { MoreVertical, AlertTriangle, Clock } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu.jsx";
-import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS } from "@/utils/format.js";
+import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, stageClass } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
 
@@ -18,38 +18,8 @@ const ORDER_STATUS_TONE = {
   CANCELLED:  "bg-redbg text-red",
 };
 
-// Titik warna per stage — mengikuti STAGE_VARIANT di utils/format.js
-// (sano-color-system.md §4). Sengaja class statis, bukan dibangun runtime,
-// supaya ke-scan Tailwind. Restrukturisasi 24 Agustus 2026 (7→4 stage):
-// QUALIFIED/QUOTED/BOOKED/SCHEDULED digabung PROSPECT (accent), COMPLETED/
-// REVIEWED digabung TRANSACTION (green). SPAM baru — abu-abu netral.
-// Revisi 26 Agustus 2026: REVIEWED dikembalikan (definisi baru — review
-// publik, bukan lagi ditinjau internal) — tetap hijau (sama seperti
-// TRANSACTION, cuma sudah lebih maju), konsisten dengan STAGE_VARIANT.
-export const STAGE_DOT = {
-  NEW:         "bg-orange",
-  PROSPECT:    "bg-accent",
-  TRANSACTION: "bg-green",
-  REVIEWED:    "bg-green",
-  SPAM:        "bg-inset",
-};
-
-// Glow kaca per stage (D-101, 5 September 2026) — owner: kartu Kanban abu-
-// abu/gelap "kurang match sama biru kita" di halaman Pipeline yang sudah
-// jadi kaca (D-099), minta glass effect + glow warna per stage (New=oranye,
-// Prospek=biru, dst). BUKAN warna baru — SATU-SATUNYA sumber, dipetakan
-// PERSIS dari STAGE_DOT di atas (var CSS yang SUDAH ada: --orange/--accent/
-// --green), cuma diperluas dari "titik kecil" jadi glow di tepi kartu.
-// Dipakai sebagai custom property `--kb-accent` inline per kartu (pola sama
-// dengan --dh-bar di Delivery Hub) — CSS aktualnya di delivery-dark.css/
-// -light.css §.dh-kanban-card, no-op di luar .glass-division.
-const STAGE_GLOW = {
-  NEW:         "var(--orange)",
-  PROSPECT:    "var(--accent)",
-  TRANSACTION: "var(--green)",
-  REVIEWED:    "var(--green)",
-  SPAM:        "var(--ink3)",
-};
+// Warna tahap: SATU sumber di styles/stage-palette.css (token --stage-*), dipilih lewat stageClass(stage) di utils/format.js.
+// STAGE_DOT / STAGE_GLOW lama (oranye/biru/hijau) dihapus — Fase Pipeline, 31 Okt 2026. Dipakai sebagai kelas "stage-dot" + stageClass().
 
 // Ambang "stale" — deal yang tidak disentuh selama ini dianggap mandek.
 // 14 hari dipilih supaya tidak berisik: siklus jual kasur di sini berhari-hari
@@ -86,6 +56,9 @@ export default function KanbanCard({
     // Jangan buka chat kalau yang diklik kontrol di dalam kartu (menu pindah
     // stage) — tanpa ini menu tidak bisa dipakai lagi.
     if (e.target.closest("[data-no-chat]")) return;
+    // Menu "Pindah ke" di-portal ke <body>: event klik item menu tetap menggelembung lewat pohon React ke kartu ini (bukan DOM),
+    // sehingga memilih tahap ikut membuka chat. Abaikan klik yang targetnya di luar DOM kartu.
+    if (!e.currentTarget.contains(e.target)) return;
     onOpenChat?.();
   }
 
@@ -112,12 +85,8 @@ export default function KanbanCard({
       // Delivery Hub) — garis aksen kiri 3px + glow SENDIRI (posisi tetap,
       // tidak ketutup kartu lain). --kb-accent dibaca .dh-kanban-card untuk
       // border+halo tambahan (sekarang ambient, bukan drop-shadow ke bawah).
-      style={{
-        "--kb-accent": STAGE_GLOW[stage] || STAGE_GLOW.SPAM,
-        "--dh-bar": STAGE_GLOW[stage] || STAGE_GLOW.SPAM,
-      }}
       className={cn(
-        "dh-kanban-card dh-bar-left group relative rounded-xl  bg-surface p-2.5 shadow-card",
+        "crm-pipe-kartu group relative rounded-xl bg-surface p-3 shadow-card",
         // Lift saat digeser: shadow-popover + scale ~1.02 dalam 150ms, dan slot asal
         // diredam (opacity) — sano-animation-guidelines.md §3.6.
         "transition-[box-shadow,transform,opacity] duration-150 ease-out",
@@ -133,9 +102,9 @@ export default function KanbanCard({
         <Avatar name={nama} src={card.profilePictureUrl} size="sm" />
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold leading-tight text-ink">{nama}</p>
+          <p className="crm-pipe-nama truncate text-[14px] font-bold leading-tight text-ink" title={nama}>{nama}</p>
           {card.phone && (
-            <p className="mt-0.5 truncate text-[11px] tabular-nums text-ink3">{card.phone}</p>
+            <p className="crm-pipe-nomor mt-0.5 truncate text-[12px] tabular-nums text-ink3">{card.phone}</p>
           )}
         </div>
 
@@ -166,7 +135,7 @@ export default function KanbanCard({
             <MenuLabel>Pindah ke</MenuLabel>
             {stages.filter((s) => s !== stage).map((s) => (
               <MenuItem key={s} onSelect={() => onMoveToStage(s)}>
-                <span className={cn("h-2 w-2 shrink-0 rounded-full", STAGE_DOT[s] || "bg-ink3")} />
+                <span className={cn("stage-dot h-2 w-2 shrink-0 rounded-full", stageClass(s))} />
                 {STAGE_LABELS[s] || s}
               </MenuItem>
             ))}
@@ -175,11 +144,8 @@ export default function KanbanCard({
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[13px] font-bold tabular-nums text-ink">
+        <span className="crm-pipe-nilai text-[15px] font-bold tabular-nums text-ink">
           {formatRupiah(card.totalValue)}
-        </span>
-        <span className={cn("text-[11px] tabular-nums", stale ? "font-semibold text-orange" : "text-ink3")}>
-          {card.daysSince}h lalu
         </span>
       </div>
 
@@ -213,21 +179,25 @@ export default function KanbanCard({
         </div>
       )}
 
-      {(card.assignedSales || card.unreadCount > 0) && (
-        <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-line pt-1.5">
-          <span className="min-w-0 truncate text-[11px] text-ink3">
-            {card.assignedSales?.name || "Belum ada sales"}
+      <div className="crm-pipe-kaki mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
+        <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink2" title={card.assignedSales?.name || "Belum ada sales"}>
+          {card.assignedSales && <Avatar name={card.assignedSales.name} src={card.assignedSales.avatarUrl} size="sm" className="crm-pipe-sales h-5 w-5 text-[9px]" />}
+          <span className="min-w-0 truncate">{card.assignedSales?.name || "Belum ada sales"}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className={cn("inline-flex items-center gap-1 text-[12px] tabular-nums", stale ? "font-semibold text-orange" : "text-ink3")} title={card.daysSince + " hari sejak aktivitas terakhir"}>
+            <Clock size={12} className="shrink-0" aria-hidden /> {card.daysSince} hari
           </span>
           {card.unreadCount > 0 && (
             <span
-              className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white"
+              className="crm-pipe-unread shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white"
               title={`${card.unreadCount} pesan belum dibaca`}
             >
               {card.unreadCount}
             </span>
           )}
-        </div>
-      )}
+        </span>
+      </div>
     </div>
   );
 }
