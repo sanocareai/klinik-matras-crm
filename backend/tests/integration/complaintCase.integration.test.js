@@ -550,10 +550,17 @@ test("waive-redelivery: alasan wajib, lalu melewati gerbang dengan audit trail -
   assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
   assert.equal(confirm.body.status, "SELESAI");
 
-  // Job itu sendiri TIDAK ikut berubah -- waive hanya membuka gerbang, bukan
-  // berpura-pura job sudah dikerjakan.
+  // Job yang BELUM berjalan (masih UNSCHEDULED) TIDAK boleh dibiarkan
+  // nyangkut -- waive membatalkannya EKSPLISIT lewat mekanisme pembatalan
+  // yang sudah ada (cancelOrderDeliveryJobs/DeliveryJobCancellation), BUKAN
+  // ditandai COMPLETED/diberi POD palsu, dan BUKAN dibiarkan diam begitu
+  // saja (hardening review 31 Oktober 2026, poin 1).
   const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
-  assert.equal(jobRow.status, "UNSCHEDULED");
+  assert.equal(jobRow.status, "FAILED", "job yang belum berjalan harus ikut dibatalkan, bukan dibiarkan nyangkut");
+  assert.equal(jobRow.proofPhotoUrls.length, 0, "TIDAK boleh diberi bukti foto palsu");
+  const tombstone = await testPrisma.deliveryJobCancellation.findUnique({ where: { jobId: deliveryJobId } });
+  assert.ok(tombstone, "pembatalan job harus lewat mekanisme tombstone yang sudah ada, tercatat siapa/kapan/alasan");
+  assert.match(tombstone.reason, /Komplain diselesaikan tanpa pengiriman ulang/);
 
   const timeline = await sales.api.get(`/api/activity?entityType=complaint&entityId=${caseId}`);
   assert.ok(timeline.body.events.some((e) => e.eventType === "COMPLAINT_REDELIVERY_WAIVED"));
@@ -652,4 +659,168 @@ test("PATCH /routes/:id/jobs TETAP mengizinkan job komplain yang SUDAH tuntas (C
 
   const r = await admin.api.patch(`/api/armada/routes/${route.id}/jobs`, { jobIds: [deliveryJobId], reason: "Catat retroaktif" });
   assert.equal(r.status, 200, JSON.stringify(r.body));
+});
+
+// ─── HARDENING (review 31 Oktober 2026) ────────────────────────────────────
+// Celah TAMBAHAN yang ditemukan review: gerbang versi pertama cuma menolak
+// job yang SUDAH ada tapi belum tuntas -- kasus yang TIDAK PERNAH bikin Job
+// sama sekali (lewat MENUNGGU_CUSTOMER, bukan DIKIRIM_ULANG) lolos begitu
+// saja, dan waiver versi pertama meninggalkan job yang belum berjalan
+// nyangkut selamanya (bug yang sama, cuma dipindah tempat). Tes di bawah
+// membuktikan kedua celah itu sekarang tertutup.
+
+test("Gerbang redelivery -- HARDENING poin 2: MENUNGGU_CUSTOMER -> KONFIRMASI_CUSTOMER ditolak kalau kasus BELUM PERNAH punya Job DELIVERY (bypass createDeliveryTask)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const { order } = await createTestUnit();
+  const create = await sales.api.post("/api/complaints", { orderId: order.id, category: "KETERLAMBATAN", description: "Test bypass -- tidak pernah bikin job" });
+  const caseId = create.body.id;
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "VERIFIKASI" });
+  const toMenunggu = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "MENUNGGU_CUSTOMER" });
+  assert.equal(toMenunggu.status, 200, JSON.stringify(toMenunggu.body));
+
+  // Jalur LAMA: 0 job pernah dibuat untuk kasus ini -> gerbang versi pertama
+  // meloloskan ini ("0 outstanding = tidak perlu redelivery"). Sekarang wajib ditolak.
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.match(r.body.error, /belum pernah punya job pengiriman ulang/);
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.status, "MENUNGGU_CUSTOMER", "status TIDAK boleh ikut naik kalau gerbang menolak");
+});
+
+test("Gerbang redelivery -- HARDENING poin 2: transisi manual LANGSUNG ke DIKIRIM_ULANG ditolak -- wajib lewat Delivery Task (satu transaksi dengan pembuatan Job)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const { order } = await createTestUnit();
+  const create = await sales.api.post("/api/complaints", { orderId: order.id, category: "KETERLAMBATAN", description: "Test bypass transisi manual" });
+  const caseId = create.body.id;
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "VERIFIKASI" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "ACTION_REQUIRED" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "SIAP_DIKIRIM" });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "DIKIRIM_ULANG" });
+  assert.equal(r.status, 400, JSON.stringify(r.body));
+  assert.match(r.body.error, /Delivery Task/);
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.status, "SIAP_DIKIRIM", "status TIDAK boleh berubah -- tetap wajib lewat POST /:id/delivery-task");
+  assert.equal(await testPrisma.job.count({ where: { complaintCaseId: caseId } }), 0);
+});
+
+test("waive-redelivery -- HARDENING poin 2: bisa dipanggil dari MENUNGGU_CUSTOMER (kasus yang MEMANG tidak pernah butuh redelivery fisik, mis. diselesaikan lewat penjelasan/refund)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const { order } = await createTestUnit();
+  const create = await sales.api.post("/api/complaints", { orderId: order.id, category: "LAYANAN_STAF", description: "Customer cuma minta penjelasan, tidak perlu kirim ulang" });
+  const caseId = create.body.id;
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "VERIFIKASI" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "MENUNGGU_CUSTOMER" });
+
+  const waive = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Customer puas dengan penjelasan, tidak perlu kirim ulang" });
+  assert.equal(waive.status, 200, JSON.stringify(waive.body));
+
+  const advance = await sales.api.post(`/api/complaints/${caseId}/status`, { status: "KONFIRMASI_CUSTOMER" });
+  assert.equal(advance.status, 200, JSON.stringify(advance.body));
+  const confirm = await sales.api.post(`/api/complaints/${caseId}/confirm-customer`, {});
+  assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
+  assert.equal(confirm.body.status, "SELESAI");
+
+  assert.equal(await testPrisma.job.count({ where: { complaintCaseId: caseId } }), 0, "kasus ini memang tidak pernah butuh Job sama sekali");
+});
+
+test("waive-redelivery: ditolak (409) kalau job pengiriman ulang masih EN_ROUTE/ARRIVED -- sedang berjalan, tidak boleh ditarik paksa dari lapangan", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+
+  for (const status of ["EN_ROUTE", "ARRIVED"]) {
+    const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+    await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status } });
+    const r = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Coba waive saat job sedang jalan" });
+    assert.equal(r.status, 409, `status job ${status} seharusnya menolak waiver: ${JSON.stringify(r.body)}`);
+    assert.match(r.body.error, /dalam perjalanan/);
+    const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+    assert.equal(jobRow.status, status, "job yang sedang berjalan TIDAK boleh disentuh oleh waiver yang ditolak");
+  }
+});
+
+test("waive-redelivery: ditolak (409) kalau job tercatat COMPLETED tapi TANPA bukti foto (POD belum sinkron) -- rekonsiliasi manual, bukan ditutup lewat waiver", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls: [] } });
+
+  const r = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Coba waive saat POD belum sinkron" });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.match(r.body.error, /POD belum sinkron/);
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.proofPhotoUrls.length, 0, "TIDAK boleh diberi bukti foto palsu oleh waiver yang ditolak");
+});
+
+test("waive-redelivery: ditolak (409) kalau job punya antrean RescheduleCase AKTIF -- wajib direkonsiliasi dulu lewat alur reschedule, baru bisa waive sesudahnya", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  await testPrisma.job.update({
+    where: { id: deliveryJobId },
+    data: { status: "FAILED", failureReason: "Alamat tidak ditemukan", failurePhotoUrls: ["/media/job-photos/fail.jpg"] },
+  });
+  const rescheduleCase = await testPrisma.rescheduleCase.create({
+    data: {
+      caseNumber: `RSC-TEST-${Date.now()}`, jobId: deliveryJobId, status: "AKTIF", cause: "AFTER_FAILURE",
+      reason: "Alamat tidak ditemukan", previousScheduledDate: new Date("2026-09-13"),
+    },
+  });
+
+  const blocked = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Coba waive saat antrean reschedule masih aktif" });
+  assert.equal(blocked.status, 409, JSON.stringify(blocked.body));
+  assert.match(blocked.body.error, /antrean/);
+
+  // Setelah antrean DIREKONSILIASI (ditutup lewat alur reschedule biasa),
+  // waiver baru boleh lanjut -- bukan dihindari permanen, cuma menunggu urutan yang benar.
+  await testPrisma.rescheduleCase.update({ where: { id: rescheduleCase.id }, data: { status: "DIBATALKAN", resolvedAt: new Date() } });
+  const afterReconcile = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Antrean sudah direkonsiliasi, lanjutkan waiver" });
+  assert.equal(afterReconcile.status, 200, JSON.stringify(afterReconcile.body));
+});
+
+test("waive-redelivery: panggilan berurutan kedua ditolak bersih (pre-check), tanpa menggandakan pembatalan job/activity", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const first = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Customer pilih refund" });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+
+  // Panggilan kedua yang BERURUTAN (bukan race sungguhan) kena pre-check
+  // ("sudah ditandai sebelumnya", 400) sebelum sempat masuk transaksi --
+  // guard atomik (updateMany + where redeliveryWaivedAt:null, 409) di DALAM
+  // waiveRedelivery() ada untuk race SUNGGUHAN (dua request lolos pre-check
+  // BERSAMAAN), bukan kasus berurutan ini. Yang dibuktikan di sini: SIAPA
+  // PUN jalurnya, efek sampingnya (tombstone, activity) tidak pernah dobel.
+  const second = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Customer pilih refund (retry/double-click)" });
+  assert.equal(second.status, 400, JSON.stringify(second.body));
+
+  assert.equal(await testPrisma.deliveryJobCancellation.count({ where: { jobId: deliveryJobId } }), 1, "job hanya boleh dibatalkan SEKALI, retry tidak boleh menggandakan tombstone");
+  const activityCount = (await sales.api.get(`/api/activity?entityType=complaint&entityId=${caseId}`)).body.events
+    .filter((e) => e.eventType === "COMPLAINT_REDELIVERY_WAIVED").length;
+  assert.equal(activityCount, 1, "retry tidak boleh menggandakan activity event");
+});
+
+test("waive-redelivery: race SUNGGUHAN (dua request bersamaan) -- tepat SATU yang berhasil, satu ditolak oleh guard atomik (409), job hanya dibatalkan sekali", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const [a, b] = await Promise.all([
+    sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Request A -- bersamaan" }),
+    sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Request B -- bersamaan" }),
+  ]);
+  const statuses = [a.status, b.status].sort();
+  // Keduanya lolos pre-check (dibaca sebelum salah satu menulis) -- yang
+  // kalah SEHARUSNYA kena guard atomik di dalam transaksi (409), bukan
+  // pre-check (400), karena pre-check-nya sendiri sudah lolos bersamaan.
+  assert.deepEqual(statuses, [200, 409], `tepat satu berhasil, satu ditolak guard atomik: ${JSON.stringify([a.body, b.body])}`);
+
+  assert.equal(await testPrisma.deliveryJobCancellation.count({ where: { jobId: deliveryJobId } }), 1, "job hanya boleh dibatalkan SEKALI walau dua request bersamaan");
+  const activityCount = (await sales.api.get(`/api/activity?entityType=complaint&entityId=${caseId}`)).body.events
+    .filter((e) => e.eventType === "COMPLAINT_REDELIVERY_WAIVED").length;
+  assert.equal(activityCount, 1, "race bersamaan tidak boleh menggandakan activity event");
 });

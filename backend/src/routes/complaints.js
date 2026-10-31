@@ -191,7 +191,9 @@ complaintsRouter.post("/:id/confirm-customer", requirePermission(P.ORDER_WRITE),
 // (Sales, permission SAMA dengan confirm-customer — ini keputusan resolusi,
 // bukan aksi divisi Delivery). SATU-SATUNYA jalan melewati gerbang redelivery
 // tanpa job DELIVERY benar-benar COMPLETED+POD — lihat waiveRedelivery di
-// services/complaintCase.js untuk kapan ini relevan.
+// services/complaintCase.js untuk kapan ini relevan dan kenapa job yang
+// BELUM berjalan ikut dibatalkan (bukan dibiarkan nyangkut) sebagai bagian
+// dari aksi yang sama.
 complaintsRouter.post("/:id/waive-redelivery", requirePermission(P.ORDER_WRITE), async (req, res) => {
   try {
     const kase = await waiveRedelivery(req.params.id, req.body.reason, req.user.id);

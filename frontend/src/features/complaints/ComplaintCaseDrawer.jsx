@@ -195,17 +195,30 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
 
   const transitions = kase ? (ALLOWED_TRANSITIONS[kase.status] || []) : [];
 
+  // Status dari mana gerbang redelivery relevan — SAMA dengan WAIVE_ALLOWED_
+  // STATUSES di backend/services/complaintCase.js (MENUNGGU_CUSTOMER
+  // ditambahkan hardening 31 Oktober 2026 poin 2: satu-satunya status lain
+  // yang punya transisi langsung ke KONFIRMASI_CUSTOMER tanpa lewat DIKIRIM_
+  // ULANG/pernah bikin Job).
+  const REDELIVERY_GATE_STATUSES = ["DIKIRIM_ULANG", "MENUNGGU_CUSTOMER", "KONFIRMASI_CUSTOMER"];
+
   // Gerbang redelivery (31 Oktober 2026, insiden Sony RES-27082026-183) —
   // cermin FRONTEND dari assertRedeliveryCompleted di backend/services/
   // complaintCase.js: job DELIVERY tertaut kasus ini yang BELUM COMPLETED
-  // dengan bukti foto. HANYA untuk ditampilkan (backend yang MENEGAKKAN,
-  // bukan pemeriksaan ini) — supaya staf tahu KENAPA konfirmasi ditolak
-  // sebelum mencoba, bukan cuma baca pesan error sesudahnya.
+  // dengan bukti foto, ATAU kasus belum pernah punya job DELIVERY sama
+  // sekali (hardening poin 2 — backend TIDAK lagi menganggap "0 job" = "tidak
+  // perlu redelivery", harus lewat waiver eksplisit). HANYA untuk ditampilkan
+  // (backend yang MENEGAKKAN, bukan pemeriksaan ini) — supaya staf tahu
+  // KENAPA konfirmasi ditolak sebelum mencoba, bukan cuma baca pesan error
+  // sesudahnya.
+  const deliveryJobs = kase ? (kase.jobs || []).filter((j) => j.type === "DELIVERY") : [];
   const outstandingRedeliveryJobs = kase && !kase.redeliveryWaivedAt
-    ? (kase.jobs || []).filter((j) => j.type === "DELIVERY" && !(j.status === "COMPLETED" && (j.proofPhotoUrls?.length || 0) > 0))
+    ? deliveryJobs.filter((j) => !(j.status === "COMPLETED" && (j.proofPhotoUrls?.length || 0) > 0))
     : [];
-  const redeliveryLocked = outstandingRedeliveryJobs.length > 0;
-  const canWaiveRedelivery = kase && redeliveryLocked && ["DIKIRIM_ULANG", "KONFIRMASI_CUSTOMER"].includes(kase.status);
+  const neverHadRedeliveryJob = !!(kase && !kase.redeliveryWaivedAt && deliveryJobs.length === 0
+    && REDELIVERY_GATE_STATUSES.includes(kase.status));
+  const redeliveryLocked = outstandingRedeliveryJobs.length > 0 || neverHadRedeliveryJob;
+  const canWaiveRedelivery = kase && redeliveryLocked && REDELIVERY_GATE_STATUSES.includes(kase.status);
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => (o ? null : onClose())}>
@@ -276,12 +289,18 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
                 {redeliveryLocked && (
                   <div className="rounded-btn bg-orangebg px-2.5 py-2 text-[11.5px] text-orange">
                     <p className="font-semibold">Belum bisa Konfirmasi Customer / Selesai</p>
-                    <p className="mt-0.5">Job pengiriman ulang berikut belum tuntas dengan bukti foto:</p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                      {outstandingRedeliveryJobs.map((j) => (
-                        <li key={j.id}>{JOB_STATUS_LABEL[j.status] || j.status}{j.status === "COMPLETED" ? " (tanpa bukti foto)" : ""}</li>
-                      ))}
-                    </ul>
+                    {outstandingRedeliveryJobs.length > 0 ? (
+                      <>
+                        <p className="mt-0.5">Job pengiriman ulang berikut belum tuntas dengan bukti foto:</p>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                          {outstandingRedeliveryJobs.map((j) => (
+                            <li key={j.id}>{JOB_STATUS_LABEL[j.status] || j.status}{j.status === "COMPLETED" ? " (tanpa bukti foto)" : ""}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="mt-0.5">Kasus ini belum pernah punya job pengiriman ulang — buat Delivery Task kalau memang perlu kirim ulang fisik, atau pilih "Selesaikan tanpa pengiriman ulang" di bawah.</p>
+                    )}
                   </div>
                 )}
 
