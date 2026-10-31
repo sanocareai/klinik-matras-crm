@@ -15,6 +15,8 @@
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 import { ongkirDitagih, tagihanOrder } from "./tagihanOrder.js";
 import { PILIH_KREDIT, nilaiBersih, kreditDariRelasi } from "../orderNilaiBersih.js";
+import { STATUS_DIHITUNG } from "./journal.js";
+import { KEY as KEY_ORDER } from "./posting/orderRevenue.js";
 
 const OMSET_EXCLUDED_STATUS = ["CANCELLED", "PENDING"]; // sama dengan analytics.js
 const STATUS_REFUND_AKTIF_TIDAK = ["DITOLAK", "DIBATALKAN"];
@@ -40,6 +42,12 @@ export const KUNCI = {
   TANPA_SALES: "TANPA_SALES",
   DIHITUNG_GANDA: "DIHITUNG_GANDA",
   NILAI_LUNAS_SALES: "NILAI_LUNAS_SALES",
+  // Jembatan KOHORT (audit 1 Nov 2026): kartu "Sudah Lunas" di Laporan Ringkasan = order DIBUAT di periode yang kini Lunas (basis tanggal dibuat), sedangkan kartu Sales/Finance memakai
+  // tanggal MENJADI lunas. Dua populasi berbeda; jembatan ini menyambungkannya sampai nomor order.
+  KOHORT_DIBUAT_LUNAS: "KOHORT_DIBUAT_LUNAS",
+  KOHORT_LUNAS_DI_LUAR: "KOHORT_LUNAS_DI_LUAR",
+  KOHORT_DIBUAT_SEBELUM: "KOHORT_DIBUAT_SEBELUM",
+  KOHORT_BELUM_LUNAS_PAIDAT: "KOHORT_BELUM_LUNAS_PAIDAT",
 };
 
 /** Status tindakan per penyebab (dipakai kolom "Tindakan" di drill-down & tombol CTA). */
@@ -103,22 +111,30 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
 
   // ── Order lunas-periode (L) — definisi Sales ──
   const selectOrder = {
-    id: true, orderNumber: true, value: true, ongkir: true, status: true, paymentStatus: true, paidAt: true, groupId: true, salesOwnerId: true, staffSeller: { select: { name: true } }, ...PILIH_KREDIT,
+    id: true, orderNumber: true, value: true, ongkir: true, status: true, paymentStatus: true, paidAt: true, createdAt: true, groupId: true, salesOwnerId: true, penjualanKaryawanId: true, staffSeller: { select: { name: true } }, ...PILIH_KREDIT,
     group: { select: { id: true, source: true, anchorOrderId: true } },
     customer: { select: { id: true, name: true, pipelineStage: true, assignedSales: { select: { name: true } } } },
   };
   const ordersL = await db.order.findMany({
-    where: { paidAt: { gte: mulai, lt: selesai }, status: { notIn: OMSET_EXCLUDED_STATUS }, customer: { pipelineStage: { not: "SPAM" } } },
+    // penjualanKaryawanId: null — SAMA dengan tanpaOrderSpam() di routes/analytics.js: order Penjualan Karyawan bukan omzet Sales (nominalnya dikelola Finance), jadi tidak masuk himpunan lunas-periode.
+    where: { paidAt: { gte: mulai, lt: selesai }, status: { notIn: OMSET_EXCLUDED_STATUS }, penjualanKaryawanId: null, customer: { pipelineStage: { not: "SPAM" } } },
     select: selectOrder,
   });
   const idL = new Set(ordersL.map((o) => o.id));
+  // KOHORT (kartu "Sudah Lunas" di Laporan Ringkasan): order DIBUAT di periode yang kini Lunas — kriteria SAMA dengan business-summary (tanpaOrderSpam + status bukan batal/pending).
+  const ordersA = await db.order.findMany({
+    where: { createdAt: { gte: mulai, lt: selesai }, status: { notIn: OMSET_EXCLUDED_STATUS }, paymentStatus: "LUNAS", penjualanKaryawanId: null, customer: { pipelineStage: { not: "SPAM" } } },
+    select: selectOrder,
+  });
+  const idA = new Set(ordersA.map((o) => o.id));
 
   // Order yang menerima uang periode tetapi BUKAN L
   const idLain = [...masuk.keys()].filter((id) => !idL.has(id));
   const ordersLain = idLain.length ? await db.order.findMany({ where: { id: { in: idLain } }, select: selectOrder }) : [];
 
   // ── DP/uang sebelum periode & refund untuk semua order yang relevan ──
-  const semuaId = [...idL, ...idLain];
+  const idKohortSaja = ordersA.filter((o) => !idL.has(o.id) && !idLain.includes(o.id)).map((o) => o.id);
+  const semuaId = [...idL, ...idLain, ...idKohortSaja];
   const bayarSebelum = semuaId.length
     ? await db.payment.findMany({
       where: { cancelledAt: null, createdAt: { lt: mulai }, verifications: { some: {} }, OR: [{ orderId: { in: semuaId } }, { finAllocations: { some: { orderId: { in: semuaId } } } }] },
@@ -192,10 +208,10 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
       orderId: o.id, nomor: o.orderNumber, pelanggan: o.customer.name, sales: namaSalesOrder(o), status: o.status, statusBayar: o.paymentStatus, nilaiJasa: rp(nilaiBersih(o)), notaKredit: rp(kreditDariRelasi(o)), ongkir: rp(ongkirDitagih(o, o.group ?? null)), totalTagihan,
       paymentTercatat: rp(f.tercatat), paymentTerverifikasi: rp(f.terverifikasi), paymentMenunggu: rp(f.menunggu),
       kurangLebih: rp(f.terverifikasi - totalTagihan), // negatif = kekurangan, positif = kelebihan (dari Payment terverifikasi terhadap total tagihan)
-      tanggalBayar: tglWib(f.tglBayar), tanggalLunas: tglWib(o.paidAt),
+      tanggalBayar: tglWib(f.tglBayar), tanggalLunas: tglWib(o.paidAt), tanggalDibuat: tglWib(o.createdAt),
     };
   };
-  const baris = { [KUNCI.UANG_MASUK]: [], [KUNCI.DP_BELUM_LUNAS]: [], [KUNCI.ORDER_TIDAK_DIHITUNG]: [], [KUNCI.LUNAS_PERIODE_LAIN]: [], [KUNCI.REFUND_NON_LUNAS]: [], [KUNCI.DP_SEBELUMNYA]: [], [KUNCI.REFUND_LUNAS]: [], [KUNCI.ONGKIR]: [], [KUNCI.KLAIM_TANPA_PAYMENT]: [], [KUNCI.PAYMENT_MENUNGGU]: [], [KUNCI.PAYMENT_KURANG]: [], [KUNCI.KELEBIHAN_BAYAR]: [], [KUNCI.SELISIH_LAIN]: [], [KUNCI.TANPA_SALES]: [], [KUNCI.DIHITUNG_GANDA]: [] };
+  const baris = { [KUNCI.UANG_MASUK]: [], [KUNCI.DP_BELUM_LUNAS]: [], [KUNCI.ORDER_TIDAK_DIHITUNG]: [], [KUNCI.LUNAS_PERIODE_LAIN]: [], [KUNCI.REFUND_NON_LUNAS]: [], [KUNCI.DP_SEBELUMNYA]: [], [KUNCI.REFUND_LUNAS]: [], [KUNCI.ONGKIR]: [], [KUNCI.KLAIM_TANPA_PAYMENT]: [], [KUNCI.PAYMENT_MENUNGGU]: [], [KUNCI.PAYMENT_KURANG]: [], [KUNCI.KELEBIHAN_BAYAR]: [], [KUNCI.SELISIH_LAIN]: [], [KUNCI.TANPA_SALES]: [], [KUNCI.DIHITUNG_GANDA]: [], [KUNCI.KOHORT_DIBUAT_LUNAS]: [], [KUNCI.KOHORT_LUNAS_DI_LUAR]: [], [KUNCI.KOHORT_DIBUAT_SEBELUM]: [], [KUNCI.KOHORT_BELUM_LUNAS_PAIDAT]: [] };
   const total = {};
   for (const k of Object.keys(baris)) total[k] = 0;
   const tambah = (kunci, info, jumlah, tambahan = {}) => {
@@ -211,17 +227,28 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
     tambah(KUNCI.UANG_MASUK, infoOrder(o), m.jumlah, { pembayaran: m.pay });
   }
 
+  // Pengecualian lunas (keputusan Owner): order yang tanggal lunasnya DIKUNCI ke periode lain walau uangnya baru masuk sekarang.
+  const idLunasLain = ordersLain.filter((o) => o.paymentStatus === "LUNAS" && o.paidAt && (o.paidAt < mulai || o.paidAt >= selesai)).map((o) => o.id);
+  const pengecualian = idLunasLain.length
+    ? await db.orderPaidAtPengecualian.findMany({ where: { orderId: { in: idLunasLain }, dicabutAt: null }, select: { orderId: true, paidAtDikunci: true, alasan: true } })
+    : [];
+  const pengecualianPerOrder = new Map(pengecualian.map((x) => [x.orderId, x]));
+
   // Order bukan-L yang menerima uang periode
   for (const o of ordersLain) {
     const m = masuk.get(o.id);
     const info = infoOrder(o);
     const lunasLain = o.paymentStatus === "LUNAS" && o.paidAt && (o.paidAt < mulai || o.paidAt >= selesai);
-    if (OMSET_EXCLUDED_STATUS.includes(o.status) || o.customer.pipelineStage === "SPAM") {
-      tambah(KUNCI.ORDER_TIDAK_DIHITUNG, info, m.jumlah, { alasan: o.customer.pipelineStage === "SPAM" ? "Pelanggan SPAM" : `Order ${o.status}`, pembayaran: m.pay });
+    if (OMSET_EXCLUDED_STATUS.includes(o.status) || o.customer.pipelineStage === "SPAM" || o.penjualanKaryawanId) {
+      tambah(KUNCI.ORDER_TIDAK_DIHITUNG, info, m.jumlah, { alasan: o.penjualanKaryawanId ? "Order Penjualan Karyawan — di luar omzet Sales" : o.customer.pipelineStage === "SPAM" ? "Pelanggan SPAM" : `Order ${o.status}`, pembayaran: m.pay });
     } else if (refundMap.get(o.id) > 0 && o.paymentStatus !== "LUNAS") {
       tambah(KUNCI.REFUND_NON_LUNAS, info, m.jumlah, { pembayaran: m.pay, refund: refundMap.get(o.id) });
     } else if (lunasLain) {
-      tambah(KUNCI.LUNAS_PERIODE_LAIN, info, m.jumlah, { pembayaran: m.pay, paidAt: o.paidAt });
+      const kunci = pengecualianPerOrder.get(o.id);
+      tambah(KUNCI.LUNAS_PERIODE_LAIN, info, m.jumlah, {
+        pembayaran: m.pay, paidAt: o.paidAt,
+        alasan: kunci ? `Tanggal lunas DIKUNCI ke ${tglWib(kunci.paidAtDikunci)} (pengecualian lunas): ${kunci.alasan}` : `Order dihitung lunas pada ${tglWib(o.paidAt)} (di luar periode ini)`,
+      });
     } else {
       // DP / parsial: order belum lunas (atau lunas di periode berikutnya). Sertakan pembayaran sebelumnya agar terlihat total DP order ini.
       tambah(KUNCI.DP_BELUM_LUNAS, info, m.jumlah, { pembayaran: m.pay, dibayarTotal: m.jumlah + (pra.get(o.id)?.jumlah ?? 0), sisaTagihan: Math.max(rp(tagihanOrder(o, o.group ?? null)) - (m.jumlah + (pra.get(o.id)?.jumlah ?? 0)), 0) });
@@ -269,6 +296,38 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
     }
   }
 
+  // ── JEMBATAN KOHORT: "Sudah Lunas" (dibuat di periode) → Total Perusahaan (lunas di periode) ──
+  const nilaiA = ordersA.reduce((a, o) => a + rp(nilaiBersih(o)), 0);
+  for (const o of ordersA) {
+    if (idL.has(o.id)) continue;
+    tambah(KUNCI.KOHORT_LUNAS_DI_LUAR, infoOrder(o), rp(nilaiBersih(o)), { alasan: o.paidAt ? `Berstatus Lunas, tetapi tanggal lunas ${tglWib(o.paidAt)} di luar periode` : "Berstatus Lunas, tetapi tanggal lunas kosong (tidak tercatat)" });
+  }
+  for (const o of ordersL) {
+    if (idA.has(o.id)) continue;
+    if (o.createdAt < mulai) tambah(KUNCI.KOHORT_DIBUAT_SEBELUM, infoOrder(o), rp(nilaiBersih(o)), { alasan: `Dibuat ${tglWib(o.createdAt)} (sebelum periode), lunas ${tglWib(o.paidAt)}` });
+    else tambah(KUNCI.KOHORT_BELUM_LUNAS_PAIDAT, infoOrder(o), rp(nilaiBersih(o)), { alasan: `Dibuat di periode, tanggal lunas ${tglWib(o.paidAt)} terisi, tetapi status bayar sekarang ${o.paymentStatus}` });
+  }
+  for (const o of ordersA) baris[KUNCI.KOHORT_DIBUAT_LUNAS].push({ ...infoOrder(o), jumlah: rp(nilaiBersih(o)), tindakan: null, pembayaran: masuk.get(o.id)?.pay ?? [] });
+  total[KUNCI.KOHORT_DIBUAT_LUNAS] = nilaiA;
+
+  // ── DOKUMEN PEMBAYARAN: lengkapi tiap Payment di jembatan dengan rekening + nomor jurnal supaya angka bisa ditelusuri ke dokumen ──
+  const petaPay = new Map();
+  for (const arr of Object.values(baris)) for (const r of arr) for (const p of r.pembayaran ?? []) petaPay.set(p.id, p);
+  if (petaPay.size) {
+    const idPay = [...petaPay.keys()];
+    const [infoPay, jurnalPay] = await Promise.all([
+      db.payment.findMany({ where: { id: { in: idPay } }, select: { id: true, referenceNumber: true, cashAccount: { select: { name: true } } } }),
+      db.finJournalEntry.findMany({ where: { idempotencyKey: { in: idPay.map((i) => KEY_ORDER.payment(i)) }, status: { in: STATUS_DIHITUNG } }, select: { idempotencyKey: true, entryNumber: true } }),
+    ]);
+    const rekPay = new Map(infoPay.map((x) => [x.id, x]));
+    const jurPay = new Map(jurnalPay.map((j) => [j.idempotencyKey, j.entryNumber]));
+    for (const [id, p] of petaPay) {
+      p.ref = id.slice(0, 8); p.tanggalWib = tglWib(p.tanggal);
+      p.rekening = rekPay.get(id)?.cashAccount?.name ?? null; p.referensi = rekPay.get(id)?.referenceNumber ?? null;
+      p.nomorJurnal = jurPay.get(KEY_ORDER.payment(id)) ?? null;
+    }
+  }
+
   // ── Susun bridge ──
   const M = total[KUNCI.UANG_MASUK];
   const langkah = (kunci, label, tanda, jumlah, ket) => ({ kunci, label, tanda, jumlah: rp(jumlah), keterangan: ket, nOrder: (baris[kunci] ?? []).length });
@@ -295,6 +354,23 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
     langkah(KUNCI.DIHITUNG_GANDA, "Dihitung Ganda (order dipegang >1 Sales)", 1, total[KUNCI.DIHITUNG_GANDA], "Laporan per-Sales menghitung order itu untuk tiap Sales yang memegangnya"),
     langkah(KUNCI.NILAI_LUNAS_SALES, "Nilai Order yang Menjadi Lunas (angka Total Tim di laporan Sales)", 0, kartuSales, "Persis angka kartu di laporan Sales"),
   ];
+
+  const kohortLangkah = [
+    { kunci: KUNCI.KOHORT_DIBUAT_LUNAS, label: "Sudah Lunas — order dibuat pada periode (kartu \"Sudah Lunas\" di Laporan Ringkasan)", tanda: 0, jumlah: rp(nilaiA), keterangan: "Order DIBUAT di periode yang sekarang berstatus Lunas (basis tanggal dibuat)", nOrder: ordersA.length },
+    langkah(KUNCI.KOHORT_LUNAS_DI_LUAR, "Dibuat di periode & Lunas, tetapi tanggal lunas di luar periode / kosong", -1, total[KUNCI.KOHORT_LUNAS_DI_LUAR], "Tidak dihitung sebagai menjadi lunas di periode"),
+    langkah(KUNCI.KOHORT_DIBUAT_SEBELUM, "Dibuat sebelum periode, menjadi Lunas di periode", 1, total[KUNCI.KOHORT_DIBUAT_SEBELUM], "Order bulan-bulan lalu yang baru lunas sekarang (lintas bulan)"),
+    langkah(KUNCI.KOHORT_BELUM_LUNAS_PAIDAT, "Dibuat di periode, tanggal lunas di periode, tetapi status bayar kini bukan Lunas", 1, total[KUNCI.KOHORT_BELUM_LUNAS_PAIDAT], "Mis. refund/pembatalan setelah lunas yang tidak mengosongkan tanggal lunas"),
+    { kunci: KUNCI.TOTAL_PERUSAHAAN, label: "Nilai Order yang Menjadi Lunas — Total Perusahaan", tanda: 0, jumlah: rp(totalNilaiL), keterangan: "Order yang lunas pada periode (basis tanggal lunas)", nOrder: ordersL.length },
+  ];
+  const residualKohort = rp(nilaiA) - rp(total[KUNCI.KOHORT_LUNAS_DI_LUAR]) + rp(total[KUNCI.KOHORT_DIBUAT_SEBELUM]) + rp(total[KUNCI.KOHORT_BELUM_LUNAS_PAIDAT]) - rp(totalNilaiL);
+  const kohort = {
+    judul: "Order Dibuat di Periode (Sudah Lunas) → Order yang Menjadi Lunas di Periode (Total Perusahaan)",
+    penjelasan: "Dua kartu memakai tanggal berbeda: 'Sudah Lunas' di Laporan Ringkasan menghitung order yang DIBUAT di periode dan kini Lunas; 'Nilai Order yang Menjadi Lunas' menghitung order yang LUNAS di periode, termasuk order lama.",
+    mulai: kohortLangkah[0], akhir: kohortLangkah[kohortLangkah.length - 1], langkah: kohortLangkah,
+    pembanding: { label: "Σ nilai order lunas (dihitung langsung)", jumlah: rp(totalNilaiL) },
+    residual: residualKohort,
+    status: { perhitungan: residualKohort === 0 ? "COCOK" : "TIDAK_COCOK", perhitunganLabel: residualKohort === 0 ? "Perhitungan cocok" : "Perhitungan tidak cocok" },
+  };
 
   const residual = rp(kartuSales) - rp(nilaiSalesKartu); // bridge vs hitungan langsung Σ value×jumlah Sales — HARUS 0
   const ringkas = (arr) => arr.map((b) => ({ ...b }));
@@ -353,7 +429,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
   })).filter((p) => p.nOrder > 0);
   const selisih = rp(totalPerusahaan) - rp(M);
   const tidakTerklasifikasi = rp(total[KUNCI.SELISIH_LAIN]) !== 0;
-  const kodeStatus = residual1 !== 0 || residual2 !== 0 || tidakTerklasifikasi ? "TIDAK_COCOK" : selisih === 0 && penyebab.length === 0 ? "COCOK" : "TERJELASKAN";
+  const kodeStatus = residual1 !== 0 || residual2 !== 0 || residualKohort !== 0 || tidakTerklasifikasi ? "TIDAK_COCOK" : selisih === 0 && penyebab.length === 0 ? "COCOK" : "TERJELASKAN";
   const LABEL_STATUS = { COCOK: "Cocok", TERJELASKAN: "Berbeda tetapi terjelaskan", TIDAK_COCOK: "Tidak cocok" };
   const kartuSelisih = {
     tercatat: { jumlah: rp(sumP(tercatatPeriode)), nPayment: tercatatPeriode.length, menunggu: { jumlah: rp(sumP(bukanMenunggu)), nPayment: bukanMenunggu.length } },
@@ -362,7 +438,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
     selisih: { jumlah: selisih, keterangan: "Nilai Lunas − Uang masuk terverifikasi" },
     penyebab, jumlahPenyebab: penyebab.length,
     tim: { jumlah: rp(kartuSales), selisihDariTotal: rp(kartuSales) - rp(totalPerusahaan), penyebab: penyebabTim },
-    residual: { tahap1: residual1, tahap2: residual2, nol: residual1 === 0 && residual2 === 0, terklasifikasiPenuh: !tidakTerklasifikasi },
+    residual: { tahap1: residual1, tahap2: residual2, kohort: residualKohort, nol: residual1 === 0 && residual2 === 0 && residualKohort === 0, terklasifikasiPenuh: !tidakTerklasifikasi },
     status: { kode: kodeStatus, label: LABEL_STATUS[kodeStatus] },
     tindakLanjut: [KUNCI.PAYMENT_MENUNGGU, KUNCI.KLAIM_TANPA_PAYMENT, KUNCI.PAYMENT_KURANG, KUNCI.TANPA_SALES, KUNCI.ONGKIR].map((k) => ({ kunci: k, label: TINDAKAN[k].label, kode: TINDAKAN[k].kode, nOrder: baris[k].length, jumlah: rp(Math.abs(total[k])) })).filter((t) => t.nOrder > 0),
   };
@@ -372,8 +448,8 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
     bridge: langkahBridge,
     kartuSelisih,
     residual,
-    tahap1, tahap2,
-    status: { perhitungan: residual1 === 0 && residual2 === 0 ? "COCOK" : "TIDAK_COCOK", perluDitinjau: tinjau1.length + tinjau2.length > 0 },
+    tahap1, tahap2, kohort,
+    status: { perhitungan: residual1 === 0 && residual2 === 0 && residualKohort === 0 ? "COCOK" : "TIDAK_COCOK", perluDitinjau: tinjau1.length + tinjau2.length > 0 },
     metrikKunci: { uangMasuk: "uang_masuk_terverifikasi", totalPerusahaan: "nilai_order_lunas_perusahaan", tim: "nilai_lunas_tim_sales", tanpaSales: "tanpa_atribusi_sales" },
     kartu: {
       uangMasukDariOrder: rp(M),
@@ -382,6 +458,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
       tanpaAtribusiSales: rp(total[KUNCI.TANPA_SALES]), jumlahOrderTanpaSales: baris[KUNCI.TANPA_SALES].length,
       totalPerusahaan: rp(totalPerusahaan),
       nilaiLunasSales: rp(kartuSales),
+      sudahLunasKohortDibuat: rp(nilaiA), jumlahOrderKohortDibuat: ordersA.length,
     },
     detailTersedia: denganDetail,
   };

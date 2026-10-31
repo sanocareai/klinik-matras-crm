@@ -16,6 +16,7 @@ import { postRevenueRecognition } from "../../src/services/finance/posting/order
 import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js";
 import { toMoney } from "../../src/services/finance/money.js";
 import { randomUUID } from "node:crypto";
+import { tolakPembayaran } from "../../src/services/finance/pembayaran.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -98,18 +99,29 @@ test("Berkas Pemasukan (semua kategori) = data layar: baris, urutan, nilai ANGKA
     assert.equal(x["Klasifikasi"], b.kategoriLabel);
     assert.equal(x["Tanggal"].toISOString().slice(0, 10), b.tanggal);
   });
-  assert.equal(s.total["Nilai (Rp)"], Number(layar.totalNilai), "total = total di layar (tanpa Dikecualikan/Ditolak/Dibatalkan)");
+  assert.equal(s.total["Nilai yang Dihitung (Rp)"], Number(layar.totalNilai), "total = total di layar (tanpa Dikecualikan/Ditolak/Dibatalkan)");
+  assert.equal(s.total["Nilai (Rp)"] ?? null, null, "TOTAL berada di kolom Nilai yang Dihitung, bukan di kolom Nilai historis");
   assert.match(s.kepala[1], /Periode: 1 Sep 2026 – 30 Sep 2026/);
   assert.match(s.kepala[2], /Filter: Kategori: \(semua\)/);
   assert.ok(s.header.includes("Nilai (Rp)") && s.header.includes("Pelanggan/Pembayar") && s.header.includes("Status Pembayaran"));
+  assert.ok(s.header.includes("Dihitung ke Total?") && s.header.includes("Nilai yang Dihitung (Rp)") && s.header.includes("Alasan Tidak Dihitung"), "kolom audit ada");
+  // SUM kolom "Nilai yang Dihitung" = TOTAL = layar (satu aturan), baris tak dihitung selalu punya alasan
+  const jumlahDihitung = s.baris.reduce((a, x) => a + (x["Nilai yang Dihitung (Rp)"] || 0), 0);
+  assert.equal(Math.round(jumlahDihitung * 100), Math.round(Number(layar.totalNilai) * 100), "SUM kolom baru = total layar");
+  s.baris.forEach((x, i) => {
+    if (x["Dihitung ke Total?"] === "Ya") { assert.equal(x["Nilai yang Dihitung (Rp)"], x["Nilai (Rp)"], `#${i} dihitung penuh`); assert.ok(!x["Alasan Tidak Dihitung"], `#${i} tanpa alasan`); }
+    else { assert.equal(x["Dihitung ke Total?"], "Tidak"); assert.equal(x["Nilai yang Dihitung (Rp)"], 0); assert.ok(x["Alasan Tidak Dihitung"], `#${i} alasan wajib`); }
+  });
+  assert.ok(s.baris.some((x) => /Transfer antar-rekening/.test(x["Alasan Tidak Dihitung"] || "")), "transfer dijelaskan");
 
   // total layar memang berbeda dari jumlah semua baris (transfer dikecualikan) — dan berkas menjelaskannya lewat rekap
   const jumlahSemua = s.baris.reduce((a, x) => a + (x["Nilai (Rp)"] || 0), 0);
-  assert.notEqual(jumlahSemua, s.total["Nilai (Rp)"]);
+  assert.notEqual(jumlahSemua, s.total["Nilai yang Dihitung (Rp)"]);
   const rekap = bacaSheet(r.wb, "Rekap Klasifikasi");
   const jumlahRekap = rekap.baris.filter((x) => typeof x["Jumlah Baris"] === "number").reduce((a, x) => a + x["Jumlah Baris"], 0);
   assert.equal(jumlahRekap, s.baris.length, "rekap mencakup semua baris");
-  assert.equal(Math.round(rekap.total["Nilai (Rp)"] * 100), Math.round(jumlahSemua * 100));
+  assert.equal(Math.round(rekap.total["Nilai Semua Baris (Rp)"] * 100), Math.round(jumlahSemua * 100));
+  assert.equal(Math.round(rekap.total["Nilai yang Dihitung (Rp)"] * 100), Math.round(jumlahDihitung * 100), "rekap: nilai dihitung = SUM kolom di sheet utama");
   assert.ok(rekap.baris.some((x) => x["Klasifikasi"] === "Dikecualikan"));
 
   // Pendapatan diakui membawa status pembayaran dari server; kolom bruto/retur terisi
@@ -137,7 +149,7 @@ test("Kategori & filter diikuti persis layar: Uang Masuk + status MENUNGGU, penc
     assert.equal(r.status, 200, JSON.stringify(filter));
     const s = bacaSheet(r.wb, "Pemasukan");
     assert.deepEqual(s.baris.map((x) => [x["Nomor"], x["Nilai (Rp)"]]), layar.items.map((b) => [b.nomor, Number(b.nilai)]), JSON.stringify(filter));
-    assert.equal(s.total["Nilai (Rp)"], Number(layar.totalNilai), JSON.stringify(filter));
+    assert.equal(s.total["Nilai yang Dihitung (Rp)"], Number(layar.totalNilai), JSON.stringify(filter));
     assert.ok(layar.items.length >= 1, `filter ${JSON.stringify(filter)} punya hasil`);
   }
   const menunggu = bacaSheet((await unduhExport(server.baseUrl, c.admin.token, "pemasukan", { periode, filter: { kategori: "PEMBAYARAN", status: "MENUNGGU" } })).wb, "Pemasukan");
@@ -185,4 +197,52 @@ test("Izin: tanpa login 401, SALES 403; FINANCE boleh (tidak ada kolom sensitif:
   const adm = await unduhExport(server.baseUrl, c.admin.token, "pemasukan", { periode });
   assert.deepEqual(bacaSheet(fin.wb, "Pemasukan").header, bacaSheet(adm.wb, "Pemasukan").header);
   assert.deepEqual(bacaSheet(fin.wb, "Pemasukan").baris, bacaSheet(adm.wb, "Pemasukan").baris);
+});
+
+test("DIHITUNG KE TOTAL (audit selisih Okt 2026): pembayaran dibatalkan (diganti) & ditolak tampil dengan alasan, TOTAL = SUM kolom Nilai yang Dihitung = layar; SUM mentah kolom Nilai lebih besar tepat sebesar baris tak dihitung", async () => {
+  const c = await siapkan();
+  const o = await buatOrder({ value: 1_000_000, nama: "Ibu Koreksi" });
+  await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: o.id, userId: c.admin.user.id, date: "2026-09-10" }));
+  const p1 = await bayar(c, o, { amount: 400_000, tanggal: new Date("2026-09-10T05:00:00Z"), verif: true });
+  const p2 = await bayar(c, o, { amount: 300_000, tanggal: new Date("2026-09-20T05:00:00Z"), verif: true });   // salah tanggal → dibatalkan lalu diganti p3
+  await testPrisma.payment.update({ where: { id: p2.id }, data: { cancelledAt: new Date("2026-09-22T05:00:00Z"), cancelReason: "Dikoreksi — salah tanggal" } });
+  const p3 = await bayar(c, o, { amount: 300_000, tanggal: new Date("2026-09-22T05:00:00Z"), verif: true });
+  const p4 = await bayar(c, o, { amount: 50_000, tanggal: new Date("2026-09-23T05:00:00Z"), verif: false });
+  await testPrisma.$transaction((tx) => tolakPembayaran(tx, { paymentId: p4.id, reason: "Salah input driver", userId: c.admin.user.id }));
+  await jurnal(c, { source: "TRANSFER_KAS", tanggal: "2026-09-16", desc: "Transfer ke kas", baris: [{ accountId: c.kas.accountId, cashAccountId: c.kas.id, debit: toMoney(2_000_000) }, { accountId: c.bankA.id, cashAccountId: c.bank.id, credit: toMoney(2_000_000) }] });
+
+  const layar = await layarSemua(c, "&kategori=PEMBAYARAN");
+  assert.equal(layar.items.length, 4);
+  assert.equal(layar.totalNilai, "700000.00", "layar: hanya p1 + p3");
+  const apiDaftar = (await c.a.get(`/api/finance/pemasukan?${PER}&kategori=PEMBAYARAN&limit=100`)).body;
+  assert.deepEqual(apiDaftar.totalTidakDihitung, { jumlah: 2, nilai: "350000.00" });
+  const barisApi = Object.fromEntries(apiDaftar.items.map((b) => [b.id, b]));
+  assert.equal(barisApi[p2.id].dihitung, false);
+  assert.match(barisApi[p2.id].alasanTidakDihitung, /dibatalkan/i);
+  assert.match(barisApi[p2.id].alasanTidakDihitung, /Dikoreksi — salah tanggal/);
+  assert.ok(barisApi[p2.id].alasanTidakDihitung.includes(p3.id.slice(0, 8)), "menunjuk pembayaran pengganti");
+  assert.equal(barisApi[p2.id].pengganti.id, p3.id);
+  assert.equal(barisApi[p4.id].dihitung, false);
+  assert.match(barisApi[p4.id].alasanTidakDihitung, /ditolak/i);
+  assert.equal(barisApi[p4.id].pengganti, null, "ditolak tanpa pengganti");
+  assert.equal(barisApi[p1.id].dihitung, true); assert.equal(barisApi[p1.id].nilaiDihitung, "400000.00"); assert.equal(barisApi[p1.id].alasanTidakDihitung, null);
+
+  const r = await unduhExport(server.baseUrl, c.admin.token, "pemasukan", { periode, filter: { kategori: "PEMBAYARAN" } });
+  const s = bacaSheet(r.wb, "Pemasukan");
+  assert.equal(s.baris.length, 4);
+  const sumNilai = s.baris.reduce((a, x) => a + x["Nilai (Rp)"], 0);
+  const sumDihitung = s.baris.reduce((a, x) => a + x["Nilai yang Dihitung (Rp)"], 0);
+  assert.equal(sumNilai, 1_050_000, "SUM mentah kolom Nilai memuat baris tak dihitung");
+  assert.equal(sumDihitung, 700_000, "SUM kolom Nilai yang Dihitung = TOTAL");
+  assert.equal(s.total["Nilai yang Dihitung (Rp)"], sumDihitung);
+  assert.equal(s.total["Nilai yang Dihitung (Rp)"], Number(layar.totalNilai));
+  assert.equal(sumNilai - sumDihitung, 350_000, "selisih = baris tak dihitung (dibatalkan 300.000 + ditolak 50.000)");
+  assert.deepEqual(s.baris.filter((x) => x["Dihitung ke Total?"] === "Tidak").map((x) => x["Nilai (Rp)"]).sort((a, b) => a - b), [50_000, 300_000]);
+  assert.match(String(s.baris.find((x) => x["Nilai (Rp)"] === 300_000 && x["Dihitung ke Total?"] === "Tidak")["Alasan Tidak Dihitung"]), /digantikan pembayaran/);
+
+  // rekap Klasifikasi: baris tak dihitung terlihat per klasifikasi
+  const rekap = bacaSheet(r.wb, "Rekap Klasifikasi");
+  assert.equal(rekap.total["Baris Tidak Dihitung"], 2);
+  assert.equal(rekap.total["Nilai yang Dihitung (Rp)"], 700_000);
+  assert.equal(rekap.total["Nilai Semua Baris (Rp)"], 1_050_000);
 });

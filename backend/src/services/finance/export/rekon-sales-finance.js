@@ -1,7 +1,7 @@
 // EXPORT EXCEL — REKONSILIASI SALES–FINANCE (kartu "Kenapa angka Finance dan Sales berbeda?"). Sumber data = services/finance/rekonSalesFinance.js: PAYLOAD YANG SAMA dengan kartu,
 // drill-down, dan panel Rekonsiliasi di layar (satu fungsi server). Sheet: Ringkasan (kartu + penyebab), Tindak Lanjut, Jembatan (dua tahap), Rincian Order (semua penyebab).
 import { PERMISSIONS as P } from "../../../middleware/authorize.js";
-import { rekonSalesFinance } from "../rekonSalesFinance.js";
+import { rekonSalesFinance, PENYEBAB } from "../rekonSalesFinance.js";
 import { rentangDariQuery } from "../../../routes/finance.js";
 import { labelPeriode } from "./excel.js";
 
@@ -27,16 +27,20 @@ async function ambil(db, { periode, filter, filterLabel }) {
     { uraian: `STATUS: ${k.status.label}`, jumlah: "", n: "", keterangan: k.residual.nol ? "Perhitungan cocok (residual Rp0)" : "Perhitungan TIDAK cocok" },
   ];
   const tindak = k.tindakLanjut.map((t) => ({ tindakan: t.label, order: t.nOrder, nilai: t.jumlah }));
-  const jembatan = [d.tahap1, d.tahap2].flatMap((t) => [
-    { tahap: `Tahap ${t.nomor}: ${t.judul}`, langkah: "", arah: "", order: "", jumlah: "", keterangan: "" },
+  const kohortSbg = { ...d.kohort, nomor: "Kohort", komponenLain: { daftar: [] } };
+  const jembatan = [kohortSbg, d.tahap1, d.tahap2].flatMap((t) => [
+    { tahap: t.nomor === "Kohort" ? `Jembatan kohort: ${t.judul}` : `Tahap ${t.nomor}: ${t.judul}`, langkah: "", arah: "", order: "", jumlah: "", keterangan: t.penjelasan ?? "" },
     ...t.langkah.map((b) => ({ tahap: "", langkah: b.label, arah: b.tanda === 0 ? "Awal/Hasil" : b.tanda * b.jumlah < 0 ? "Kurangi" : "Tambah", order: b.nOrder || 0, jumlah: b.tanda === 0 ? b.jumlah : Math.abs(b.jumlah), keterangan: b.keterangan })),
     ...(t.komponenLain.daftar.length ? [{ tahap: "", langkah: "Komponen lain (Rp0)", arah: "", order: 0, jumlah: 0, keterangan: t.komponenLain.daftar.join(" · ") }] : []),
     { tahap: "", langkah: t.pembanding.label, arah: "", order: "", jumlah: t.pembanding.jumlah, keterangan: `Residual ${t.residual} — ${t.status.perhitunganLabel}` },
   ]);
+  const labelPenyebab = (kunci) => d.bridge.find((b) => b.kunci === kunci)?.label ?? d.kohort.langkah.find((b) => b.kunci === kunci)?.label ?? kunci;
+  const rpTeks = (n) => `Rp${Math.round(Number(n) || 0).toLocaleString("id-ID")}`;
+  const dokumenPembayaran = (o) => (o.pembayaran ?? []).map((p) => [p.ref ?? String(p.id).slice(0, 8), p.tanggalWib ?? "", p.metode, rpTeks(p.nominal), p.rekening || "", p.nomorJurnal || "belum dijurnal"].filter((x) => x !== "").join(" · ")).join(" | ");
   const rincian = Object.entries(d.detail).flatMap(([kunci, arr]) => arr.map((o) => ({
-    penyebab: d.bridge.find((b) => b.kunci === kunci)?.label ?? kunci, nomor: o.nomor, pelanggan: o.pelanggan, sales: o.sales || "", nilaiJasa: o.nilaiJasa, ongkir: o.ongkir, totalTagihan: o.totalTagihan,
+    penyebab: labelPenyebab(kunci), nomor: o.nomor, tanggalDibuat: o.tanggalDibuat || "", dokumen: dokumenPembayaran(o), pelanggan: o.pelanggan, sales: o.sales || "", nilaiJasa: o.nilaiJasa, ongkir: o.ongkir, totalTagihan: o.totalTagihan,
     tercatat: o.paymentTercatat, terverifikasi: o.paymentTerverifikasi, kurangLebih: o.kurangLebih, tanggalBayar: o.tanggalBayar || "", tanggalLunas: o.tanggalLunas || "",
-    statusBayar: STATUS_BAYAR[o.statusBayar] ?? o.statusBayar, jumlah: o.jumlah, tindakan: o.tindakan?.label ?? "", catatan: o.alasan || "",
+    statusBayar: STATUS_BAYAR[o.statusBayar] ?? o.statusBayar, jumlah: o.jumlah, tindakan: o.tindakan?.label ?? "", catatan: o.alasan || (PENYEBAB[kunci] ?? ""),
   })));
 
   return {
@@ -60,6 +64,8 @@ async function ambil(db, { periode, filter, filterLabel }) {
         nama: "Rincian Order", judul: "Rincian Order per Penyebab",
         kolom: [
           { key: "penyebab", header: "Penyebab", tipe: "teks", lebar: 36 }, { key: "nomor", header: "No. Order", tipe: "teks", lebar: 20 }, { key: "pelanggan", header: "Pelanggan", tipe: "teks", lebar: 26 }, { key: "sales", header: "Sales", tipe: "teks" },
+          { key: "tanggalDibuat", header: "Tanggal Order Dibuat", tipe: "teks" },
+          { key: "dokumen", header: "Dokumen Pembayaran (ID · tanggal · metode · nominal · rekening · no. jurnal)", tipe: "teks", lebar: 80 },
           { key: "nilaiJasa", header: "Nilai Jasa (Rp)", tipe: "uang" }, { key: "ongkir", header: "Ongkir (Rp)", tipe: "uang" }, { key: "totalTagihan", header: "Total Tagihan (Rp)", tipe: "uang" },
           { key: "tercatat", header: "Payment Tercatat (Rp)", tipe: "uang" }, { key: "terverifikasi", header: "Payment Terverifikasi (Rp)", tipe: "uang" }, { key: "kurangLebih", header: "Kekurangan(−)/Kelebihan(+) (Rp)", tipe: "uang" },
           { key: "tanggalBayar", header: "Tanggal Pembayaran", tipe: "teks" }, { key: "tanggalLunas", header: "Tanggal Pelunasan", tipe: "teks" }, { key: "statusBayar", header: "Status Bayar", tipe: "teks" },
