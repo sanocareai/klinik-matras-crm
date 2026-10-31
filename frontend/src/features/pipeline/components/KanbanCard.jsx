@@ -2,21 +2,11 @@ import React from "react";
 import { MoreVertical, AlertTriangle, Clock } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu.jsx";
-import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, stageClass } from "@/utils/format.js";
+import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, stageClass, orderStatusChip } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
 
-// Nada warna status order — hijau hanya untuk yang benar-benar selesai
-// (DELIVERED), oranye untuk yang masih menunggu tindakan, merah untuk batal.
-// Sisanya accent (sedang berjalan) mengikuti aturan satu accent DS v2.
-const ORDER_STATUS_TONE = {
-  PENDING:    "bg-orangebg text-orange",
-  PICKUP:     "bg-accentbg text-accent",
-  PROCESSING: "bg-accentbg text-accent",
-  READY:      "bg-accentbg text-accent",
-  DELIVERED:  "bg-greenbg text-green",
-  CANCELLED:  "bg-redbg text-red",
-};
+// Warna status order di kartu = palet workflow Order (styles/order-palette.css) lewat orderStatusChip(); terpisah dari palet tahap.
 
 // Warna tahap: SATU sumber di styles/stage-palette.css (token --stage-*), dipilih lewat stageClass(stage) di utils/format.js.
 // STAGE_DOT / STAGE_GLOW lama (oranye/biru/hijau) dihapus — Fase Pipeline, 31 Okt 2026. Dipakai sebagai kelas "stage-dot" + stageClass().
@@ -167,8 +157,8 @@ export default function KanbanCard({
           {card.latestOrderMilestone && !card.latestOrderMilestone.legacy && <OrderMilestoneBadge milestone={card.latestOrderMilestone} showAhead={false} />}
           {card.latestOrderStatus && !(card.latestOrderMilestone && !card.latestOrderMilestone.legacy) && (
             <span className={cn(
-              "rounded-chip px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-              ORDER_STATUS_TONE[card.latestOrderStatus] || "bg-inset text-ink2"
+              "ord-chip inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+              orderStatusChip(card.latestOrderStatus)
             )}>
               {ORDER_STATUS_LABELS[card.latestOrderStatus] || card.latestOrderStatus}
             </span>

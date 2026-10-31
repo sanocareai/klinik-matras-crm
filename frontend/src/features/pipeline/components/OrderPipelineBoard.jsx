@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Hourglass } from "lucide-react";
 import { api } from "@/api.js";
 import { toApiParams } from "@/lib/dateRange.js";
-import { formatRupiah, ORDER_STATUS_LABELS, orderStatusVariant, PAYMENT_STATUS_LABELS, paymentStatusVariant } from "@/utils/format.js";
+import { formatRupiah, ORDER_STATUS_LABELS, orderStatusChip, PAYMENT_STATUS_LABELS, paymentChip } from "@/utils/format.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
@@ -49,7 +49,7 @@ function OrderCard({ o, onOpen }) {
         {o.orderNumber} · {KATEGORI[o.category] || o.category}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge variant={paymentStatusVariant(o.paymentStatus)}>{PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}</Badge>
+        <Badge variant={paymentChip(o.paymentStatus)}>{PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}</Badge>
         {o.assignedSalesName && <span className="truncate text-[11px] text-ink3">{o.assignedSalesName}</span>}
         {lamaMenunggu && (
           <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold text-orange" title={`Menunggu ${o.daysSince} hari tanpa perubahan`}>

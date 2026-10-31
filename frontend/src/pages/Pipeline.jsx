@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import {
   formatRupiah, formatRupiahShort, STAGE_LABELS, PIPELINE_STAGES,
-  stageVariant, stageClass, ORDER_STATUS_LABELS, orderStatusVariant,
+  stageVariant, stageClass, ORDER_STATUS_LABELS, orderStatusChip,
 } from "../utils/format.js";
 import { useCountUp } from "../hooks/useCountUp.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -129,7 +129,7 @@ function PipelineTableView({ rows, sortKey, sortDir, onSort, onOpenRow, onMoveTo
                   <TD>{r.assignedSales?.name || "—"}</TD>
                   <TD>
                     {r.latestOrderStatus
-                      ? <Badge variant={orderStatusVariant(r.latestOrderStatus)}>{ORDER_STATUS_LABELS[r.latestOrderStatus] || r.latestOrderStatus}</Badge>
+                      ? <Badge variant={orderStatusChip(r.latestOrderStatus)}>{ORDER_STATUS_LABELS[r.latestOrderStatus] || r.latestOrderStatus}</Badge>
                       : "—"}
                   </TD>
                   <TD numeric>

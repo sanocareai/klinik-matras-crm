@@ -25,7 +25,7 @@ export default function ReadinessBadge({ order, className }) {
 
   return (
     <Badge
-      variant={meta.tone}
+      variant={hasil.state === READINESS.READY ? "ord-ok" : "ord-perhatian"}
       className={className}
       title={
         hasil.state === READINESS.READY

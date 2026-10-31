@@ -1,0 +1,60 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PALET WORKFLOW ORDER & PEMBAYARAN — Sales CRM (Fase Order, 31 Okt 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   TERPISAH dari palet tahap pipeline (stage-palette.css): maknanya berbeda (progres pengerjaan/pengiriman dan status
+   uang vs tahap penjualan). Agar tidak tertukar secara visual:
+     · chip workflow Order = latar netral + TITIK berwarna menurut tahap kerja (Pengambilan → Diproses → Siap Kirim →
+       Pengiriman → Terkirim); hanya kondisi yang perlu perhatian yang berlatar warna: Menunggu = amber, Dibatalkan = merah;
+       Terkirim/Sewa Diambil = hijau lembut (selesai).
+     · chip pembayaran = latar berwarna: Belum Bayar merah, DP amber, Lunas hijau.
+   Dipakai lewat Badge variant "ord-*" / "pay-*" (components/ui/badge.jsx) dari orderStatusChip()/paymentChip() di
+   utils/format.js, titik kolom/progres lewat kelas `ord-*` atau atribut data-ord. Palet lama (ORDER_STATUS_VARIANT /
+   PAYMENT_STATUS_VARIANT) TIDAK diubah — masih dipakai Delivery, Produksi, dan modul lain.
+   Kontras teks chip ≥ 4,5:1 di terang dan gelap (dicek tests/orderPalette.test.js). */
+
+:root {
+  --ord-neutral-bg: #EEF1FB;  --ord-neutral-fg: #25264A;
+  --ord-pending-bg: #FFF0C2;  --ord-pending-fg: #6E4300;   --ord-pending-dot: #E59A00;  --ord-pending-field: #FFF7E3;
+  --ord-pickup-dot: #1AA7C7;      --ord-pickup-field: #E8F7FB;
+  --ord-processing-dot: #0E9F8E;  --ord-processing-field: #E6F6F3;
+  --ord-ready-dot: #6BB52C;       --ord-ready-field: #F0F8E6;
+  --ord-shipping-dot: #3B82F6;    --ord-shipping-field: #EAF1FF;
+  --ord-delivered-bg: #DDF6E5; --ord-delivered-fg: #11663A; --ord-delivered-dot: #1FA663; --ord-delivered-field: #EAF8EF;
+  --ord-cancelled-bg: #FFE4E1; --ord-cancelled-fg: #A3170E; --ord-cancelled-dot: #D92D20; --ord-cancelled-field: #FDEEEC;
+  --pay-belum-bg: #FFE4E1; --pay-belum-fg: #A3170E; --pay-belum-dot: #D92D20;
+  --pay-dp-bg: #FFF0C2;    --pay-dp-fg: #6E4300;    --pay-dp-dot: #E59A00;
+  --pay-lunas-bg: #DDF6E5; --pay-lunas-fg: #11663A; --pay-lunas-dot: #1FA663;
+}
+:root[data-theme="dark"] {
+  --ord-neutral-bg: rgba(153, 183, 252, 0.12);  --ord-neutral-fg: #E1E4F8;
+  --ord-pending-bg: rgba(255, 196, 61, 0.18);   --ord-pending-fg: #FFD97A;   --ord-pending-dot: #FFC43D;  --ord-pending-field: rgba(255, 196, 61, 0.09);
+  --ord-pickup-dot: #4CC9E6;      --ord-pickup-field: rgba(76, 201, 230, 0.09);
+  --ord-processing-dot: #3FD1BF;  --ord-processing-field: rgba(63, 209, 191, 0.09);
+  --ord-ready-dot: #9BDB5A;       --ord-ready-field: rgba(155, 219, 90, 0.09);
+  --ord-shipping-dot: #7CA9FF;    --ord-shipping-field: rgba(124, 169, 255, 0.10);
+  --ord-delivered-bg: rgba(60, 200, 120, 0.18); --ord-delivered-fg: #9BE8BC;  --ord-delivered-dot: #4FD18C; --ord-delivered-field: rgba(60, 200, 120, 0.09);
+  --ord-cancelled-bg: rgba(255, 99, 82, 0.16);  --ord-cancelled-fg: #FFB4A8;  --ord-cancelled-dot: #FF7A6B; --ord-cancelled-field: rgba(255, 99, 82, 0.08);
+  --pay-belum-bg: rgba(255, 99, 82, 0.16); --pay-belum-fg: #FFB4A8; --pay-belum-dot: #FF7A6B;
+  --pay-dp-bg: rgba(255, 196, 61, 0.18);   --pay-dp-fg: #FFD97A;    --pay-dp-dot: #FFC43D;
+  --pay-lunas-bg: rgba(60, 200, 120, 0.18); --pay-lunas-fg: #9BE8BC; --pay-lunas-dot: #4FD18C;
+}
+
+/* Pemetaan kunci → token. Kelas (chip/titik) atau atribut data-ord (kolom papan). Status berlatar netral memakai netral. */
+.ord-neutral { --ord-bg: var(--ord-neutral-bg); --ord-fg: var(--ord-neutral-fg); --ord-dot: var(--text-tertiary, #5E6079); --ord-field: var(--ord-neutral-bg); }
+.ord-pending, [data-ord="PENDING"]       { --ord-bg: var(--ord-pending-bg);   --ord-fg: var(--ord-pending-fg);   --ord-dot: var(--ord-pending-dot);   --ord-field: var(--ord-pending-field); }
+.ord-pickup, [data-ord="PICKUP"]         { --ord-bg: var(--ord-neutral-bg);   --ord-fg: var(--ord-neutral-fg);   --ord-dot: var(--ord-pickup-dot);    --ord-field: var(--ord-pickup-field); }
+.ord-processing, [data-ord="PROCESSING"] { --ord-bg: var(--ord-neutral-bg);   --ord-fg: var(--ord-neutral-fg);   --ord-dot: var(--ord-processing-dot); --ord-field: var(--ord-processing-field); }
+.ord-ready, [data-ord="READY"]           { --ord-bg: var(--ord-neutral-bg);   --ord-fg: var(--ord-neutral-fg);   --ord-dot: var(--ord-ready-dot);     --ord-field: var(--ord-ready-field); }
+.ord-shipping, [data-ord="SHIPPING"], [data-ord="SEWA_DIKIRIM"] { --ord-bg: var(--ord-neutral-bg); --ord-fg: var(--ord-neutral-fg); --ord-dot: var(--ord-shipping-dot); --ord-field: var(--ord-shipping-field); }
+.ord-delivered, [data-ord="DELIVERED"], [data-ord="SEWA_DIAMBIL"] { --ord-bg: var(--ord-delivered-bg); --ord-fg: var(--ord-delivered-fg); --ord-dot: var(--ord-delivered-dot); --ord-field: var(--ord-delivered-field); }
+.ord-cancelled, [data-ord="CANCELLED"]   { --ord-bg: var(--ord-cancelled-bg); --ord-fg: var(--ord-cancelled-fg); --ord-dot: var(--ord-cancelled-dot); --ord-field: var(--ord-cancelled-field); }
+.ord-ok { --ord-bg: var(--ord-delivered-bg); --ord-fg: var(--ord-delivered-fg); --ord-dot: var(--ord-delivered-dot); }          /* kelengkapan data: Lengkap */
+.ord-perhatian { --ord-bg: var(--ord-cancelled-bg); --ord-fg: var(--ord-cancelled-fg); --ord-dot: var(--ord-cancelled-dot); } /* kondisi perlu perhatian: Wajib Dilengkapi */
+.pay-belum { --ord-bg: var(--pay-belum-bg); --ord-fg: var(--pay-belum-fg); --ord-dot: var(--pay-belum-dot); }
+.pay-dp    { --ord-bg: var(--pay-dp-bg);    --ord-fg: var(--pay-dp-fg);    --ord-dot: var(--pay-dp-dot); }
+.pay-lunas { --ord-bg: var(--pay-lunas-bg); --ord-fg: var(--pay-lunas-fg); --ord-dot: var(--pay-lunas-dot); }
+
+.ord-chip { background: var(--ord-bg); color: var(--ord-fg); }
+.ord-chip::before { content: ""; width: 7px; height: 7px; flex: 0 0 7px; border-radius: 999px; background: var(--ord-dot); }
+.ord-dot { background: var(--ord-dot); }
+.ord-field { background: var(--ord-field); }

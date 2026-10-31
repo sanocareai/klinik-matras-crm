@@ -1,0 +1,153 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS SALES CRM — HALAMAN ORDER (Fase Order, 31 Okt 2026, acuan: SANSS-Konsep-Order.png)
+   ═══════════════════════════════════════════════════════════════════════════
+   Visual saja. Data, endpoint, aturan transisi status, hak akses, dropdown, tindakan kartu, ekspor, dan tujuan klik tidak
+   diubah. Semua aturan di bawah `:root .app-shell.crm-skin .crm-ord` (halaman Order + tema Sales CRM). Warna workflow Order
+   dan pembayaran dari palet SENDIRI (styles/order-palette.css: --ord-*, --pay-*); warna tahap pipeline dari stage-palette.css.
+   Tanpa font-family/@import: tetap Manrope (--font-ui). */
+
+/* ── 1. RUANG & JUDUL ───────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-ord { max-width: none; padding-inline: 24px; padding-bottom: 24px; }
+:root .app-shell.crm-skin .crm-ord .page-title { font-size: 32px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; }
+:root .app-shell.crm-skin .crm-ord .page-subtitle { margin-top: 4px; font-size: 15px; color: var(--text-secondary); }
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin .crm-ord { padding-inline: 16px; padding-bottom: 16px; }
+  :root .app-shell.crm-skin .crm-ord .page-title { font-size: 26px; }
+}
+
+/* ── 2. TOOLBAR ─────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-ord .crm-ord-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-cari-wadah { flex: 1 1 300px; min-width: 240px; order: 1; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-cari { width: 100%; height: 40px; border-radius: 12px; background: var(--crm-panel); box-shadow: var(--crm-shadow); font-size: 14px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter,
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain { padding: 10px 12px; border-radius: 14px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-grup-aksi { display: flex; align-items: center; gap: 8px; margin-left: auto; order: 2; }
+/* Baris 1 = pencarian + Papan/Tabel/Refresh/Export; baris 2 = tanggal + filter utama (toolbar dua baris, bukan tiga). */
+:root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter { order: 3; flex: 1 1 100%; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter > button,
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain > button,
+:root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter .date-range-picker-trigger,
+:root .app-shell.crm-skin .crm-ord .crm-ord-refresh,
+:root .app-shell.crm-skin .crm-ord .crm-ord-export {
+  height: 40px; padding-inline: 14px; border: 0; border-radius: 12px; background: var(--crm-panel); color: var(--text-primary);
+  box-shadow: var(--crm-shadow); font-weight: 600;
+}
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain > button { background: var(--bg-inset); box-shadow: none; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter > button[class*="bg-accentbg"],
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain > button[class*="bg-accentbg"],
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain-tombol.crm-ord-aktif { background: var(--crm-soft); color: var(--crm-primary-ink); box-shadow: inset 0 0 0 1.5px var(--crm-primary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain-tombol { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-mandek[class*="bg-accent"] { height: 40px; border-radius: 12px; font-weight: 700; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-segmen { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-segmen > button {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding-inline: 14px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+:root .app-shell.crm-skin .crm-ord .crm-ord-segmen > button:hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-segmen > button[aria-pressed="true"] { background: var(--crm-primary); color: #FFFFFF; }
+
+/* ── 3. KPI PRIORITAS ───────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi-baris { display: flex; align-items: stretch; gap: 12px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi-grid { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi {
+  --kpi-bg: var(--crm-soft); --kpi-tile: var(--crm-primary);
+  display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 18px; background: var(--kpi-bg);
+}
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="nilai"]  { --kpi-bg: #E6F0FF; --kpi-tile: #2F6FD6; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="belum"]  { --kpi-bg: #FFF1CF; --kpi-tile: #B45309; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="mandek"] { --kpi-bg: #FFE6E2; --kpi-tile: #D92D20; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="aman"]   { --kpi-bg: #E3F6EA; --kpi-tile: #1B8F4E; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-kpi { --kpi-bg: rgba(110, 142, 255, 0.14); }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="nilai"]  { --kpi-bg: rgba(76, 150, 255, 0.14); }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="belum"]  { --kpi-bg: rgba(255, 196, 61, 0.13); }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="mandek"] { --kpi-bg: rgba(255, 99, 82, 0.14); }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-kpi[data-tone="aman"]   { --kpi-bg: rgba(60, 200, 120, 0.12); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi-ikon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 14px; background: var(--kpi-tile); color: #FFFFFF; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi-label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi-nilai { margin: 2px 0 0; font-size: 24px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kpi-cakupan { margin: 3px 0 0; font-size: 11.5px; line-height: 1.3; color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-metrik-tombol {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; align-self: center; height: 40px; padding-inline: 14px; border: 0; border-radius: 12px;
+  background: var(--crm-panel); color: var(--text-primary); box-shadow: var(--crm-shadow); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+:root .app-shell.crm-skin .crm-ord .crm-ord-metrik-lain { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; padding: 14px; border-radius: 18px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-metrik-label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-metrik-nilai { margin: 2px 0 0; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-info { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-info svg { margin-top: 2px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-info-detail { padding: 10px 14px; border-radius: 14px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+
+/* ── 4. PAPAN: kolom rounded berbidang warna lembut (pola Pipeline) ─────── */
+:root .app-shell.crm-skin .crm-ord .crm-ord-papan { gap: 16px; padding-top: 4px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kolom { background: var(--ord-field); border-radius: 22px; padding: 14px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ord-dot) 16%, transparent); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-ikon-kolom {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 12px;
+  background: color-mix(in srgb, var(--ord-dot) 20%, var(--crm-panel)); color: color-mix(in srgb, var(--ord-dot) 62%, #1B1B39);
+}
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-ikon-kolom { color: var(--ord-dot); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-nama-kolom { font-size: 16px; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-hitung { background: var(--crm-panel); color: var(--text-primary); min-width: 28px; text-align: center; }
+
+/* Kartu */
+:root .app-shell.crm-skin .crm-ord .crm-ord-kartu { background: var(--crm-panel); border: 0; border-radius: 16px; box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kartu:hover { box-shadow: var(--crm-shadow-pop); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kartu p { margin-bottom: 0; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kartu-mandek { box-shadow: var(--crm-shadow), inset 0 0 0 1.5px color-mix(in srgb, #E59A00 55%, transparent); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kelengkapan:empty { display: none; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-buka-lagi { background: var(--ord-pending-bg); border: 0; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-buka-lagi p,
+:root .app-shell.crm-skin .crm-ord .crm-ord-buka-lagi button { color: var(--ord-pending-fg); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-id { color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-baris { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-label { flex: 0 0 68px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em; color: var(--text-secondary); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-nilai-baris { flex: 1 1 auto; min-width: 0; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-progres { display: flex; gap: 4px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-progres-ruas { flex: 1 1 0; height: 5px; border-radius: 999px; background: var(--bg-inset); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-progres-isi { background: var(--crm-primary); }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-ord .crm-ord-progres-isi { background: var(--accent); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kartu-mandek .crm-ord-progres-isi { background: #E59A00; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-lama { margin-top: 6px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kaki { border-top-color: var(--hairline, rgba(27, 27, 57, 0.08)); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-aksi { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-kosong { border: 2px dashed color-mix(in srgb, var(--ord-dot) 50%, transparent); background: color-mix(in srgb, var(--crm-panel) 55%, transparent); color: var(--text-secondary); }
+
+/* ── 5. TABEL ───────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-ord .crm-ord-tabel { border-radius: 20px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-ord .crm-ord-tabel thead th { background: var(--bg-inset); color: var(--text-secondary); border-bottom: 0; font-size: 12px; font-weight: 700; padding-block: 14px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-tabel tbody td { padding-block: 12px; }
+:root .app-shell.crm-skin .crm-ord .crm-ord-tabel tbody tr:hover { background: var(--bg-hover); }
+
+/* ── 6. LAYAR SEDANG & HP ───────────────────────────────────────────────── */
+@media (max-width: 1280px) {
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  /* Toolbar HP diringkas agar papan cepat terlihat: pencarian selalu terlihat (baris penuh); baris filter menggeser ke samping
+     (tanpa bilah gulir); baris aksi = Papan/Tabel + Refresh + Export (ikon berlabel aksesibel). Area sentuh 44px, teks tidak dikecilkan. */
+  :root .app-shell.crm-skin .crm-ord .crm-ord-toolbar { gap: 8px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-cari-wadah { flex: 1 1 100%; min-width: 0; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-cari { height: 44px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter {
+    flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; padding-bottom: 4px; scrollbar-width: none;
+  }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter::-webkit-scrollbar { display: none; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter > *,
+  :root .app-shell.crm-skin .crm-ord .crm-ord-grup-filter > button { flex-shrink: 0; height: 44px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-mandek { height: 44px !important; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-grup-aksi { flex: 1 1 100%; margin-left: 0; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-segmen { flex: 1 1 auto; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-segmen > button { flex: 1 1 0; justify-content: center; height: 36px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-refresh,
+  :root .app-shell.crm-skin .crm-ord .crm-ord-export { width: 44px; height: 44px !important; padding: 0; flex: 0 0 44px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-refresh-teks,
+  :root .app-shell.crm-skin .crm-ord .crm-ord-export-teks { display: none; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-filter-lain > * { flex: 1 1 100%; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kpi-baris { flex-direction: column; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kpi-grid { gap: 8px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kpi { flex-direction: column; gap: 8px; padding: 12px; border-radius: 16px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kpi-ikon { width: 36px; height: 36px; border-radius: 12px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kpi-nilai { font-size: 17px; letter-spacing: -0.02em; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-metrik-tombol { width: 100%; justify-content: center; height: 44px; }
+  :root .app-shell.crm-skin .crm-ord .crm-ord-kolom { min-width: min(300px, 82vw); }
+}

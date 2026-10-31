@@ -290,6 +290,19 @@ export const stageClass = (s) => STAGE_VARIANT[s] || "stage-spam";
 /** Warna titik/bar tahap sebagai var() CSS (untuk style inline, mis. grafik): var(--stage-new-dot) … */
 export const stageDotVar = (s) => `var(--${STAGE_VARIANT[s] || "stage-spam"}-dot)`;
 
+// ── PALET WORKFLOW ORDER & PEMBAYARAN Sales CRM (Fase Order, 31 Okt 2026) — SATU sumber, TERPISAH dari palet tahap ──
+// Token di styles/order-palette.css. Dipakai Orders, kartu Pipeline, Pelanggan, Inbox (Sales CRM). ORDER_STATUS_VARIANT /
+// PAYMENT_STATUS_VARIANT (di bawah) TIDAK diubah: masih dipakai Delivery, Produksi, dan modul lain.
+export const ORDER_CHIP = {
+  PENDING: "ord-pending", PICKUP: "ord-pickup", PROCESSING: "ord-processing", READY: "ord-ready", SHIPPING: "ord-shipping",
+  DELIVERED: "ord-delivered", CANCELLED: "ord-cancelled", SEWA_DIKIRIM: "ord-shipping", SEWA_DIAMBIL: "ord-delivered",
+};
+export const PAYMENT_CHIP = { BELUM_BAYAR: "pay-belum", DP: "pay-dp", LUNAS: "pay-lunas" };
+/** Variant Badge / kelas token untuk status workflow order ("ord-pending" …); tak dikenal → netral. */
+export const orderStatusChip = (s) => ORDER_CHIP[s] || "ord-neutral";
+/** Variant Badge / kelas token untuk status pembayaran ("pay-lunas" …); tak dikenal → netral. */
+export const paymentChip = (s) => PAYMENT_CHIP[s] || "ord-neutral";
+
 export const CONV_STATUS_LABELS = {
   OPEN:     "Terbuka",
   PENDING:  "Pending",

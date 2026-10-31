@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AlertTriangle, Plus, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { formatRupiah, orderStatusVariant, paymentStatusVariant, PAYMENT_STATUS_LABELS, nilaiBersihOrder } from "@/utils/format.js";
+import { formatRupiah, orderStatusChip, paymentChip, PAYMENT_STATUS_LABELS, nilaiBersihOrder } from "@/utils/format.js";
 import { statusLabel, productSummary, formatTanggalPendek } from "./orderSummary.js";
 import BuatResiModal from "@/features/resi/BuatResiModal.jsx";
 import { useResiAktif } from "@/features/resi/useResiAktif.js";
@@ -59,8 +59,8 @@ export default function OrderHistoryList({ customer, onOpenOrder, onCreateOrder,
             </span>
             <span className="truncate text-[12px] text-ink2">{productSummary(o)}</span>
             <span className="flex flex-wrap items-center gap-1.5">
-              <Badge variant={orderStatusVariant(o.status)}>{statusLabel(o.status)}</Badge>
-              <Badge variant={paymentStatusVariant(o.paymentStatus)}>
+              <Badge variant={orderStatusChip(o.status)}>{statusLabel(o.status)}</Badge>
+              <Badge variant={paymentChip(o.paymentStatus)}>
                 {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
               </Badge>
               {formatTanggalPendek(o.createdAt) && (

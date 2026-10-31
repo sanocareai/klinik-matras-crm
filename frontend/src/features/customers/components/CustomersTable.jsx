@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table.jsx";
 import {
   formatRupiah, formatPhoneDisplay, STAGE_LABELS, ORDER_STATUS_LABELS, SOURCE_LABELS,
-  stageVariant, orderStatusVariant, healthVariant, tagClass, isVIP,
+  stageVariant, orderStatusChip, healthVariant, tagClass, isVIP,
 } from "@/utils/format.js";
 import { kolomTampil, LEBAR_KOLOM, lebarMinTabel } from "@/features/customers/columns.js";
 
@@ -141,7 +141,7 @@ export default function CustomersTable({
         return (
           <TD key={k}>
             {c.latestOrderStatus ? (
-              <Badge variant={orderStatusVariant(c.latestOrderStatus)}>
+              <Badge variant={orderStatusChip(c.latestOrderStatus)}>
                 {ORDER_STATUS_LABELS[c.latestOrderStatus] || c.latestOrderStatus}
               </Badge>
             ) : <span className="text-ink3">—</span>}

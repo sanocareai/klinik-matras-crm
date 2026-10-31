@@ -4,13 +4,15 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
   AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch, Loader2, Truck, RotateCcw,
+  PackageOpen, Settings2, PackageCheck, CheckCircle2, XCircle, Undo2, ClipboardList, FileClock, SlidersHorizontal, ChevronDown, BarChart3, Info,
 } from "lucide-react";
 import { api } from "../api.js";
 import { Card } from "@/components/ui/card.jsx";
-import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
+import { OrderMilestoneBadge, orderMilestoneText } from "@/components/OrderMilestoneBadge.jsx";
+import { milestoneRedundan } from "@/features/orders/milestoneLogic.js";
 import { formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
-  PIPELINE_STAGES, STAGE_LABELS, stageVariant,
+  PIPELINE_STAGES, STAGE_LABELS, stageVariant, orderStatusChip, paymentChip,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS, nilaiBersihOrder, notaKreditOrder } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
@@ -73,16 +75,12 @@ import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 const ALUR = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED"];
 const SEMUA_STATUS = [...ALUR, "CANCELLED"];
 
-const STATUS_TONE = {
-  PENDING:    { chip: "bg-orangebg text-orange", dot: "bg-orange" },
-  PICKUP:     { chip: "bg-accentbg text-accent", dot: "bg-accent" },
-  PROCESSING: { chip: "bg-accentbg text-accent", dot: "bg-accent" },
-  READY:      { chip: "bg-accentbg text-accent", dot: "bg-accent" },
-  SHIPPING:   { chip: "bg-accentbg text-accent", dot: "bg-accent" },
-  DELIVERED:  { chip: "bg-greenbg text-green",   dot: "bg-green" },
-  CANCELLED:  { chip: "bg-redbg text-red",       dot: "bg-red" },
-  SEWA_DIKIRIM: { chip: "bg-accentbg text-accent", dot: "bg-accent" },
-  SEWA_DIAMBIL: { chip: "bg-greenbg text-green",   dot: "bg-green" },
+// Warna status order & pembayaran = palet workflow Order (styles/order-palette.css) lewat orderStatusChip()/paymentChip() di
+// utils/format.js — TERPISAH dari palet tahap pipeline. STATUS_TONE / PAYMENT_TONE lokal (oranye/biru/hijau) dihapus.
+// Ikon header kolom papan (tampilan saja).
+const IKON_KOLOM = {
+  PICKUP: PackageOpen, PROCESSING: Settings2, READY: PackageCheck, SHIPPING: Truck, DELIVERED: CheckCircle2,
+  CANCELLED: XCircle, SEWA_DIKIRIM: Truck, SEWA_DIAMBIL: Undo2,
 };
 
 // Kanban ringkas (4 Sep 2026, laporan owner — lihat ORDER_STATUS_BUCKET di
@@ -235,7 +233,7 @@ function StatusSelect({ order, onChange, className }) {
       // (lihat orderStatusesForCategory di utils/format.js). Sebelumnya
       // dropdown ini SELALU menawarkan 6 status lama tanpa peduli kategori.
       options={orderStatusesForCategory(order.category).map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
-      getChipClass={(v) => (STATUS_TONE[v] || { chip: "bg-inset text-ink2" }).chip}
+      getChipClass={(v) => badgeVariants({ variant: orderStatusChip(v) })}
       locked={!!order.statusLocked}
       lockedTitle="Status di-override manual — ikut hitungan otomatis lagi lewat drawer profil pelanggan"
       title="Status dihitung otomatis dari unit"
@@ -272,11 +270,6 @@ function PipelineStageSelect({ order, onChange, className }) {
 // di sini, pola SAMA dengan StatusSelect/PipelineStageSelect di atas —
 // refetch penuh via `load()` setelah berhasil, jadi badge yang sama langsung
 // menampilkan nilai baru, bukan menunggu navigasi ulang.
-const PAYMENT_TONE = {
-  BELUM_BAYAR: "bg-redbg text-red",
-  DP:          "bg-orangebg text-orange",
-  LUNAS:       "bg-greenbg text-green",
-};
 function PaymentStatusSelect({ order, onChange, className, locked }) {
   const gateAktif = useKlaimLunasAktif() === true;
   return (
@@ -284,7 +277,7 @@ function PaymentStatusSelect({ order, onChange, className, locked }) {
       value={order.paymentStatus || "BELUM_BAYAR"}
       onChange={(v) => onChange(order, v)}
       options={opsiStatusBayar(PAYMENT_STATUSES, order.paymentStatus, isAdminUser(currentUser()), gateAktif).map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
-      getChipClass={(v) => PAYMENT_TONE[v]}
+      getChipClass={(v) => badgeVariants({ variant: paymentChip(v) })}
       disabled={locked}
       title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa ubah pembayaran" : undefined}
       ariaLabel={`Ubah status pembayaran untuk ${order.customerName || "pelanggan"}`}
@@ -307,96 +300,109 @@ function bolehDibukaLagiUntukPengiriman(order) {
   return order.status === "DELIVERED" && order.category !== "SEWA" && !order.deliveryJob;
 }
 
+// Fase Order (31 Okt 2026): kartu disusun ulang — nama pelanggan dominan, ID order, nilai, lalu baris BERLABEL yang memisahkan
+// lima hal berbeda: status order (workflow), pembayaran, pipeline (tahap penjualan), milestone/status unit (posisi fisik), dan
+// jadwal logistik (job Ambil/Kirim). Semua dropdown, tindakan, dan tujuan klik lama dipertahankan.
+const URUTAN_PROGRES = ["PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED"];
+// Posisi tahap kerja (tampilan saja, bukan aturan transisi): { langkah, total, label } atau null (Dibatalkan).
+function progresOrder(order) {
+  if (order.status === "CANCELLED") return null;
+  if (order.category === "SEWA") {
+    const sudahDiambil = order.status === "SEWA_DIAMBIL";
+    return { langkah: sudahDiambil ? 2 : 1, total: 2, label: ORDER_STATUS_LABELS[sudahDiambil ? "SEWA_DIAMBIL" : "SEWA_DIKIRIM"] };
+  }
+  if (order.status === "PENDING") return { langkah: 0, total: URUTAN_PROGRES.length, label: ORDER_STATUS_BUCKET_LABELS.PENDING };
+  const i = URUTAN_PROGRES.indexOf(kanbanBucket(order.status));
+  return { langkah: i + 1, total: URUTAN_PROGRES.length, label: ORDER_STATUS_BUCKET_LABELS[URUTAN_PROGRES[i]] || ORDER_STATUS_LABELS[order.status] };
+}
+
+function BarisLabel({ label, children, className }) {
+  return (
+    <div className={cn("crm-ord-baris", className)}>
+      <span className="crm-ord-label">{label}</span>
+      <div className="crm-ord-nilai-baris">{children}</div>
+    </div>
+  );
+}
+
 function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked, onReopenForDelivery, reopeningId, onBukaUnit }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
-  // D-030 (revisi 20 Agustus 2026): SELURUH kartu bisa diklik untuk buka
-  // rincian pesanan (dulu cuma ikon jam kecil di pojok, gampang kelewat —
-  // pola sekarang mengikuti kebiasaan tracking paket marketplace: klik
-  // order apa pun langsung masuk detail). Kontrol interaktif di dalam kartu
-  // (select status/pipeline/pembayaran, tombol chat) sudah/perlu
-  // stopPropagation supaya tidak ikut memicu buka drawer saat dipakai.
+  const progres = progresOrder(order);
+  const tampilMilestone = !!orderMilestoneText(order.milestone) && !milestoneRedundan(order, order.milestone);
+  // D-030 (revisi 20 Agustus 2026): SELURUH kartu bisa diklik untuk buka rincian pesanan. Kontrol interaktif di dalam kartu
+  // (select status/pipeline/pembayaran, tombol chat) memakai stopPropagation supaya tidak ikut memicu buka drawer.
   return (
     <div
-      onClick={() => onOpenTimeline(order)}
-      className="cursor-pointer rounded-xl bg-surface p-2.5 shadow-card transition-shadow duration-150 hover:shadow-popover"
+      onClick={(e) => { if (!e.currentTarget.contains(e.target)) return; onOpenTimeline(order); }}
+      className={cn("crm-ord-kartu cursor-pointer rounded-xl bg-surface p-3 shadow-card transition-shadow duration-150 hover:shadow-popover", mandek && "crm-ord-kartu-mandek")}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         <Avatar name={nama} src={order.profilePictureUrl} size="sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold leading-tight text-ink">{nama}</p>
-          {order.penjualanKaryawan && order.customerPhone && <p className="mt-0.5 truncate text-[10.5px] tabular-nums text-ink3" data-testid="hp-customer-pkr">{order.customerPhone}</p>}
-          <p className="mt-0.5 truncate font-mono text-[10px] text-ink3">
+          <p className="crm-ord-nama truncate text-[14px] font-bold leading-tight text-ink" title={nama}>{nama}</p>
+          {order.penjualanKaryawan && order.customerPhone && <p className="mt-0.5 truncate text-[11px] tabular-nums text-ink3" data-testid="hp-customer-pkr">{order.customerPhone}</p>}
+          <p className="crm-ord-id mt-0.5 truncate font-mono text-[11.5px] text-ink3" title={order.orderNumber || "tanpa ID"}>
             {order.orderNumber || "tanpa ID"}
           </p>
           {order.staffSeller && <p className="mt-0.5 truncate text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {order.staffSeller.name}</p>}
           <SumberPkr pkr={order.penjualanKaryawan} mode="chip" className="mt-0.5" />
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {order.penjualanKaryawan ? <BadgeBayarPkr pkr={order.penjualanKaryawan} /> : <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />}
-          <ReadinessBadge order={order} />
-        </div>
       </div>
 
-      {/* BUG YANG DIPERBAIKI (26 Agustus 2026): dua select ini dulu SEJAJAR
-          (flex-1 + flex-1), memaksa lebar SAMA RATA berapa pun panjang
-          labelnya — di kartu selebar 272px itu cuma ~123px per select. Label
-          pipeline sudah lebih panjang dari label status ("Scheduled /
-          Transaksi", "Already Reviewed") dan native <select> TIDAK
-          menampilkan ellipsis atau tooltip saat teksnya kepotong, jadi
-          teksnya benar-benar hilang tanpa jejak. Ditumpuk VERTIKAL supaya
-          tiap select dapat lebar PENUH kartu (~246px) — aman untuk label
-          sepanjang apa pun yang realistis, tidak perlu hitung ulang kalau
-          ada label baru lagi nanti. */}
-      {punyaUnitPkr(order) && <DaftarUnitPkr pkr={order.penjualanKaryawan} onBuka={onBukaUnit} className="mt-2" />}
-      <div className="mt-2 flex flex-col gap-1.5">
-        <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
-        <OrderMilestoneBadge milestone={order.milestone} order={order} />
-        <PipelineStageSelect order={order} onChange={onStageChange} className="w-full" />
-      </div>
+      {/* Kelengkapan data (indikator Lengkap / Wajib Dilengkapi) di baris sendiri supaya nama pelanggan tidak terpotong. */}
+      <div className="crm-ord-kelengkapan mt-2"><ReadinessBadge order={order} /></div>
 
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[13px] font-bold tabular-nums text-ink">
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <span className="crm-ord-nilai text-[16px] font-extrabold tabular-nums text-ink">
           {formatRupiah(nilaiBersihOrder(order))}
         </span>
-        <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[10px] font-semibold text-ink2">
+        <span className="shrink-0 rounded-chip bg-inset px-2 py-0.5 text-[11px] font-semibold text-ink2">
           {KATEGORI_LABELS[order.category] || order.category}
         </span>
       </div>
 
-      <p className={cn("mt-1.5 flex items-center gap-1 text-[11px]", mandek ? "font-semibold text-orange" : "text-ink3")}>
-        {mandek ? <AlertTriangle size={11} className="shrink-0" /> : <Clock size={11} className="shrink-0" />}
+      {punyaUnitPkr(order) && <DaftarUnitPkr pkr={order.penjualanKaryawan} onBuka={onBukaUnit} className="mt-2" />}
+
+      {/* Baris berlabel — setiap makna terpisah: jangan disatukan (Order = workflow pengerjaan; Bayar = uang; Pipeline = tahap
+          penjualan pelanggan; Milestone = posisi unit fisik yang paling tertinggal). */}
+      <div className="mt-2.5 flex flex-col gap-1.5">
+        <BarisLabel label="Order"><StatusSelect order={order} onChange={onStatusChange} className="w-full" /></BarisLabel>
+        <BarisLabel label="Bayar">
+          {order.penjualanKaryawan ? <BadgeBayarPkr pkr={order.penjualanKaryawan} /> : <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} className="w-full" />}
+        </BarisLabel>
+        <BarisLabel label="Pipeline"><PipelineStageSelect order={order} onChange={onStageChange} className="w-full" /></BarisLabel>
+        {tampilMilestone && <BarisLabel label="Milestone"><OrderMilestoneBadge milestone={order.milestone} order={order} /></BarisLabel>}
+      </div>
+
+      {progres && (
+        <div className="crm-ord-progres mt-2.5" role="img" aria-label={progres.langkah === 0 ? `Belum dikerjakan (${progres.label})` : `Tahap ${progres.langkah} dari ${progres.total}: ${progres.label}`}>
+          {Array.from({ length: progres.total }).map((_, i) => <span key={i} className={cn("crm-ord-progres-ruas", i < progres.langkah && "crm-ord-progres-isi")} />)}
+        </div>
+      )}
+
+      <p className={cn("crm-ord-lama mt-1.5 flex items-center gap-1 text-[12px]", mandek ? "font-semibold text-orange" : "text-ink3")}>
+        {mandek ? <AlertTriangle size={12} className="shrink-0" /> : <Clock size={12} className="shrink-0" />}
         {order.daysInStatus === 0 ? "Masuk hari ini" : `${order.daysInStatus} hari di status ini`}
+        {mandek && <span> · mandek</span>}
         {order.daysInStatusPerkiraan && <span title="Riwayat status belum terekam untuk order ini — dihitung dari terakhir diubah">*</span>}
       </p>
 
-      {/* Revisi/komplain lintas divisi (10 September 2026, permintaan owner:
-          "gue ingin di semua divisi ... request, revisi, komplain,
-          reschedule semua muncul di masing-masing divisi" + "card per
-          order nya juga ada keterangan" — kasus Richard RES-30082026-201).
-          order.activeRevision SUDAH ada di respons GET /orders sejak D-109
-          (dipakai ProductionOrders.jsx), cuma belum pernah ditampilkan di
-          sini — jadi sales tidak pernah tahu tahap revisi TANPA buka drawer.
-          Fallback ke "Ada komplain" polos kalau belum ada UnitRevision
-          formal (baru dilaporkan, belum masuk Retur). */}
+      {/* Revisi/komplain lintas divisi (10 September 2026) — fallback ke "Ada komplain" polos bila belum ada UnitRevision formal. */}
       {order.activeRevision ? (
-        <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
-          <AlertTriangle size={11} className="shrink-0" />
+        <p className="crm-ord-perhatian mt-1 flex items-center gap-1 text-[12px] font-semibold text-red">
+          <AlertTriangle size={12} className="shrink-0" />
           Revisi: {REVISION_STATUS[order.activeRevision.status]?.label || order.activeRevision.status}
         </p>
       ) : order.hasComplaint && (
-        <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
-          <AlertTriangle size={11} className="shrink-0" /> Ada komplain
+        <p className="crm-ord-perhatian mt-1 flex items-center gap-1 text-[12px] font-semibold text-red">
+          <AlertTriangle size={12} className="shrink-0" /> Ada komplain
         </p>
       )}
 
-      {/* Status Delivery — D-036 (30 Agustus 2026). Sales lihat progres
-          pengambilan/pengiriman TANPA pindah ke Delivery & Fulfillment —
-          job PICKUP dan DELIVERY beda tahap, jadi ditampilkan terpisah
-          kalau dua-duanya ada (order LAYANAN yang sudah selesai diambil
-          DAN sudah masuk antrean kirim, misalnya). */}
+      {/* Jadwal logistik (D-036) — job PICKUP dan DELIVERY beda tahap, ditampilkan terpisah bila dua-duanya ada. */}
       {(order.pickupJob || order.deliveryJob || order.complaintPickupJob || order.complaintDeliveryJob) && (
-        <div className="mt-1 flex flex-col gap-0.5">
+        <div className="crm-ord-jadwal mt-1.5 flex flex-col gap-1">
           {[
             order.pickupJob && { ...order.pickupJob, label: "Ambil" },
             order.deliveryJob && { ...order.deliveryJob, label: "Kirim" },
@@ -405,32 +411,31 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
           ]
             .filter(Boolean)
             .map((j, i) => (
-              <p key={i} className="flex items-center gap-1 truncate text-[11px] text-ink3">
-                <Truck size={11} className="shrink-0" />
-                {j.label}: {JOB_STATUS_REAL[j.status]?.label || j.status}
-                {j.scheduledDate ? ` · ${formatTanggalPendek(j.scheduledDate)}` : ""}
-                {j.driverName ? ` · ${j.driverName}` : ""}
-                {/* Kasus reschedule AKTIF (D-160, 13 September 2026) — ringkasJob
-                    di backend cuma mengembalikan rescheduleCase kalau
-                    statusnya AKTIF, jadi ada/tidaknya field ini SUDAH berarti
-                    "perlu perhatian", tidak perlu cek status lagi di sini. */}
-                {j.rescheduleCase && (
-                  <span className="font-semibold text-orange"> · Dijadwal Ulang{j.rescheduleCase.round > 1 ? ` (ronde ${j.rescheduleCase.round})` : ""}</span>
-                )}
+              <p key={i} className="flex items-start gap-1.5 text-[12px] leading-snug text-ink2">
+                <Truck size={12} className="mt-[3px] shrink-0 text-ink3" />
+                <span className="min-w-0">
+                  <span className="font-semibold">{j.label}:</span> {JOB_STATUS_REAL[j.status]?.label || j.status}
+                  {j.scheduledDate ? ` · ${formatTanggalPendek(j.scheduledDate)}` : ""}
+                  {j.driverName ? ` · ${j.driverName}` : ""}
+                  {/* Kasus reschedule AKTIF (D-160) — keberadaan field ini SUDAH berarti "perlu perhatian". */}
+                  {j.rescheduleCase && (
+                    <span className="font-semibold text-orange"> · Dijadwal Ulang{j.rescheduleCase.round > 1 ? ` (ronde ${j.rescheduleCase.round})` : ""}</span>
+                  )}
+                </span>
               </p>
             ))}
         </div>
       )}
 
       {bolehDibukaLagiUntukPengiriman(order) && (
-        <div className="mt-1.5 rounded-btn border border-orange/40 bg-orangebg px-2 py-1.5">
-          <p className="text-[11px] text-orange">
+        <div className="crm-ord-buka-lagi mt-2 rounded-btn border border-orange/40 bg-orangebg px-2 py-1.5">
+          <p className="text-[11.5px] text-orange">
             "Terkirim" tapi belum pernah punya job Pengiriman — kemungkinan cuma pengambilan yang selesai.
           </p>
           <button
             type="button" disabled={reopeningId === order.id}
             onClick={(e) => { e.stopPropagation(); onReopenForDelivery(order); }}
-            className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-orange underline decoration-dotted disabled:opacity-60"
+            className="mt-1 flex items-center gap-1 text-[11.5px] font-semibold text-orange underline decoration-dotted disabled:opacity-60"
           >
             {reopeningId === order.id ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
             Buka lagi utk Pengiriman
@@ -438,28 +443,27 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
         </div>
       )}
 
-      <div className="mt-2 flex items-center gap-1 border-t border-line pt-2">
-        {/* BUG YANG DIPERBAIKI: nama sales sebelumnya text-ink3 (opacity 40%,
-            dipakai untuk placeholder/data kosong) — nama sales itu DATA
-            SUNGGUHAN, bukan "kosong", jadi kontrasnya dinaikkan ke text-ink2
-            + medium weight supaya kebaca jelas, bukan pudar seperti "—". */}
-        <span title={keteranganSalesKredit(order)} className={cn("min-w-0 flex-1 truncate text-[11px]", namaSalesKredit(order) ? "font-medium text-ink2" : "text-ink3")}>
-          {namaSalesKredit(order) || "Belum ada sales"}
+      <div className="crm-ord-kaki mt-2.5 flex items-center gap-1.5 border-t border-line pt-2">
+        {/* Nama sales = data sungguhan, kontras dinaikkan (bukan text-ink3 placeholder). */}
+        <span title={keteranganSalesKredit(order)} className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-[12px]", namaSalesKredit(order) ? "font-medium text-ink2" : "text-ink3")}>
+          {namaSalesKredit(order) && <Avatar name={namaSalesKredit(order)} size="sm" className="crm-ord-sales h-5 w-5 text-[9px]" />}
+          <span className="min-w-0 truncate">{namaSalesKredit(order) || "Belum ada sales"}</span>
         </span>
         <button
           type="button" onClick={(e) => { e.stopPropagation(); onOpenTimeline(order); }}
-          title="Lihat rincian pesanan"
-          className="rounded-md p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink2"
+          title="Lihat rincian pesanan" aria-label={`Rincian pesanan ${order.orderNumber || nama}`}
+          className="crm-ord-aksi rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink2"
         >
-          <Clock size={13} />
+          <Clock size={15} />
         </button>
         <button
           type="button" onClick={(e) => { e.stopPropagation(); onOpenChat(order); }}
           title={order.conversationId ? "Buka chat customer" : "Customer belum pernah chat"}
+          aria-label={`Buka chat ${nama}`}
           disabled={!order.conversationId}
-          className="rounded-md p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-accent disabled:opacity-40"
+          className="crm-ord-aksi rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-accent disabled:opacity-40"
         >
-          <MessageSquare size={13} />
+          <MessageSquare size={15} />
         </button>
       </div>
     </div>
@@ -510,6 +514,9 @@ export default function Orders() {
   const [unitId, setUnitId] = useOpenParam("unit"); // ?unit=<id> → Unit 360 terbuka (muat ulang / tautan langsung aman)
   const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
+  const [filterLainBuka, setFilterLainBuka] = useState(false);   // panel "Filter lainnya"
+  const [metrikLainBuka, setMetrikLainBuka] = useState(false);   // panel "Metrik lainnya"
+  const [infoBuka, setInfoBuka] = useState(false);               // rincian cakupan angka ringkasan
   const [timelineOrder, setTimelineOrder] = useState(null);
   const [timelineTab, setTimelineTab] = useState(null); // tab awal drawer (jalan pintas pembayaran)
   const klaimGateAktifHalaman = useKlaimLunasAktif() === true;
@@ -1051,6 +1058,38 @@ export default function Orders() {
     }
   }
 
+  // ── Fase Order (31 Okt 2026): empat KPI prioritas + "Metrik lainnya". Rumus & sumber TIDAK berubah (lihat catatan di atas);
+  // hanya `cakupan` (teks jujur tentang asal angka) yang ditambahkan. `filterKlien` = filter yang HANYA diterapkan di browser
+  // (Mandek, bucket Diproses) — agregat server belum mengikutinya.
+  const filterKlien = hanyaMandek || fStatus === "PROCESSING";
+  const jumlahFilterLain = [fStatusUnit, fKategori, fPenjual, fPipeline, fPromo].filter(Boolean).length;
+  const cakupanAgregat = (tambahan) => `agregat penuh${tambahan ? ` · ${tambahan}` : ""}${filterKlien ? " · belum ikut filter Mandek/Diproses" : ""}`;
+  const cakupanDimuat = data?.truncated ? `dari ${items.length.toLocaleString("id-ID")} order terbaru yang dimuat` : "dari seluruh order yang cocok filter";
+  const KPI_UTAMA = [
+    { l: "Total Order", v: totalOrderAktif.toLocaleString("id-ID"), Ikon: ClipboardList, tone: "total", cakupan: cakupanAgregat("tanpa Dibatalkan"),
+      tip: "Order aktif yang cocok dengan filter — CANCELLED tidak dihitung, konsisten dengan Dashboard & Laporan. Dihitung dari agregat penuh (tidak kepotong batas 200 baris tabel di bawah)." },
+    { l: "Nilai Order", v: formatRupiah(totalNilai), Ikon: Wallet, tone: "nilai", cakupan: cakupanAgregat("belum tentu lunas"),
+      tip: "Total nilai order aktif (CANCELLED tidak dihitung) — belum tentu sudah dibayar lunas." },
+    { l: "Belum Lunas", v: formatRupiah(belumLunas), Ikon: FileClock, tone: "belum", cakupan: cakupanAgregat("DP + Belum Bayar"),
+      tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar) — dihitung LIVE dari status SEKARANG, ikut naik/turun kapan pun status order berubah. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru dibayar SETELAH tanggal terakhir periode itu tidak ikut, geser ke periode berikutnya) — dua angka ini akan berbeda kalau ada order yang baru lunas SETELAH bulan laporannya tutup buku, dan itu memang disengaja, bukan salah hitung." },
+    { l: `Mandek ≥${MANDEK_HARI} hari`, v: totalMandek.toLocaleString("id-ID"), Ikon: AlertTriangle, tone: totalMandek > 0 ? "mandek" : "aman", cakupan: cakupanDimuat,
+      tip: `Order yang tertahan di status yang sama ≥${MANDEK_HARI} hari (DELIVERED/CANCELLED dikecualikan — itu status akhir, wajar lama). Dihitung dari order yang dimuat di layar, BUKAN agregat penuh.` },
+  ];
+  const KPI_LAIN = [
+    { l: "Total pelanggan", v: totalPelanggan.toLocaleString("id-ID"), cakupan: cakupanDimuat,
+      tip: "Pelanggan UNIK (baru ATAU lama) yang bikin order di periode/filter ini. Beda dari kartu \"Conversion\" di Dashboard — itu cuma menghitung lead BARU yang masuk di periode yang sama, tidak termasuk pelanggan lama yang order lagi." },
+    { l: "Repeat order", v: repeatPelanggan.toLocaleString("id-ID"), tone: repeatPelanggan > 0 ? "text-green" : undefined, cakupan: cakupanDimuat,
+      tip: "Dari Total Pelanggan di atas, berapa yang bikin order LEBIH dari sekali DI PERIODE/FILTER INI (bukan status repeat sepanjang riwayat pelanggan itu)." },
+    { l: "AOV", v: totalOrderAktif > 0 ? formatRupiah(aov) : "—", cakupan: cakupanAgregat(""),
+      tip: "Average Order Value = Nilai order ÷ Total order aktif — rata-rata besar 1 order di periode/filter ini." },
+    { l: "Lunas", v: formatRupiah(lunas), tone: "text-green", cakupan: cakupanAgregat("live"),
+      tip: "Nilai order aktif yang status pembayarannya SUDAH Lunas — dihitung LIVE dari status SEKARANG (Nilai order − Belum lunas), ikut naik kapan pun ada order yang baru dibayar. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru lunas SETELAH tanggal terakhir periode itu geser ke periode berikutnya, tidak ikut naik di sana) — dua angka ini bisa beda dan itu memang disengaja, bukan salah hitung." },
+    { l: "Rata-rata proses", v: avgProsesHari != null ? `${avgProsesHari.toFixed(1)} hari` : "—", cakupan: cakupanDimuat,
+      tip: "Rata-rata lama dari order DIBUAT sampai berstatus DELIVERED, dihitung dari order yang SUDAH delivered di periode/filter ini. Order yang masih berjalan tidak dihitung — waktu prosesnya belum final." },
+    { l: "Komplain", v: complaintRate != null ? `${complaintRate}%` : "—", tone: complaintRate > 5 ? "text-red" : undefined, cakupan: cakupanDimuat,
+      tip: "Persentase order aktif di periode ini yang ditandai \"Pernah Komplain\" — bukan penalti, diagnostik kualitas layanan periode ini." },
+  ];
+
   return (
     // D-150 (10 September 2026, laporan owner: "card ga ikut melebar ketika
     // full screen") — PageContainer default `max-w-[1400px]` (page.jsx) pas
@@ -1062,58 +1101,49 @@ export default function Orders() {
     // halaman ini (twMerge resolve konflik lewat className, tidak mengubah
     // PageContainer itu sendiri) — halaman lain yang lebih pas dibatasi
     // (Pengaturan, dst) tidak ikut berubah.
-    <PageContainer className="max-w-none">
+    <PageContainer fluid className="crm-ord">
       <PageHeader
         title="Order"
         subtitle={
           loading ? "Memuat…"
-            : totalMandek > 0
-              ? `${itemsAktif.length} order · ${totalMandek} mandek ≥${MANDEK_HARI} hari di status yang sama`
-              : `${itemsAktif.length} order · ${formatRupiah(totalNilai)}`
+            : `${itemsAktif.length.toLocaleString("id-ID")} order${data?.truncated ? " terbaru dimuat" : ""} · pantau progres layanan dan pembayaran`
         }
-        actions={
-          <>
+      />
+
+      <PageBody>
+       <PageErrorBoundary label="Orders">
+        {isAdmin && <SalesGroupSettings />}
+
+        {/* ── TOOLBAR: pencarian, tanggal, filter utama, Papan/Tabel, Refresh, Export dalam satu kelompok. Filter tambahan
+            (status unit, kategori, penjual, pipeline, promo) di "Filter lainnya". ── */}
+        <div className="crm-ord-toolbar">
+          <div className="crm-ord-cari-wadah relative">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" />
+            <input
+              type="search" value={cari} onChange={(e) => setCari(e.target.value)}
+              placeholder="Cari ID, unit, PKR, nama, HP…"
+              aria-label="Cari order"
+              className="crm-ord-cari h-8 w-64 rounded-lg bg-surface pl-9 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            />
+            {cari && (
+              <button type="button" onClick={() => setCari("")} aria-label="Hapus pencarian"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink3 hover:text-ink">
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          <div className="crm-ord-grup-filter">
             <DateRangePicker value={range} onChange={setRange} />
-            <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
-              <input
-                type="search" value={cari} onChange={(e) => setCari(e.target.value)}
-                placeholder="Cari ID, unit, PKR, nama, HP…"
-                aria-label="Cari order"
-                className="h-8 w-64 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-              />
-              {cari && (
-                <button type="button" onClick={() => setCari("")} aria-label="Hapus pencarian"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink3 hover:text-ink">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
             <FilterDropdown
               icon={FILTER_TONE.status.icon} activeColor={FILTER_TONE.status.hex}
               value={fStatus} onChange={setFStatus}
-              // Opsi status DISEDERHANAKAN jadi bucket (4 Sep 2026) — kecuali
-              // filter Kategori sedang dikunci ke SEWA, yang statusnya sendiri
-              // sudah cuma 2 tahap (lihat KANBAN_BUCKETS/SEWA_KANBAN_STATUSES).
+              // Opsi status DISEDERHANAKAN jadi bucket (4 Sep 2026) — kecuali filter Kategori dikunci ke SEWA (2 tahap).
               options={(fKategori === "SEWA" ? SEWA_KANBAN_STATUSES : KANBAN_BUCKETS).map((s) => ({
                 value: s, label: (fKategori === "SEWA" ? ORDER_STATUS_LABELS : ORDER_STATUS_BUCKET_LABELS)[s] || s,
               }))}
               placeholder="Semua Status"
               ariaLabel="Filter status order"
-            />
-            <FilterDropdown
-              icon={FILTER_TONE.status.icon} activeColor={FILTER_TONE.status.hex}
-              value={fStatusUnit} onChange={setFStatusUnit}
-              options={UNIT_STATUS_OPSI}
-              placeholder="Semua Status Unit"
-              ariaLabel="Filter status unit produksi"
-            />
-            <FilterDropdown
-              icon={FILTER_TONE.kategori.icon} activeColor={FILTER_TONE.kategori.hex}
-              value={fKategori} onChange={setFKategori}
-              options={Object.entries(KATEGORI_LABELS).map(([value, label]) => ({ value, label }))}
-              placeholder="Semua Kategori"
-              ariaLabel="Filter kategori"
             />
             <FilterDropdown
               icon={FILTER_TONE.pembayaran.icon} activeColor={FILTER_TONE.pembayaran.hex}
@@ -1128,6 +1158,53 @@ export default function Orders() {
               options={salesUsers.map((u) => ({ value: u.id, label: u.name }))}
               placeholder="Semua Sales"
               ariaLabel="Filter sales person"
+            />
+            <button
+              type="button" onClick={() => setFilterLainBuka((v) => !v)}
+              aria-expanded={filterLainBuka} aria-controls="crm-ord-filter-lain"
+              className={cn("crm-ord-filter-lain-tombol", jumlahFilterLain > 0 && "crm-ord-aktif")}
+            >
+              <SlidersHorizontal size={14} /> Filter lainnya{jumlahFilterLain > 0 ? ` (${jumlahFilterLain})` : ""}
+              <ChevronDown size={13} className={cn("transition-transform", filterLainBuka && "rotate-180")} />
+            </button>
+            <Button
+              variant={hanyaMandek ? "primary" : "ghost"} size="sm" className="crm-ord-mandek"
+              onClick={() => setHanyaMandek((v) => !v)} aria-pressed={hanyaMandek}
+              title={`Hanya order yang tertahan ≥${MANDEK_HARI} hari di status yang sama`}
+            >
+              <AlertTriangle size={14} /> Mandek
+            </Button>
+          </div>
+
+          <div className="crm-ord-grup-aksi">
+            <div className="crm-ord-segmen" role="group" aria-label="Tampilan">
+              <button type="button" onClick={() => gantiView("board")} aria-pressed={view === "board"} aria-label="Tampilan Papan"><LayoutGrid size={14} /> Papan</button>
+              <button type="button" onClick={() => gantiView("table")} aria-pressed={view === "table"} aria-label="Tampilan Tabel"><ListIcon size={14} /> Tabel</button>
+            </div>
+            <Button variant="ghost" size="sm" className="crm-ord-refresh" onClick={load} disabled={loading} aria-label="Refresh daftar order" title="Refresh">
+              <RefreshCw size={14} /> <span className="crm-ord-refresh-teks">Refresh</span>
+            </Button>
+            <Button variant="ghost" size="sm" className="crm-ord-export" onClick={handleExport} disabled={items.length === 0 || exporting} aria-label="Export order ke Excel">
+              <Download size={14} /> <span className="crm-ord-export-teks">{exporting ? "Menyiapkan…" : "Export"}</span>
+            </Button>
+          </div>
+        </div>
+
+        {filterLainBuka && (
+          <div id="crm-ord-filter-lain" className="crm-ord-filter-lain">
+            <FilterDropdown
+              icon={FILTER_TONE.status.icon} activeColor={FILTER_TONE.status.hex}
+              value={fStatusUnit} onChange={setFStatusUnit}
+              options={UNIT_STATUS_OPSI}
+              placeholder="Semua Status Unit"
+              ariaLabel="Filter status unit produksi"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.kategori.icon} activeColor={FILTER_TONE.kategori.hex}
+              value={fKategori} onChange={setFKategori}
+              options={Object.entries(KATEGORI_LABELS).map(([value, label]) => ({ value, label }))}
+              placeholder="Semua Kategori"
+              ariaLabel="Filter kategori"
             />
             <FilterDropdown
               icon={FILTER_TONE.penjual.icon} activeColor={FILTER_TONE.penjual.hex}
@@ -1152,104 +1229,72 @@ export default function Orders() {
                 ariaLabel="Filter promo"
               />
             )}
-            <Button
-              variant={hanyaMandek ? "primary" : "ghost"} size="sm"
-              onClick={() => setHanyaMandek((v) => !v)}
-              title={`Hanya order yang tertahan ≥${MANDEK_HARI} hari di status yang sama`}
-            >
-              <AlertTriangle size={14} /> Mandek
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => gantiView(view === "board" ? "table" : "board")}>
-              {view === "board" ? <ListIcon size={14} /> : <LayoutGrid size={14} />}
-              {view === "board" ? "Tabel" : "Papan"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
-              <RefreshCw size={14} /> Refresh
-            </Button>
-            {fStatus === "PROCESSING" && (
-              <label className="flex cursor-pointer items-center gap-1.5 text-[12.5px] font-medium text-ink2" title="Ikut sertakan order yang sedang komplain/revisi di file Excel, walau status order-nya sudah Terkirim. Status order tidak diubah.">
-                <input type="checkbox" checked={sertakanKomplain} onChange={(e) => setSertakanKomplain(e.target.checked)} className="accent-[var(--accent)]" />
-                Sertakan komplain
-              </label>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleExport} disabled={items.length === 0 || exporting}>
-              <Download size={14} /> {exporting ? "Menyiapkan…" : "Export"}
-            </Button>
-          </>
-        }
-      />
+          </div>
+        )}
 
-      <PageBody>
-       <PageErrorBoundary label="Orders">
-        {isAdmin && <SalesGroupSettings />}
-        {/* Ringkasan uang — piutang ditonjolkan karena itu angka yang paling
-            sering dicari dan paling mudah hilang dari pandangan. */}
+        {fStatus === "PROCESSING" && (
+          <label className="flex cursor-pointer items-center gap-1.5 text-[12.5px] font-medium text-ink2" title="Ikut sertakan order yang sedang komplain/revisi di file Excel, walau status order-nya sudah Terkirim. Status order tidak diubah.">
+            <input type="checkbox" checked={sertakanKomplain} onChange={(e) => setSertakanKomplain(e.target.checked)} className="accent-[var(--accent)]" />
+            Sertakan komplain di Export
+          </label>
+        )}
+
+        {/* ── KPI PRIORITAS (empat) + "Metrik lainnya". Sumber, cakupan, periode, dan rumus tiap angka TIDAK berubah: tiga angka uang/jumlah
+            dari agregat penuh server (tidak kepotong batas baris); Mandek dihitung dari order yang dimuat di layar. Cakupan ditulis
+            di bawah tiap angka agar tidak menyiratkan semuanya agregat penuh. ── */}
         {!loading && items.length > 0 && (
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {[
-              { l: "Total order", v: totalOrderAktif.toLocaleString("id-ID"),
-                tip: "Order aktif yang cocok dengan filter — CANCELLED tidak dihitung, konsisten dengan Dashboard & Laporan. Dihitung dari agregat penuh (tidak kepotong batas 200 baris tabel di bawah)." },
-              { l: "Total pelanggan", v: totalPelanggan.toLocaleString("id-ID"),
-                tip: "Pelanggan UNIK (baru ATAU lama) yang bikin order di periode/filter ini. Beda dari kartu \"Conversion\" di Dashboard — itu cuma menghitung lead BARU yang masuk di periode yang sama, tidak termasuk pelanggan lama yang order lagi." },
-              { l: "Repeat order", v: repeatPelanggan.toLocaleString("id-ID"), tone: repeatPelanggan > 0 ? "text-green" : undefined,
-                tip: "Dari Total Pelanggan di atas, berapa yang bikin order LEBIH dari sekali DI PERIODE/FILTER INI (bukan status repeat sepanjang riwayat pelanggan itu)." },
-              { l: "Nilai order", v: formatRupiah(totalNilai),
-                tip: "Total nilai order aktif (CANCELLED tidak dihitung) — belum tentu sudah dibayar lunas." },
-              { l: "AOV", v: totalOrderAktif > 0 ? formatRupiah(aov) : "—",
-                tip: "Average Order Value = Nilai order ÷ Total order aktif — rata-rata besar 1 order di periode/filter ini." },
-              { l: "Lunas", v: formatRupiah(lunas), tone: "text-green",
-                tip: "Nilai order aktif yang status pembayarannya SUDAH Lunas — dihitung LIVE dari status SEKARANG (Nilai order − Belum lunas), ikut naik kapan pun ada order yang baru dibayar. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru lunas SETELAH tanggal terakhir periode itu geser ke periode berikutnya, tidak ikut naik di sana) — dua angka ini bisa beda dan itu memang disengaja, bukan salah hitung." },
-              { l: "Belum lunas", v: formatRupiah(belumLunas),
-                tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar) — dihitung LIVE dari status SEKARANG, ikut naik/turun kapan pun status order berubah. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru dibayar SETELAH tanggal terakhir periode itu tidak ikut, geser ke periode berikutnya) — dua angka ini akan berbeda kalau ada order yang baru lunas SETELAH bulan laporannya tutup buku, dan itu memang disengaja, bukan salah hitung." },
-              { l: "Rata-rata proses", v: avgProsesHari != null ? `${avgProsesHari.toFixed(1)} hari` : "—",
-                tip: "Rata-rata lama dari order DIBUAT sampai berstatus DELIVERED, dihitung dari order yang SUDAH delivered di periode/filter ini. Order yang masih berjalan tidak dihitung — waktu prosesnya belum final." },
-              { l: "Komplain", v: complaintRate != null ? `${complaintRate}%` : "—", tone: complaintRate > 5 ? "text-red" : undefined,
-                tip: "Persentase order aktif di periode ini yang ditandai \"Pernah Komplain\" — bukan penalti, diagnostik kualitas layanan periode ini." },
-              { l: "Mandek", v: totalMandek.toLocaleString("id-ID"), tone: totalMandek > 0 ? "text-orange" : undefined,
-                tip: `Order yang tertahan di status yang sama ≥${MANDEK_HARI} hari (DELIVERED/CANCELLED dikecualikan — itu status akhir, wajar lama).` },
-            ].map((k) => (
-              // "order-kpi-glass" (D-108) — owner kirim referensi Apple
-              // liquid-glass (pil 3D glossy biru, ikon squircle dengan
-              // sheen terang di atas) untuk strip KPI ini ("bisa buat lebih
-              // menarik seperti referensi"). Marker class murni CSS, no-op
-              // di luar .glass-division — lihat delivery-dark.css/-light.css
-              // untuk gradient+sheen+glow-nya. Satu hue biru saja (gradasi
-              // terang->gelap dalam kartu, PERSIS gaya referensi: semua pil
-              // itu juga cuma satu warna, bedanya cuma lightness), taat
-              // "aturan satu accent" — bukan warna baru per kartu.
-              <div key={k.l} className="order-kpi-glass rounded-2xl bg-surface p-3.5 shadow-card">
-                <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink3">
-                  {k.l}
-                  <InfoTooltip text={k.tip} />
-                </p>
-                <p className={cn("dh-figure mt-1 text-[17px] font-bold tabular-nums", k.tone || "text-ink")}>{k.v}</p>
+          <>
+            <div className="crm-ord-kpi-baris">
+              <div className="crm-ord-kpi-grid">
+                {KPI_UTAMA.map((k) => (
+                  <div key={k.l} className="crm-ord-kpi" data-tone={k.tone}>
+                    <span className="crm-ord-kpi-ikon" aria-hidden="true"><k.Ikon size={20} /></span>
+                    <div className="min-w-0">
+                      <p className="crm-ord-kpi-label">{k.l} <InfoTooltip text={k.tip} /></p>
+                      <p className="crm-ord-kpi-nilai">{k.v}</p>
+                      <p className="crm-ord-kpi-cakupan">{k.cakupan}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+              <button
+                type="button" onClick={() => setMetrikLainBuka((v) => !v)}
+                aria-expanded={metrikLainBuka} aria-controls="crm-ord-metrik-lain" className="crm-ord-metrik-tombol"
+              >
+                <BarChart3 size={15} /> Metrik lainnya <ChevronDown size={13} className={cn("transition-transform", metrikLainBuka && "rotate-180")} />
+              </button>
+            </div>
+            {metrikLainBuka && (
+              <div id="crm-ord-metrik-lain" className="crm-ord-metrik-lain">
+                {KPI_LAIN.map((k) => (
+                  <div key={k.l} className="crm-ord-metrik">
+                    <p className="crm-ord-metrik-label">{k.l} <InfoTooltip text={k.tip} /></p>
+                    <p className={cn("crm-ord-metrik-nilai", k.tone)}>{k.v}</p>
+                    <p className="crm-ord-kpi-cakupan">{k.cakupan}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
-        {adaFilter && !loading && (
-          <p className="mb-3 text-xs text-ink3">
-            {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
-            <button type="button"
-              onClick={() => { setCari(""); setFStatus(""); setFStatusUnit(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setHanyaMandek(false); }}
-              className="font-semibold text-accent hover:underline">
-              Reset filter
-            </button>
-          </p>
-        )}
-
-        {data?.truncated && (
-          <div className="mb-3 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[11.5px] leading-relaxed text-ink">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-orange" />
-            <p>
-              Tabel di bawah cuma menampilkan {items.length} order terbaru (dibatasi demi kecepatan) —
-              pakai pencarian/filter untuk mempersempit kalau perlu lihat semuanya.{" "}
-              <strong>Kartu Total order/Nilai order/AOV/Belum lunas di atas TETAP akurat</strong> (dihitung
-              dari agregat penuh, tidak ikut kepotong) — yang masih dari daftar terpotong ini cuma
-              Repeat Order, Rata-rata Proses, dan Komplain.
+            <p className="crm-ord-info">
+              <Info size={13} className="shrink-0" aria-hidden />
+              <span>
+                Menampilkan {items.length.toLocaleString("id-ID")} order{data?.truncated ? " terbaru (dibatasi demi kecepatan)" : ""}
+                {adaFilter && <> sesuai filter · <button type="button"
+                  onClick={() => { setCari(""); setFStatus(""); setFStatusUnit(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setFPenjual(""); setHanyaMandek(false); }}
+                  className="font-semibold text-accent hover:underline">Reset filter</button></>}
+                {" · "}
+                <button type="button" onClick={() => setInfoBuka((v) => !v)} aria-expanded={infoBuka} aria-controls="crm-ord-info-detail"
+                  className="font-semibold text-accent hover:underline">{infoBuka ? "Sembunyikan cakupan angka" : "Lihat cakupan angka"}</button>
+              </span>
             </p>
-          </div>
+            {infoBuka && (
+              <p id="crm-ord-info-detail" className="crm-ord-info crm-ord-info-detail">
+                Total order, Nilai order, Belum lunas, AOV, dan Lunas = agregat penuh sesuai filter di server{filterKlien ? " (belum mengikuti filter Mandek/Diproses)" : ""};
+                Mandek dan metrik lainnya dihitung dari order yang dimuat di layar. Cakupan tiap angka juga tertulis di bawah angkanya.
+              </p>
+            )}
+          </>
         )}
 
         {loading ? (
@@ -1274,31 +1319,18 @@ export default function Orders() {
             </p>
           </div>
         ) : view === "board" ? (
-          // Papan per status kerja + scroll horizontal, tiap kolom punya scroll
-          // vertikal sendiri (pelajaran dari Pipeline: satu kolom panjang tidak
-          // boleh menentukan panjang halaman).
+          // Papan per status kerja + scroll horizontal, tiap kolom punya scroll vertikal sendiri (pelajaran dari Pipeline: satu
+          // kolom panjang tidak boleh menentukan panjang halaman). Fase Order: pola kolom rounded + bidang warna lembut seperti Pipeline,
+          // lebar minimum nyaman, scroll horizontal bila perlu (teks tidak dikecilkan).
           <div
-            // Callback ref (bukan objek ref biasa) — reset scrollLeft=0 TEPAT
-            // saat div ini attach ke DOM (termasuk board sempat unmount/
-            // remount karena toggle loading), sama pola dengan Pipeline.jsx.
+            // Callback ref — reset scrollLeft=0 TEPAT saat div attach ke DOM (pola sama dengan Pipeline.jsx).
             ref={(el) => { boardScrollRef.current = el; if (el) el.scrollLeft = 0; }}
-            className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2"
+            className="crm-ord-papan -mx-1 flex gap-4 overflow-x-auto px-1 pb-3"
           >
             {(() => {
-              // Kanban ringkas (4 Sep 2026): SEWA-only view pakai 2 status
-              // aslinya, view lain (semua/LAYANAN/BARU campur) pakai 3 bucket
-              // (Diproses/Siap Kirim/Terkirim) — lihat KANBAN_BUCKETS &
-              // kanbanBucket() di atas.
+              // Kanban ringkas (4 Sep 2026): SEWA-only view pakai 2 status aslinya, view lain pakai bucket — lihat KANBAN_BUCKETS & kanbanBucket().
               const kolomKategori = fKategori === "SEWA" ? SEWA_KANBAN_STATUSES : KANBAN_BUCKETS;
-              // Order SEWA LAMA (dibuat sebelum 4 Sep 2026, sebelum status
-              // SEWA_DIKIRIM/SEWA_DIAMBIL ada) masih menyimpan status GRANULAR
-              // lama (PENDING/PICKUP/PROCESSING/READY/DELIVERED) — TIDAK
-              // dibackfill (tidak ada cara tahu pasti "masih dipakai" vs
-              // "sudah diambil" tanpa menebak). Supaya order lama ini TIDAK
-              // hilang dari papan, "DELIVERED lama" (barang sudah sampai ke
-              // customer — definisinya sama persis dgn "Pengiriman") masuk
-              // kolom SEWA_DIKIRIM; sisanya (belum sempat terkirim) juga
-              // masuk situ, cuma CANCELLED yang tetap kolomnya sendiri.
+              // Order SEWA LAMA (status granular lama) tidak dibackfill: yang bukan CANCELLED masuk kolom SEWA_DIKIRIM supaya tidak hilang dari papan.
               const legacySewaBucket = (status) => (status === "CANCELLED" ? "CANCELLED" : "SEWA_DIKIRIM");
               const groupFn = fKategori === "SEWA"
                 ? (o) => (SEWA_KANBAN_STATUSES.includes(o.status) ? o.status : legacySewaBucket(o.status))
@@ -1310,39 +1342,30 @@ export default function Orders() {
               const mandekKolom = kolom.filter(isMandek).length;
               const labelMap = fKategori === "SEWA" ? ORDER_STATUS_LABELS : ORDER_STATUS_BUCKET_LABELS;
               const nilaiKolom = kolom.reduce((s, o) => s + nilaiBersihOrder(o), 0);
+              const IkonKolom = IKON_KOLOM[status] || Package;
               return (
-                // min-w/max-w + flex-1 (D-103) — sama fix dengan Pipeline.jsx:
-                // lebar tetap (272px shrink-0) tidak ikut melebar saat window
-                // diperbesar, jadi board numpuk di kiri dengan area kosong di
-                // kanan di layar lebar. Sekarang sama rata mengisi ruang
-                // sampai 360px/kolom, tetap clamp ke 272px minimum (scroll
-                // horizontal existing tetap jalan di layar sempit/kolom banyak).
-                <div key={status} className="flex min-w-[272px] max-w-[360px] flex-1 flex-col rounded-2xl bg-inset/80 p-2.5">
-                  <div className="flex items-center gap-2 px-0.5">
-                    <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STATUS_TONE[status]?.dot || "bg-ink3")} />
-                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink2">
+                <div key={status} data-ord={status} className="crm-ord-kolom flex min-w-[280px] max-w-[380px] flex-1 flex-col rounded-2xl p-3">
+                  <div className="crm-ord-kolom-kepala flex items-center gap-2.5">
+                    <span className="crm-ord-ikon-kolom" aria-hidden="true"><IkonKolom size={18} /></span>
+                    <span className="crm-ord-nama-kolom min-w-0 flex-1 text-[15px] font-bold leading-tight text-ink" title={labelMap[status] || status}>
                       {labelMap[status] || status}
                     </span>
-                    <span className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-ink2">
-                      {kolom.length}
-                    </span>
+                    <span className="crm-ord-hitung rounded-full px-2 py-0.5 text-[12px] font-bold tabular-nums">{kolom.length}</span>
                   </div>
-                  <div className="mb-2 mt-1 flex items-baseline justify-between gap-2 px-0.5">
-                    <span className="text-[13px] font-bold tabular-nums text-ink">
+                  <div className="mb-2.5 mt-2 flex items-baseline justify-between gap-2 px-0.5">
+                    <span className="crm-ord-total-kolom text-[15px] font-extrabold tabular-nums text-ink" title="Total nilai order di kolom ini (yang dimuat)">
                       {formatRupiahShort(nilaiKolom)}
                     </span>
                     {mandekKolom > 0 && (
-                      <span className="shrink-0 text-[10px] font-semibold text-orange">
-                        {mandekKolom} mandek
-                      </span>
+                      <span className="shrink-0 text-[11px] font-semibold text-orange">{mandekKolom} mandek</span>
                     )}
                   </div>
-                  <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
+                  <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2.5 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
                       <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !canEditLunas} onReopenForDelivery={handleReopenForDelivery} reopeningId={reopeningId} onBukaUnit={bukaUnit} />
                     ))}
                     {kolom.length === 0 && (
-                      <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
+                      <div className="crm-ord-kosong flex min-h-24 flex-1 items-center justify-center rounded-xl px-2 py-4 text-center text-[12.5px] text-ink3">
                         Kosong
                       </div>
                     )}
@@ -1358,7 +1381,7 @@ export default function Orders() {
              ditulis manual, bukan lewat <Table>/<TBody> component) — tetap
              butuh class ini supaya cocok seleksi wildcard kaca. No-op di
              luar .glass-division. */
-          <div className="overflow-x-auto rounded-2xl bg-surface shadow-card dh-table">
+          <div className="crm-ord-tabel overflow-x-auto rounded-2xl bg-surface shadow-card dh-table">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
