@@ -136,11 +136,48 @@ export function JembatanUangMasukKas({ from, to }) {
   );
 }
 
+/** Isi penjelasan "Kenapa angkanya berbeda?" (pasangan angka dari kontrak + glosarium + jembatan opsional). Dipakai KenapaBeda (Finance, lipat) dan panel Rekonsiliasi Laporan Sales (tautan di dalam panel). */
+export function IsiKenapaBeda({ metrik = [], from, to, denganJembatan = false }) {
+  const k = useKontrak();
+  const daftar = useMemo(() => (k ? metrik.map((x) => k.peta.get(x)).filter(Boolean) : []), [k, metrik]);
+  return (
+    <div className="space-y-4">
+      <p className="text-[13px] leading-relaxed text-ink2">
+        Angka Finance punya tanggal dan sumber yang berbeda-beda — uang diterima, dibukukan, dan diakui sebagai pendapatan adalah tiga kejadian yang berbeda.
+        Selisihnya selalu bisa dijelaskan sampai Rp0; berikut penjelasannya.
+      </p>
+      {daftar.length > 0 && (
+        <ul className="space-y-2.5">
+          {daftar.map((m) => (
+            <li key={m.kunci} className="rounded-btn bg-inset/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink2">
+              <b className="block text-[13px] font-semibold text-ink">{m.nama}</b>
+              {m.definisi}
+              <span className="mt-1 block text-ink3">Tanggal: {m.basisLabel} · Sumber: {m.sumber}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {k?.glosarium && (
+        <div>
+          <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink3">Istilah</p>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+            {k.glosarium.map((g) => (
+              <div key={g.kunci} className="text-[12.5px] leading-snug">
+                <dt className="inline font-semibold text-ink">{g.istilah}: </dt>
+                <dd className="m-0 inline text-ink2">{g.arti}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+      {denganJembatan && from && to && <JembatanUangMasukKas from={from} to={to} />}
+    </div>
+  );
+}
+
 /** Panel "Kenapa angkanya berbeda?" — lipat; isi: pasangan angka (dari kontrak) + glosarium + jembatan opsional (children). */
 export function KenapaBeda({ metrik = [], from, to, denganJembatan = false, className }) {
   const [buka, setBuka] = useState(false);
-  const k = useKontrak();
-  const daftar = useMemo(() => (k ? metrik.map((x) => k.peta.get(x)).filter(Boolean) : []), [k, metrik]);
   return (
     <Card className={cn("fin-glass", className)}>
       <CardContent className="py-3">
@@ -150,36 +187,8 @@ export function KenapaBeda({ metrik = [], from, to, denganJembatan = false, clas
           {buka ? <ChevronDown size={16} className="text-ink3" /> : <ChevronRight size={16} className="text-ink3" />}
         </button>
         {buka && (
-          <div className="mt-3 space-y-4">
-            <p className="text-[13px] leading-relaxed text-ink2">
-              Angka Finance punya tanggal dan sumber yang berbeda-beda — uang diterima, dibukukan, dan diakui sebagai pendapatan adalah tiga kejadian yang berbeda.
-              Selisihnya selalu bisa dijelaskan sampai Rp0; berikut penjelasannya.
-            </p>
-            {daftar.length > 0 && (
-              <ul className="space-y-2.5">
-                {daftar.map((m) => (
-                  <li key={m.kunci} className="rounded-btn bg-inset/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink2">
-                    <b className="block text-[13px] font-semibold text-ink">{m.nama}</b>
-                    {m.definisi}
-                    <span className="mt-1 block text-ink3">Tanggal: {m.basisLabel} · Sumber: {m.sumber}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {k?.glosarium && (
-              <div>
-                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink3">Istilah</p>
-                <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
-                  {k.glosarium.map((g) => (
-                    <div key={g.kunci} className="text-[12.5px] leading-snug">
-                      <dt className="inline font-semibold text-ink">{g.istilah}: </dt>
-                      <dd className="m-0 inline text-ink2">{g.arti}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
-            {denganJembatan && from && to && <JembatanUangMasukKas from={from} to={to} />}
+          <div className="mt-3">
+            <IsiKenapaBeda metrik={metrik} from={from} to={to} denganJembatan={denganJembatan} />
           </div>
         )}
       </CardContent>

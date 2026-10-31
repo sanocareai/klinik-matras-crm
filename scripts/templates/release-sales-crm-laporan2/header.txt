@@ -1,0 +1,22 @@
+# RILIS FRONTEND-SAJA "Sales CRM — Laporan Analitik fase 2 (Performa Tim, Pipeline, Rekonsiliasi Sales–Finance)" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image.
+# Isi (penyajian saja; metrik, rumus, periode, endpoint, ekspor, hak akses tidak berubah): Performa Tim (peringatan ringkas, 4 KPI + pendukung, penjualan biru/respons tosca dengan legenda satuan, tabel Rincian Performa);
+# Pipeline (tabel posisi saat ini + "Rasio antar tahap", Kecepatan/Pergerakan bertanda "Selama periode", pesan durasi terlama dengan penjelasan klik/keyboard); Rekonsiliasi Sales–Finance (status terpisah, alur tiga angka, dua tahap yang bisa dibuka; empat kartu lama dilebur).
+# KOORDINASI finance/kontrak.jsx: satu-satunya berkas di luar Laporan; menambah ekspor IsiKenapaBeda (KenapaBeda tetap, tampil identik di Finance). Redesign-1 (Ringkasan Finance) dikoordinasikan sebelum rilis.
+# Order/palet --ord-*/--pay-*, badge, format.js, main.jsx, shell TIDAK disentuh. Font tetap Manrope (tanpa font-family/@import baru). PWA tidak berubah.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif a0dbe2fb (Laporan Ringkasan/Sales/Marketing; di atas Order f3dcb541 dan backend anti-dobel media 3786430a). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-sales-crm-laporan2.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/slp2.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/slp2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/slp2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/slp2.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/slp2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-sales-crm-laporan2.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-sales-crm-laporan2/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)

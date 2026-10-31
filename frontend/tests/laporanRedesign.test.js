@@ -94,7 +94,7 @@ test("Sales: empat KPI + metrik pendukung, rumus, ekspor, rincian Lunas & tabel 
     'label="Konversi Tim"', "numericValue={total?.conversionRate || 0}", 'label="Target Tim"', "numericValue={targetInfo.percentToTarget || 0}",
     'label: "AOV Tim"', "numericValue: teamAovAll", 'label: "Chat Spam"', "numericValue: total?.spamCount || 0",
     "onExport({ rekonSales: rekon.data })", "openLunasDetail(r.userId, r.name)", "api.getSalesLunasDetail({ userId, ...toApiParams(range) })",
-    "<KartuRekon", "<PanelRekon", "<KartuPenjualanKaryawan range={range} />", 'title="Leaderboard Sales"', 'title="Nilai Penjualan per Sales"', 'title="Rincian Penjualan"',
+    "<PanelRekon", "<KartuPenjualanKaryawan range={range} />", 'title="Leaderboard Sales"', 'title="Nilai Penjualan per Sales"', 'title="Rincian Penjualan"',
   ]) assert.ok(sales.includes(frag), frag);
   // 11 kolom metrik tabel rincian (+ kolom Sales) tidak berkurang
   assert.equal((sales.match(/\{ k: "/g) || []).length, 11);

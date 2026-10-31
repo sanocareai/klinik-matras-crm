@@ -1,0 +1,19 @@
+# Teks yang HANYA ada di Laporan baru (tidak ada di dist aktif); teks fitur live (termasuk Order f3dcb541) yang HARUS ada di KEDUANYA.
+for s0 in "crm-rk-alur" "rekon-tahap-tombol" "crm-pl-posisi" "bottleneck-info" "Rasio antar tahap" "crm-pt-tabel"; do
+  [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks Laporan baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat Laporan baru: ${s0}"
+done
+# CSS: lapisan Laporan (.crm-lap) hanya di dist baru; lapisan sebelumnya (termasuk Order) tetap ada
+for c1 in ".crm-rk-alur" ".crm-rk-tahap" ".crm-pl-posisi" ".crm-pt-legenda"; do
+  [ -z "$(grep -lF -- "$c1" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$c1" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru TIDAK memuat aturan ${c1}"
+done
+for c0 in ".crm-dash" ".crm-skin" ".crm-pipe-isi" ".crm-utama" ".crm-so-c" ".topbar-searchfield" ".sidebar-help-btn" ".crm-ws-menu" ".tab-chip-konteks" ".crm-pel-tabel" ".crm-pel-bulk" ".stage-field" ".crm-pipe-toolbar" ".crm-pipe-kolom" ".ord-chip" ".crm-ord-toolbar" ".crm-ord-kolom" ".crm-lap" ".crm-ss-sebaran" ".crm-mk-tabel" ".crm-lap-alert"; do
+  [ -n "$(grep -lF -- "$c0" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$c0" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru KEHILANGAN ${c0}"
+done
+for s2 in "Sales Overview" "Deal Pipeline" "Top Performing Reps" "Needs Action" "Hot Leads" "Recent Activity" "Kasus Komplain Butuh Follow-up" "Lihat semua sales" "Buka Inbox" "Buka Pipeline" "crm-kpi-tile" "komplain perlu ditindaklanjuti" "sanss-crm-skin" "Tutup emoji" "inbox-page-head" "Nilai Penjualan Tim" "needs-action-daftar" "hot-leads-daftar" "aktivitas-toggle" "crm-pipe-baris" "crm-so-c" "crm-pipe-ikon" "topbar-searchfield" "sidebar-help-btn" "tab-chip-konteks" "Cari halaman atau menu" "workspace-switcher-ringkas" "crm-pel-tabel" "pelanggan-kolom:v1" "Kolom tambahan" "Total estimasi nilai" "Seret kartu ke sini" "crm-pipe-kolom" "Metrik lainnya" "Lihat cakupan angka" "crm-ord-kolom" "crm-ord-kelengkapan" "Kelola biaya iklan" "Tren lead harian" "Rekonsiliasi Sales–Finance" "Leaderboard Sales" "Aging Piutang" "Performa Sumber" "Sebaran Tahap" "crm-mk-kel" "tren-satu-titik" "crm-lap-metrik" "crm-lap-alert"; do
+  [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): Performa Tim/Pipeline/Rekonsiliasi baru (JS+CSS) ada; Laporan fase 1, Dashboard/kerangka/Pelanggan/Pipeline/Order tetap; teks fitur live tetap"
