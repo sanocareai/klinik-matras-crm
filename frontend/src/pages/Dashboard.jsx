@@ -156,13 +156,13 @@ export default function Dashboard({ user }) {
         />
 
         {/* ── Dua kolom: corong + leaderboard ── */}
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PipelineFunnelCard range={range} />
+        <section className="crm-bawah grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <PipelineFunnelCard range={range} ringkas />
           <TopRepsCard range={range} />
         </section>
 
         {/* ── Dua kolom: antrean tindakan + lead panas ── */}
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="crm-bawah grid grid-cols-1 gap-4 lg:grid-cols-2">
           <TaskQueueCard
             items={d.followUps.data?.items}
             loading={d.followUps.isLoading}
@@ -183,6 +183,7 @@ export default function Dashboard({ user }) {
             klik kartu workspace sekarang langsung ke sini, bukan mampir
             command center dulu. ── */}
         <RecentActivityCard
+          ringkas
           items={d.recentActivity.data?.items}
           loading={d.recentActivity.isLoading}
           error={d.recentActivity.isError}

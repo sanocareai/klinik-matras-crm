@@ -1,24 +1,18 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { UserPlus, ShoppingCart, GitBranch } from "lucide-react";
+import { UserPlus, ShoppingCart, GitBranch, ChevronDown } from "lucide-react";
 import SectionCard from "@/components/ui/section-card.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import IconTile from "@/components/ui/icon-tile.jsx";
+import { MiniTile, IkAlur } from "./MiniIkon.jsx";
+import { IkonTas, IkonOrang } from "./KpiTile.jsx";
 import { formatRupiahShort, STAGE_LABELS } from "@/utils/format.js";
 import { formatRelatif } from "@/utils/formatDate.js";
 
-// ─── RECENT ACTIVITY ─────────────────────────────────────────────────────────
-// Padanan "Recent activity" di command center lama (DivisionPage.jsx, /portal/
-// growth) — di sana SENGAJA cuma empty state jujur karena backend belum py
-// datanya (lihat komentar panjang di file itu). Sekarang beneran ADA:
-// GET /analytics/recent-activity gabungan order baru + lead baru + perpindahan
-// pipeline, diurutkan waktu. Dipindah ke Dashboard (30 Agustus 2026) supaya
-// klik kartu workspace di Main Hub bisa langsung ke Dashboard tanpa mampir
-// command center dulu — lihat catatan di Portal.jsx.
 const JENIS = {
-  order: { Icon: ShoppingCart, depth: 3 },
-  lead:  { Icon: UserPlus,     depth: 1 },
-  stage: { Icon: GitBranch,    depth: 2 },
+  order: { Icon: ShoppingCart, depth: 3, Ikon: IkonTas,   tone: "green" },
+  lead:  { Icon: UserPlus,     depth: 1, Ikon: IkonOrang, tone: "blue" },
+  stage: { Icon: GitBranch,    depth: 2, Ikon: IkAlur,    tone: "indigo" },
 };
 
 function teksAktivitas(item) {
@@ -42,9 +36,65 @@ function teksAktivitas(item) {
   }
 }
 
-export default function RecentActivityCard({ items = [], loading, error }) {
+// Batas awal daftar ringkas Dashboard Sales CRM; sisanya dibuka lewat "Lihat semua" (data tidak dibuang).
+const AWAL = 5;
+
+// `ringkas` (OPSIONAL, default false — Portal & ReadinessPanel memakai kartu ini dan TIDAK berubah): daftar padat ikon · nama · aktivitas · waktu,
+// lima teratas dulu, "Lihat semua" membuka seluruh data yang dimuat (tanpa tinggi minimum / padding berlebih).
+export default function RecentActivityCard({ items = [], loading, error, ringkas = false }) {
   const navigate = useNavigate();
-  const list = (Array.isArray(items) ? items : []).slice(0, 8);
+  const [semua, setSemua] = useState(false);
+  const data = Array.isArray(items) ? items : [];
+  const list = ringkas ? data : data.slice(0, 8);
+  const tampil = ringkas && !semua ? list.slice(0, AWAL) : list;
+  const adaSisa = ringkas && list.length > AWAL;
+
+  if (ringkas) {
+    return (
+      <SectionCard
+        title="Recent Activity"
+        footer={adaSisa ? (
+          <button type="button" className="crm-lihat-semua" aria-expanded={semua} onClick={() => setSemua((v) => !v)} data-testid="aktivitas-toggle">
+            {semua ? "Tampilkan lebih sedikit" : `Lihat semua (${list.length})`}
+            <ChevronDown size={15} className={semua ? "crm-putar" : undefined} aria-hidden="true" />
+          </button>
+        ) : undefined}
+      >
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10 rounded-btn" />)}
+          </div>
+        ) : error ? (
+          <p className="crm-kosong">Gagal memuat aktivitas.</p>
+        ) : list.length === 0 ? (
+          <p className="crm-kosong" data-testid="aktivitas-kosong">Belum ada aktivitas terbaru.</p>
+        ) : (
+          <div className="crm-daftar" data-testid="aktivitas-daftar">
+            {tampil.map((item) => {
+              const j = JENIS[item.type] || JENIS.lead;
+              const { judul, sub } = teksAktivitas(item);
+              return (
+                <button
+                  key={`${item.type}-${item.id}`}
+                  type="button"
+                  onClick={() => item.customerId && navigate(`/customers?id=${item.customerId}`)}
+                  disabled={!item.customerId}
+                  className="crm-baris"
+                >
+                  <MiniTile tone={j.tone} Ikon={j.Ikon} />
+                  <span className="crm-baris-teks">
+                    <span className="crm-baris-judul">{judul}</span>
+                    <span className="crm-baris-sub">{sub}</span>
+                  </span>
+                  <span className="crm-baris-waktu">{formatRelatif(item.createdAt)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </SectionCard>
+    );
+  }
 
   return (
     <SectionCard title="Recent Activity">

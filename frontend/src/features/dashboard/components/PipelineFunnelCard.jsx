@@ -7,31 +7,12 @@ import { api } from "@/api.js";
 import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
 import { toApiParams } from "@/lib/dateRange.js";
 
-// Revisi 26 Jul 2026: pipeline 8-stage (LOST dihapus dari sistem, jadi tidak
-// ada lagi stage negatif yang perlu disembunyikan dari corong) — seluruh
-// tahap NEW→REVIEWED ditampilkan supaya corong mencerminkan exit-criteria
-// nyata di tiap tahap operasional.
-// Revisi 30 Jul 2026: PAID dihapus (7 stage) — COMPLETED sekarang jadi tahap
-// "berhasil" (dipakai juga sebagai pembilang conversion rate di bawah).
-// Revisi 24 Agustus 2026: 7 stage → 4 (NEW/PROSPECT/TRANSACTION/SPAM). SPAM
-// SENGAJA TIDAK ditampilkan di corong ini — corong menggambarkan progres
-// lead MENYEMPIT ke arah closing, dan chat junk bukan bagian dari narasi
-// itu (dikecualikan juga dari Closing Rate, lihat routes/analytics.js
-// /sales-report). SPAM tetap terlihat di tempat lain (Kanban Pipeline).
-// Revisi 26 Agustus 2026: REVIEWED dikembalikan (definisi baru — review
-// publik) sebagai tahap KEEMPAT — subset dari TRANSACTION (customer yang
-// closing DAN lanjut kasih review), jadi tetap konsisten dengan corong yang
-// menyempit terus ke kanan.
+// Urutan tahap & sumber data (analytics/pipeline-funnel) tidak berubah.
 const TAHAP = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED"];
 
-// ─── DEAL PIPELINE ───────────────────────────────────────────────────────────
-// DS v2.4: periode SENDIRI (PeriodMenu) DIHAPUS — sekarang mengikuti SATU
-// date picker di header Dashboard lewat prop `range`, sama seperti Sales
-// Overview & Top Performing Reps. Sebelumnya tiap kartu punya pemilih periode
-// masing-masing yang independen — pilih tanggal di satu kartu tidak
-// mengubah kartu lain, padahal semuanya menampilkan data yang "sama-sama
-// tentang periode ini" di mata pengguna.
-export default function PipelineFunnelCard({ range, className }) {
+// `ringkas` (OPSIONAL, default false — PipelineWidget memakai kartu ini dan TIDAK berubah): bar horizontal per tahap —
+// nama tahap, jumlah lead, nilai; panjang bar = jumlah lead ÷ jumlah terbesar; jumlah 0 → tanpa isian.
+export default function PipelineFunnelCard({ range, className, ringkas = false }) {
   const params = useMemo(() => toApiParams(range), [range]);
 
   const q = useQuery({
@@ -50,15 +31,8 @@ export default function PipelineFunnelCard({ range, className }) {
   }));
 
   const adaData = stages.some((s) => s.count > 0);
+  const maks = Math.max(1, ...stages.map((s) => s.count));
 
-  // Revisi 25 Agustus 2026: footer "Conversion Rate" DIHAPUS — sebelumnya
-  // dihitung sendiri di sini sebagai TRANSACTION count / NEW count, dua-duanya
-  // snapshot state HARI INI dari populasi yang tidak terkait (sebagian besar
-  // customer TRANSACTION sekarang sudah lama keluar dari NEW), jadi bukan
-  // conversion rate yang valid secara statistik. Metrik konversi sungguhan
-  // (berbasis transisi pipeline periode) ada di Laporan > Sales Report. Lebih
-  // baik tidak menampilkan angka daripada menampilkan angka yang salah makna
-  // — prinsip yang sama dipegang di seluruh sistem atribusi lead.
   return (
     <SectionCard title="Deal Pipeline" className={className}>
       {q.isLoading ? (
@@ -66,9 +40,22 @@ export default function PipelineFunnelCard({ range, className }) {
           {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 rounded-btn" />)}
         </div>
       ) : q.isError ? (
-        <p className="t-secondary py-8 text-center">Gagal memuat data pipeline.</p>
+        <p className={ringkas ? "crm-kosong" : "t-secondary py-8 text-center"}>Gagal memuat data pipeline.</p>
       ) : !adaData ? (
-        <p className="t-secondary py-8 text-center">Belum ada data pipeline pada periode ini.</p>
+        <p className={ringkas ? "crm-kosong" : "t-secondary py-8 text-center"}>Belum ada data pipeline pada periode ini.</p>
+      ) : ringkas ? (
+        <ul className="crm-pipe" data-testid="pipeline-bar">
+          {stages.map((s) => (
+            <li key={s.key} className="crm-pipe-baris" data-stage={s.key}>
+              <span className="crm-pipe-nama">{s.label}</span>
+              <span className="crm-pipe-jumlah">{s.count}</span>
+              <span className="crm-pipe-nilai">{s.value}</span>
+              <span className="crm-pipe-jalur" role="presentation">
+                {s.count > 0 && <span className="crm-pipe-isi" style={{ width: `${Math.max(4, (s.count / maks) * 100)}%` }} />}
+              </span>
+            </li>
+          ))}
+        </ul>
       ) : (
         <Funnel stages={stages} />
       )}

@@ -1,18 +1,18 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Phone, Mail, CalendarDays, CheckSquare, Clock } from "lucide-react";
+import { Clock, CheckCircle2 } from "lucide-react";
 import SectionCard, { ViewAllLink } from "@/components/ui/section-card.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
-import IconTile from "@/components/ui/icon-tile.jsx";
+import { MiniTile, IkChat, IkNampan, IkLonceng } from "./MiniIkon.jsx";
 import { formatDurasiRelatif } from "@/utils/format.js";
 
-// Ikon + kedalaman ubin per jenis antrean. Kedalaman dipakai untuk membedakan
-// jenis TANPA memakai hue berbeda — inti aturan "seragam biru, beda kedalaman".
+// "Needs Action" — antrean chat yang menunggu tindakan. Sumber data & aturan jenis (balas / ambil / follow-up) tidak berubah;
+// tampilan (redesain 31 Okt 2026): baris ringkas ikon · nama + tindakan · waktu. Tinggi kartu mengikuti isi (tidak dipaksa
+// setinggi Hot Leads — lihat .crm-bawah di styles/sanss-crm-dashboard.css).
 const JENIS = {
-  balas:     { Icon: Phone,        depth: 4, label: "Balas chat" },
-  ambil:     { Icon: CheckSquare,  depth: 3, label: "Ambil & balas" },
-  followup:  { Icon: Mail,         depth: 2, label: "Follow-up" },
-  jadwal:    { Icon: CalendarDays, depth: 1, label: "Jadwalkan" },
+  balas:    { Ikon: IkChat,    tone: "orange", label: "Balas chat" },
+  ambil:    { Ikon: IkNampan,  tone: "indigo", label: "Ambil & balas" },
+  followup: { Ikon: IkLonceng, tone: "blue",   label: "Follow-up" },
 };
 
 function jenisDari(t) {
@@ -21,17 +21,6 @@ function jenisDari(t) {
   return "followup";
 }
 
-// ─── ANTREAN TUGAS ───────────────────────────────────────────────────────────
-// Padanan "Upcoming Tasks" di referensi. Sumber datanya /analytics/follow-ups
-// (percakapan yang menunggu balasan) — itu satu-satunya "tugas" nyata yang
-// dimiliki sistem ini; TIDAK ada modul task terpisah, jadi tidak dibuat-buat.
-//
-// `t.id` DARI BACKEND ADALAH CONVERSATION ID (lihat routes/analytics.js
-// /follow-ups: `items.push({ id: c.id, ... })` dengan c = Conversation).
-// Klik baris sekarang membuka Inbox LANGSUNG di percakapan itu lewat
-// `?conv=` — mekanisme deep-link ini sudah ada (dipakai toast notifikasi),
-// bukan fitur baru di backend. Sebelumnya semua baris hanya navigate ke
-// "/inbox" polos, sales harus cari sendiri kontaknya secara manual.
 export default function TaskQueueCard({ items = [], loading, error }) {
   const navigate = useNavigate();
   const list = (Array.isArray(items) ? items : []).slice(0, 4);
@@ -42,34 +31,25 @@ export default function TaskQueueCard({ items = [], loading, error }) {
       footer={<ViewAllLink onClick={() => navigate("/inbox")}>Buka Inbox</ViewAllLink>}
     >
       {loading ? (
-        <div className="flex flex-col gap-3">
-          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-11 rounded-btn" />)}
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10 rounded-btn" />)}
         </div>
       ) : error ? (
-        <p className="t-secondary py-8 text-center">Gagal memuat antrean.</p>
+        <p className="crm-kosong">Gagal memuat antrean.</p>
       ) : list.length === 0 ? (
-        <p className="t-secondary py-8 text-center">Semua chat sudah dibalas 👍</p>
+        <p className="crm-kosong" data-testid="needs-action-kosong"><CheckCircle2 size={16} aria-hidden="true" /> Semua chat sudah dibalas</p>
       ) : (
-        <div className="flex flex-col">
+        <div className="crm-daftar" data-testid="needs-action-daftar">
           {list.map((t) => {
             const j = JENIS[jenisDari(t)] || JENIS.followup;
             return (
-              <button
-                key={t.id}
-                onClick={() => navigate(`/inbox?conv=${t.id}`)}
-                className="-mx-2 flex items-center gap-3 rounded-btn px-2 py-2.5 text-left transition-colors hover:bg-hovertint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-              >
-                <IconTile icon={j.Icon} depth={j.depth} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <p className="t-body truncate font-semibold">{t.customerName}</p>
-                  {/* Kontras dinaikkan dari t-secondary (60% alpha) ke 75% —
-                      di kartu ini teksnya kecil, 60% terasa terlalu pudar. */}
-                  <p className="truncate text-[13px] text-ink/75">{t.nextAction || j.label}</p>
-                </div>
-                <span className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-ink/65">
-                  <Clock size={11} />
-                  {formatDurasiRelatif(t.waitingMinutes)}
+              <button key={t.id} type="button" onClick={() => navigate(`/inbox?conv=${t.id}`)} className="crm-baris">
+                <MiniTile tone={j.tone} Ikon={j.Ikon} />
+                <span className="crm-baris-teks">
+                  <span className="crm-baris-judul">{t.customerName}</span>
+                  <span className="crm-baris-sub">{t.nextAction || j.label}</span>
                 </span>
+                <span className="crm-baris-waktu"><Clock size={11} aria-hidden="true" />{formatDurasiRelatif(t.waitingMinutes)}</span>
               </button>
             );
           })}

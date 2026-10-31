@@ -127,3 +127,100 @@
 .crm-dash .crm-so-kepala p { margin-block-end: 0; }
 .crm-dash .crm-so-kepala .t-metric { margin-top: 4px; }
 .crm-dash .crm-so-kepala { margin-bottom: 10px; }
+
+/* ═══ 7. BAGIAN BAWAH: Deal Pipeline · Top Performing Reps · Needs Action · Hot Leads · Recent Activity ═══
+   Grid tidak memaksa kartu sedikit isi setinggi tetangganya (align-items: start); HP satu kolom (grid-cols-1 bawaan). */
+.crm-dash .crm-bawah { align-items: start; }
+.crm-dash .crm-kosong {
+  display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; padding: 14px 8px;
+  font-size: 13px; color: var(--text-secondary); text-align: center;
+}
+.crm-dash .crm-kosong svg { color: #146C2E; flex: 0 0 auto; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-dash .crm-kosong svg { color: #6EE7A0; }
+
+/* ── ubin ikon mini: satu gaya dengan ikon KPI (berisi, dua warna, sudut lembut) ── */
+.crm-dash .crm-ik-tile {
+  --ik-a: #FFFFFF; --ik-b: #D4E1FF; --tile-bg: linear-gradient(145deg, #5B8CFF 0%, #3965FA 100%);
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 10px; background: var(--tile-bg);
+  box-shadow: 0 4px 10px -6px rgba(27, 27, 57, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.crm-dash .crm-ik-tile svg { display: block; }
+.crm-dash .crm-ik-tile[data-tone="indigo"] { --ik-b: #DDE2FF; --tile-bg: linear-gradient(145deg, #8E9BFF 0%, #5563F0 100%); }
+.crm-dash .crm-ik-tile[data-tone="green"]  { --ik-b: #C8F5D8; --tile-bg: linear-gradient(145deg, #3FD07A 0%, #12994A 100%); }
+.crm-dash .crm-ik-tile[data-tone="orange"] { --ik-b: #FFE2C2; --tile-bg: linear-gradient(145deg, #FFA24D 0%, #F26B1D 100%); }
+
+/* ── baris daftar (Needs Action, Hot Leads, Recent Activity) ── */
+.crm-dash .crm-daftar { display: flex; flex-direction: column; margin: 0 -8px; }
+.crm-dash .crm-baris {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; border-radius: 12px;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color 0.12s ease;
+}
+.crm-dash .crm-baris:hover:not(:disabled) { background: var(--bg-hover); }
+.crm-dash .crm-baris:disabled { cursor: default; }
+.crm-dash .crm-baris--dua { align-items: flex-start; }
+.crm-dash .crm-baris-teks { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.crm-dash .crm-baris-judul { font-size: 14px; font-weight: 700; line-height: 1.3; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.crm-dash .crm-baris-sub { font-size: 12.5px; line-height: 1.3; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.crm-dash .crm-baris-waktu {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-width: 52px; justify-content: flex-end;
+  font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap;
+}
+/* Hot Leads: baris 1 = nama (ruang terbesar) + nilai/skor; baris 2 = badge tahap + keterangan */
+.crm-dash .crm-baris-atas { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.crm-dash .crm-baris-atas .crm-baris-judul { flex: 1 1 auto; }
+.crm-dash .crm-baris-nilai { flex: 0 0 auto; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.crm-dash .crm-baris-bawah { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; }
+.crm-dash .crm-baris-bawah .crm-baris-sub { flex: 1 1 auto; }
+.crm-dash .crm-lihat-semua {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; border: 0; background: transparent; padding: 0;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--accent); cursor: pointer;
+}
+.crm-dash .crm-lihat-semua:hover { opacity: 0.75; }
+.crm-dash .crm-putar { transform: rotate(180deg); }
+
+/* ── Deal Pipeline: bar horizontal per tahap ── */
+.crm-dash .crm-pipe { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.crm-dash .crm-pipe-baris {
+  --bar: #99B7FC;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 12px; row-gap: 6px;
+}
+.crm-dash .crm-pipe-baris[data-stage="PROSPECT"]    { --bar: #6E8EFF; }
+.crm-dash .crm-pipe-baris[data-stage="TRANSACTION"] { --bar: #3965FA; }
+.crm-dash .crm-pipe-baris[data-stage="REVIEWED"]    { --bar: #2A47B8; }
+.crm-dash .crm-pipe-nama { font-size: 14px; font-weight: 700; color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-dash .crm-pipe-jumlah { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; min-width: 2ch; }
+.crm-dash .crm-pipe-nilai { font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text-secondary); text-align: right; min-width: 8.5em; }
+.crm-dash .crm-pipe-jalur { grid-column: 1 / -1; display: block; height: 10px; border-radius: 999px; background: var(--bg-inset); overflow: hidden; }
+.crm-dash .crm-pipe-isi { display: block; height: 100%; border-radius: 999px; background: var(--bar); }
+
+/* ── Top Performing Reps: baris grid, angka rata kanan ── */
+.crm-dash .crm-reps { display: flex; flex-direction: column; }
+.crm-dash .crm-rep {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(7.5em, auto) 4.5em; align-items: center; column-gap: 10px; padding: 7px 0;
+}
+.crm-dash .crm-rep + .crm-rep { border-top: 1px solid var(--hairline); }
+.crm-dash .crm-rep--kepala { padding: 0 0 6px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-secondary); }
+.crm-dash .crm-rep--kepala + .crm-rep { border-top: 1px solid var(--hairline); }
+.crm-dash .crm-rep-nama { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.crm-dash .crm-rep-teks { font-size: 14px; font-weight: 600; color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-dash .crm-rep--kepala .crm-rep-nama { display: block; font-weight: 600; }
+.crm-dash .crm-rep-nilai { text-align: right; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+.crm-dash .crm-rep-closing { text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
+.crm-dash .crm-rep--kepala .crm-rep-nilai, .crm-dash .crm-rep--kepala .crm-rep-closing { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); }
+.crm-dash .crm-rep-satuan { display: none; font-weight: 500; }
+@media (max-width: 520px) {
+  /* HP: baris 1 = peringkat + nama; baris 2 = nilai dan closing di bawah nama */
+  .crm-dash .crm-rep { grid-template-columns: 24px minmax(0, 1fr) auto; row-gap: 2px; }
+  .crm-dash .crm-rep--kepala { display: none; }
+  .crm-dash .crm-rep-nama { grid-column: 2 / -1; }
+  .crm-dash .crm-rep-nilai { grid-column: 2; grid-row: 2; text-align: left; }
+  .crm-dash .crm-rep-closing { grid-column: 3; grid-row: 2; }
+  .crm-dash .crm-rep-satuan { display: inline; }
+  .crm-dash .crm-pipe-nilai { min-width: 0; }
+}
+@media (max-width: 520px) {
+  /* HP: badge tahap di baris kedua, keterangan singkat membungkus di bawahnya (tidak terpotong) */
+  .crm-dash .crm-baris-bawah { flex-wrap: wrap; row-gap: 2px; }
+  .crm-dash .crm-baris-bawah .crm-baris-sub { flex: 1 1 100%; white-space: normal; }
+}
