@@ -439,3 +439,119 @@
 .crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(190px, 1.5fr) 72px minmax(140px, 2fr) 100px 124px; }
 @container ss (max-width: 560px) { .crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(0, 1fr) auto; } }
 .crm-lap .crm-pt-tabel tbody td, .crm-lap .crm-pt-tabel tfoot td { padding-right: 30px; }
+
+/* ── 17. REKONSILIASI SALES–FINANCE (tab Sales, 1 Nov 2026): alur tiga angka + dua tahap yang bisa dibuka ──────────────────────────── */
+.crm-lap .crm-rk-kepala { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.crm-lap .crm-rk-sub { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--text-secondary); }
+.crm-lap .crm-rk-kenapa {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 4px; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--crm-primary-ink, #2F57E0); border-radius: 8px;
+}
+.crm-lap .crm-rk-kenapa:hover { text-decoration: underline; }
+.crm-lap .crm-rk-kenapa-isi { margin-top: 12px; padding: 14px 16px; border-radius: 16px; background: var(--bg-inset); }
+.crm-lap .crm-rk :is(button, [role="button"]):focus-visible { outline: 2px solid #3965FA; outline-offset: 2px; }
+
+/* dua status TERPISAH */
+.crm-lap .crm-rk-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; }
+.crm-lap .crm-rk-st { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-rk-st[data-ok="1"] svg { color: #1F9D55; }
+.crm-lap .crm-rk-st[data-ok="0"] { color: #B3261E; }
+.crm-lap .crm-rk-st[data-tinjau="1"] { color: #9A4A00; }
+.crm-lap .crm-rk-st[data-tinjau="1"] svg { color: #C25E00; }
+.crm-lap .crm-rk-st[data-tinjau="0"] { font-weight: 500; color: var(--text-secondary); }
+:root[data-theme="dark"] .crm-lap .crm-rk-st[data-ok="1"] svg { color: #6EE7A0; }
+:root[data-theme="dark"] .crm-lap .crm-rk-st[data-ok="0"] { color: #FFB4AB; }
+:root[data-theme="dark"] .crm-lap .crm-rk-st[data-tinjau="1"] { color: #FFC38A; }
+:root[data-theme="dark"] .crm-lap .crm-rk-st[data-tinjau="1"] svg { color: #FFC38A; }
+.crm-lap .crm-rk-sekat { display: inline-block; width: 1px; height: 22px; background: var(--hairline); }
+
+/* ringkasan temuan (tetap terlihat saat perhitungan dilipat) */
+.crm-lap .crm-rk-temuan { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.crm-lap .crm-rk-temuan li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 10px 14px; border-radius: 14px; background: #FFF4E5; color: #5A3B0E; font-size: 13px; line-height: 1.45; }
+.crm-lap .crm-rk-temuan li b { font-size: 14px; color: #1B1B39; }
+.crm-lap .crm-rk-temuan li span { font-weight: 700; font-variant-numeric: tabular-nums; }
+.crm-lap .crm-rk-temuan li em { flex-basis: 100%; font-style: normal; }
+:root[data-theme="dark"] .crm-lap .crm-rk-temuan li { background: #33250F; color: #EBD3A9; }
+:root[data-theme="dark"] .crm-lap .crm-rk-temuan li b { color: #F5F6FF; }
+.crm-lap .crm-rk-tautan { padding: 2px 8px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--crm-primary-ink, #2F57E0); text-decoration: underline; }
+
+/* alur tiga angka: horizontal di desktop, vertikal di HP */
+.crm-lap .crm-rk-alur { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 18px 0 14px; }
+.crm-lap .crm-rk-panah { display: flex; justify-content: center; color: var(--text-tertiary); transform: rotate(90deg); }
+@container laptab (min-width: 900px) {
+  .crm-lap .crm-rk-alur { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: 10px; }
+  .crm-lap .crm-rk-panah { align-items: center; transform: none; }
+}
+.crm-lap .crm-rk-alur-kartu {
+  --ik-a: #FFFFFF; --ik-b: #DDE2FF;
+  display: flex; align-items: flex-start; gap: 14px; min-width: 0; padding: 16px 18px; border-radius: 18px; border: 1px solid var(--hairline); background: var(--bg-inset);
+}
+.crm-lap .crm-rk-alur > .crm-rk-alur-kartu:first-child { border-color: rgba(57, 101, 250, 0.45); background: rgba(57, 101, 250, 0.08); }
+.crm-lap .crm-rk-alur-kartu--klik { cursor: pointer; }
+.crm-lap .crm-rk-alur-kartu--klik:hover { box-shadow: 0 10px 24px -18px rgba(57, 101, 250, 0.8); }
+.crm-lap .crm-rk-ikon {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 16px;
+  background: linear-gradient(145deg, #5B8CFF 0%, #3965FA 100%); box-shadow: 0 6px 14px -8px rgba(27, 27, 57, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.crm-lap .crm-rk-ikon svg { display: block; width: 30px; height: 30px; }
+.crm-lap .crm-rk-alur > .crm-rk-alur-kartu:nth-child(3) .crm-rk-ikon { background: linear-gradient(145deg, #7FA6FF 0%, #4A78F5 100%); }
+.crm-lap .crm-rk-alur > .crm-rk-alur-kartu:nth-child(5) .crm-rk-ikon { background: linear-gradient(145deg, #8E9BFF 0%, #5563F0 100%); }
+.crm-lap .crm-rk-alur-isi { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.crm-lap .crm-rk-alur-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-rk-alur-nilai { font-size: 26px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); text-wrap: balance; }
+.crm-lap .crm-rk-alur-sub { font-size: 13px; line-height: 1.4; color: var(--text-tertiary); }
+
+/* tahap yang bisa dibuka */
+.crm-lap .crm-rk-tahap-daftar { display: flex; flex-direction: column; gap: 10px; }
+.crm-lap .crm-rk-tahap { border-radius: 16px; border: 1px solid var(--hairline); background: var(--bg-inset); overflow: hidden; }
+.crm-lap .crm-rk-tahap-kepala { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; width: 100%; padding: 14px 16px; border: 0; background: transparent; cursor: pointer; font: inherit; text-align: left; color: var(--text-primary); }
+.crm-lap .crm-rk-no { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; background: #3965FA; font-size: 14px; font-weight: 800; color: #FFFFFF; }
+.crm-lap .crm-rk-tahap-nama { flex: 1 1 220px; min-width: 0; font-size: 15px; font-weight: 700; }
+.crm-lap .crm-rk-chip { padding: 2px 10px; border-radius: 999px; background: #FFF1DC; font-size: 12.5px; font-weight: 700; color: #9A4A00; }
+:root[data-theme="dark"] .crm-lap .crm-rk-chip { background: rgba(255, 169, 77, 0.16); color: #FFC38A; }
+.crm-lap .crm-rk-tahap-selisih { display: inline-flex; align-items: baseline; gap: 6px; font-size: 13.5px; color: var(--text-secondary); }
+.crm-lap .crm-rk-tahap-selisih b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.crm-lap .crm-rk-tahap-selisih b[data-ok="1"], .crm-lap .crm-rk-selisih[data-ok="1"] b { color: #146C2E; }
+.crm-lap .crm-rk-tahap-selisih b[data-ok="0"], .crm-lap .crm-rk-selisih[data-ok="0"] b { color: #B3261E; }
+:root[data-theme="dark"] .crm-lap .crm-rk-tahap-selisih b[data-ok="1"], :root[data-theme="dark"] .crm-lap .crm-rk-selisih[data-ok="1"] b { color: #6EE7A0; }
+:root[data-theme="dark"] .crm-lap .crm-rk-tahap-selisih b[data-ok="0"], :root[data-theme="dark"] .crm-lap .crm-rk-selisih[data-ok="0"] b { color: #FFB4AB; }
+.crm-lap .crm-rk-tahap-aksi { display: inline-flex; align-items: center; gap: 4px; padding-left: 14px; border-left: 1px solid var(--hairline); font-size: 13.5px; font-weight: 600; color: var(--crm-primary-ink, #2F57E0); white-space: nowrap; }
+.crm-lap .crm-rk-tahap-isi { padding: 4px 16px 16px; border-top: 1px solid var(--hairline); }
+.crm-lap .crm-rk-tahap-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 0 6px; }
+.crm-lap .crm-rk-tahap-judul { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-rk-langkah { display: grid; grid-template-columns: minmax(0, 1fr) auto 18px; align-items: start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.crm-lap .crm-rk-langkah--klik { cursor: pointer; }
+.crm-lap .crm-rk-langkah--klik:hover { background: var(--bg-surface); }
+.crm-lap .crm-rk-langkah-teks { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.crm-lap .crm-rk-langkah-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 14px; color: var(--text-primary); overflow-wrap: anywhere; }
+.crm-lap .crm-rk-langkah-label em { font-style: normal; font-weight: 400; color: var(--text-tertiary); }
+.crm-lap .crm-rk-langkah--tebal .crm-rk-langkah-label { font-weight: 700; }
+.crm-lap .crm-rk-langkah-ket { font-size: 12.5px; line-height: 1.4; color: var(--text-tertiary); }
+.crm-lap .crm-rk-langkah-nilai { font-size: 14px; font-weight: 600; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.crm-lap .crm-rk-langkah--tebal .crm-rk-langkah-nilai { font-weight: 800; }
+.crm-lap .crm-rk-langkah-panah { color: var(--text-tertiary); padding-top: 2px; }
+.crm-lap .crm-rk-nol { padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.crm-lap .crm-rk-nol-tombol { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--bg-surface); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--crm-primary-ink, #2F57E0); }
+.crm-lap .crm-rk-nol-daftar { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.crm-lap .crm-rk-nol-daftar li { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text-secondary); }
+.crm-lap .crm-rk-nol-daftar li span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.crm-lap .crm-rk-nol-daftar li b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.crm-lap .crm-rk-hasil { margin-top: 2px; }
+.crm-lap .crm-rk-selisih { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(57, 101, 250, 0.1); font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.crm-lap .crm-rk-selisih b { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+.crm-lap .crm-rk-tinjau { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.crm-lap .crm-rk-tinjau li { font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+.crm-lap .crm-rk-tinjau li b { color: #9A4A00; }
+:root[data-theme="dark"] .crm-lap .crm-rk-tinjau li b { color: #FFC38A; }
+.crm-lap .crm-rk-catatan { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-tertiary); }
+.crm-lap .crm-rk-catatan svg { flex: 0 0 auto; margin-top: 2px; }
+.crm-lap .crm-rk-galat { margin: 14px 0 0; padding: 10px 14px; border-radius: 12px; background: #FFF1F0; font-size: 13px; color: #B3261E; }
+:root[data-theme="dark"] .crm-lap .crm-rk-galat { background: #2A1620; color: #FFB4AB; }
+@media (max-width: 639px) {
+  .crm-lap .crm-rk-tahap-aksi { padding-left: 0; border-left: 0; margin-left: auto; }
+  .crm-lap .crm-rk-alur-nilai { font-size: 24px; }
+}
+
+/* Kontras badge "Perlu ditinjau" (komponen bersama StatusJembatan) di dalam panel Rekonsiliasi: 4,1:1 → ≥ 4,5:1 */
+.crm-lap .crm-rk-tahap-status [class*="text-orange"] { color: #8F4400; }
+:root[data-theme="dark"] .crm-lap .crm-rk-tahap-status [class*="text-orange"] { color: #FFC38A; }

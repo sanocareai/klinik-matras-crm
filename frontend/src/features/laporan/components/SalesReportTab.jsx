@@ -13,8 +13,7 @@ import { api } from "@/api.js";
 import KpiLap from "./KpiLap.jsx";
 import MetrikRingkas from "./MetrikRingkas.jsx";
 import ChartCard from "./ChartCard.jsx";
-import { useRekonSalesFinance, KartuRekon, PanelRekon, DaftarRekonModal } from "./RekonSalesFinance.jsx";
-import { KenapaBeda } from "@/features/finance/kontrak.jsx";
+import { useRekonSalesFinance, PanelRekon, DaftarRekonModal } from "./RekonSalesFinance.jsx";
 import BarRow from "./BarRow.jsx";
 import KartuPenjualanKaryawan from "./KartuPenjualanKaryawan.jsx";
 
@@ -214,10 +213,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       ]} />
 
 
-      {/* ── Rekonsiliasi Sales–Finance: kartu terpisah + bridge (angka dari server) ─────────────── */}
-      <KartuRekon data={rekon.data} loading={rekon.loading} onBuka={setRekonBuka} />
+      {/* ── Rekonsiliasi Sales–Finance (redesain 1 Nov 2026): satu panel — alur tiga angka + dua tahap yang bisa dibuka; empat kartu lama (Uang Masuk, DP, Ongkir, Tanpa Atribusi) dan
+          "Kenapa angkanya berbeda?" sudah dipindah ke dalam panel (angka dari server) ─────────────── */}
       <PanelRekon data={rekon.data} loading={rekon.loading} error={rekon.error} onBuka={setRekonBuka} />
-      <KenapaBeda metrik={["uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"]} />
       <DaftarRekonModal kunci={rekonBuka} data={rekon.data} onClose={() => setRekonBuka(null)} onDitetapkan={() => { setRekonBuka(null); rekon.muatUlang(); }} />
 
       {/* ── Penjualan Karyawan: order karyawan non-Sales, masuk omzet perusahaan tetapi di luar angka Tim Sales ── */}

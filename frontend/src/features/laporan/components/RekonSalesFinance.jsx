@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, ExternalLink, ChevronRight } from "lucide-react";
+import { Loader2, ExternalLink, ChevronRight, ChevronDown, ChevronUp, ArrowRight, HelpCircle, CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { formatRupiah } from "@/utils/format.js";
@@ -9,9 +9,12 @@ import { toApiParams } from "@/lib/dateRange.js";
 import { isAdminUser } from "@/lib/roles.js";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
-import KpiCard from "./KpiCard.jsx";
-import ChartCard from "./ChartCard.jsx";
-import { StatusJembatan } from "@/features/finance/kontrak.jsx";
+import { Card } from "@/components/ui/card.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
+import { IkonDompet, IkonOrang } from "@/features/dashboard/components/KpiTile.jsx";
+import { IkCentang } from "@/features/dashboard/components/MiniIkon.jsx";
+import { PecahAngka } from "./KpiLap.jsx";
+import { StatusJembatan, IsiKenapaBeda, useKontrak } from "@/features/finance/kontrak.jsx";
 
 // ═══ REKONSILIASI SALES–FINANCE (30 Sep 2026) ═══════════════════════════════════════════════════════
 // SEMUA angka dari server (services/finance/rekonSalesFinance.js — SATU helper yang juga dipakai Finance & Export Excel). Komponen ini TIDAK
@@ -45,111 +48,206 @@ export function useRekonSalesFinance(range, onData) {
   return { ...state, muatUlang: () => setVersi((v) => v + 1) };
 }
 
-/** Empat kartu terpisah (permintaan Owner): uang masuk dari order, DP belum lunas, ongkir diterima, tanpa atribusi Sales. */
-export function KartuRekon({ data, loading, onBuka }) {
-  const k = data?.kartu;
-  const bisaBuka = !!data?.detailTersedia;
-  const kartu = [
-    { kunci: "UANG_MASUK", label: "Uang Masuk Terverifikasi dari Order", nilai: k?.uangMasukDariOrder, sub: "Payment terverifikasi yang diterima di periode ini", tip: "Total Payment aktif yang sudah diverifikasi Finance dan diterima pada periode ini, per order. Ini sisi uang (Finance) — belum tentu sama dengan Nilai Order yang Menjadi Lunas." },
-    { kunci: "DP_BELUM_LUNAS", label: "DP Belum Lunas", nilai: k?.dpBelumLunas, sub: k ? `${k.jumlahOrderDp} order belum lunas` : "", tip: "Uang muka/DP terverifikasi untuk order yang belum lunas. Sudah masuk Uang Masuk tetapi belum masuk Nilai Order yang Menjadi Lunas sampai total pembayaran memenuhi tagihan." },
-    { kunci: "ONGKIR", label: "Ongkir Diterima", nilai: k?.ongkirDiterima, sub: "ikut Payment, bukan nilai jasa/order", tip: "Bagian Payment yang menutup ongkir. Basis komisi Sales tetap nilai jasa/order tanpa ongkir." },
-    { kunci: "TANPA_SALES", label: "Tanpa Atribusi Sales", nilai: k?.tanpaAtribusiSales, sub: k ? `${k.jumlahOrderTanpaSales} order · tetap masuk total perusahaan` : "", tip: "Order lunas yang tidak dimiliki Sales mana pun (order internal / pelanggan di luar percakapan Sales). TIDAK diberikan ke Sales secara tebakan; tetap dihitung di total perusahaan." },
-  ];
+// Informasi yang sebelumnya tampil sebagai EMPAT KARTU terpisah (label, subjudul, tooltip persis sama) — kini ada pada tempat yang sesuai di alur/perhitungan:
+// Uang Masuk = angka pertama alur; DP Belum Lunas dan Ongkir Diterima = langkah Tahap 1; Tanpa Atribusi Sales = langkah Tahap 2. Klik membuka daftar order yang sama (hanya bila server mengirim detail).
+export const KARTU_REKON = {
+  UANG_MASUK: { label: "Uang Masuk Terverifikasi dari Order", sub: "Payment terverifikasi yang diterima di periode ini", tip: "Total Payment aktif yang sudah diverifikasi Finance dan diterima pada periode ini, per order. Ini sisi uang (Finance) — belum tentu sama dengan Nilai Order yang Menjadi Lunas." },
+  DP_BELUM_LUNAS: { label: "DP Belum Lunas", sub: "order belum lunas", tip: "Uang muka/DP terverifikasi untuk order yang belum lunas. Sudah masuk Uang Masuk tetapi belum masuk Nilai Order yang Menjadi Lunas sampai total pembayaran memenuhi tagihan." },
+  ONGKIR: { label: "Ongkir Diterima", sub: "ikut Payment, bukan nilai jasa/order", tip: "Bagian Payment yang menutup ongkir. Basis komisi Sales tetap nilai jasa/order tanpa ongkir." },
+  TANPA_SALES: { label: "Tanpa Atribusi Sales", sub: "tetap masuk total perusahaan", tip: "Order lunas yang tidak dimiliki Sales mana pun (order internal / pelanggan di luar percakapan Sales). TIDAK diberikan ke Sales secara tebakan; tetap dihitung di total perusahaan." },
+};
+// Daftar metrik penjelasan "Kenapa angkanya berbeda?" (sama dengan panel lama di tab Sales).
+const METRIK_KENAPA = ["uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"];
+
+const rupiahAtauKosong = (n) => (n == null ? "—" : formatRupiah(n));
+// Langkah: tanda 0 = angka awal/hasil; selain itu tampil sebagai EFEK (tanda × jumlah): "+" menambah, "−" mengurangi (aturan lama, tidak diubah).
+const teksLangkah = (b) => { const efek = b.tanda * b.jumlah; return b.tanda === 0 || b.jumlah === 0 ? formatRupiah(b.jumlah) : `${efek < 0 ? "−" : "+"} ${formatRupiah(Math.abs(efek))}`; };
+
+function KartuAlur({ ikon: Ikon, label, nilai, sub, tip, onKlik, testid }) {
+  const isi = (
+    <>
+      <span className="crm-rk-ikon"><Ikon width="24" height="24" /></span>
+      <span className="crm-rk-alur-isi">
+        <span className="crm-rk-alur-label">{label}{tip && <InfoTooltip text={tip} />}</span>
+        <span className="crm-rk-alur-nilai"><PecahAngka teks={nilai} /></span>
+        {sub && <span className="crm-rk-alur-sub">{sub}</span>}
+      </span>
+    </>
+  );
+  return onKlik
+    ? <div className="crm-rk-alur-kartu crm-rk-alur-kartu--klik" role="button" tabIndex={0} onClick={onKlik} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onKlik(); } }} data-testid={testid} aria-label={`${label}: ${nilai}. Buka daftar order`}>{isi}</div>
+    : <div className="crm-rk-alur-kartu" data-testid={testid}>{isi}</div>;
+}
+const Panah = () => <span className="crm-rk-panah" aria-hidden="true"><ArrowRight size={20} /></span>;
+
+/** Satu langkah perhitungan: label (+ tooltip kartu lama bila ada), keterangan, jumlah order, jumlah; bisa dibuka ke daftar order bila server mengirim detail. */
+function BarisLangkah({ b, bisaBuka, onBuka, tip, tebal }) {
+  const bisa = bisaBuka && b.nOrder > 0;
   return (
-    <div className="crm-lap-rekon-kartu grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading}>
-      {kartu.map((c, i) => (
-        <div key={c.kunci} className={cn(bisaBuka && c.nilai ? "cursor-pointer" : "")} onClick={() => bisaBuka && c.nilai && onBuka(c.kunci)} role={bisaBuka && c.nilai ? "button" : undefined}>
-          <KpiCard compact index={i} label={c.label} numericValue={c.nilai || 0} format={(v) => (k ? formatRupiah(Math.round(v)) : "—")} sub={c.sub} tooltip={c.tip} />
-        </div>
-      ))}
+    <div
+      className={cn("crm-rk-langkah", tebal && "crm-rk-langkah--tebal", bisa && "crm-rk-langkah--klik")}
+      onClick={bisa ? () => onBuka(b.kunci) : undefined} role={bisa ? "button" : undefined} tabIndex={bisa ? 0 : undefined}
+      onKeyDown={bisa ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onBuka(b.kunci); } } : undefined}
+      data-testid={`rekon-langkah-${b.kunci}`}
+    >
+      <span className="crm-rk-langkah-teks">
+        <span className="crm-rk-langkah-label">{b.label}{tip && <InfoTooltip text={tip} />}</span>
+        {b.keterangan && <span className="crm-rk-langkah-ket">{b.keterangan}</span>}
+        {b.nOrder > 0 && <span className="crm-rk-langkah-ket">{b.nOrder} order</span>}
+      </span>
+      <span className="crm-rk-langkah-nilai">{teksLangkah(b)}</span>
+      <span className="crm-rk-langkah-panah">{bisa ? <ChevronRight size={14} aria-hidden /> : null}</span>
     </div>
   );
 }
 
 /**
- * Satu tahap jembatan Sales–Finance (kartu per baris — TANPA tabel lebar, aman di HP 390px). Semua angka, status, residual, dan "Komponen lain" dari server;
- * komponen ini hanya menampilkan. Tanda tampilan = EFEK langkah (tanda × jumlah): langkah "kurangi" berjumlah negatif (mis. Klaim Lunas tanpa Payment) justru MENAMBAH → "+".
+ * Satu tahap jembatan (lipat). Tertutup: nama tahap, selisih aktual, status peninjauan, "Lihat perhitungan". Terbuka: angka awal, SEMUA penyesuaian nonnol (tanda tambah/kurang seperti perhitungan lama),
+ * hasil perhitungan, pembanding langsung, selisih aktual + status; komponen Rp0 dilipat ("Tampilkan komponen Rp0"). Angka seluruhnya dari server (t) — tidak dihitung ulang di sini.
  */
-function TahapRekon({ t, bisaBuka, onBuka }) {
+function TahapRekon({ t, nama, bisaBuka, onBuka, kunciDariLabel }) {
+  const [buka, setBuka] = useState(false);
+  const [nol, setNol] = useState(false);
+  const id = `rekon-tahap-isi-${t.nomor}`;
+  const awal = t.mulai ?? t.langkah[0];
+  const akhir = t.akhir ?? t.langkah[t.langkah.length - 1];
+  const tengah = t.langkah.filter((b) => b.kunci !== awal.kunci && b.kunci !== akhir.kunci);
+  const cocok = t.residual === 0;
+  const daftarNol = t.komponenLain?.daftar || [];
+  const tipDari = (kunci) => KARTU_REKON[kunci]?.tip;
   return (
-    <section className="rounded-card bg-surface shadow-card" aria-label={`Tahap ${t.nomor}`} data-testid={`rekon-tahap-${t.nomor}`}>
-      <div className="space-y-2 border-b border-line/60 px-3 py-3">
-        <p className="text-[13px] font-bold text-ink">Tahap {t.nomor} · {t.judul}</p>
-        <StatusJembatan status={t.status} />
-      </div>
-      <div>
-        {t.langkah.map((b) => {
-          const hasil = b.tanda === 0;
-          const bisa = bisaBuka && b.nOrder > 0;
-          // EFEK langkah terhadap angka berjalan = tanda × jumlah (ditemukan saat QA visual 1 Okt 2026).
-          const efek = b.tanda * b.jumlah;
-          const tampil = b.tanda === 0 || b.jumlah === 0 ? formatRupiah(b.jumlah) : `${efek < 0 ? "−" : "+"} ${formatRupiah(Math.abs(efek))}`;
-          return (
-            <div
-              key={b.kunci}
-              className={cn("flex items-start gap-2 border-b border-line/60 px-3 py-2.5 last:border-0 max-sm:min-h-11", hasil && "bg-inset/60", bisa && "cursor-pointer hover:bg-hovertint")}
-              onClick={bisa ? () => onBuka(b.kunci) : undefined}
-              role={bisa ? "button" : undefined}
-              tabIndex={bisa ? 0 : undefined}
-              onKeyDown={bisa ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onBuka(b.kunci); } } : undefined}
-            >
-              <span className="min-w-0 flex-1">
-                <span className={cn("block text-[13px] leading-snug", hasil ? "font-bold text-ink" : "text-ink2")}>{b.label}</span>
-                {b.keterangan && <span className="mt-0.5 block text-[11.5px] leading-snug text-ink3">{b.keterangan}</span>}
-                {b.nOrder > 0 && <span className="mt-0.5 block text-[11.5px] text-ink3">{b.nOrder} order</span>}
-              </span>
-              <span className={cn("shrink-0 whitespace-nowrap text-right text-[13px] tabular-nums", hasil ? "font-bold text-ink" : "font-semibold text-ink2")}>{tampil}</span>
-              <span className="w-4 shrink-0 pt-0.5 text-ink3">{bisa ? <ChevronRight size={14} aria-hidden /> : null}</span>
+    <section className="crm-rk-tahap" data-buka={buka ? "1" : "0"} aria-label={`Tahap ${t.nomor}`} data-testid={`rekon-tahap-${t.nomor}`}>
+      <button type="button" className="crm-rk-tahap-kepala" aria-expanded={buka} aria-controls={id} onClick={() => setBuka((v) => !v)} data-testid={`rekon-tahap-tombol-${t.nomor}`}>
+        <span className="crm-rk-no" aria-hidden="true">{t.nomor}</span>
+        <span className="crm-rk-tahap-nama">Tahap {t.nomor} · {nama}</span>
+        {t.status.perluDitinjau && <span className="crm-rk-chip" data-testid={`rekon-tinjau-${t.nomor}`}>Perlu ditinjau · {t.status.alasanTinjau.length}</span>}
+        <span className="crm-rk-tahap-selisih">Selisih <b data-ok={cocok ? "1" : "0"}>{rpBertanda(t.residual)}</b></span>
+        <span className="crm-rk-tahap-aksi">{buka ? "Tutup perhitungan" : "Lihat perhitungan"}{buka ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}</span>
+      </button>
+      {buka && (
+        <div id={id} className="crm-rk-tahap-isi">
+          <div className="crm-rk-tahap-status">
+            <p className="crm-rk-tahap-judul">{t.judul}</p>
+            <StatusJembatan status={t.status} />
+          </div>
+          <BarisLangkah b={awal} bisaBuka={bisaBuka} onBuka={onBuka} tip={tipDari(awal.kunci)} tebal />
+          {tengah.map((b) => <BarisLangkah key={b.kunci} b={b} bisaBuka={bisaBuka} onBuka={onBuka} tip={tipDari(b.kunci)} />)}
+          {daftarNol.length > 0 && (
+            <div className="crm-rk-nol">
+              <button type="button" className="crm-rk-nol-tombol" aria-expanded={nol} onClick={() => setNol((v) => !v)} data-testid="rekon-komponen-nol-tombol">
+                {nol ? "Sembunyikan komponen Rp0" : "Tampilkan komponen Rp0"} ({daftarNol.length}){nol ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+              </button>
+              {nol && (
+                <ul className="crm-rk-nol-daftar" data-testid="rekon-komponen-lain">
+                  {daftarNol.map((nm) => <li key={nm}><span>{nm}{tipDari(kunciDariLabel(nm)) && <InfoTooltip text={tipDari(kunciDariLabel(nm))} />}</span><b>Rp0</b></li>)}
+                </ul>
+              )}
             </div>
-          );
-        })}
-        {t.komponenLain?.daftar?.length > 0 && (
-          <p className="border-t border-line/60 px-3 py-2.5 text-[12px] leading-snug text-ink3" data-testid="rekon-komponen-lain">
-            <b className="font-semibold text-ink2">Komponen lain (Rp0): </b>{t.komponenLain.daftar.join(" · ")}
-          </p>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/60 px-3 py-2.5 text-[12px] text-ink3">
-        <span className="min-w-0">{t.pembanding.label}: <b className="tabular-nums text-ink2">{formatRupiah(t.pembanding.jumlah)}</b></span>
-        <span className={cn("font-semibold tabular-nums", t.residual === 0 ? "text-ink2" : "text-red")}>Selisih (residual): {rpBertanda(t.residual)}</span>
-      </div>
-      {t.status.alasanTinjau.length > 0 && (
-        <ul className="space-y-1 border-t border-line/60 px-3 py-2.5">
-          {t.status.alasanTinjau.map((a) => (
-            <li key={a.kunci} className="text-[12px] leading-snug text-ink2">
-              <b className="font-semibold text-orange">Perlu ditinjau · </b>{a.nOrder} order · {rpBertanda(a.jumlah)} — {a.alasan}
-            </li>
-          ))}
-        </ul>
+          )}
+          <div className="crm-rk-hasil">
+            <div className="crm-rk-langkah crm-rk-langkah--tebal"><span className="crm-rk-langkah-teks"><span className="crm-rk-langkah-label">{akhir.label} <em>· hasil perhitungan</em></span>{akhir.keterangan && <span className="crm-rk-langkah-ket">{akhir.keterangan}</span>}</span><span className="crm-rk-langkah-nilai">{formatRupiah(akhir.jumlah)}</span><span className="crm-rk-langkah-panah" /></div>
+            <div className="crm-rk-langkah"><span className="crm-rk-langkah-teks"><span className="crm-rk-langkah-label">{t.pembanding.label} <em>· pembanding langsung</em></span></span><span className="crm-rk-langkah-nilai">{formatRupiah(t.pembanding.jumlah)}</span><span className="crm-rk-langkah-panah" /></div>
+          </div>
+          <div className="crm-rk-selisih" data-ok={cocok ? "1" : "0"} data-testid={`rekon-selisih-${t.nomor}`}>
+            <span>Selisih perhitungan</span>
+            <b>{rpBertanda(t.residual)} · {cocok ? "Cocok" : "Tidak cocok"}</b>
+          </div>
+          {t.status.alasanTinjau.length > 0 && (
+            <ul className="crm-rk-tinjau">
+              {t.status.alasanTinjau.map((a) => (
+                <li key={a.kunci}>
+                  <b>Perlu ditinjau · </b>{a.nOrder} order · {rpBertanda(a.jumlah)} — {a.alasan}
+                  {bisaBuka && a.nOrder > 0 && <button type="button" className="crm-rk-tautan" onClick={() => onBuka(a.kunci)}>Lihat order</button>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </section>
   );
 }
 
-/** Panel rekonsiliasi dua tahap: (1) Uang Masuk Terverifikasi → Total Perusahaan, (2) Total Perusahaan → Tim Sales. */
+/**
+ * Panel Rekonsiliasi Sales–Finance (redesain Sales CRM 1 Nov 2026; angka, definisi, status, dan rumus SEMUA dari server seperti sebelumnya):
+ * judul + subjudul + dua status TERPISAH (perhitungan cocok / perlu ditinjau — selisih Rp0 tidak otomatis berarti tak ada masalah) → ringkasan temuan → alur tiga angka → dua tahap yang bisa dibuka.
+ */
 export function PanelRekon({ data, loading, error, onBuka }) {
   const bisaBuka = !!data?.detailTersedia;
+  const [kenapa, setKenapa] = useState(false);
+  const kontrak = useKontrak();
+  const defisi = (kunci) => kontrak?.peta?.get(kunci)?.definisi || null;
+  const kunciDariLabel = (label) => (data?.bridge || []).find((b) => b.label === label)?.kunci ?? null;
+  const t1 = data?.tahap1; const t2 = data?.tahap2;
+  const cocok = data?.status?.perhitungan === "COCOK";
+  const tinjau = !!data?.status?.perluDitinjau;
+  const temuan = t1 && t2 ? [...t1.status.alasanTinjau, ...t2.status.alasanTinjau] : [];
+  const k = data?.kartu;
+  const a1 = t1 ? (t1.mulai ?? t1.langkah[0]) : null;
+  const hasil1 = t1 ? (t1.akhir ?? t1.langkah[t1.langkah.length - 1]) : null;
+  const hasil2 = t2 ? (t2.akhir ?? t2.langkah[t2.langkah.length - 1]) : null;
   return (
-    <ChartCard
-      index={2}
-      title="Rekonsiliasi Sales–Finance"
-      description="Dua tahap: dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas — Total Perusahaan, lalu ke angka Tim Sales. Angka dari server, sama dengan yang dipakai Finance."
-      empty={error ? `Gagal memuat rekonsiliasi: ${error}` : null}
-    >
-      {loading && !data ? (
-        <div className="flex items-center justify-center gap-2 py-6 text-[13px] text-ink3"><Loader2 size={16} className="animate-spin" /> Memuat…</div>
-      ) : data?.tahap1 ? (
-        <div className="space-y-4">
-          <StatusJembatan status={{ perhitungan: data.status.perhitungan, perhitunganLabel: data.status.perhitungan === "COCOK" ? "Perhitungan cocok (kedua tahap)" : "Perhitungan tidak cocok", perluDitinjau: data.status.perluDitinjau }} />
-          <TahapRekon t={data.tahap1} bisaBuka={bisaBuka} onBuka={onBuka} />
-          <TahapRekon t={data.tahap2} bisaBuka={bisaBuka} onBuka={onBuka} />
-          {data.residual !== 0 && (
-            <p className="rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" role="alert">Bridge belum menutup: selisih {formatRupiah(data.residual)}. Hubungi admin — angka ini seharusnya nol.</p>
-          )}
-          {!bisaBuka && <p className="text-[11.5px] text-ink3">Daftar order penyusun hanya tampil untuk Finance dan Admin.</p>}
+    <Card className="crm-rk" data-testid="panel-rekon" aria-busy={loading}>
+      <div className="crm-rk-kepala">
+        <div className="min-w-0">
+          <h3 className="t-card-title">Rekonsiliasi Sales–Finance</h3>
+          <p className="crm-rk-sub">Hubungkan pembayaran masuk dengan nilai order lunas dan atribusi tim.</p>
         </div>
+        <button type="button" className="crm-rk-kenapa" aria-expanded={kenapa} onClick={() => setKenapa((v) => !v)} data-testid="rekon-kenapa-tombol">
+          <HelpCircle size={16} aria-hidden="true" /> Kenapa angkanya berbeda?
+        </button>
+      </div>
+      {kenapa && <div className="crm-rk-kenapa-isi" data-testid="rekon-kenapa"><IsiKenapaBeda metrik={METRIK_KENAPA} /></div>}
+
+      {error ? (
+        <p className="crm-rk-galat" role="alert">{`Gagal memuat rekonsiliasi: ${error}`}</p>
+      ) : loading && !data ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-[13px] text-ink3"><Loader2 size={16} className="animate-spin" /> Memuat…</div>
+      ) : t1 ? (
+        <>
+          {/* Dua status TERPISAH (kondisi yang sudah ada): kecocokan perhitungan ≠ kebutuhan peninjauan */}
+          <div className="crm-rk-status" data-testid="rekon-status">
+            <span className="crm-rk-st" data-ok={cocok ? "1" : "0"}>{cocok ? <CheckCircle2 size={18} aria-hidden="true" /> : <AlertTriangle size={18} aria-hidden="true" />}{cocok ? "Perhitungan cocok (kedua tahap)" : "Perhitungan tidak cocok"}</span>
+            <i className="crm-rk-sekat" aria-hidden="true" />
+            <span className="crm-rk-st" data-tinjau={tinjau ? "1" : "0"}>{tinjau && <AlertTriangle size={18} aria-hidden="true" />}{tinjau ? "Perlu ditinjau" : "Tidak ada yang perlu ditinjau"}</span>
+          </div>
+
+          {temuan.length > 0 && (
+            <ul className="crm-rk-temuan" data-testid="rekon-temuan" aria-label="Ringkasan temuan yang perlu ditinjau">
+              {temuan.map((a) => (
+                <li key={a.kunci}>
+                  <b>{JUDUL_DETAIL[a.kunci] || a.kunci}</b>
+                  <span>{a.nOrder} order · {rpBertanda(a.jumlah)}</span>
+                  <em>{a.alasan}</em>
+                  {bisaBuka && a.nOrder > 0 && <button type="button" className="crm-rk-tautan" onClick={() => onBuka(a.kunci)}>Lihat order</button>}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Alur tiga angka — tiga ukuran BERBEDA meskipun nilainya kebetulan sama */}
+          <div className="crm-rk-alur" data-testid="rekon-alur">
+            <KartuAlur testid="rekon-alur-uang" ikon={IkonDompet} label="Uang masuk terverifikasi" nilai={rupiahAtauKosong(k?.uangMasukDariOrder ?? a1?.jumlah)} sub={KARTU_REKON.UANG_MASUK.sub} tip={KARTU_REKON.UANG_MASUK.tip}
+              onKlik={bisaBuka && (k?.uangMasukDariOrder ?? a1?.jumlah) ? () => onBuka("UANG_MASUK") : null} />
+            <Panah />
+            <KartuAlur testid="rekon-alur-perusahaan" ikon={IkCentang} label="Order lunas perusahaan" nilai={rupiahAtauKosong(k?.totalPerusahaan ?? hasil1?.jumlah)} sub={hasil1?.keterangan} tip={defisi("nilai_order_lunas_perusahaan")} />
+            <Panah />
+            <KartuAlur testid="rekon-alur-tim" ikon={IkonOrang} label="Order lunas tim Sales" nilai={rupiahAtauKosong(k?.nilaiLunasSales ?? hasil2?.jumlah)} sub={hasil2?.keterangan} tip={defisi("nilai_lunas_tim_sales")} />
+          </div>
+
+          <div className="crm-rk-tahap-daftar">
+            <TahapRekon t={t1} nama="Pembayaran → Order lunas perusahaan" bisaBuka={bisaBuka} onBuka={onBuka} kunciDariLabel={kunciDariLabel} />
+            <TahapRekon t={t2} nama="Perusahaan → Tim Sales" bisaBuka={bisaBuka} onBuka={onBuka} kunciDariLabel={kunciDariLabel} />
+          </div>
+
+          {data.residual !== 0 && (
+            <p className="crm-rk-galat" role="alert">Bridge belum menutup: selisih {formatRupiah(data.residual)}. Hubungi admin — angka ini seharusnya nol.</p>
+          )}
+          <p className="crm-rk-catatan"><Info size={14} aria-hidden="true" /> Nilai order lunas bukan metrik yang sama dengan uang masuk. Dua tahap: dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas — Total Perusahaan, lalu ke angka Tim Sales. Angka dari server, sama dengan yang dipakai Finance.</p>
+          {!bisaBuka && <p className="crm-rk-catatan">Daftar order penyusun hanya tampil untuk Finance dan Admin.</p>}
+        </>
       ) : null}
-    </ChartCard>
+    </Card>
   );
 }
 

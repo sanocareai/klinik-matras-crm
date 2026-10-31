@@ -20,9 +20,14 @@ test("Label & tooltip kartu: 'Nilai Order yang Menjadi Lunas' dengan tooltip per
   assert.ok(tab.includes("Nilai penuh order yang mencapai lunas pada periode ini. Tidak selalu sama dengan uang masuk periode karena DP, ongkir, dan pembayaran lintas periode."));
 });
 
-test("Empat kartu terpisah + panel bridge terpasang di tab Sales", () => {
+test("Empat kartu lama dilebur ke panel (label/subjudul/tooltip tetap di KARTU_REKON) + panel bridge terpasang di tab Sales", () => {
   for (const label of ["Uang Masuk Terverifikasi dari Order", "DP Belum Lunas", "Ongkir Diterima", "Tanpa Atribusi Sales"]) assert.ok(rekon.includes(`label: "${label}"`), `kartu "${label}" tidak ada`);
-  assert.match(tab, /<KartuRekon /);
+  assert.doesNotMatch(tab, /<KartuRekon /, "kartu terpisah dihapus: Uang Masuk = angka alur, DP/Ongkir = langkah Tahap 1, Tanpa Atribusi = langkah Tahap 2");
+  assert.match(rekon, /export const KARTU_REKON/);
+  for (const kunci of ["UANG_MASUK", "DP_BELUM_LUNAS", "ONGKIR", "TANPA_SALES"]) assert.ok(rekon.includes(`${kunci}: { label:`), `${kunci} tetap punya label+tooltip`);
+  assert.ok(rekon.includes("TIDAK diberikan ke Sales secara tebakan"), "tooltip Tanpa Atribusi tetap");
+  assert.match(rekon, /onKlik=\{bisaBuka/, "Uang Masuk tetap membuka daftar order");
+  assert.match(tab, /<IsiKenapaBeda|PanelRekon/);
   assert.match(tab, /<PanelRekon /);
   assert.match(tab, /<DaftarRekonModal /);
 });
@@ -33,9 +38,10 @@ test("Angka bridge dari SERVER: komponen tidak menjumlah/menghitung ulang (tanpa
   // satu-satunya reduce di komponen adalah subtotal tampilan daftar (jumlah baris yang SUDAH dikirim server), bukan bridge
   const bagianBridge = rekon.slice(rekon.indexOf("function TahapRekon"), rekon.indexOf("const JUDUL_DETAIL"));
   assert.doesNotMatch(bagianBridge, /\.reduce\(/, "PanelRekon/TahapRekon tidak boleh menghitung ulang");
-  assert.match(bagianBridge, /t\.langkah\.map/, "baris tahap dari server");
-  assert.match(bagianBridge, /data\.tahap1/);
-  assert.match(bagianBridge, /data\.tahap2/);
+  assert.match(bagianBridge, /tengah\.map/, "baris tahap dari server");
+  assert.match(bagianBridge, /t\.langkah\.filter/);
+  assert.ok(bagianBridge.includes("data?.tahap1"));
+  assert.ok(bagianBridge.includes("data?.tahap2"));
   assert.match(bagianBridge, /t\.residual/);
   assert.match(bagianBridge, /t\.komponenLain/, "baris nol dilipat server → ditampilkan sebagai Komponen lain");
 });
@@ -82,7 +88,8 @@ test("Dua tahap (Fase 1): status 'Perhitungan cocok' dan 'Perlu ditinjau' TERPIS
   const bagian = rekon.slice(rekon.indexOf("function TahapRekon"), rekon.indexOf("const JUDUL_DETAIL"));
   assert.match(bagian, /<StatusJembatan status=\{t\.status\}/);
   assert.doesNotMatch(bagian, /<table/, "tahap jembatan tidak memakai tabel (HP 390px)");
-  assert.match(bagian, /t\.residual === 0 \? "text-ink2" : "text-red"/);
+  assert.match(bagian, /const cocok = t\.residual === 0;/);
+  assert.match(bagian, /data-ok=\{cocok \? "1" : "0"\}/, "merah hanya bila residual ≠ 0");
   assert.doesNotMatch(bagian, /efek < 0 && "text-red"/, "pengurang bukan masalah — tidak diberi warna merah");
   const kontrak = baca("src/features/finance/kontrak.jsx");
   assert.match(kontrak, /perhitungan === "COCOK"/);
