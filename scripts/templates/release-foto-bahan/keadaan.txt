@@ -1,0 +1,33 @@
+# Keadaan production SAAT INI (membaca production; menulis daftar ke $BK_DIR/applied-sebelum${1}.txt). Cetak SEGAR | LANJUT | "TOLAK: ..." (exit 1). Dipakai di preflight dan diulang sesaat sebelum migrasi.
+keadaan_produksi() {
+  local sfx="$1" nkol nisi=0 terpasang csok=0 raw row pend solo lama
+  psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sebelum${sfx}.txt" || { echo "TOLAK: gagal membaca migrasi terpasang"; return 1; }
+  sg ls-tree --name-only "$DEPLOY_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u > "$BK_DIR/cand-pra.txt"
+  sg ls-tree --name-only "$BASE_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u > "$BK_DIR/base-pra.txt"
+  solo="$(comm -13 "$BK_DIR/cand-pra.txt" "$BK_DIR/applied-sebelum${sfx}.txt" || true)"
+  [ -z "$solo" ] || { echo "TOLAK: production memiliki migrasi yang TIDAK ada di kandidat: $(printf '%s' "$solo" | tr '\n' ' ')"; return 1; }
+  lama="$(grep -vxF "$MIG_NAME" "$BK_DIR/applied-sebelum${sfx}.txt" || true)"
+  [ "$lama" = "$(cat "$BK_DIR/base-pra.txt")" ] || { echo "TOLAK: migrasi terpasang (di luar migrasi rilis) BUKAN tepat himpunan baseline"; return 1; }
+  nkol="$(psql_live -At -c "select count(*) from information_schema.columns where table_schema='public' and table_name='materials' and column_name in ('photo_file','photo_updated_at')")"
+  [[ "$nkol" =~ ^[0-9]+$ ]] || { echo "TOLAK: hitungan kolom rilis bukan angka"; return 1; }
+  if [ "$nkol" = "2" ]; then nisi="$(psql_live -At -c "select count(*) from materials where photo_file is not null or photo_updated_at is not null")"; fi
+  [[ "$nisi" =~ ^[0-9]+$ ]] || { echo "TOLAK: hitungan isi kolom rilis bukan angka"; return 1; }
+  terpasang="$(grep -Fxc "$MIG_NAME" "$BK_DIR/applied-sebelum${sfx}.txt" || true)"
+  raw="$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${MIG_NAME}/migration.sql" | sha256sum | cut -d' ' -f1)"
+  row="$(psql_live -At -c "select checksum||'|'||applied_steps_count::text||'|'||(finished_at is not null)::text||'|'||(rolled_back_at is null)::text from _prisma_migrations where migration_name='${MIG_NAME}'")"
+  [ "$row" = "${raw}|1|true|true" ] && csok=1
+  pend="$(comm -23 "$BK_DIR/cand-pra.txt" "$BK_DIR/applied-sebelum${sfx}.txt" || true)"
+  tentukan_keadaan "$nkol" "$nisi" "$terpasang" "$csok" "$pend"
+}
+KEADAAN="$(keadaan_produksi "")" || die "${KEADAAN}"
+[ "$KEADAAN" = "SEGAR" ] || [ "$KEADAAN" = "LANJUT" ] || die "keadaan production tidak dikenal: ${KEADAAN}"
+MIG_SEBELUM="$(grep -c . "$BK_DIR/base-pra.txt")"
+ok "keadaan production: ${KEADAAN} (baseline ${MIG_SEBELUM} migrasi terpasang; migrasi rilis ${MIG_NAME} $([ "$KEADAAN" = "SEGAR" ] && echo 'pending' || echo 'sudah terpasang, kolom kosong'))"
+SKEMA_PRA="$(psql_live -At -c "$SKEMA_SQL")"; [ -n "$SKEMA_PRA" ] || die "sidik jari skema produksi kosong"
+# PERSISTENSI FILE (baca-saja): folder data container LIVE harus berupa bind-mount dari penyimpanan persisten host, dan dapat ditulis proses backend.
+mount_data() { docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Type}}:{{.Source}}:{{.RW}}{{end}}{{end}}' "$1"; }
+MOUNT_DATA_LAMA="$(mount_data "$CID_OLD")"
+[ "$MOUNT_DATA_LAMA" = "bind:${PERSIST}/backend/data:true" ] || die "folder /app/data container live BUKAN bind-mount ${PERSIST}/backend/data (rw): '${MOUNT_DATA_LAMA}' — foto akan hilang saat container dibuat ulang; berhenti"
+docker exec "$CID_OLD" sh -c 'test -w /app/data' </dev/null || die "folder /app/data tidak dapat ditulis proses backend live"
+[ "$(stat -c %d "$PERSIST/backend/data")" = "$(stat -c %d "$PERSIST")" ] || warn "folder data persisten berada di perangkat berbeda dari ${PERSIST}"
+ok "persistensi file: /app/data container live = bind-mount ${PERSIST}/backend/data (rw, dapat ditulis); folder foto dibuat otomatis saat unggahan pertama; compose rilis baru identik (dibuktikan di fase 4)"

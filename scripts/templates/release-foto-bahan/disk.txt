@@ -1,0 +1,11 @@
+DIST_KB="$(du -sk "$PREV_DIR/frontend/dist" | cut -f1)"
+PERM_KB=$(( NM_KB + DIST_KB + 60 * 1024 + 256 * 1024 ))                # MENETAP setelah rilis: folder release baru (node_modules + dist + sumber) + image baru (~125 MB: lapisan COPY + prisma generate) + cache build + backup + log
+SEMENTARA_KB=$(( DB_BYTES / 1024 * 3 + NM_KB ))                         # hanya selama build/rehearsal: salinan restore DB (data + WAL) dan salinan node_modules saat disalin lalu dibangun
+PUNCAK_KB=$(( PERM_KB + SEMENTARA_KB ))
+NEED_PASCA_KB=$(( MIN_FREE_KB + PERM_KB ))                              # gerbang 5 GiB di 'sebelum switch' tetap harus terpenuhi SETELAH semua yang menetap terpasang
+NEED_PUNCAK_KB=$(( PUNCAK_KB + 1024 * 1024 ))                           # lantai 1 GiB pada titik puncak
+NEED_KB=$(( NEED_PASCA_KB > NEED_PUNCAK_KB ? NEED_PASCA_KB : NEED_PUNCAK_KB ))
+ok "kebutuhan disk (dari ukuran nyata): menetap $(( PERM_KB / 1024 )) MiB, puncak $(( PUNCAK_KB / 1024 )) MiB; butuh bebas >= $(( NEED_KB / 1024 )) MiB di awal (= max(5 GiB + menetap, puncak + 1 GiB)); bebas sekarang $(( AVAIL_KB / 1024 )) MiB"
+cek_disk "awal"
+[ "$AVAIL_KB" -ge "$NEED_KB" ] || die "ruang disk kurang: bebas $(( AVAIL_KB / 1024 )) MiB < kebutuhan $(( NEED_KB / 1024 )) MiB (menetap $(( PERM_KB / 1024 )) + gerbang 5 GiB, atau puncak $(( PUNCAK_KB / 1024 )) + 1 GiB) — berhenti; skrip ini TIDAK membersihkan apa pun (pembersihan VPS ditangani sesi lain)"
+ok "ruang disk cukup untuk build + backup + image + release + rehearsal dan gerbang 5 GiB tetap terpenuhi sebelum switch"

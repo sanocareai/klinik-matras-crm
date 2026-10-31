@@ -1,0 +1,28 @@
+gagal_reh() { reh_drop; die "$@"; }
+[ "$(bebas_kb)" -ge $(( DB_BYTES / 1024 * 3 + 1024 * 1024 )) ] || gagal_reh "ruang disk kurang untuk salinan restore (butuh >= $(( DB_BYTES / 1024 * 3 / 1024 + 1024 )) MiB bebas)"
+# Skema salinan restore harus SAMA dengan production sebelum migrasi (restore setia) dan belum memuat kolom foto.
+[ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_PRA" ] || gagal_reh "skema hasil restore BERBEDA dari production (sidik jari kolom/constraint/indeks/trigger)"
+[ "$(RPSQL "select count(*) from information_schema.columns where table_schema='public' and table_name='materials' and column_name in ('photo_file','photo_updated_at')")" = "0" ] || gagal_reh "salinan restore sudah memuat kolom foto (seharusnya belum: rilis belum dipasang)"
+RMAT_PRA="$(RPSQL "$MAT_SQL")"; [ "$RMAT_PRA" = "$(psql_live -At -c "$MAT_SQL")" ] || gagal_reh "isi bahan hasil restore BERBEDA dari production"
+ok "restore setia pada skema dan isi bahan production; kolom foto belum ada; migrasi rilis pending pada salinan"
+# UJI BATAS TUNGGU KUNCI pada salinan restore: sesi lain memegang kunci baca pada materials → migrasi HARUS berhenti (bukan antre), tanpa kolom terpasang.
+( dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -q -c "BEGIN; SELECT count(*) FROM materials; SELECT pg_sleep(40); COMMIT;" </dev/null >/dev/null 2>&1 & )
+sleep 3
+T_LK0="$(date +%s)"
+if dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate deploy </dev/null > "$BK_DIR/reh-lock-timeout.log" 2>&1; then gagal_reh "migrasi TIDAK berhenti ketika tabel materials dikunci (lock_timeout tidak bekerja)"; fi
+T_LK=$(( $(date +%s) - T_LK0 ))
+grep -Eq '55P03|lock timeout' "$BK_DIR/reh-lock-timeout.log" || gagal_reh "migrasi gagal tetapi BUKAN karena batas tunggu kunci (lihat reh-lock-timeout.log)"
+[ "$T_LK" -le 60 ] || gagal_reh "migrasi menunggu kunci terlalu lama (${T_LK} s)"
+[ "$(RPSQL "select count(*) from information_schema.columns where table_schema='public' and table_name='materials' and column_name in ('photo_file','photo_updated_at')")" = "0" ] || gagal_reh "kolom foto terpasang padahal migrasi berhenti (tidak atomik)"
+ok "batas tunggu kunci teruji pada salinan: migrasi berhenti setelah ${T_LK} detik saat materials dikunci sesi lain; TIDAK ada kolom terpasang"
+for i in $(seq 1 40); do [ "$(RPSQL "select count(*) from pg_stat_activity where datname = current_database() and query like '%pg_sleep(40)%' and pid <> pg_backend_pid()")" = "0" ] && break; sleep 2; done
+# Pemulihan resmi migrasi yang berhenti (SAMA dengan yang dipakai di production bila ini terjadi): tandai rolled-back, lalu terapkan ulang.
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate resolve --rolled-back "$MIG_NAME" </dev/null > "$BK_DIR/reh-resolve.log" 2>&1 || { tail -n 8 "$BK_DIR/reh-resolve.log"; gagal_reh "migrate resolve --rolled-back pada salinan GAGAL"; }
+T_M0="$(date +%s%N)"
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate deploy </dev/null > "$BK_DIR/reh-migrate-deploy.log" 2>&1 || { tail -n 12 "$BK_DIR/reh-migrate-deploy.log"; gagal_reh "migrate deploy pada salinan restore GAGAL"; }
+T_M_MS=$(( ($(date +%s%N) - T_M0) / 1000000 ))
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || gagal_reh "migrate status rehearsal (image baru) setelah migrasi TIDAK 'up to date'"
+struktur_baru RPSQL gagal_reh 1
+[ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_PRA" ] || gagal_reh "skema lama / constraint / indeks / trigger BERUBAH oleh migrasi"
+[ "$(RPSQL "$MAT_SQL")" = "$RMAT_PRA" ] || gagal_reh "isi bahan (tanpa kolom foto) BERUBAH oleh migrasi"
+ok "migrasi diterapkan pada salinan restore (${T_M_MS} ms): 2 kolom NULL sesuai audit; skema/constraint/indeks/trigger lama IDENTIK; isi bahan IDENTIK; pemulihan resmi (resolve --rolled-back lalu deploy) teruji"

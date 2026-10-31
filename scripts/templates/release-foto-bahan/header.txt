@@ -1,0 +1,20 @@
+# RILIS "FOTO BAHAN" (Gudang → Stok & Lokasi → drawer bahan: unggah/ganti/putar/hapus satu foto per bahan; thumbnail di daftar): WEB + BACKEND + 1 MIGRASI ADITIF (dua kolom NULL pada materials) — RELEASE-DIRECTORY, FAIL-CLOSED.
+#   • Fitur: foto diproses di server (isi gambar divalidasi dari header: format, ukuran berkas ≤10 MB, dimensi ≤12000 px, ≤64 megapiksel; WebP ≤1280 px, metadata/GPS dibuang, thumbnail 192 px); disimpan di data/material-photos (volume persisten /app/data);
+#     nama berkas acak dan tidak pernah ditimpa (ganti/putar = nama baru, cache tidak menampilkan foto lama); hapus HANYA berkas milik bahan itu; ganti/putar/hapus yang gagal tidak merusak foto lama. Izin = izin ubah bahan (inventory:write); jejak audit per perubahan.
+#   • Akses foto: TIDAK ada penyajian statis direktori. GET /api/inventory/foto-bahan/<nama> hanya lewat URL bertanda-tangan berumur pendek (disisipkan pada respons berizin) atau Bearer pemegang izin baca bahan. backend/src/index.js TIDAK berubah.
+#   • Rilis ini TIDAK menulis foto/contoh apa pun di production, TIDAK mengubah bahan, stok, harga, valuasi, jurnal, atau izin; migrasi TANPA backfill (semua bahan tetap tanpa foto sampai pengguna mengunggah).
+#   • Migrasi: ALTER TABLE materials ADD COLUMN ×2 (nullable, tanpa default) tetap membutuhkan kunci ACCESS EXCLUSIVE singkat pada materials → berkas migrasi memasang lock_timeout 5 s dan statement_timeout 30 s: bila database sibuk migrasi BERHENTI (gagal bersih, tanpa kolom), tidak antre.
+#     Pin sha256 migrasi + diff schema.prisma + pemindai DDL daftar-putih (uji negatif) di preflight; rehearsal menguji batas tunggu kunci pada salinan restore dan pemulihan resmi (migrate resolve --rolled-back).
+#   • Gate: preflight (baca-saja); backup + RESTORE rehearsal pada salinan NYATA (kode baru sebagai SERVER terhadap salinan yang sudah bermigrasi: unggah/putar/ganti/hapus, akses 401/403/404, validasi, serentak, kegagalan aman, tanpa efek ke stok/harga/jurnal);
+#     bukti persistensi file lintas recreate container (direktori data SEMENTARA — direktori data production TIDAK pernah dipasang pada rehearsal) + kontrol negatif tanpa volume; kompatibilitas kode lama (image rollback + migrate deploy + kueri lama di atas skema baru);
+#     build web di release dir; migrasi sebelum switch (backend lama tetap melayani); switch SATU kali; verifikasi; smoke baca-saja. TIDAK ada foto/bahan/PO percobaan di production.
+#   • PENGUNCIAN + GERBANG IDENTITAS KODE LIVE: sama dengan rilis sebelumnya (kunci deploy bersama, kepemilikan proses; hash isi kode live == baseline di fase 2, fase 6, dan tepat sebelum switch). Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus.
+#   • DISK: gerbang 5 GiB TIDAK diturunkan dan diperiksa di awal, setelah build image, setelah rehearsal, sebelum migrasi, dan sebelum switch; skrip juga menghitung kebutuhan menetap dan puncak dari ukuran nyata (node_modules, dist, database) dan berhenti bila ruang tidak cukup.
+#
+#   cat scripts/release-foto-bahan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/fb1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/fb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/fb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/fb1r.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA migrasi production dan TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/fb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/fb1.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan deploy)
+#
+# ROLLBACK: KODE aman di-rollback kapan pun (image + folder release LIVE sebelumnya). Skema TIDAK dibalik: dua kolom NULL tetap (tidak dibaca kode lama; teruji). File foto TETAP di folder persisten (kode lama tidak menyajikannya). Detail di blok rollback skrip.
+# (dibangkitkan oleh scripts/gen-release-foto-bahan.cjs dari scripts/release-harga-dari-po.sh + scripts/templates/release-foto-bahan/* + pustaka scripts/lib/{scan-migrasi,rehearsal,smoke,kompat-lama}-foto-bahan.mjs; JANGAN edit tangan — bangkitkan ulang)

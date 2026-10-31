@@ -1,0 +1,36 @@
+PHASE="6-migrate"; say "6. Migrasi aditif (image baru; backend lama tetap melayani) — keadaan ${KEADAAN}"
+[ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum migrasi"
+[ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah sebelum migrasi"
+cek_disk "sebelum migrasi"
+gerbang_kode_live "fase-6-pra-migrasi"
+tidak_ada_deploy_lain_lagi
+# Keadaan production diputuskan ULANG sesaat sebelum bertindak: harus sama dengan preflight (tidak ada sesi lain yang menerapkan/mengubah migrasi).
+KEADAAN2="$(keadaan_produksi "2")" || die "${KEADAAN2}"
+[ "$KEADAAN2" = "$KEADAAN" ] || die "keadaan production berubah sejak preflight (${KEADAAN} → ${KEADAAN2})"
+cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sebelum2.txt" || die "daftar migrasi terpasang berubah selama persiapan (sesi lain menerapkan migrasi) — berhenti, ulangi preflight"
+[ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "image container aktif berubah selama persiapan — JANGAN migrasi"
+[ "$(mount_data "$CID_OLD")" = "$MOUNT_DATA_LAMA" ] || die "mount /app/data container live berubah selama persiapan"
+COUNT_SQL="select 'materials', count(*) from materials union all select 'materials_berfoto', count(*) from materials where photo_file is not null union all select 'stock_movements', count(*) from stock_movements union all select 'harga_berlaku', count(*) from material_harga_berlaku union all select 'valuasi_stok', count(*) from fin_stock_movement_valuations union all select 'jurnal', count(*) from fin_journal_entries union all select 'jurnal_baris', count(*) from fin_journal_lines union all select 'biaya_beku', count(*) from stock_movement_biaya_operasional union all select 'penyesuaian_stok', count(*) from stock_adjustment_requests union all select 'catatan_pemakaian', count(*) from unit_usage_notes union all select 'aktivitas_bahan', count(*) from activity_events where entity_type = 'material'"
+psql_live -At -c "$COUNT_SQL" > "$BK_DIR/hitung-pra-switch.txt" || die "hitung baris pra-migrasi gagal"; ok "pra-migrasi: hitung baris bahan/foto/stok/harga/valuasi/jurnal/biaya beku/penyesuaian/catatan pemakaian/aktivitas bahan dicatat"
+psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pra-migrasi.txt" || die "sidik jari beku pra-migrasi gagal"
+cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pra-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pra-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH sebelum migrasi"; }
+[ "$(psql_live -At -c "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema production berubah sejak preflight"
+MAT_PRA="$(psql_live -At -c "$MAT_SQL")"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-deploy.log" 2>&1 || { tail -n 14 "$BK_DIR/migrate-deploy.log"; die "migrate deploy GAGAL (bila 55P03/lock timeout: database sibuk, tidak ada kolom terpasang — ikuti pemulihan di instruksi rollback: resolve --rolled-back lalu ulangi); backend baru TIDAK dinyalakan, backend lama tetap melayani"; }
+  cat "$BK_DIR/migrate-deploy.log" | tail -n 4 | sed 's/^/        /'
+else
+  # LANJUT: migrasi SUDAH terpasang dan terbukti (checksum, struktur, kosong). TIDAK menjalankan migrate deploy: hanya membaca status.
+  dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | tee "$BK_DIR/migrate-status-lanjut.log" | grep -i 'up to date' >/dev/null || die "keadaan LANJUT: migrate status production tidak 'up to date'"
+fi
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migrasi setengah jalan; JANGAN switch"
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( MIG_SEBELUM + 1 ))" ] || die "jumlah migrasi terpasang != baseline + 1 ($(( MIG_SEBELUM + 1 )))"
+psql_live -At -c "select finished_at is not null from _prisma_migrations where migration_name='${MIG_NAME}'" | grep -Fx t >/dev/null || die "${MIG_NAME} tidak tercatat selesai"
+struktur_baru LQ die 1
+[ "$(psql_live -At -c "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema lama / constraint / indeks / trigger BERUBAH oleh migrasi (jangan switch)"
+[ "$(psql_live -At -c "$MAT_SQL")" = "$MAT_PRA" ] || die "isi bahan (tanpa kolom foto) BERUBAH oleh migrasi (jangan switch)"
+curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "backend lama tidak sehat setelah tahap migrasi"
+ok "migrasi diterapkan (${MIG_SEBELUM} → $(( MIG_SEBELUM + 1 ))); 2 kolom NULL, struktur tervalidasi; skema/constraint/indeks/trigger lama identik; isi bahan identik; backend lama tetap sehat dan melayani"
+psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pasca-migrasi.txt" || die "sidik jari beku pasca-migrasi gagal"
+cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH oleh tahap migrasi (jangan switch)"; }
+ok "pasca-migrasi sebelum switch: dokumen pembanding beku IDENTIK"

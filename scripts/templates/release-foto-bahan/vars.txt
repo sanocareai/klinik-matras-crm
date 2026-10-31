@@ -1,0 +1,13 @@
+# Migrasi aditif yang SUDAH diaudit (nama + sha256 isi, LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
+MIG_NAME="@@MIG_NAME@@"
+MIG_PIN="@@MIG_PIN@@"
+# Hasil pemindai DDL untuk migrasi di atas (jumlah per jenis pernyataan). Selisih = berhenti.
+SCAN_EXPECT='@@SCAN_EXPECT@@'
+# Diff schema.prisma antara baseline dan kandidat (U0, tanpa baris index dan tanpa nomor baris hunk) yang SUDAH diaudit: sha256. Selisih = berhenti.
+SCHEMA_DIFF_SHA="@@SCHEMA_DIFF_SHA@@"
+# Kolom yang HARUS ada di database sesudah migrasi (nama persis; dibaca dari migrasi yang dipin).
+KOL_BARU="photo_file photo_updated_at"
+# Gerbang disk: minimal 5 GiB bebas (TIDAK diturunkan). Diperiksa berkali-kali; lolos di awal saja tidak cukup.
+MIN_FREE_KB=$((5 * 1024 * 1024))
+bebas_kb() { df -Pk "$HOME" | awk 'NR==2{print $4}'; }
+cek_disk() { local b; b="$(bebas_kb)"; [ "$b" -ge "$MIN_FREE_KB" ] || die "disk bebas $(( b / 1024 )) MiB < 5 GiB ($1) — berhenti; pembersihan VPS ditangani sesi lain, skrip ini tidak menghapus apa pun"; ok "disk bebas $(( b / 1024 )) MiB >= 5 GiB ($1)"; }

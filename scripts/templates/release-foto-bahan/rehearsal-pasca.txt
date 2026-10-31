@@ -1,0 +1,21 @@
+# BUKTI PERSISTENSI FILE (rehearsal; direktori data SEMENTARA — direktori data production TIDAK dipasang): kontainer 1 menulis foto → kontainer 1 DIHAPUS (--rm) → kontainer 2 BARU membacanya lewat router produksi; lalu kontrol negatif tanpa volume.
+REH_DBURL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
+FOTO_JSON="$(dcp "$NEW_DIR" run --rm --no-deps -T "${REH_VOL[@]}" -e DATABASE_URL="$REH_DBURL" backend node scripts/uji-foto-bahan-persisten.mjs tulis </dev/null 2> "$BK_DIR/persisten-tulis.err" | tail -n 1)" || { cat "$BK_DIR/persisten-tulis.err"; gagal_reh "bukti persistensi: kontainer 1 gagal menulis foto"; }
+FOTO_ID="$(printf '%s' "$FOTO_JSON" | sed -n 's/.*"materialId":"\([0-9a-f-]*\)".*/\1/p')"; FOTO_SHA="$(printf '%s' "$FOTO_JSON" | sed -n 's/.*"sha256":"\([0-9a-f]*\)".*/\1/p')"
+[[ "$FOTO_ID" =~ ^[0-9a-f-]{36}$ ]] && [[ "$FOTO_SHA" =~ ^[0-9a-f]{64}$ ]] || gagal_reh "bukti persistensi: keluaran kontainer 1 tidak valid: ${FOTO_JSON}"
+[ "$(ls "$BK_DIR/reh-data/material-photos" 2>/dev/null | wc -l)" = "2" ] || gagal_reh "bukti persistensi: host tidak melihat tepat 2 berkas (utama + thumbnail) di direktori data sementara"
+dcp "$NEW_DIR" run --rm --no-deps -T "${REH_VOL[@]}" -e DATABASE_URL="$REH_DBURL" backend node scripts/uji-foto-bahan-persisten.mjs baca "$FOTO_ID" "$FOTO_SHA" </dev/null > "$BK_DIR/persisten-baca.log" 2>&1 || { cat "$BK_DIR/persisten-baca.log"; gagal_reh "bukti persistensi: kontainer BARU (recreate) tidak dapat membaca foto dari volume yang sama"; }
+grep -q '"shaCocok":true' "$BK_DIR/persisten-baca.log" || gagal_reh "bukti persistensi: isi foto setelah recreate berbeda"
+REH_NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$CID_OLD")"
+if docker run --rm --network "$REH_NET" -e DATABASE_URL="$REH_DBURL" "$NEW_IMG_ID" node scripts/uji-foto-bahan-persisten.mjs baca "$FOTO_ID" "$FOTO_SHA" > "$BK_DIR/persisten-kontrol.log" 2>&1 </dev/null; then gagal_reh "kontrol negatif: kontainer TANPA volume seharusnya TIDAK menemukan foto"; fi
+grep -q '"statusUtama":404' "$BK_DIR/persisten-kontrol.log" || gagal_reh "kontrol negatif: kontainer tanpa volume harus 404 (lihat persisten-kontrol.log)"
+dcp "$NEW_DIR" run --rm --no-deps -T "${REH_VOL[@]}" -e DATABASE_URL="$REH_DBURL" backend node scripts/uji-foto-bahan-persisten.mjs bersih "$FOTO_ID" </dev/null > "$BK_DIR/persisten-bersih.log" 2>&1 || gagal_reh "bukti persistensi: pembersihan bahan uji gagal"
+[ "$(ls "$BK_DIR/reh-data/material-photos" 2>/dev/null | wc -l)" = "0" ] || gagal_reh "berkas uji tersisa di direktori data sementara"
+ok "persistensi file TERBUKTI: foto ditulis kontainer 1, kontainer 1 dihapus, kontainer 2 BARU membaca isi identik (sha256) lewat router produksi dan URL bertanda-tangan; tanpa volume = 404 (volume-lah yang menyimpan); production: /app/data = ${MOUNT_DATA_LAMA#bind:}"
+# KOMPATIBILITAS KODE LAMA (rollback kode tanpa membalik skema): image LAMA (tag rollback) terhadap salinan yang SUDAH bermigrasi. CMD kontainer lama menjalankan migrate deploy saat start → harus lolos; kueri/penulisan bahan lama harus normal.
+docker run --rm --network "$REH_NET" -e DATABASE_URL="$REH_DBURL" "$ROLLBACK_TAG" npx prisma migrate deploy > "$BK_DIR/kompat-migrate-deploy.log" 2>&1 </dev/null || { tail -n 12 "$BK_DIR/kompat-migrate-deploy.log"; gagal_reh "kompatibilitas: image LAMA gagal menjalankan migrate deploy pada skema baru (rollback akan gagal start)"; }
+grep -qi 'No pending migrations' "$BK_DIR/kompat-migrate-deploy.log" || gagal_reh "kompatibilitas: image lama tidak melaporkan 'No pending migrations' pada skema baru"
+docker run --rm -i --network "$REH_NET" -e DATABASE_URL="$REH_DBURL" "$ROLLBACK_TAG" node --input-type=module - > "$BK_DIR/kompat-lama.log" 2>&1 <<'KOMPATNODE' || { cat "$BK_DIR/kompat-lama.log"; gagal_reh "kompatibilitas kode lama GAGAL"; }
+@@KOMPAT_JS@@
+KOMPATNODE
+ok "kompatibilitas rollback KODE: image LAMA ($(printf '%s' "$ROLLBACK_TAG" | sed 's/.*://')) menjalankan migrate deploy tanpa masalah ('No pending migrations') dan $(grep -c '^OK' "$BK_DIR/kompat-lama.log") pemeriksaan kueri/tulis bahan lulus di atas skema BARU"

@@ -1,0 +1,35 @@
+
+# Struktur objek rilis (2 kolom NULL pada materials, tanpa default; tanpa indeks/constraint/trigger baru) — SATU definisi dipakai production (sebelum switch), rehearsal, dan sesudah switch.
+# $1 = fungsi pembaca SQL (menerima satu argumen SQL, mencetak hasil -At), $2 = fungsi kegagalan (menerima pesan), $3 = "1" bila kolom foto HARUS kosong semua (sebelum switch / rehearsal), "0" sesudah switch (pengguna boleh sudah mengunggah).
+in_list() { local o="" x; for x in $1; do o="${o:+$o,}'$x'"; done; printf '%s' "$o"; }
+struktur_baru() {
+  local Q="$1" G="$2" K="${3:-1}" r
+  r="$("$Q" "select string_agg(column_name||':'||data_type||':'||coalesce(character_maximum_length::text,'-')||':'||coalesce(datetime_precision::text,'-')||':'||is_nullable||':'||coalesce(column_default,'-'), ',' order by column_name) from information_schema.columns where table_schema='public' and table_name='materials' and column_name in ($(in_list "$KOL_BARU"))")"
+  [ "$r" = "photo_file:character varying:80:-:YES:-,photo_updated_at:timestamp without time zone:-:3:YES:-" ] || "$G" "kolom foto tidak sesuai migrasi yang diaudit: ${r}"
+  [ "$("$Q" "select count(*) from materials where photo_file is not null and (photo_file !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{12}[.]webp$' or photo_file not like id::text || '-%')")" = "0" ] || "$G" "ada nilai photo_file yang bukan nama berkas sah milik bahannya"
+  if [ "$K" = "1" ]; then [ "$("$Q" "select count(*) from materials where photo_file is not null or photo_updated_at is not null")" = "0" ] || "$G" "kolom foto TIDAK kosong (backfill tidak diizinkan; unggahan baru hanya setelah switch)"; fi
+}
+# Sidik jari skema LAMA: kolom semua tabel (tanpa dua kolom rilis), SEMUA constraint, SEMUA indeks, SEMUA trigger non-internal. Identik sebelum vs sesudah migrasi = migrasi hanya menambah dua kolom.
+SKEMA_SQL="select md5(coalesce((select string_agg(table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,''), ',' order by table_name, ordinal_position) from information_schema.columns where table_schema='public' and not (table_name='materials' and column_name in ('photo_file','photo_updated_at'))),'') || '|' || coalesce((select string_agg(conrelid::regclass::text||':'||conname||':'||pg_get_constraintdef(oid), ',' order by conrelid::regclass::text, conname) from pg_constraint where connamespace='public'::regnamespace),'') || '|' || coalesce((select string_agg(indexdef, ',' order by indexname) from pg_indexes where schemaname='public'),'') || '|' || coalesce((select string_agg(tgrelid::regclass::text||':'||tgname, ',' order by tgrelid::regclass::text, tgname) from pg_trigger where not tgisinternal),''))"
+# Isi bahan TANPA dua kolom rilis (jumlah + md5 seluruh baris): identik sebelum vs sesudah migrasi.
+MAT_SQL="select count(*)::text || ':' || coalesce(md5(string_agg((to_jsonb(m) - 'photo_file' - 'photo_updated_at')::text, '|' order by m.id::text)), '-') from materials m"
+
+# Klasifikasi KEADAAN production — murni, FAIL-CLOSED: selain dua keadaan yang dikenal = TOLAK.
+#   SEGAR  = kolom foto belum ada dan migrasi rilis belum terpasang; migrasi pending = tepat migrasi rilis.
+#   LANJUT = rilis terhenti SESUDAH migrasi: kedua kolom ada dan KOSONG, migrasi rilis selesai (1 langkah, tidak di-rollback, checksum = berkas kandidat), tidak ada pending.
+# Argumen: nkol nisi mig_terpasang(0/1) csok(0/1) pending(teks)
+tentukan_keadaan() {
+  local nkol="$1" nisi="$2" terpasang="$3" csok="$4" pend="$5"
+  if [ "$nkol" = "0" ] && [ "$terpasang" = "0" ]; then
+    [ "$pend" = "$MIG_NAME" ] || { echo "TOLAK: migrasi pending bukan tepat migrasi rilis ini ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; }
+    echo SEGAR; return 0
+  fi
+  if [ "$nkol" = "2" ] && [ "$terpasang" = "1" ]; then
+    [ -z "$pend" ] || { echo "TOLAK: masih ada migrasi pending ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; }
+    [ "$csok" = "1" ] || { echo "TOLAK: status/checksum migrasi rilis tidak sesuai berkas kandidat"; return 1; }
+    [ "$nisi" = "0" ] || { echo "TOLAK: kolom foto TIDAK kosong (${nisi} bahan berfoto) — rilis ini mungkin sudah live; jangan diulang"; return 1; }
+    echo LANJUT; return 0
+  fi
+  echo "TOLAK: keadaan campuran/tidak dikenal (kolom foto=${nkol}, migrasi rilis terpasang=${terpasang})"; return 1
+}
+LQ() { psql_live -At -c "$1"; }
