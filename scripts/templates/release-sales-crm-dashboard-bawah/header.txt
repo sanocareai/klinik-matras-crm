@@ -1,0 +1,22 @@
+# RILIS FRONTEND-SAJA "Dashboard Sales CRM — bagian bawah" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image.
+# Isi: Deal Pipeline (bar horizontal per tahap: nama, jumlah lead, nilai; lebar = jumlah ÷ terbesar × 100% tanpa batas minimum, jumlah 0 tanpa isian), Top Performing Reps (baris peringkat · nama · nilai · closing,
+# angka rata kanan), Needs Action (baris ringkas, tinggi mengikuti isi), Hot Leads (nama + skor, lalu tahap + keterangan), Recent Activity (lima dulu, "Lihat semua" membuka sisanya) — ikon SVG dua warna dalam ubin 32px.
+# Mode ringkas OPT-IN: Portal, ReadinessPanel, dan PipelineWidget (yang juga memakai kartu Recent Activity / Pipeline) TIDAK berubah. Semua aturan CSS di dalam .crm-dash.
+# Bagian atas Dashboard (KPI), data, rumus, urutan, rentang waktu, dan tujuan klik TIDAK berubah. Font tetap Manrope (tidak ada font-family/@import baru).
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif a434c858 (Dashboard Sales CRM). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-sales-crm-dashboard-bawah.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/scb1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scb1.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-sales-crm-dashboard-bawah.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-sales-crm-dashboard-bawah/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
