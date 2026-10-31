@@ -88,6 +88,8 @@ import "./styles/sanss-crm-pelanggan.css";
 import "./styles/sanss-crm-pipeline.css";
 // Halaman Order (Fase Order, 31 Okt 2026) — gaya khusus .crm-ord.
 import "./styles/sanss-crm-order.css";
+// Ringkasan Keuangan Finance (Fase Ringkasan Finance, 31 Okt 2026) — gaya khusus .fin-halaman/.fin-ring; kerangka memakai .crm-skin yang kini juga dipasang untuk Finance.
+import "./styles/sanss-finance.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

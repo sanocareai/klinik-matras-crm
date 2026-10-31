@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, ArrowRight, Wallet, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
@@ -14,21 +13,16 @@ import {
 } from "@/features/finance/shared.jsx";
 import BuktiReview from "@/features/finance/BuktiReview.jsx";
 import { KenapaBeda, AuditKonsistensi } from "@/features/finance/kontrak.jsx";
-import { KotakPembalik, UangBiaya } from "@/features/finance/biayaNeto.jsx";
-import { penandaDari, ringkasPembalik } from "@/features/finance/biayaNetoLogic.js";
-import { hitungKualitasData, margin as hitungMargin, pisahkanPiutang, ringkasAging, LABEL_BANNER, LABEL_REKONSILIASI } from "@/features/finance/ringkasanKualitas.js";
+import { StripStatus, KpiKartu, PerluDibereskan, SaldoRekening, LabaRugiPanel } from "@/features/finance/RingkasanPanels.jsx";
+import { todayWIB } from "@/lib/dateRange.js";
+import { hitungKualitasData, margin as hitungMargin, pisahkanPiutang, ringkasAging } from "@/features/finance/ringkasanKualitas.js";
 
-// Ringkasan Keuangan — urutan layar (atas → bawah):
-//   1. Kualitas data (banner + butir yang harus diselesaikan) — angka di bawahnya SEMENTARA, bukan laporan final
-//   2. KPI ringkas (satu baris; tanpa hero ganda)
-//   3. Kas & Bank: saldo buku vs saldo riil terkonfirmasi vs selisih rekonsiliasi (pada cutoff yang sama)  |  Laba rugi sementara
-//   4. Piutang: tiga jenis yang TIDAK boleh dicampur + aging
-//   5. Antrean pekerjaan, lalu daftar rinci
+// Ringkasan Keuangan — urutan layar (atas → bawah), desain baru 31 Okt 2026 (gaya: styles/sanss-finance.css, panel: features/finance/RingkasanPanels.jsx):
+//   1. Judul + periode  2. Strip status data (ringkas; penjelasan penuh di "Lihat rincian")  3. Empat KPI  4. Perlu dibereskan  5. Saldo rekening  6. Laba rugi sementara
+//   Lalu rincian lama TETAP ada di bawahnya: penjelasan angka, piutang (tiga jenis + aging), antrean pekerjaan, audit, daftar rinci.
 //
 // Halaman ini HANYA membaca. Semua angka datang dari API yang sudah ada (jurnal yang sudah dibukukan); tidak ada perhitungan akuntansi baru di sini.
 // Sumber tambahan yang boleh gagal tanpa merobohkan halaman: saldo riil terkonfirmasi & daftar order yang belum diakui (ditandai "tidak tersedia", bukan 0).
-
-const TANPA_DATA = "Tidak tersedia";
 
 export default function FinanceDashboard() {
   const navigate = useNavigate();
@@ -63,9 +57,12 @@ export default function FinanceDashboard() {
   const lr = data?.labaRugi;
   const antrean = data?.antrean;
   const marginInfo = kualitas && lr ? hitungMargin(kualitas, lr) : null;
+  // Server menghitung saldo/piutang/utang pada tanggal buku hari ini (WIB); tanggalnya tidak ikut dikirim, jadi tanggal yang sama dihitung di sini.
+  const posisi = useMemo(() => todayWIB().format("YYYY-MM-DD"), []);
 
   return (
     <HalamanFinance
+      className="fin-halaman"
       title="Ringkasan Keuangan"
       subtitle={data ? `Periode ${tanggalPendek(periode.from)} – ${tanggalPendek(periode.to)} · dihitung dari jurnal yang sudah dibukukan.` : "Posisi kas, laba rugi sementara, piutang & utang, dan pekerjaan yang menunggu."}
       actions={<PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
@@ -74,8 +71,8 @@ export default function FinanceDashboard() {
       onRetry={muat}
     >
       {data && (
-        <div className="space-y-5">
-          <BannerKualitas kualitas={kualitas} catatan={data.catatan} navigate={navigate} />
+        <div className="fin-ring">
+          <StripStatus kualitas={kualitas} catatan={data.catatan} />
 
           {data.totalKas === 0 && data.kasBank.length === 0 && (
             <Card className="bg-accentbg">
@@ -89,70 +86,43 @@ export default function FinanceDashboard() {
             </Card>
           )}
 
-          {/* ── KPI ringkas: SATU baris (hero & kartu ganda dihapus) ── */}
-          <section aria-label="Angka utama" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KartuAngka
-              label="Kas & Bank (menurut buku)" metrik="kas_bank_buku"
-              value={formatUang(data.totalKas)}
-              sub={`${data.kasBank.length} rekening · bukan saldo koran bank`}
+          {/* ── Empat KPI. Saldo/tagihan/utang = posisi tanggal buku hari ini (WIB, sama dengan server); laba = rentang periode yang dipilih. ── */}
+          <section aria-label="Angka utama" className="fin-kpi-grid">
+            <KpiKartu
+              nada="biru" label="Saldo kas & bank" metrik="kas_bank_buku"
+              nilai={formatUang(data.totalKas)} ket="Menurut pembukuan" tanggal={`Per ${tanggalPendek(posisi)}`}
               onClick={() => navigate("/finance/cash")}
-              info="Jumlah saldo seluruh rekening kas, bank, dan e-wallet aktif menurut jurnal di buku besar. Bandingkan dengan saldo riil terkonfirmasi di bagian Kas & Bank di bawah."
+              info={`Jumlah saldo seluruh rekening kas, bank, dan e-wallet aktif menurut jurnal di buku besar (${data.kasBank.length} rekening). Bukan saldo koran bank.`}
             />
-            <KartuAngka
-              label="Laba Bersih Sementara" metrik="laba_bersih_sementara"
-              value={formatUang(lr?.labaBersih ?? 0)}
-              tone={(lr?.labaBersih ?? 0) < 0 ? "red" : "default"}
-              sub="Dari jurnal yang sudah dibukukan · belum final"
+            <KpiKartu
+              nada="muda" label="Laba sementara" metrik="laba_bersih_sementara"
+              nilai={formatUang(lr?.labaBersih ?? 0)} ket="Dari transaksi yang sudah dibukukan" tanggal={`${tanggalPendek(data.periode?.from ?? periode.from)}–${tanggalPendek(data.periode?.to ?? periode.to)}`}
+              penanda={(lr?.labaBersih ?? 0) < 0 ? "Rugi sementara" : null}
               onClick={() => navigate("/finance/reports")}
-              info="Pendapatan yang SUDAH dibukukan dikurangi seluruh beban yang sudah dibukukan. Order yang sudah selesai tetapi belum diakui pendapatannya belum ikut, sehingga angka ini bisa lebih rendah dari kenyataan. DP yang belum diserahkan tidak dihitung sebagai pendapatan."
+              info="Pendapatan yang SUDAH dibukukan dikurangi seluruh biaya yang sudah dibukukan. Order yang sudah selesai tetapi belum diakui pendapatannya belum ikut; dampak data yang belum lengkap bisa berbeda pada saldo, biaya, dan laba. DP yang belum diserahkan tidak dihitung sebagai pendapatan."
             />
-            <KartuAngka
-              label="Piutang Menurut Buku Besar" metrik="piutang_usaha"
-              value={formatUang(piutang.bukuBesar)}
-              tone={data.piutang.ringkasan?.["90_plus"] > 0 ? "red" : "default"}
-              sub="Saldo akun Piutang Usaha di buku besar"
+            <KpiKartu
+              nada="lavender" label="Tagihan pelanggan" metrik="piutang_usaha"
+              nilai={formatUang(piutang.bukuBesar)} ket="Piutang dalam pembukuan" tanggal={`Per ${tanggalPendek(posisi)}`}
+              penanda={data.piutang.ringkasan?.["90_plus"] > 0 ? "Ada tagihan lewat 90 hari" : null}
               onClick={() => navigate("/finance/receivables")}
-              info="Saldo Piutang Usaha menurut jurnal. Terdiri dari tagihan operasional (belum lunas menurut CRM) dan order yang sudah lunas di CRM tetapi pembayarannya belum diverifikasi. Bukan sama dengan pembayaran yang belum tercatat — lihat bagian Piutang di bawah."
+              info="Saldo Piutang Usaha menurut jurnal. Terdiri dari tagihan operasional (belum lunas menurut CRM) dan order yang sudah lunas di CRM tetapi pembayarannya belum diverifikasi. Bukan sama dengan pembayaran yang belum tercatat."
             />
-            <KartuAngka
-              label="Utang Usaha" metrik="utang_supplier"
-              value={formatUang(data.utang.total)}
-              sub="Tagihan supplier belum dibayar"
+            <KpiKartu
+              nada="lime" label="Tagihan supplier" metrik="utang_supplier"
+              nilai={formatUang(data.utang.total)} ket="Utang usaha" tanggal={`Per ${tanggalPendek(posisi)}`}
               onClick={() => navigate("/finance/suppliers")}
               info="Total tagihan supplier yang sudah disetujui tetapi belum dibayar — kebalikan dari piutang."
             />
           </section>
 
-          <KenapaBeda metrik={["uang_masuk_terverifikasi", "kas_masuk_pelanggan", "pendapatan_diakui", "piutang_usaha", "uang_keluar_kas", "beban_diakui"]} from={periode.from} to={periode.to} denganJembatan />
+          <PerluDibereskan kualitas={kualitas} navigate={navigate} />
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
-            <KasBank data={data} riil={riil} navigate={navigate} className="lg:col-span-3" />
-            <Card className="lg:col-span-2">
-              <JudulKartu
-                title="Laba Rugi Sementara"
-                description="Dari jurnal yang sudah dibukukan. Pendapatan diakui saat order diserahterimakan."
-                info="Kenapa DP tidak langsung dihitung untung: uang yang masuk sebelum barang/jasa diserahkan masih bisa direfund atau order-nya batal. Angka ini sementara karena masih ada order selesai yang pendapatannya belum dibukukan."
-              />
-              <CardContent>
-                <dl className="space-y-2 text-[13px]">
-                  <Baris label="Pendapatan tercatat" value={lr?.pendapatanBruto} />
-                  {lr?.retur > 0 && <Baris label="Retur & potongan" value={-lr.retur} />}
-                  <Baris label="Pendapatan bersih" value={lr?.pendapatanBersih} tebal />
-                  <BarisBiaya label="Beban pokok (HPP)" value={lr?.bebanPokok ?? 0} penanda={data?.labaRugiPenanda} />
-                  <Baris label="Laba kotor" value={lr?.labaKotor} tebal />
-                  <BarisBiaya label="Beban operasional" value={lr?.bebanOperasional ?? 0} penanda={data?.labaRugiPenanda} />
-                  <div className="border-t border-line pt-2"><Baris label="Laba bersih sementara" value={lr?.labaBersih} tebal besar /></div>
-                </dl>
-                <div className="mt-3"><KotakPembalik penanda={penandaDari({ penanda: data?.labaRugiPenanda })} ada={ringkasPembalik(lr).ada} testid="kotak-pembalik-dashboard" /></div>
-                <p className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="catatan-margin">
-                  {marginInfo?.tampil
-                    ? <>Margin bersih {marginInfo.nilai.toFixed(1)}%.</>
-                    : <>{marginInfo?.alasan ?? "Margin tidak ditampilkan"}. Margin baru ditampilkan setelah data pendapatan lengkap.</>}
-                </p>
-                <Button variant="tertiary" size="sm" className="mt-2 px-0" onClick={() => navigate("/finance/reports")}>Lihat laporan lengkap <ArrowRight size={14} /></Button>
-              </CardContent>
-            </Card>
-          </div>
+          <SaldoRekening data={data} riil={riil} posisi={posisi} navigate={navigate} />
+
+          <LabaRugiPanel lr={lr} penanda={data?.labaRugiPenanda} marginInfo={marginInfo} navigate={navigate} />
+
+          <KenapaBeda metrik={["uang_masuk_terverifikasi", "kas_masuk_pelanggan", "pendapatan_diakui", "piutang_usaha", "uang_keluar_kas", "beban_diakui"]} from={periode.from} to={periode.to} denganJembatan />
 
           {/* ── Piutang: tiga jenis yang berbeda + aging ── */}
           <section aria-label="Piutang dan tagihan" className="space-y-3">
@@ -173,7 +143,7 @@ export default function FinanceDashboard() {
                 info="Daftar tagihan yang harus ditagih tim (order diserahkan, belum lunas). Bagian dari piutang buku besar; tidak termasuk order yang sudah lunas di CRM."
               />
               <KartuAngka
-                label="Pembayaran Belum Tercatat" metrik="klaim_lunas_menunggu"
+                label="Pembayaran Belum Tercatat di Pembukuan" metrik="klaim_lunas_menunggu"
                 value={piutang.pembayaranBelumTercatat.jumlah === null ? TANPA_DATA : `${piutang.pembayaranBelumTercatat.jumlah.toLocaleString("id-ID")} order`}
                 tone={piutang.pembayaranBelumTercatat.jumlah > 0 ? "orange" : "default"}
                 sub={piutang.pembayaranBelumTercatat.total === null ? undefined : `Senilai ${formatUang(piutang.pembayaranBelumTercatat.total)} · lunas di CRM, belum ada catatan pembayaran & rekening`}
@@ -308,142 +278,9 @@ export default function FinanceDashboard() {
   );
 }
 
-// ─── Bagian ───────────────────────────────────────────────────────────────
+// ─── Bagian rincian lama (dipertahankan) ───────────────────────────────────
 
-function BannerKualitas({ kualitas, catatan, navigate }) {
-  const bermasalah = kualitas.belumFinal;
-  const Ikon = bermasalah ? AlertTriangle : CheckCircle2;
-  return (
-    <Card className={bermasalah ? "bg-orangebg" : "bg-greenbg"} role="status" aria-live="polite" data-testid="banner-kualitas">
-      <CardContent className="space-y-3 py-4">
-        <div className="flex gap-3">
-          <Ikon size={18} className={`mt-0.5 shrink-0 ${bermasalah ? "text-orange" : "text-green"}`} />
-          <div className="min-w-0">
-            <p className="text-[14px] font-bold text-ink">{bermasalah ? "Angka sementara — belum final" : "Data lengkap menurut pemeriksaan otomatis"}</p>
-            <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
-              {bermasalah ? <>{LABEL_BANNER} Semua angka di halaman ini dihitung dari <b>jurnal yang sudah dibukukan</b>, bukan laporan final.</> : "Semua angka di halaman ini dihitung dari jurnal yang sudah dibukukan."}
-            </p>
-            {catatan?.pesan?.length > 0 && <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12px] text-ink2">{catatan.pesan.map((p, i) => <li key={i}>{p}</li>)}</ul>}
-          </div>
-        </div>
-        <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0 lg:grid-cols-4" aria-label="Hal yang perlu diselesaikan">
-          {kualitas.butir.map((b) => <ButirKualitas key={b.id} b={b} navigate={navigate} />)}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ButirKualitas({ b, navigate }) {
-  const tanpaData = b.jumlah === null;
-  const bersih = !tanpaData && b.jumlah === 0;
-  const angka = tanpaData ? TANPA_DATA : b.satuan === "rupiah" ? formatUang(b.jumlah) : b.jumlah.toLocaleString("id-ID");
-  return (
-    <li>
-      <button
-        type="button" onClick={() => navigate(b.tujuan)} title={b.hint}
-        className="flex h-full w-full flex-col rounded-lg border border-line bg-surface px-3 py-2 text-left outline-none transition-colors hover:bg-inset focus-visible:ring-2 focus-visible:ring-accent/40"
-      >
-        <span className={`text-[20px] font-bold leading-tight tabular-nums ${tanpaData ? "text-ink3 text-[14px]" : bersih ? "text-green" : "text-orange"}`}>{angka}</span>
-        <span className="mt-0.5 text-[12px] font-medium text-ink">{b.label}</span>
-        <span className="mt-0.5 text-[11px] leading-snug text-ink3">
-          {tanpaData ? "Data tidak dapat dimuat" : b.nilai && b.satuan !== "rupiah" ? `Senilai ${formatUang(b.nilai)}` : bersih ? "Tidak ada" : b.satuan === "rupiah" ? "Menunggu rekening koran" : "Perlu ditindaklanjuti"}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-const STATUS_REKENING = {
-  SESUAI: { label: "Sesuai", variant: "green" },
-  SELISIH: { label: "Ada selisih", variant: "orange" },
-  BELUM_DIKONFIRMASI: { label: "Belum dikonfirmasi", variant: "neutral" },
-  TIDAK_ADA_SALDO_RIIL: { label: "Tanpa saldo riil", variant: "neutral" },
-};
-
-function KasBank({ data, riil, navigate, className }) {
-  const petaRiil = new Map((riil?.rekening ?? []).map((r) => [r.id, r]));
-  return (
-    <Card className={className}>
-      <JudulKartu
-        title="Kas & Bank"
-        description="Saldo buku, saldo riil terkonfirmasi, dan selisih rekonsiliasi."
-        info="Saldo buku dihitung dari jurnal. Saldo riil adalah konfirmasi owner (bukan rekening koran). Selisih dihitung pada tanggal buku cutoff yang sama, jadi mutasi setelah cutoff tidak ikut memengaruhi selisih."
-      />
-      <CardContent>
-        {data.kasBank.length === 0 ? (
-          <EmptyState icon={Wallet} title="Belum ada rekening" description="Daftarkan kas & rekening bank supaya uang masuk/keluar punya tempat."
-            action={<Button size="sm" onClick={() => navigate("/finance/cash")}>Tambah Rekening</Button>} />
-        ) : (
-          <>
-            <div className="hidden grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 border-b border-line pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink3 sm:grid">
-              <span>Rekening</span><span className="text-right">Saldo buku</span><span className="text-right">Saldo riil terkonfirmasi</span><span className="text-right">Selisih rekonsiliasi</span>
-            </div>
-            <ul className="divide-y divide-line" data-testid="tabel-kas-bank">
-              {data.kasBank.map((r) => {
-                const x = petaRiil.get(r.id);
-                const st = x ? STATUS_REKENING[x.status] : null;
-                const bukuBerbeda = x && Math.abs(Number(x.saldoBuku) - Number(r.saldo)) >= 1;
-                return (
-                  <li key={r.id} className="grid grid-cols-2 gap-x-3 gap-y-1 py-2.5 sm:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] sm:items-center">
-                    <span className="col-span-2 min-w-0 sm:col-span-1">
-                      <span className="block truncate text-[13px] font-medium text-ink">{r.name}</span>
-                      <span className="text-[12px] text-ink3">{r.kind === "KAS" ? "Kas tunai" : r.kind === "BANK" ? (r.bankName || "Bank") : "E-wallet"}{r.accountNumber ? ` · ${r.accountNumber}` : ""}</span>
-                    </span>
-                    <Sel label="Saldo buku">
-                      <Uang value={r.saldo} className="text-[13px] font-bold" />
-                      {bukuBerbeda && <span className="block text-[11px] text-ink3">Per cutoff: {formatUang(x.saldoBuku)}</span>}
-                    </Sel>
-                    <Sel label="Saldo riil terkonfirmasi">
-                      {x && x.saldoRiil !== null ? <Uang value={x.saldoRiil} className="text-[13px] font-bold" /> : <span className="text-[12px] text-ink3">{riil ? "Belum dikonfirmasi" : TANPA_DATA}</span>}
-                    </Sel>
-                    <Sel label="Selisih rekonsiliasi" className="col-span-2 sm:col-span-1">
-                      {x && x.selisih !== null ? (
-                        <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                          <Uang value={x.selisih} className={`text-[13px] font-bold ${x.selisih > 0 ? "text-orange" : ""}`} />
-                          {st && <Badge variant={st.variant}>{st.label}</Badge>}
-                        </span>
-                      ) : st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="text-[12px] text-ink3">—</span>}
-                      {!!x?.danaBelumTeridentifikasi && (
-                        <span className="mt-0.5 block text-[11px] font-medium text-orange">
-                          Termasuk {formatUang(x.danaBelumTeridentifikasi)} menunggu identifikasi
-                        </span>
-                      )}
-                    </Sel>
-                  </li>
-                );
-              })}
-            </ul>
-            {!!riil?.danaBelumTeridentifikasi?.total && (
-              <div className="mt-3 rounded-lg border border-orange/40 bg-orangebg px-3 py-2.5 text-[12px] leading-relaxed text-ink">
-                <p className="font-semibold text-orange">⚠ {riil.danaBelumTeridentifikasi.peringatan}</p>
-                <p className="mt-1 text-ink2">
-                  Dana ini masuk akun sementara "Dana Masuk Belum Teridentifikasi" (2-1700) — BUKAN pendapatan, BUKAN periode rekonsiliasi selesai.
-                  Sumbernya wajib dibuktikan (rekening koran) sebelum direklasifikasi ke akun yang benar.
-                </p>
-              </div>
-            )}
-            <div className="mt-3 space-y-1 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2">
-              <p className="font-medium text-ink">{LABEL_REKONSILIASI}</p>
-              {riil && <p>Cutoff: {riil.cutoffLabel} (tanggal buku {tanggalPendek(riil.tanggalBuku)}). Selisih positif = saldo buku lebih tinggi dari saldo riil. Sumber saldo riil: {riil.sumber.toLowerCase()}.</p>}
-              {!riil && <p>Data saldo riil terkonfirmasi tidak dapat dimuat.</p>}
-            </div>
-            <Button variant="tertiary" size="sm" className="mt-1 px-0" onClick={() => navigate("/finance/reconciliation")}>Buka rekonsiliasi <ArrowRight size={14} /></Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function Sel({ label, children, className = "" }) {
-  return (
-    <span className={`min-w-0 sm:text-right ${className}`}>
-      <span className="block text-[11px] text-ink3 sm:hidden">{label}</span>
-      {children}
-    </span>
-  );
-}
+const TANPA_DATA = "Tidak tersedia";
 
 const WARNA_AGING = {
   belum: "var(--green)",
@@ -490,25 +327,6 @@ function Metrik({ label, nilai, sub, tone }) {
       <p className="text-[12px] text-ink3">{label}</p>
       <p className={`mt-0.5 text-[18px] font-bold tabular-nums ${tone === "red" ? "text-red" : tone === "orange" ? "text-orange" : "text-ink"}`}>{nilai}</p>
       {sub && <p className="mt-0.5 text-[11px] leading-snug text-ink3">{sub}</p>}
-    </div>
-  );
-}
-
-/** Biaya neto: tampil apa adanya (positif = beban); negatif = pembalik beban bersih → kurung + label (mengurangi biaya, menaikkan laba). */
-function BarisBiaya({ label, value, penanda }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="text-ink2">{label}</dt>
-      <dd><UangBiaya value={value} penanda={penandaDari({ penanda })} /></dd>
-    </div>
-  );
-}
-
-function Baris({ label, value, tebal, besar }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className={tebal ? "font-bold text-ink" : "text-ink2"}>{label}</dt>
-      <dd className={besar ? "text-[16px] font-bold" : tebal ? "font-bold" : ""}><Uang value={value ?? 0} /></dd>
     </div>
   );
 }

@@ -74,7 +74,7 @@ test("wiring: semua layar biaya memakai penyajian pembalik, tidak ada lagi pemba
   assert.doesNotMatch(lr, /<TD truncate>\{b\.name\}\{b\.saldoTidakNormal/, "penanda 'Saldo terbalik' tidak boleh terpotong oleh truncate pada nama akun panjang");
   assert.match(baca("features/finance/biayaNeto.jsx"), /text-green/, "nominal pembalik hijau (menaikkan laba), bukan merah");
   const dash = baca("pages/finance/FinanceDashboard.jsx");
-  assert.match(dash, /kotak-pembalik-dashboard/); assert.match(dash, /labaRugiPenanda/);
+  assert.match(baca("features/finance/RingkasanPanels.jsx"), /kotak-pembalik-dashboard/); assert.match(dash, /labaRugiPenanda/);
   assert.doesNotMatch(dash, /-\(lr\.bebanPokok\)|-lr\.bebanPokok|-\(lr\.bebanOperasional\)/);
   const hpp = baca("features/finance/laporanTerinci/PanelHppBeban.jsx");
   assert.match(hpp, /kotak-pembalik-hpp/); assert.match(hpp, /kotak-pembalik-divisi/); assert.match(hpp, /UangBiaya/);

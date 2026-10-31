@@ -37,9 +37,10 @@ import { BRAND } from "@/lib/brand.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { IKON_NAV_SALES } from "./sanssIcons.jsx";
+import { IKON_NAV_FINANCE } from "./financeIcons.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
-import { FINANCE_HUBS, hubAktif, badgeHub } from "@/lib/financeHubs.js";
+import { FINANCE_HUBS, hubAktif, badgeHub, hubTerlihat } from "@/lib/financeHubs.js";
 import { useAntreanFinance } from "@/lib/financeAntrean.js";
 
 // ─── SIDEBAR PER DIVISI (1 Agustus 2026, Gilang) ─────────────────────────────
@@ -650,7 +651,10 @@ const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
 // (components/sanssIcons.jsx), dipetakan per RUTE saat render sehingga data menu, urutan,
 // badge, dan hak akses tidak tersentuh. Rute tanpa pemetaan memakai ikon aslinya.
 function denganIkonSales(sections) {
-  return sections.map((s) => ({ ...s, items: s.items.map((it) => (IKON_NAV_SALES[it.to] ? { ...it, Icon: IKON_NAV_SALES[it.to] } : it)) }));
+  return sections.map((s) => ({ ...s, items: s.items.map((it) => {
+    const Ikon = IKON_NAV_SALES[it.to] || (it.hubKey ? IKON_NAV_FINANCE[it.hubKey] : null);
+    return Ikon ? { ...it, Icon: Ikon } : it;
+  }) }));
 }
 // Lapisan visual Sales CRM (styles/sanss-crm.css, 31 Okt 2026) — aktif default;
 // localStorage "sanss-crm-skin" = "off" mematikannya untuk banding saat review.
@@ -942,11 +946,14 @@ export default function Layout({ user, onLogout }) {
   // karena admin yang ada sekarang (Gilang, Novi) sama-sama masih punya
   // legacy role=ADMIN.
   const isAdmin = isAdminUser(user);
-  // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): HANYA divisi growth.
-  const crmShell = divisionKey === "growth" && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
+  const crmShell = (divisionKey === "growth" || divisionKey === "finance") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
   // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
+  // Finance: sidebar hanya memuat hub, jadi pencarian memakai semua halaman hub yang boleh dilihat peran ini (sumber & penyaringan sama dengan sidebar/hub).
   const halamanCari = crmShell
-    ? visibleSections(division.sections, isAdmin).flatMap((sec) => sec.items.map((it) => ({ to: it.to, label: it.label, section: sec.section })))
+    ? (divisionKey === "finance"
+      ? hubTerlihat(rolesOf(user)).flatMap((h) => h.items.map((it) => ({ to: it.to, label: it.label, section: h.label })))
+      : visibleSections(division.sections, isAdmin).flatMap((sec) => sec.items.map((it) => ({ to: it.to, label: it.label, section: sec.section }))))
     : undefined;
 
   // SSE: saat ada pesan baru, refresh badge unread & notifikasi langsung tanpa tunggu interval

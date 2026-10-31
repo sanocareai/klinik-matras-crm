@@ -217,9 +217,9 @@ export function periodeDefault() {
 // `fluid` (D-193) default TRUE di sini — HAMPIR SEMUA halaman Finance adalah
 // halaman daftar/tabel padat (lihat audit lebar layar 22 Sep 2026). Halaman
 // yang justru butuh lebar baca terbatas (kalau ada) mengirim `fluid={false}`.
-export function HalamanFinance({ title, subtitle, actions, loading, error, onRetry, fluid = true, children }) {
+export function HalamanFinance({ title, subtitle, actions, loading, error, onRetry, fluid = true, className, children }) {
   return (
-    <PageContainer fluid={fluid}>
+    <PageContainer fluid={fluid} className={className}>
       <PageHeader title={title} subtitle={subtitle} actions={actions} />
       <PageBody>
         {error ? (
