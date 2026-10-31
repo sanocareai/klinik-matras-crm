@@ -54,10 +54,10 @@ test("Palette: daftar halaman = menu yang boleh dilihat (sumber sama dengan side
   assert.ok(palette.includes("(e.metaKey || e.ctrlKey) && (e.key === \"k\" || e.key === \"K\")"), "Ctrl/⌘ K tetap");
 });
 
-test("CSS shell: semua aturan di bawah .crm-skin (kecuali palette di-portal ke body); tanpa font/@import baru", () => {
+test("CSS shell: semua aturan di bawah .crm-skin (kecuali palette & dropdown workspace yang di-portal ke body); tanpa font/@import baru", () => {
   const aturan = bagian14.split("}").map((b) => b.split("{")[0].trim()).filter(Boolean);
   for (const sel of aturan.join(",").split(",").map((s) => s.trim()).filter((s) => s && !s.startsWith("@") && !/^\d|^from|^to/.test(s)))
-    assert.ok(sel.includes(".crm-skin") || sel.startsWith(".palette-input-ringkas") || sel.startsWith("}"), `selektor di luar tema: ${sel}`);
+    assert.ok(sel.includes(".crm-skin") || sel.includes(".crm-ws-menu") || sel.startsWith(".palette-input-ringkas") || sel.startsWith("}"), `selektor di luar tema: ${sel}`);
   assert.ok(!/font-family|@font-face|@import/.test(cssTanpaKomentar));
 });
 

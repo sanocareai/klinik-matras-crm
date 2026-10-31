@@ -94,6 +94,7 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
   return (
     <Menu
       align="start"
+      className={ringkas ? "crm-ws-menu" : undefined}
       trigger={
         <button
           type="button"
