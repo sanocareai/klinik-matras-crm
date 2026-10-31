@@ -406,6 +406,9 @@ test("AUDIT SELISIH OKT 2026: jembatan KOHORT (dibuat di periode & Lunas → lun
   assert.match(r.detail.KOHORT_LUNAS_DI_LUAR.find((x) => x.nomor === A2.orderNumber).alasan, /tanggal lunas kosong/);
   assert.match(r.detail.KOHORT_LUNAS_DI_LUAR.find((x) => x.nomor === A3.orderNumber).alasan, /2026-08-28/);
   assert.match(r.detail.KOHORT_DIBUAT_SEBELUM[0].alasan, /sebelum periode/);
+  assert.equal(r.detail.KOHORT_DIBUAT_SEBELUM[0].pembayaran.length, 1, "drilldown kohort sampai dokumen pembayaran");
+  assert.ok(r.detail.KOHORT_DIBUAT_SEBELUM[0].pembayaran[0].ref && r.detail.KOHORT_DIBUAT_SEBELUM[0].pembayaran[0].tanggalWib, "ID dokumen + tanggal WIB");
+  assert.ok(r.detail.KOHORT_DIBUAT_LUNAS.every((x) => Array.isArray(x.pembayaran)), "kohort dibuat-lunas membawa daftar pembayaran");
   assert.ok(r.detail.KOHORT_DIBUAT_LUNAS.some((x) => x.nomor === Pkr.orderNumber), "daftar kohort memuat semua order, termasuk Rp0");
 
   // Sama dengan kartu "Sudah Lunas" di Laporan Ringkasan (business-summary: order dibuat di periode, kini Lunas, bersih)

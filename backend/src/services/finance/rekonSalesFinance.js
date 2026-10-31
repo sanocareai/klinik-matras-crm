@@ -301,16 +301,18 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
 
   // ── JEMBATAN KOHORT: "Sudah Lunas" (dibuat di periode) → Total Perusahaan (lunas di periode) ──
   const nilaiA = ordersA.reduce((a, o) => a + rp(nilaiBersih(o)), 0);
+  // Dokumen pembayaran order kohort: semua Payment terverifikasi s/d akhir periode (sebelum + dalam periode) supaya drilldown sampai dokumen.
+  const payKohort = (o) => [...(pra.get(o.id)?.pay ?? []), ...(masuk.get(o.id)?.pay ?? [])];
   for (const o of ordersA) {
     if (idL.has(o.id)) continue;
-    tambah(KUNCI.KOHORT_LUNAS_DI_LUAR, infoOrder(o), rp(nilaiBersih(o)), { alasan: o.paidAt ? `Berstatus Lunas, tetapi tanggal lunas ${tglWib(o.paidAt)} di luar periode` : "Berstatus Lunas, tetapi tanggal lunas kosong (tidak tercatat)" });
+    tambah(KUNCI.KOHORT_LUNAS_DI_LUAR, infoOrder(o), rp(nilaiBersih(o)), { pembayaran: payKohort(o), alasan: o.paidAt ? `Berstatus Lunas, tetapi tanggal lunas ${tglWib(o.paidAt)} di luar periode` : "Berstatus Lunas, tetapi tanggal lunas kosong (tidak tercatat)" });
   }
   for (const o of ordersL) {
     if (idA.has(o.id)) continue;
-    if (o.createdAt < mulai) tambah(KUNCI.KOHORT_DIBUAT_SEBELUM, infoOrder(o), rp(nilaiBersih(o)), { alasan: `Dibuat ${tglWib(o.createdAt)} (sebelum periode), lunas ${tglWib(o.paidAt)}` });
-    else tambah(KUNCI.KOHORT_BELUM_LUNAS_PAIDAT, infoOrder(o), rp(nilaiBersih(o)), { alasan: `Dibuat di periode, tanggal lunas ${tglWib(o.paidAt)} terisi, tetapi status bayar sekarang ${o.paymentStatus}` });
+    if (o.createdAt < mulai) tambah(KUNCI.KOHORT_DIBUAT_SEBELUM, infoOrder(o), rp(nilaiBersih(o)), { pembayaran: payKohort(o), alasan: `Dibuat ${tglWib(o.createdAt)} (sebelum periode), lunas ${tglWib(o.paidAt)}` });
+    else tambah(KUNCI.KOHORT_BELUM_LUNAS_PAIDAT, infoOrder(o), rp(nilaiBersih(o)), { pembayaran: payKohort(o), alasan: `Dibuat di periode, tanggal lunas ${tglWib(o.paidAt)} terisi, tetapi status bayar sekarang ${o.paymentStatus}` });
   }
-  for (const o of ordersA) baris[KUNCI.KOHORT_DIBUAT_LUNAS].push({ ...infoOrder(o), jumlah: rp(nilaiBersih(o)), tindakan: null, pembayaran: masuk.get(o.id)?.pay ?? [] });
+  for (const o of ordersA) baris[KUNCI.KOHORT_DIBUAT_LUNAS].push({ ...infoOrder(o), jumlah: rp(nilaiBersih(o)), tindakan: null, pembayaran: payKohort(o) });
   total[KUNCI.KOHORT_DIBUAT_LUNAS] = nilaiA;
 
   // ── DOKUMEN PEMBAYARAN: lengkapi tiap Payment di jembatan dengan rekening + nomor jurnal supaya angka bisa ditelusuri ke dokumen ──

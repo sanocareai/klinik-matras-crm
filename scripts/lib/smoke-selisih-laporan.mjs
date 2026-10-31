@@ -79,6 +79,17 @@ rec("Σ nilaiDihitung baris = total layar (satu aturan 'dihitung ke total')", Ma
 const tidakDihitung = halaman.filter((b) => b.dihitung === false);
 rec("setiap baris yang tidak dihitung membawa alasan tertulis; baris dihitung tanpa alasan", tidakDihitung.every((b) => b.alasanTidakDihitung && Number(b.nilaiDihitung) === 0) && halaman.filter((b) => b.dihitung).every((b) => !b.alasanTidakDihitung && b.nilaiDihitung === b.nilai), `${tidakDihitung.length} tidak dihitung`);
 rec("jumlah & nilai 'tidak dihitung' di respons = Σ baris tidak dihitung", totalTidak?.jumlah === tidakDihitung.length && Math.round(Number(totalTidak?.nilai) * 100) === Math.round(tidakDihitung.reduce((a, b) => a + Number(b.nilai), 0) * 100));
+// Tautan pengganti: tiap baris dibatalkan/ditolak yang order-nya masih punya pembayaran AKTIF harus menunjuk pembayaran aktif pada order yang SAMA; tanpa pembayaran aktif → tidak ada tautan.
+const dibatalLayar = tidakDihitung.filter((b) => b.sub === "PEMBAYARAN_TIDAK_DIHITUNG");
+let salahTaut = 0;
+for (const b of dibatalLayar) {
+  const aktif = await prisma.$queryRawUnsafe("select p.id::text i from payments p where p.order_id = (select order_id from payments where id = $1::uuid) and p.cancelled_at is null", b.id);
+  const ids = new Set(aktif.map((x) => x.i));
+  if (ids.size === 0 ? b.pengganti !== null : !(b.pengganti && ids.has(b.pengganti.id) && b.alasanTidakDihitung.includes(String(b.pengganti.id).slice(0, 8)))) salahTaut++;
+}
+rec("setiap pembayaran dibatalkan/ditolak menautkan pembayaran AKTIF pada order yang sama (atau tidak ada tautan bila order tak punya pembayaran aktif), id pengganti tercantum di alasan", salahTaut === 0, salahTaut + " salah");
+for (const b of dibatalLayar) console.log("  SNAPSHOT_TIDAK_DIHITUNG " + [b.id.slice(0, 8), b.nomor, b.nilai, b.statusLabel, b.pengganti ? b.pengganti.kecocokan + ":" + String(b.pengganti.id).slice(0, 8) : "tanpa-pengganti", JSON.stringify(b.alasanTidakDihitung).slice(0, 140)].join(" | "));
+console.log("  SNAPSHOT_TOTAL layar=" + totalNilai + " SUM_dihitung=" + sumDihitung + " tidak_dihitung=" + tidakDihitung.reduce((a, b) => a + Number(b.nilai), 0));
 rec("pembayaran dibatalkan/ditolak di periode (SQL) = baris tidak dihitung di layar", tidakDihitung.length === sqlTdkHitung, `${tidakDihitung.length} vs ${sqlTdkHitung}`);
 
 const ex = await unduh("pemasukan", { periode: { from: FROM, to: TO }, filter: { kategori: "PEMBAYARAN" } });

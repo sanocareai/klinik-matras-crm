@@ -157,6 +157,16 @@ Tidak ada bug perhitungan yang mengubah angka Oktober 2026 — ketiga angka acua
 
 **Catatan verifikasi:** kode kandidat **belum dijalankan terhadap data produksi** (menyalin kode ke container produksi tidak diizinkan dalam audit baca-saja). Bukti kandidat: tes integrasi DB terisolasi (rekon 12/12, pemasukan 11/11, export 5/5, termasuk pembayaran ditolak/dibatalkan + pengganti, pengecualian lunas aktif dan dicabut, order PKR, DP lintas bulan, ongkir, refund, order tanpa Sales, batas tanggal WIB, kohort) dan rehearsal lokal pada DB berisi skenario Oktober. Pada data nyata, skrip rilis menjalankan kode kandidat sebagai server terhadap **salinan restore produksi** untuk Agustus/September/Oktober dan baru lanjut bila semua parity lulus.
 
+## E2. Verifikasi pada kandidat gabungan dengan live 50b7e190 (1 Nov 2026)
+
+Live pindah ke `50b7e190` (Sales CRM Laporan fase 2/slp2: akordeon Rekonsiliasi, Performa Tim, Pipeline). Kandidat digabung ke baseline itu; 2 konflik (`RekonSalesFinance.jsx`, `SalesReportTab.jsx`) diselesaikan dengan **mengambil struktur slp2** lalu memasang ulang jembatan kohort sebagai akordeon "K" dan metrik kohort di panel "Kenapa angkanya berbeda?".
+- **QA browser** (Chrome headless, DB lokal berbentuk snapshot audit; desktop 1440 dan HP 390, terang dan gelap): 101 pemeriksaan lulus, 0 gagal — tooltip kartu (BASIS tanggal), akordeon kohort selisih Rp0, drilldown sampai dokumen pembayaran (ID · rekening), alasan pengecualian dicabut, layar Uang Masuk, Export Excel dari UI.
+- **Excel (hasil klik tombol di UI)**: SUM kolom "Nilai yang Dihitung (Rp)" = TOTAL = layar = Rp431.443.000; SUM mentah "Nilai (Rp)" = Rp434.948.501; dua baris "Tidak" = Rp3.505.500 + Rp1 = **Rp3.505.501**.
+  - Rp3.505.500 dibatalkan → pengganti nominal sama (ID pembayaran tercantum di alasan).
+  - Rp1 ditolak → pembayaran aktif lain pada order yang sama (ID pembayaran tercantum di alasan). Aturan pengganti diperluas agar baris Rp1 (nominal pembayaran benar berbeda) tetap menunjuk pembayaran yang benar.
+- Data QA ini sintetis (meniru bentuk snapshot); angka yang sama pada **data produksi nyata** dibuktikan oleh rehearsal skrip rilis pada salinan restore (smoke mencetak `SNAPSHOT_TIDAK_DIHITUNG` dan `SNAPSHOT_TOTAL`).
+- Drilldown kohort sekarang juga membawa dokumen pembayaran (sebelumnya kosong di baris kohort).
+
 ## F. Keputusan manusia yang masih terbuka (tidak diubah oleh rilis ini)
 
 1. **RES-03102026-017 (Rp3.990.000, Sutami)** — pemilik eksplisit Suci (nonaktif), percakapan dipegang Ervina. Tetapkan pemilik ke Ervina lewat "Tetapkan Sales" (Admin, beralasan, teraudit) **atau** putuskan bahwa pemilik nonaktif harus jatuh ke pemegang percakapan. Dampak: Nilai Lunas Tim Oktober +Rp3.990.000 dan Target/komisi Ervina.

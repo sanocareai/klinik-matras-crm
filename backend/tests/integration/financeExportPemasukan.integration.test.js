@@ -224,7 +224,11 @@ test("DIHITUNG KE TOTAL (audit selisih Okt 2026): pembayaran dibatalkan (diganti
   assert.equal(barisApi[p2.id].pengganti.id, p3.id);
   assert.equal(barisApi[p4.id].dihitung, false);
   assert.match(barisApi[p4.id].alasanTidakDihitung, /ditolak/i);
-  assert.equal(barisApi[p4.id].pengganti, null, "ditolak tanpa pengganti");
+  assert.equal(barisApi[p2.id].pengganti.kecocokan, "NOMINAL_SAMA");
+  assert.equal(barisApi[p4.id].pengganti.kecocokan, "ORDER_SAMA", "salah input nominal lain: ditautkan ke pembayaran aktif pada order yang sama");
+  assert.deepEqual(barisApi[p4.id].pengganti.semua.map((g) => g.id), [p1.id, p3.id]);
+  assert.ok(barisApi[p4.id].alasanTidakDihitung.includes(p1.id.slice(0, 8)) && /pembayaran aktif pada order yang sama/i.test(barisApi[p4.id].alasanTidakDihitung));
+  assert.ok(barisApi[p4.id].pengganti.semua.every((g) => g.terverifikasi === true));
   assert.equal(barisApi[p1.id].dihitung, true); assert.equal(barisApi[p1.id].nilaiDihitung, "400000.00"); assert.equal(barisApi[p1.id].alasanTidakDihitung, null);
 
   const r = await unduhExport(server.baseUrl, c.admin.token, "pemasukan", { periode, filter: { kategori: "PEMBAYARAN" } });
