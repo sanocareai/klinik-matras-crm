@@ -23,6 +23,7 @@ import { signEvidenceUrl } from "./productionEvidenceMedia.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { hitungKelengkapanDaftar, listWorkOrders, perkayaBarisUnit } from "../services/productionOrderList.js";
+import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT } from "../services/pkrProduksiGuard.js";
 import { ambilPernyataanUnit, cabutPernyataanTanpaBahan, nyatakanTanpaBahanBaru } from "../services/unitMaterialDeclarationService.js";
 import { AdopsiError, ambilPemakaianAktual, ambilRencanaBahan, catatStatusKerjaManual, katalogBahan, loadAppEvidence, riwayatKerjaUnit, simpanRencanaBahan } from "../services/productionAdoptionService.js";
 import { RencanaBahanError } from "../lib/domain/productionMaterialPlan.js";
@@ -78,7 +79,9 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       include: {
         currentStage: { select: { id: true, code: true, labelId: true, phase: true, requiresQc: true, defaultWorkCenter: { select: { id: true, code: true, name: true } } } },
         service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
-        order: { select: { id: true, orderNumber: true, status: true, deliveryConfirmedDate: true, statusLocked: true, statusOverrideAt: true, statusOverrideNote: true, statusOverrideBy: { select: { name: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { id: true, name: true } }, units: { select: { id: true, unitCode: true, status: true } } } },
+        // PKR_ORDER_SELECT + PKR_UNIT_ITEM_SELECT: kelengkapan "Data order" drawer dinilai dengan aturan & data yang SAMA dengan daftar (perkayaBarisUnit memakai rujukanPkrDariOrder). Tanpa ini order PKR kurang tampil "belum dinilai".
+        order: { select: { id: true, orderNumber: true, status: true, ...PKR_ORDER_SELECT, deliveryConfirmedDate: true, statusLocked: true, statusOverrideAt: true, statusOverrideNote: true, statusOverrideBy: { select: { name: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { id: true, name: true } }, units: { select: { id: true, unitCode: true, status: true } } } },
+        ...PKR_UNIT_ITEM_SELECT,
       },
     });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan", code: "UNIT_TIDAK_ADA" });
