@@ -56,10 +56,10 @@ export function KartuRekon({ data, loading, onBuka }) {
     { kunci: "TANPA_SALES", label: "Tanpa Atribusi Sales", nilai: k?.tanpaAtribusiSales, sub: k ? `${k.jumlahOrderTanpaSales} order · tetap masuk total perusahaan` : "", tip: "Order lunas yang tidak dimiliki Sales mana pun (order internal / pelanggan di luar percakapan Sales). TIDAK diberikan ke Sales secara tebakan; tetap dihitung di total perusahaan." },
   ];
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading}>
+    <div className="crm-lap-rekon-kartu grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading}>
       {kartu.map((c, i) => (
         <div key={c.kunci} className={cn(bisaBuka && c.nilai ? "cursor-pointer" : "")} onClick={() => bisaBuka && c.nilai && onBuka(c.kunci)} role={bisaBuka && c.nilai ? "button" : undefined}>
-          <KpiCard index={i} label={c.label} numericValue={c.nilai || 0} format={(v) => (k ? formatRupiah(Math.round(v)) : "—")} sub={c.sub} tooltip={c.tip} />
+          <KpiCard compact index={i} label={c.label} numericValue={c.nilai || 0} format={(v) => (k ? formatRupiah(Math.round(v)) : "—")} sub={c.sub} tooltip={c.tip} />
         </div>
       ))}
     </div>

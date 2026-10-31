@@ -2,15 +2,15 @@ import React, { useEffect, useState } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { api } from "@/api.js";
-import { cn } from "@/lib/utils.js";
 import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS, SOURCE_LABELS } from "@/utils/format.js";
 import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
 import { computeTeamTarget, namaBulanTarget } from "../utils/teamTarget.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import ProgressRing from "@/components/ui/progress-ring.jsx";
-import KpiCard from "./KpiCard.jsx";
+import KpiLap from "./KpiLap.jsx";
+import AlertRingkas from "./AlertRingkas.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
 import StageBySalesCard from "./StageBySalesCard.jsx";
@@ -37,7 +37,7 @@ function PromoSummaryCard({ index }) {
         {dipakai.map((p) => (
           <BarRow
             key={p.id}
-            label={p.name} value={p.orderCount} max={max}
+            label={p.name} value={p.orderCount} max={max} tumpuk
             display={`${p.orderCount.toLocaleString("id-ID")} order`}
             sub={formatRupiahShort(p.totalValue)}
             tone={p.active ? "accent" : "muted"}
@@ -74,6 +74,10 @@ function PromoSummaryCard({ index }) {
 //    kosong). Sekarang memakai deret ADAPTIF dari /business-summary: rentang
 //    <=92 hari jadi HARIAN. Itu juga menghilangkan pertentangan lama antara
 //    header "Periode: 27 Jun – 26 Jul" dengan grafik yang selalu 6 bulan.
+//
+// KOMPOSISI (redesain Sales CRM 31 Okt 2026, hanya tampilan — metrik, rumus, periode, tujuan klik tidak berubah):
+// peringatan ringkas → 4 KPI berwarna → [Tren | Konversi] → [Target | Aging] → Sales per Stage → panel sebaran
+// berdampingan (auto-fit: 3 kolom bila ruang cukup, 1 kolom di HP). Gaya di styles/sanss-crm-laporan.css (.crm-lap).
 const AXIS = { fontSize: 12, fill: "var(--text-secondary)" };
 
 const CATEGORY_LABELS = {
@@ -149,168 +153,40 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
 
   const agingRows = uang?.outstandingAging || [];
   const agingMax  = Math.max(1, ...agingRows.map((r) => r.value));
+  const adaAging  = agingRows.some((r) => r.value > 0);
+
+  // Warna cincin SEMANTIK, SAMA PERSIS logika bar linear lama (D-112) —
+  // hijau=tercapai, biru=setengah jalan, oranye=tertinggal (peringatan).
+  const ringColor = percentToTarget == null ? "var(--hairline)"
+    : percentToTarget >= 100 ? "var(--green)"
+    : percentToTarget >= 50 ? "var(--accent)" : "var(--orange)";
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Target Bulanan — pertanyaan PERTAMA yang owner tanya ("apa kita on
-          track?"), sebelumnya tidak terjawab di tab ini sama sekali (KPI
-          Nilai Penjualan cuma angka mentah, tanpa konteks target). Data +
-          logika SAMA PERSIS dengan kartu "Target Tim" di tab Sales (lihat
-          utils/teamTarget.js) — sengaja tidak dihitung ulang terpisah di
-          sini. Disembunyikan total kalau belum ada target diset sama sekali
-          (targetValue 0), bukan tampil "0%" yang menyesatkan. */}
-      {targetValue > 0 && (() => {
-        // Warna cincin SEMANTIK, SAMA PERSIS logika bar linear lama (D-112,
-        // referensi ring NexusBank "Available"/LearnZimTPS "Daily Goal") —
-        // cuma bentuknya yang berubah (linear → bulat), maknanya TIDAK:
-        // hijau=tercapai, biru=setengah jalan (masih dalam "keluarga biru"
-        // yang diminta owner), oranye=tertinggal (peringatan, dipertahankan
-        // sebagai warna semantik, bukan dekoratif — sama pola dengan
-        // STAGE_DOT/mandek di halaman lain yang sengaja tidak dilebur ke
-        // satu warna).
-        const ringColor = percentToTarget == null ? "var(--hairline)"
-          : percentToTarget >= 100 ? "var(--green)"
-          : percentToTarget >= 50 ? "var(--accent)" : "var(--orange)";
-        return (
-          // rounded-card (D-111, bukan rounded-2xl) — sama alasan dengan
-          // KpiCard.jsx: radius identik (16px), cuma supaya "Target Bulanan
-          // Tim" ikut kaca seperti kartu lain di halaman ini.
-          <div className="rounded-card bg-surface p-5 shadow-card">
-            <div className="flex flex-wrap items-center gap-5">
-              <ProgressRing percent={percentToTarget ?? 0} color={ringColor} size={88} strokeWidth={9}>
-                <span className="text-xl font-extrabold tabular-nums text-ink">
-                  {percentToTarget != null ? `${percentToTarget}%` : "—"}
-                </span>
-              </ProgressRing>
-              <div className="min-w-[160px] flex-1">
-                <p className="flex flex-wrap items-center gap-1 text-[13px] font-medium text-ink3">
-                  Target Bulanan Tim <InfoTooltip text={INFO_TARGET} />
-                  {/* Selalu bulan berjalan — TIDAK ikut date picker di atas
-                      (lihat catatan Laporan.jsx#salesReportBulanIni).
-                      Ditandai eksplisit supaya tidak membingungkan saat
-                      rentang lain (mis. "Hari ini") sedang dipilih untuk
-                      sisa halaman. */}
-                  <span className="ml-1.5 font-normal text-ink4">· {labelBulanTarget}</span>
-                </p>
-                <p className="mt-1.5 text-lg font-bold tabular-nums text-ink">
-                  {formatRupiah(teamGrossAll)}
-                </p>
-                <p className="text-xs text-ink3">dari target {formatRupiah(targetValue)}</p>
-                {selisihVsNilai != null && selisihVsNilai > 0 && (
-                  <p className="mt-1 text-[11px] text-ink3">
-                    Nilai Penjualan {formatRupiah(summary.uang.grossValue)} lebih besar {formatRupiah(selisihVsNilai)} karena termasuk order yang tidak dipegang sales tim.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── 1. UANG ────────────────────────────────────────────────────── */}
-      {/* xl:grid-cols-4 (D-113), BUKAN lg:grid-cols-4 — bug nyata, laporan
-          owner (screenshot): angka Rupiah kepotong ("Rp53.250.00", "Rp2.420.
-          455") di window ~1060px. AKAR MASALAH: lg (1024px) menganggap 4
-          kolom "muat" murni dari breakpoint viewport, TANPA memperhitungkan
-          KpiCard sendiri py `overflow-hidden` (untuk tint hero) + angka
-          26px font-extrabold — di lebar segitu tiap kolom cuma ~150px
-          konten, kurang untuk Rupiah 12 digit, jadi angkanya betul-betul
-          KEPOTONG (bukan cuma "kurang rapi" - risiko salah baca nominal di
-          tool bisnis). Dashboard.jsx SUDAH lebih dulu memakai `xl:` untuk
-          KPI row 4-kolom yang SAMA persis alasannya (breakpoint lebih
-          lebar sebelum pecah 4 kolom) - Laporan ketinggalan menyamakan
-          pola itu sampai sekarang. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          index={0} hero
-          label="Nilai Penjualan"
-          numericValue={uang?.grossValue || 0}
-          format={(v) => formatRupiah(Math.round(v))}
-          growth={overview?.growthOrderValue} compareLabel={cmp}
-          sub={`${uang?.totalOrders || 0} order · order masuk (belum tentu terbayar)`}
-          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas). Order berstatus Menunggu dan Dibatalkan TIDAK dihitung karena belum pasti."
-        />
-        <KpiCard
-          index={1}
-          label="Sudah Lunas"
-          numericValue={uang?.collectedValue || 0}
-          format={(v) => formatRupiah(Math.round(v))}
-          sub={uang?.collectedRate != null ? `${uang.collectedRate}% dari nilai penjualan` : "—"}
-          tooltip="Nilai order yang statusnya sudah ditandai LUNAS oleh sales, dari order di periode yang dipilih di atas."
-        />
-        <KpiCard
-          index={2}
-          label="Belum Lunas"
-          numericValue={uang?.outstandingValue || 0}
-          format={(v) => formatRupiah(Math.round(v))}
-          sub="nilai order yang belum tercatat lunas"
-          tooltip="Nilai Penjualan dikurangi Sudah Lunas — order yang statusnya DP atau belum dibayar sama sekali."
-        />
-        <KpiCard
-          index={3}
-          label="Rata-rata per Order"
-          numericValue={uang?.aov || 0}
-          format={(v) => formatRupiah(Math.round(v))}
-          sub="AOV — nilai penjualan / jumlah order"
-          tooltip="Nilai Penjualan dibagi jumlah order di periode yang dipilih — patokan cepat menilai order besar/kecil rata-rata."
-        />
-      </div>
-
-      {/* Aging piutang — "Belum Lunas" di atas satu angka gabungan, tidak
-          bisa membedakan piutang yang baru kemarin (wajar) dari yang sudah
-          sebulan menunggak (butuh ditagih). Umur dihitung dari createdAt
-          order sampai SEKARANG, bukan relatif ke periode laporan yang
-          dipilih — piutang 40 hari tetap "40 hari" apa pun rentang di atas. */}
-      {agingRows.some((r) => r.value > 0) && (
-        <ChartCard
-          index={3.5}
-          title="Aging Piutang"
-          description="Order belum lunas, dikelompokkan berdasarkan sudah berapa lama menunggak"
-        >
-          <div className="flex flex-col gap-2.5">
-            {agingRows.map((r) => (
-              <BarRow
-                key={r.label} label={r.label} value={r.value} max={agingMax}
-                display={formatRupiahShort(r.value)}
-                sub={`${r.count} order`}
-                tone={r.label === ">30 hari" ? "red" : r.label === "7-30 hari" ? "orange" : "accent"}
-              />
-            ))}
-          </div>
-        </ChartCard>
-      )}
-
-      {/* Peringatan kualitas data pembayaran. Rasio lunas yang sangat rendah
-          hampir selalu berarti `paymentStatus` order TIDAK dirawat tim, bukan
-          benar-benar ada piutang sebesar itu. Ini harus dikatakan terus
-          terang — kalau tidak, angka "Belum Lunas" akan dibaca sebagai
-          kerugian nyata dan memicu keputusan yang salah. */}
+    <div className="crm-lap-tab">
+      <div className="crm-lap-alerts">
+      {/* ── PERINGATAN (ringkas: judul + jumlah/masalah + Lihat rincian; teks lengkap di dalam rincian) ───────── */}
+      {/* Rasio lunas yang sangat rendah hampir selalu berarti `paymentStatus` order TIDAK dirawat tim, bukan
+          benar-benar ada piutang sebesar itu. Harus dikatakan terus terang — kalau tidak, angka "Belum Lunas"
+          dibaca sebagai kerugian nyata dan memicu keputusan yang salah. */}
       {uang?.collectedRate != null && uang.collectedRate < 40 && uang.grossValue > 0 && (
-        <div className="flex items-start gap-2.5 rounded-xl bg-orangebg px-3.5 py-3">
-          <AlertTriangle className="mt-0.5 shrink-0 text-orange" size={16} />
-          <p className="text-xs leading-relaxed text-ink">
+        <AlertRingkas tone="oranye" testid="alert-lunas-rendah" judul="Data pembayaran belum lengkap" ringkas={`hanya ${uang.collectedRate}% nilai order bertanda “Lunas”`}>
+          <p>
             Hanya <strong>{uang.collectedRate}%</strong> nilai order bertanda “Lunas”.
             Kalau tim belum rutin memperbarui <strong>Status Pembayaran</strong> di
-            tiap order, angka “Belum Lunas” di atas bukan piutang sebenarnya —
+            tiap order, angka “Belum Lunas” di bawah bukan piutang sebenarnya —
             itu order yang statusnya belum diisi. Periksa dulu sebelum
             memakainya sebagai angka penagihan.
           </p>
-        </div>
+        </AlertRingkas>
       )}
 
-      {/* Integritas data — DIPECAH JADI 2 (10 Sep 2026, audit menyeluruh):
-          "Paid"/"Already Reviewed" tapi TIDAK PUNYA order sama sekali (data
-          hilang, tambahkan order) VS PUNYA order tapi SEMUA dibatalkan
-          (stage lupa digeser balik). Dua akar masalah beda, dua tindakan
-          perbaikan beda — sebelumnya digabung jadi satu angka yang teksnya
-          cuma menjelaskan skenario pertama, padahal datanya sudah lama
-          mencakup skenario kedua juga (silently). Kedua kelompok ini SUDAH
-          dikeluarkan dari "Pelanggan Sudah Bayar" di atas — banner ini murni
-          checklist beres-beres data, bukan lagi memengaruhi angka laporan. */}
+      {/* Integritas data — DIPECAH JADI 2 (10 Sep 2026, audit menyeluruh): "Paid"/"Already Reviewed" tapi TIDAK PUNYA
+          order sama sekali (data hilang, tambahkan order) VS PUNYA order tapi SEMUA dibatalkan (stage lupa digeser
+          balik). Dua akar masalah beda, dua tindakan perbaikan beda. Kedua kelompok ini SUDAH dikeluarkan dari
+          "Pelanggan Sudah Bayar" — banner ini murni checklist beres-beres data, bukan memengaruhi angka laporan. */}
       {summary?.integritas?.orphanNoOrder > 0 && (
-        <div className="flex items-start gap-2.5 rounded-xl bg-redbg px-3.5 py-3">
-          <AlertTriangle className="mt-0.5 shrink-0 text-red" size={16} />
-          <p className="text-xs leading-relaxed text-ink">
+        <AlertRingkas tone="merah" testid="alert-orphan-tanpa-order" judul="Pelanggan Paid tanpa order" ringkas={`${summary.integritas.orphanNoOrder} pelanggan`}>
+          <p>
             <strong>{summary.integritas.orphanNoOrder} pelanggan</strong> berstatus
             “Paid”/“Already Reviewed” tapi <strong>tidak punya order sama sekali</strong>.
             Kalau sudah bayar, harusnya ada order yang dibayar — jadi pendapatan
@@ -318,12 +194,11 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
             Penjualan mana pun. Biasanya karena stage digeser di Kanban tanpa
             membuat order. Perbaiki di Pelanggan → buka profil → tambah order.
           </p>
-        </div>
+        </AlertRingkas>
       )}
       {summary?.integritas?.orphanAllCancelled > 0 && (
-        <div className="flex items-start gap-2.5 rounded-xl bg-redbg px-3.5 py-3">
-          <AlertTriangle className="mt-0.5 shrink-0 text-red" size={16} />
-          <p className="text-xs leading-relaxed text-ink">
+        <AlertRingkas tone="merah" testid="alert-orphan-batal" judul="Pelanggan Paid, semua order dibatalkan" ringkas={`${summary.integritas.orphanAllCancelled} pelanggan`}>
+          <p>
             <strong>{summary.integritas.orphanAllCancelled} pelanggan</strong> berstatus
             “Paid”/“Already Reviewed” tapi <strong>semua order-nya sudah dibatalkan</strong>.
             Deal-nya kemungkinan memang batal, tapi stage pipeline-nya lupa
@@ -331,14 +206,50 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
             "Paid"/"Already Reviewed" lagi); kalau ternyata masih lanjut, buat
             order baru yang aktif. Perbaiki di Pelanggan → buka profil.
           </p>
-        </div>
+        </AlertRingkas>
       )}
+      </div>
 
-      {/* ── SALES PER STAGE (30 Sep 2026, permintaan owner, gaya bento) ── */}
-      <StageBySalesCard range={range} onGoTab={onGoTab} />
+      {/* ── 1. UANG — 4 KPI utama berwarna (4 kolom ≥1360px, 2 kolom sedang, 1 kolom HP: aturan .crm-kpi-grid) ──────────
+          Pelajaran D-113: 4 kolom hanya bila lebar cukup, supaya angka Rupiah 12 digit tidak terpotong. */}
+      <section className="crm-kpi-grid">
+        <KpiLap
+          tone="revenue" ikon="dompet"
+          label="Nilai Penjualan"
+          numericValue={uang?.grossValue || 0}
+          format={(v) => formatRupiah(Math.round(v))}
+          growth={overview?.growthOrderValue} compareLabel={cmp}
+          sub={`${uang?.totalOrders || 0} order · order masuk (belum tentu terbayar)`}
+          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas). Order berstatus Menunggu dan Dibatalkan TIDAK dihitung karena belum pasti."
+        />
+        <KpiLap
+          tone="leads" ikon="centang"
+          label="Sudah Lunas"
+          numericValue={uang?.collectedValue || 0}
+          format={(v) => formatRupiah(Math.round(v))}
+          sub={uang?.collectedRate != null ? `${uang.collectedRate}% dari nilai penjualan` : "—"}
+          tooltip="Nilai order yang statusnya sudah ditandai LUNAS oleh sales, dari order di periode yang dipilih di atas."
+        />
+        <KpiLap
+          tone="orders" ikon="tas"
+          label="Belum Lunas"
+          numericValue={uang?.outstandingValue || 0}
+          format={(v) => formatRupiah(Math.round(v))}
+          sub="nilai order yang belum tercatat lunas"
+          tooltip="Nilai Penjualan dikurangi Sudah Lunas — order yang statusnya DP atau belum dibayar sama sekali."
+        />
+        <KpiLap
+          tone="conversion" ikon="diagram"
+          label="Rata-rata per Order"
+          numericValue={uang?.aov || 0}
+          format={(v) => formatRupiah(Math.round(v))}
+          sub="AOV — nilai penjualan / jumlah order"
+          tooltip="Nilai Penjualan dibagi jumlah order di periode yang dipilih — patokan cepat menilai order besar/kecil rata-rata."
+        />
+      </section>
 
       {/* ── 2. TREN PENDAPATAN + KONVERSI ─────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
+      <div className="crm-lap-baris crm-lap-baris--tren">
         <ChartCard
           index={4}
           title="Tren Pendapatan"
@@ -349,7 +260,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           }
           empty={series.length === 0 ? "Belum ada data pada periode ini." : null}
         >
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={250}>
             <AreaChart data={series} margin={{ top: 6, right: 10, left: -8, bottom: 0 }}>
               <defs>
                 <linearGradient id="ringkasanRev" x1="0" y1="0" x2="0" y2="1">
@@ -364,7 +275,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                 tick={AXIS} axisLine={false} tickLine={false} dy={4}
                 interval="preserveStartEnd" minTickGap={28}
               />
-              <YAxis tickFormatter={formatRupiahShort} tick={AXIS} axisLine={false} tickLine={false} width={64} />
+              <YAxis tickFormatter={formatRupiahShort} tick={AXIS} axisLine={false} tickLine={false} width={78} />
               <Tooltip content={<ChartTip granularity={gran} />} cursor={{ stroke: "var(--hairline)" }} />
               <Area
                 type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2.5}
@@ -448,8 +359,69 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
         </ChartCard>
       </div>
 
-      {/* ── 3. BEBAN PRODUKSI + KATEGORI ──────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      {/* ── 3. TARGET BULANAN + AGING PIUTANG (berdampingan; bila salah satu tidak ada, yang lain melebar) ─────────── */}
+      {(targetValue > 0 || adaAging) && (
+        <div className="crm-lap-baris crm-lap-baris--auto">
+          {/* Target Bulanan — pertanyaan PERTAMA yang owner tanya ("apa kita on track?"). Data + logika SAMA PERSIS
+              dengan kartu "Target Tim" di tab Sales (utils/teamTarget.js). Disembunyikan total kalau belum ada target
+              diset sama sekali (targetValue 0), bukan tampil "0%" yang menyesatkan. */}
+          {targetValue > 0 && (
+            <div className="rounded-card bg-surface p-5 shadow-card crm-lap-target">
+              <div className="flex flex-wrap items-center gap-5">
+                <ProgressRing percent={percentToTarget ?? 0} color={ringColor} size={88} strokeWidth={9}>
+                  <span className="text-xl font-extrabold tabular-nums text-ink">
+                    {percentToTarget != null ? `${percentToTarget}%` : "—"}
+                  </span>
+                </ProgressRing>
+                <div className="min-w-[160px] flex-1">
+                  <p className="flex flex-wrap items-center gap-1 text-[13px] font-medium text-ink3">
+                    Target Bulanan Tim <InfoTooltip text={INFO_TARGET} />
+                    {/* Selalu bulan berjalan — TIDAK ikut date picker di atas (lihat catatan Laporan.jsx#salesReportBulanIni). */}
+                    <span className="ml-1.5 font-normal text-ink4">· {labelBulanTarget}</span>
+                  </p>
+                  <p className="mt-1.5 text-lg font-bold tabular-nums text-ink">
+                    {formatRupiah(teamGrossAll)}
+                  </p>
+                  <p className="text-xs text-ink3">dari target {formatRupiah(targetValue)}</p>
+                  {selisihVsNilai != null && selisihVsNilai > 0 && (
+                    <p className="mt-1 text-[11px] text-ink3">
+                      Nilai Penjualan {formatRupiah(summary.uang.grossValue)} lebih besar {formatRupiah(selisihVsNilai)} karena termasuk order yang tidak dipegang sales tim.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Aging piutang — "Belum Lunas" satu angka gabungan tidak bisa membedakan piutang yang baru kemarin (wajar)
+              dari yang sudah sebulan menunggak. Umur dihitung dari createdAt order sampai SEKARANG, bukan relatif ke
+              periode laporan — piutang 40 hari tetap "40 hari" apa pun rentang di atas. */}
+          {adaAging && (
+            <ChartCard
+              index={3.5}
+              title="Aging Piutang"
+              description="Order belum lunas, dikelompokkan berdasarkan sudah berapa lama menunggak"
+            >
+              <div className="flex flex-col gap-2.5">
+                {agingRows.map((r) => (
+                  <BarRow
+                    key={r.label} label={r.label} value={r.value} max={agingMax}
+                    display={formatRupiahShort(r.value)}
+                    sub={`${r.count} order`}
+                    tone={r.label === ">30 hari" ? "red" : r.label === "7-30 hari" ? "orange" : "accent"}
+                  />
+                ))}
+              </div>
+            </ChartCard>
+          )}
+        </div>
+      )}
+
+      {/* ── SALES PER STAGE (30 Sep 2026, permintaan owner, gaya bento) ── */}
+      <StageBySalesCard range={range} onGoTab={onGoTab} />
+
+      {/* ── 4. PANEL SEBARAN — berdampingan (auto-fit), urutan baca sama dengan versi lama ──────────────────────── */}
+      <div className="crm-lap-grid-panel">
         <ChartCard
           index={6}
           title={<span className="inline-flex items-center gap-1.5">Order per Status <InfoTooltip text={INFO_STATUS} /></span>}
@@ -459,7 +431,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           <div className="flex flex-col gap-2.5">
             {statusRows.map((r) => (
               <BarRow
-                key={r.status}
+                key={r.status} tumpuk
                 label={ORDER_STATUS_LABELS[r.status] || r.status}
                 value={r.count} max={statusMax}
                 display={`${r.count} order`}
@@ -483,7 +455,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           <div className="flex flex-col gap-2.5">
             {kategori.map((r) => (
               <BarRow
-                key={r.category}
+                key={r.category} tumpuk
                 label={CATEGORY_LABELS[r.category] || r.category}
                 value={r.value} max={katMax}
                 display={formatRupiahShort(r.value)}
@@ -492,34 +464,28 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
             ))}
           </div>
         </ChartCard>
-      </div>
 
-      {/* ── 4. SUMBER LEAD + PIPELINE + KOTA ──────────────────────────── */}
-      {/* "Dari mana pelanggan datang" — sebelumnya TIDAK ADA visibilitas
-          sumber lead sama sekali di tab ini (harus pindah ke tab Traffic).
-          SPAM dikecualikan (custWhereKonversi di backend) supaya jumlahnya
-          sepadan dengan KPI "New Leads" di atas — dulu leadSourceBreakdown
-          tidak punya konsumen UI sama sekali, jadi celah ini tidak ketahuan. */}
-      <ChartCard
-        index={7.5}
-        title="Sumber Lead"
-        description="Dari mana pelanggan baru datang, periode ini"
-        empty={sumberLead.length === 0 ? "Belum ada lead pada periode ini." : null}
-      >
-        <div className="flex flex-col gap-2.5">
-          {sumberLead.map((r) => (
-            <BarRow
-              key={r.leadSource}
-              label={SOURCE_LABELS[r.leadSource] || r.leadSource}
-              value={r.count} max={sumberLeadMax}
-              display={r.count.toLocaleString("id-ID")}
-              sub={sumberLeadTotal > 0 ? `${Math.round((r.count / sumberLeadTotal) * 100)}%` : undefined}
-            />
-          ))}
-        </div>
-      </ChartCard>
+        {/* "Dari mana pelanggan datang" — SPAM dikecualikan (custWhereKonversi di backend) supaya jumlahnya sepadan
+            dengan KPI "New Leads" — dulu leadSourceBreakdown tidak punya konsumen UI sama sekali. */}
+        <ChartCard
+          index={7.5}
+          title="Sumber Lead"
+          description="Dari mana pelanggan baru datang, periode ini"
+          empty={sumberLead.length === 0 ? "Belum ada lead pada periode ini." : null}
+        >
+          <div className="flex flex-col gap-2.5">
+            {sumberLead.map((r) => (
+              <BarRow
+                key={r.leadSource} tumpuk
+                label={SOURCE_LABELS[r.leadSource] || r.leadSource}
+                value={r.count} max={sumberLeadMax}
+                display={r.count.toLocaleString("id-ID")}
+                sub={sumberLeadTotal > 0 ? `${Math.round((r.count / sumberLeadTotal) * 100)}%` : undefined}
+              />
+            ))}
+          </div>
+        </ChartCard>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ChartCard
           index={8}
           title="Posisi Pipeline"
@@ -529,7 +495,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           <div className="flex flex-col gap-2.5">
             {funnelUtama.map((f) => (
               <BarRow
-                key={f.stage}
+                key={f.stage} tumpuk
                 label={STAGE_LABELS[f.stage] || f.stage}
                 value={f.count} max={funnelMax}
                 display={f.count.toLocaleString("id-ID")}
@@ -558,7 +524,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           <div className="flex flex-col gap-2.5">
             {kota.map((r) => (
               <BarRow
-                key={r.city}
+                key={r.city} tumpuk
                 label={r.city} value={r.count} max={kotaMax}
                 display={r.count.toLocaleString("id-ID")}
                 tone={r.city === "Belum diisi" ? "muted" : "accent"}

@@ -34,22 +34,25 @@ const TONE_BAR = {
 // jadi flex item LANGSUNG di baris yang sama dengan bar — urutan visualnya
 // (label → bar → value → sub) diatur lewat `sm:order-*`, bukan urutan DOM
 // (DOM tetap label,value,sub lalu bar, supaya baris-1 mobile benar).
-export default function BarRow({ label, value, max, display, sub, tone = "accent" }) {
+// `tumpuk` (opsional, default false = perilaku lama) — SELALU 2 baris (label+angka di atas, bar selebar penuh di bawah),
+// tidak menunggu breakpoint sm: milik VIEWPORT. Dipakai panel Laporan Sales CRM yang berdampingan: lebar panel ≈ 360–420px
+// walau layar lebar, jadi layout satu-baris (label w-28 + angka w-24 + sub w-16) menyisakan bar nyaris 0px.
+export default function BarRow({ label, value, max, display, sub, tone = "accent", tumpuk = false }) {
   const pct = max > 0 ? Math.max((value / max) * 100, value > 0 ? 2 : 0) : 0;
   return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-      <div className="flex items-center gap-2 sm:contents">
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink2 sm:w-28 sm:flex-none" title={label}>
+    <div className={cn("flex flex-col gap-1.5", !tumpuk && "sm:flex-row sm:items-center sm:gap-3")}>
+      <div className={cn("flex items-center gap-2", !tumpuk && "sm:contents")}>
+        <span className={cn("min-w-0 flex-1 truncate text-xs font-medium text-ink2", !tumpuk && "sm:w-28 sm:flex-none")} title={label}>
           {label}
         </span>
-        <span className="shrink-0 text-right text-xs font-bold tabular-nums text-ink sm:order-3 sm:w-24">
+        <span className={cn("shrink-0 text-right text-xs font-bold tabular-nums text-ink", !tumpuk && "sm:order-3 sm:w-24")}>
           {display ?? value}
         </span>
         {sub !== undefined && (
-          <span className="shrink-0 text-right text-[11px] tabular-nums text-ink3 sm:order-4 sm:w-16">{sub}</span>
+          <span className={cn("shrink-0 text-right text-[11px] tabular-nums text-ink3", !tumpuk && "sm:order-4 sm:w-16")}>{sub}</span>
         )}
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-inset sm:order-2 sm:w-auto sm:flex-1">
+      <div className={cn("h-2 w-full overflow-hidden rounded-full bg-inset", !tumpuk && "sm:order-2 sm:w-auto sm:flex-1")}>
         <div
           className={cn("h-full rounded-full transition-[width] duration-700 ease-out", TONE_BAR[tone] || TONE_BAR.accent)}
           style={{ width: `${pct}%` }}

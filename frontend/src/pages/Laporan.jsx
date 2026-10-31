@@ -2,6 +2,9 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useTabs, useTabVisibility, useTabId } from "@/lib/TabsContext.jsx";
 import { Download, RefreshCw } from "lucide-react";
+import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
+// Gaya Laporan (Sales CRM): semua aturan di bawah .crm-lap. Diimpor DI SINI (bukan main.jsx) supaya hanya dimuat bersama halaman ini.
+import "@/styles/sanss-crm-laporan.css";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { STAGE_LABELS } from "../utils/format.js";
@@ -237,33 +240,31 @@ export default function Laporan() {
   }
 
   return (
-    <div className="dash-page" style={{ paddingBottom: 40 }}>
-      <div className="page-header">
-        <div>
-          <h1 className="t-page-title" style={{ margin: 0 }}>Laporan Analitik</h1>
-          <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
-            Periode: {formatRangeText(range)}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => { loadData(); setVersiRefresh((v) => v + 1); }} disabled={loading}>
-            <RefreshCw size={14} /> Refresh
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={handleExport} disabled={loading || exporting}>
-            <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
-          </button>
-          <DateRangePicker value={range} onChange={setRange} />
-        </div>
-      </div>
+    <PageContainer fluid className="crm-dash crm-lap">
+      <PageHeader
+        title="Laporan Analitik"
+        subtitle={`Periode: ${formatRangeText(range)}`}
+        actions={(
+          <>
+            <button className="btn btn-ghost btn-sm crm-lap-refresh" onClick={() => { loadData(); setVersiRefresh((v) => v + 1); }} disabled={loading} aria-label="Refresh">
+              <RefreshCw size={14} /> <span className="crm-lap-teks-aksi">Refresh</span>
+            </button>
+            <DateRangePicker value={range} onChange={setRange} />
+            <button className="btn btn-primary btn-sm crm-lap-export" onClick={handleExport} disabled={loading || exporting}>
+              <Download size={14} /> {exporting ? "Menyiapkan…" : <>Export<span className="crm-lap-teks-aksi"> {tab}</span></>}
+            </button>
+          </>
+        )}
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="crm-pills">
+        <TabsList className="crm-lap-tabs">
           {TABS.map((t) => (
             <TabsTrigger key={t} value={t}>{t}</TabsTrigger>
           ))}
         </TabsList>
 
-        <div style={{ paddingTop: 24 }}>
+        <div className="crm-lap-isi">
           {tab === "Marketing" ? (
             // Marketing memuat laporan atribusinya sendiri dengan periode global di atas; tidak ikut skeleton agar state (urutan, drilldown, bagian yang dibuka) tidak hilang saat data traffic dimuat ulang.
             <TabsContent value="Marketing">
@@ -309,6 +310,6 @@ export default function Laporan() {
           )}
         </div>
       </Tabs>
-    </div>
+    </PageContainer>
   );
 }

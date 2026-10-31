@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, Info, Crown, Loader2, ExternalLink, BarChart3, BadgeCheck, Target, Flag, ShoppingBag, ShieldAlert } from "lucide-react";
+import { Download, Info, Crown, Loader2, ExternalLink } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils.js";
 import { compareLabel, toApiParams } from "@/lib/dateRange.js";
 import { computeTeamTarget, namaBulanTarget } from "../utils/teamTarget.js";
 import { api } from "@/api.js";
-import KpiCard from "./KpiCard.jsx";
+import KpiLap from "./KpiLap.jsx";
+import MetrikRingkas from "./MetrikRingkas.jsx";
 import ChartCard from "./ChartCard.jsx";
 import { useRekonSalesFinance, KartuRekon, PanelRekon, DaftarRekonModal } from "./RekonSalesFinance.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
@@ -146,8 +147,8 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
     : 0;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3">
+    <div className="crm-lap-tab">
+      <div className="crm-lap-subhead">
         <h2 className="t-card-title" style={{ margin: 0 }}>Ringkasan tim</h2>
         <button className="btn btn-ghost btn-sm" onClick={() => onExport({ rekonSales: rekon.data })}>
           <Download size={14} /> Export Excel
@@ -155,35 +156,34 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       </div>
 
       {/* ── Ringkasan tim ─────────────────────────────────────────────── */}
-      {/* Empat KPI utama (redesign 31 Okt 2026): 4 kolom HANYA mulai 1360px (aturan di sanss-crm.css .crm-kpi-utama; varian min-[…] Tailwind kalah urutan dari sm:) —
-          di bawahnya 2 kolom, supaya angka Rupiah panjang tidak terjepit
-          (pelajaran D-113). AOV & Chat Spam = metrik pendukung, baris ringkas
+      {/* Empat KPI utama berwarna (redesain 31 Okt 2026): 4 kolom HANYA mulai 1360px (.crm-kpi-grid), di bawahnya 2 kolom,
+          supaya angka Rupiah panjang tidak terjepit (pelajaran D-113). AOV & Chat Spam = metrik pendukung, baris ringkas
           di bawahnya. Isi & rumus kartu tidak berubah. */}
-      <div className="crm-kpi-utama grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <KpiCard
-          index={0} hero tone="primary" icon={BarChart3} label="Nilai Penjualan Tim"
+      <section className="crm-kpi-grid">
+        <KpiLap
+          tone="revenue" ikon="dompet" label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}
           format={(v) => formatRupiah(Math.round(v))}
           growth={report?.growthTeamGrossValue} compareLabel={cmp}
           sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
           tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas — “reach”, belum tentu sudah lunas."
         />
-        <KpiCard
-          index={1} tone="soft" icon={BadgeCheck} label="Nilai Order yang Menjadi Lunas"
+        <KpiLap
+          tone="leads" ikon="centang" label="Nilai Order yang Menjadi Lunas"
           numericValue={teamCollectedAll}
           format={(v) => formatRupiah(Math.round(v))}
           sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses (perkiraan)`}
           tooltip="Nilai penuh order yang mencapai lunas pada periode ini. Tidak selalu sama dengan uang masuk periode karena DP, ongkir, dan pembayaran lintas periode."
         />
-        <KpiCard
-          index={2} tone="soft" icon={Target} label="Konversi Tim"
+        <KpiLap
+          tone="orders" ikon="alur" label="Konversi Tim"
           numericValue={total?.conversionRate || 0}
           format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
           tooltip={`Konversi Tim = (pelanggan pindah ke Transaksi) ÷ (percakapan yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut). Contoh: ${total?.paidCustomers || 0} pindah Transaksi dari ${total?.handled || 0} percakapan ditangani. ⚠️ BEDA dengan "Conversion" di Dashboard (keduanya BENAR, bukan salah satu salah hitung): angka ini basisnya PERCAKAPAN yang ditangani tim di periode ini, TERMASUK lead LAMA (lahir bulan sebelumnya) yang baru closing sekarang; "Conversion" Dashboard basisnya LEAD BARU yang lahir di periode ini saja. Makanya penyebut & pembilangnya beda dan wajar angkanya tidak sama.`}
         />
-        <KpiCard
-          index={3} tone="lime" icon={Flag} label="Target Tim"
+        <KpiLap
+          tone="conversion" ikon="diagram" label="Target Tim"
           numericValue={targetInfo.percentToTarget || 0}
           format={() => (targetInfo.percentToTarget != null ? `${targetInfo.percentToTarget}%` : "—")}
           sub={
@@ -195,23 +195,24 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           }
           tooltip={`Progres closing tim terhadap target BULANAN — SELALU ${labelBulanTarget}, tidak ikut rentang tanggal yang dipilih di atas.`}
         />
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <KpiCard
-          compact index={4} icon={ShoppingBag} label="AOV Tim"
-          numericValue={teamAovAll}
-          format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
-          sub="rata-rata nilai per order, seluruh tim"
-          tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
-        />
-        <KpiCard
-          compact index={5} icon={ShieldAlert} label="Chat Spam"
-          numericValue={total?.spamCount || 0}
-          format={(v) => Math.round(v).toLocaleString("id-ID")}
-          sub={total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani"}
-          tooltip={`Spam % = (chat yang dipegang tim & ditandai SPAM) ÷ (chat SPAM + chat yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut) — scope sama dengan kartu lain di atas. Bukan penalti performa sales — ini pengawas KUALITAS LEAD masuk, layak ditinjau kalau jumlahnya tiba-tiba melonjak.`}
-        />
-      </div>
+      </section>
+      <MetrikRingkas items={[
+        {
+          ikon: "tas", tone: "blue", label: "AOV Tim",
+          numericValue: teamAovAll,
+          format: (v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—"),
+          sub: "rata-rata nilai per order, seluruh tim",
+          tooltip: "Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas.",
+        },
+        {
+          ikon: "chat", tone: "orange", label: "Chat Spam",
+          numericValue: total?.spamCount || 0,
+          format: (v) => Math.round(v).toLocaleString("id-ID"),
+          sub: total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani",
+          tooltip: `Spam % = (chat yang dipegang tim & ditandai SPAM) ÷ (chat SPAM + chat yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut) — scope sama dengan kartu lain di atas. Bukan penalti performa sales — ini pengawas KUALITAS LEAD masuk, layak ditinjau kalau jumlahnya tiba-tiba melonjak.`,
+        },
+      ]} />
+
 
       {/* ── Rekonsiliasi Sales–Finance: kartu terpisah + bridge (angka dari server) ─────────────── */}
       <KartuRekon data={rekon.data} loading={rekon.loading} onBuka={setRekonBuka} />
@@ -222,7 +223,8 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       {/* ── Penjualan Karyawan: order karyawan non-Sales, masuk omzet perusahaan tetapi di luar angka Tim Sales ── */}
       <KartuPenjualanKaryawan range={range} />
 
-      {/* ── Leaderboard ───────────────────────────────────────────────── */}
+      {/* ── Leaderboard + Nilai per Sales: berdampingan bila ruang cukup (.crm-lap-baris--lb), satu kolom di HP ───── */}
+      <div className="crm-lap-baris crm-lap-baris--lb">
       <ChartCard
         index={4}
         title="Leaderboard Sales"
@@ -366,12 +368,13 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
         <div className="flex flex-col gap-2.5">
           {rows.filter((r) => r.grossValue > 0).map((r) => (
             <BarRow
-              key={r.userId} label={r.name} value={r.grossValue} max={maxNilai}
+              key={r.userId} tumpuk label={r.name} value={r.grossValue} max={maxNilai}
               display={formatRupiahShort(r.grossValue)} sub={`${r.orders} order`} tone="green"
             />
           ))}
         </div>
       </ChartCard>
+      </div>
 
       {/* ── Tabel rinci ──────────────────────────────────────────────── */}
       {rows.length > 0 && (
