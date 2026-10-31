@@ -13,6 +13,8 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { resetRateLimits } from "../../src/lib/rateLimit.js";
 import { createOrderForCustomer } from "../../src/services/orderCreation.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
+import { bukukanPembayaran } from "../../src/services/finance/hooks.js";
+import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js";
 
 let server; let raw;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); raw = makeRaw(server.baseUrl); });
@@ -38,9 +40,9 @@ async function pelanggan(nama, { sales = null, tambahan = [] } = {}) {
   for (let i = 0; i < daftar.length; i++) await testPrisma.conversation.create({ data: { customerId: c.id, channel: i === 0 ? "WHATSAPP" : "INSTAGRAM", assignedToId: daftar[i], type: "INDIVIDUAL" } });
   return c;
 }
-async function order(c, { nilai, ongkir = null, status = "DELIVERED", paidAt = null, ps = "LUNAS", owner = null }) {
+async function order(c, { nilai, ongkir = null, status = "DELIVERED", paidAt = null, ps = "LUNAS", owner = null, dibuat = null, pkr = null }) {
   seq += 1;
-  return testPrisma.order.create({ data: { customerId: c.id, orderNumber: `RK-${Date.now()}-${seq}`, category: "LAYANAN", status, value: nilai, ongkir, paymentStatus: ps, paidAt, salesOwnerId: owner } });
+  return testPrisma.order.create({ data: { customerId: c.id, orderNumber: `RK-${Date.now()}-${seq}`, category: "LAYANAN", status, value: nilai, ongkir, paymentStatus: ps, paidAt, salesOwnerId: owner, ...(dibuat && { createdAt: new Date(dibuat) }), ...(pkr && { penjualanKaryawanId: pkr }) } });
 }
 async function bayar(o, amount, tgl, { verif = true, batal = false, oleh, verifikator } = {}) {
   const p = await testPrisma.payment.create({ data: { orderId: o.id, amount, method: "TRANSFER", recordedById: oleh, createdAt: new Date(tgl), ...(batal && { cancelledAt: new Date(), cancelReason: "uji" }) } });
@@ -365,4 +367,105 @@ test("EXPORT Rekonsiliasi: payload SAMA dengan kartu/drill-down (Ringkasan = kar
   assert.match(String(r.wb.getWorksheet("Ringkasan").getRow(5).getCell(1).value), /Basis tanggal: .* Zona waktu: WIB/);
   const sales = await unduhExport(server.baseUrl, w.kiki.token, "rekon-sales-finance", { periode: { from: "2026-09-01", to: "2026-09-30" } });
   assert.equal(sales.status, 403);
+});
+
+test("AUDIT SELISIH OKT 2026: jembatan KOHORT (dibuat di periode & Lunas → lunas di periode) tepat sampai nomor order; residual 0; kartu 'Sudah Lunas' = Σ kohort", async () => {
+  const w = await dunia();
+  const c = await pelanggan("Pelanggan Kohort", { sales: w.kiki.user.id });
+  const A1 = await order(c, { nilai: 1_000_000, dibuat: "2026-09-05T03:00:00Z", paidAt: new Date("2026-09-10T05:00:00Z") });   // dibuat & lunas di periode
+  await bayar(A1, 1_000_000, "2026-09-10T05:00:00Z", w.kw);
+  const A2 = await order(c, { nilai: 500_000, dibuat: "2026-09-06T03:00:00Z", paidAt: null });                                    // Lunas tetapi tanggal lunas kosong
+  const A3 = await order(c, { nilai: 300_000, dibuat: "2026-09-07T03:00:00Z", paidAt: new Date("2026-08-28T05:00:00Z") });         // Lunas, tanggal lunas Agustus
+  const B1 = await order(c, { nilai: 2_000_000, dibuat: "2026-08-20T03:00:00Z", paidAt: new Date("2026-09-12T05:00:00Z") });        // order lama lunas di periode
+  await bayar(B1, 2_000_000, "2026-09-12T05:00:00Z", w.kw);
+  const B2 = await order(c, { nilai: 400_000, dibuat: "2026-09-08T03:00:00Z", paidAt: new Date("2026-09-09T05:00:00Z"), ps: "DP" }); // tanggal lunas terisi tetapi status bayar kini DP
+  const Pkr = await order(c, { nilai: 0, dibuat: "2026-09-09T03:00:00Z", paidAt: new Date("2026-09-09T05:00:00Z") });
+
+  const r = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body;
+  const k = r.kohort;
+  assert.equal(k.residual, 0, "jembatan kohort menutup persis");
+  assert.equal(k.status.perhitungan, "COCOK");
+  const g = (kunci) => k.langkah.find((x) => x.kunci === kunci);
+  assert.equal(g("KOHORT_DIBUAT_LUNAS").jumlah, 1_800_000, "Sudah Lunas = A1 1.000.000 + A2 500.000 + A3 300.000 (+ Rp0)");
+  assert.equal(g("KOHORT_DIBUAT_LUNAS").nOrder, 4, "termasuk order Rp0");
+  assert.equal(g("KOHORT_LUNAS_DI_LUAR").jumlah, 800_000);
+  assert.equal(g("KOHORT_LUNAS_DI_LUAR").nOrder, 2);
+  assert.equal(g("KOHORT_DIBUAT_SEBELUM").jumlah, 2_000_000);
+  assert.equal(g("KOHORT_BELUM_LUNAS_PAIDAT").jumlah, 400_000);
+  assert.equal(g("TOTAL_PERUSAHAAN").jumlah, 3_400_000, "= Σ nilai lunas-periode: A1 + B1 + B2 (+ Rp0)");
+  assert.equal(r.kartu.sudahLunasKohortDibuat, 1_800_000);
+  assert.equal(r.kartu.totalPerusahaan, 3_400_000);
+  assert.equal(r.status.perhitungan, "COCOK");
+  assert.equal(r.kartuSelisih.residual.kohort, 0);
+
+  // Sampai nomor order & alasan per baris
+  const nomor = (kunci) => r.detail[kunci].map((x) => x.nomor).sort();
+  assert.deepEqual(nomor("KOHORT_LUNAS_DI_LUAR"), [A2.orderNumber, A3.orderNumber].sort());
+  assert.deepEqual(nomor("KOHORT_DIBUAT_SEBELUM"), [B1.orderNumber]);
+  assert.deepEqual(nomor("KOHORT_BELUM_LUNAS_PAIDAT"), [B2.orderNumber]);
+  assert.match(r.detail.KOHORT_LUNAS_DI_LUAR.find((x) => x.nomor === A2.orderNumber).alasan, /tanggal lunas kosong/);
+  assert.match(r.detail.KOHORT_LUNAS_DI_LUAR.find((x) => x.nomor === A3.orderNumber).alasan, /2026-08-28/);
+  assert.match(r.detail.KOHORT_DIBUAT_SEBELUM[0].alasan, /sebelum periode/);
+  assert.ok(r.detail.KOHORT_DIBUAT_LUNAS.some((x) => x.nomor === Pkr.orderNumber), "daftar kohort memuat semua order, termasuk Rp0");
+
+  // Sama dengan kartu "Sudah Lunas" di Laporan Ringkasan (business-summary: order dibuat di periode, kini Lunas, bersih)
+  const bs = (await raw("GET", `/api/analytics/business-summary?${PERIODE}`, { token: w.admin.token })).body;
+  assert.equal(bs.uang.collectedValue, g("KOHORT_DIBUAT_LUNAS").jumlah, "kartu Ringkasan 'Sudah Lunas' = langkah awal jembatan kohort");
+});
+
+test("AUDIT SELISIH OKT 2026: dokumen Payment (ID, rekening, nomor jurnal) di jembatan; pengecualian lunas dijelaskan; order PKR dikecualikan dari himpunan lunas-periode (sama dengan laporan Sales)", async () => {
+  const w = await dunia();
+  const c = await pelanggan("Pelanggan Dokumen", { sales: w.kiki.user.id });
+  await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
+  const akunBank = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.BANK } });
+  const rek = await testPrisma.finCashAccount.create({ data: { name: "Bank Dokumen", kind: "BANK", accountId: akunBank.id } });
+
+  // (1) pengecualian lunas: uang masuk September, tanggal lunas DIKUNCI ke Agustus (keputusan Owner)
+  const oKunci = await order(c, { nilai: 1_500_000, dibuat: "2026-08-10T03:00:00Z", paidAt: new Date("2026-08-31T16:00:00Z") });
+  await testPrisma.orderPaidAtPengecualian.create({ data: { orderId: oKunci.id, paidAtDikunci: new Date("2026-08-31T16:00:00Z"), alasan: "Keputusan Owner: keringanan target Agustus", createdById: w.admin.user.id } });
+  const pKunci = await bayar(oKunci, 750_000, "2026-09-11T05:00:00Z", w.kw);
+  await testPrisma.payment.update({ where: { id: pKunci.id }, data: { cashAccountId: rek.id } });
+  // (2) lunas di periode LAIN tanpa pengecualian (Oktober)
+  const oLain = await order(c, { nilai: 900_000, dibuat: "2026-09-02T03:00:00Z", paidAt: new Date("2026-10-05T05:00:00Z") });
+  await bayar(oLain, 400_000, "2026-09-14T05:00:00Z", w.kw);
+  // (3) order Penjualan Karyawan (PKR) bernilai >0 dengan tanggal lunas di periode: BUKAN omzet Sales (trigger DB melarang Payment pada order PKR, jadi tanpa uang masuk)
+  const pkr = await testPrisma.finPenjualanKaryawan.create({ data: { nomor: `PKR-UJI-${seq}`, date: new Date("2026-09-15T00:00:00Z"), sellerId: w.kiki.user.id, buyerName: "Kerabat Uji", total: 0 } });
+  const oPkr = await order(c, { nilai: 250_000, dibuat: "2026-09-15T03:00:00Z", paidAt: new Date("2026-09-16T05:00:00Z"), pkr: pkr.id });
+  // (4) order normal supaya ada nomor jurnal pada Payment
+  const oNormal = await order(c, { nilai: 1_000_000, dibuat: "2026-09-03T03:00:00Z", paidAt: new Date("2026-09-04T05:00:00Z") });
+  const pNormal = await bayar(oNormal, 1_000_000, "2026-09-04T05:00:00Z", w.kw);
+  await testPrisma.payment.update({ where: { id: pNormal.id }, data: { cashAccountId: rek.id, referenceNumber: "TRX-REF-1" } });
+  await setSetting(testPrisma, SETTING_KEYS.SALDO_AWAL_CUTOFF, "2026-01-01");   // default cutoff 2026 mencegah posting uang yang diterima sebelum saldo awal
+  const hasilBuku = await testPrisma.$transaction((tx) => bukukanPembayaran(tx, { paymentId: pNormal.id, userId: w.admin.user.id }));
+  assert.notEqual(hasilBuku?.gap, true, "posting penerimaan berhasil: " + JSON.stringify(hasilBuku));
+
+  const r = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body;
+  assert.equal(r.residual, 0); assert.equal(r.tahap1.residual, 0); assert.equal(r.tahap2.residual, 0); assert.equal(r.kohort.residual, 0);
+
+  const lain = r.detail.LUNAS_PERIODE_LAIN;
+  assert.deepEqual(lain.map((x) => x.nomor).sort(), [oKunci.orderNumber, oLain.orderNumber].sort());
+  assert.match(lain.find((x) => x.nomor === oKunci.orderNumber).alasan, /DIKUNCI ke 2026-08-31.*keringanan target Agustus/);
+  assert.match(lain.find((x) => x.nomor === oLain.orderNumber).alasan, /dihitung lunas pada 2026-10-05/);
+  assert.equal(garis(r, "LUNAS_PERIODE_LAIN").jumlah, 750_000 + 400_000);
+
+  // PKR: tidak masuk himpunan lunas-periode (kartu Sales/komisi juga mengecualikannya) — tidak mengembang Total Perusahaan maupun Tanpa Atribusi
+  assert.equal(garis(r, "TOTAL_PERUSAHAAN").jumlah, 1_000_000, "hanya oNormal yang lunas di periode (PKR dikecualikan, Rp0)");
+  assert.equal(garis(r, "TANPA_SALES").jumlah, 0, "order PKR tidak muncul sebagai Tanpa Atribusi Sales");
+  assert.ok(!Object.values(r.detail).some((arr) => arr.some((x) => x.nomor === oPkr.orderNumber)), "order PKR tidak ada di jembatan mana pun");
+  const sr = (await raw("GET", `/api/analytics/sales-report?${PERIODE}`, { token: w.admin.token })).body;
+  const kartuTim = (sr.total.collectedValue || 0) + sr.rows.filter((x) => x.isTeamLead).reduce((a, x) => a + x.collectedValue, 0);
+  assert.equal(kartuTim, r.kartu.nilaiLunasSales, "bridge tetap == kartu Tim laporan Sales");
+
+  // Dokumen pembayaran: ID pendek, tanggal WIB, rekening, nomor jurnal (null bila belum dijurnal)
+  const uang = r.detail.UANG_MASUK;
+  const bNormal = uang.find((x) => x.nomor === oNormal.orderNumber).pembayaran[0];
+  assert.equal(bNormal.id, pNormal.id);
+  assert.equal(bNormal.ref, pNormal.id.slice(0, 8));
+  assert.equal(bNormal.tanggalWib, "2026-09-04");
+  assert.equal(bNormal.rekening, "Bank Dokumen");
+  assert.equal(bNormal.referensi, "TRX-REF-1");
+  assert.match(bNormal.nomorJurnal, /^JU-|^JRN|\d/, "nomor jurnal penerimaan tercantum");
+  const bKunci = uang.find((x) => x.nomor === oKunci.orderNumber).pembayaran[0];
+  assert.equal(bKunci.rekening, "Bank Dokumen");
+  assert.equal(bKunci.nomorJurnal, null, "belum dijurnal → null (bukan tebakan)");
 });
