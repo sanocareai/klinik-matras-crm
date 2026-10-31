@@ -95,16 +95,20 @@ export function TagihanPelanggan({ piutang, aging, teratas, navigate }) {
 
 // ─── Pencatatan terbaru (jurnal) ────────────────────────────────────────────
 
+const JURNAL_AWAL = 5;
 export function PencatatanTerbaru({ jurnal, navigate }) {
-  const daftar = (jurnal ?? []).slice(0, 5);
+  const [semua, setSemua] = useState(false);
+  const idDaftar = useId();
+  const lengkap = jurnal ?? [];
+  const daftar = semua ? lengkap : lengkap.slice(0, JURNAL_AWAL);
   return (
     <section className="fin-panel" aria-labelledby="fin-pt-judul" data-testid="panel-pencatatan-terbaru">
       <header className="fin-panel-kepala">
         <h2 id="fin-pt-judul" className="fin-panel-judul">Pencatatan terbaru</h2>
-        <p className="fin-panel-sub">Lima jurnal terbaru di buku besar. Setiap transaksi keuangan otomatis dicatat sebagai satu jurnal.</p>
+        <p className="fin-panel-sub fin-cakupan-baris"><Cakupan>Semua periode</Cakupan><span>Jurnal terbaru di buku besar; tidak mengikuti periode terpilih. Setiap transaksi keuangan otomatis dicatat sebagai satu jurnal.</span></p>
       </header>
       {daftar.length === 0 ? <p className="fin-kosong">Belum ada pencatatan.</p> : (
-        <ul className="fin-jr">
+        <ul id={idDaftar} className="fin-jr">
           {daftar.map((e) => (
             <li key={e.id}>
               <button type="button" className="fin-jr-item" onClick={() => navigate("/finance/journal")}>
@@ -117,7 +121,13 @@ export function PencatatanTerbaru({ jurnal, navigate }) {
           ))}
         </ul>
       )}
-      <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/journal")}>Lihat semua jurnal <ArrowRight size={14} aria-hidden="true" /></Button>
+      <div className="fin-panel-aksi-baris">
+        {lengkap.length > JURNAL_AWAL
+          ? <Pembuka buka={semua} onToggle={() => setSemua((v) => !v)} id={idDaftar} className="fin-panel-tautan">{semua ? `Tampilkan ${JURNAL_AWAL} saja` : `Tampilkan ${angkaId(lengkap.length)} jurnal terbaru`}</Pembuka>
+          : <span />}
+        <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/journal")}>Lihat semua jurnal <ArrowRight size={14} aria-hidden="true" /></Button>
+      </div>
+      <p className="fin-panel-sub fin-catatan-tipis">Halaman jurnal membuka bulan berjalan; ubah rentang tanggal di sana untuk periode lain.</p>
     </section>
   );
 }

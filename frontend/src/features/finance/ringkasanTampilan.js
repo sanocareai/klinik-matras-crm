@@ -28,7 +28,7 @@ export function keteranganRekening(r) {
 export const TEKS_STRIP = Object.freeze({
   belumLengkap: { judul: "Data belum lengkap", isi: "Sebagian transaksi belum masuk pembukuan. Angka masih sementara." },
   sumberHilang: { judul: "Sebagian data tidak dapat dimuat", isi: "Angka di bawah masih sementara sampai data tersebut tersedia." },
-  lengkap: { judul: "Data lengkap menurut pemeriksaan otomatis", isi: "Semua angka di halaman ini dihitung dari jurnal yang sudah dibukukan." },
+  lengkap: { judul: "Tidak ada kekurangan pencatatan yang terdeteksi", isi: "Konfirmasi rekening dan pencocokan saldo diperiksa terpisah." },
 });
 
 /** Keadaan strip: ada butir bermasalah → "belumLengkap"; hanya sumber yang tidak termuat → "sumberHilang"; selain itu "lengkap". Kondisi sama dengan banner lama (kualitas.belumFinal). */
@@ -108,7 +108,9 @@ export function susunTindakLanjut({ antrean, kualitas, riil, bukti }) {
   ];
 
   const nBukti = bukti ? bukti.items.length : null;
-  const buktiBaris = baris({ id: "bukti_transaksi", judul: "Bukti transaksi perlu diperiksa", jumlah: nBukti, satuan: "bukti", tujuan: null,
+  const buktiBaris = baris({ id: "bukti_transaksi", judul: "Bukti transaksi perlu diperiksa", jumlah: nBukti, satuan: "bukti terdeteksi", tujuan: null,
+    ringkas: bukti ? `${angkaID(bukti.belumDiverifikasi)} nota menunggu verifikasi · ${angkaID(bukti.tanpaNota)} transaksi wajib nota tetapi belum ada` : null,
+    catatanBatas: bukti ? BATAS_DATA_BUKTI : null,
     penjelasan: bukti ? `${bukti.belumDiverifikasi} nota menunggu verifikasi orang lain · ${bukti.tanpaNota} transaksi wajib nota tetapi belum ada. Dihitung dari 200 pengeluaran dan 200 pembelian terbaru sejak kebijakan nota berlaku; bila lebih banyak, yang lebih lama tidak ikut terhitung.` : "Data bukti tidak dapat dimuat." });
 
   return [
@@ -118,6 +120,9 @@ export function susunTindakLanjut({ antrean, kualitas, riil, bukti }) {
     { id: "bukti", judul: "Bukti transaksi", cakupan: "Sejak kebijakan nota berlaku", baris: [buktiBaris] },
   ];
 }
+
+export const BATAS_DATA_BUKTI = "Dari maksimal 200 pengeluaran dan 200 pembelian terbaru.";
+const angkaID = (n) => Number(n || 0).toLocaleString("id-ID");
 
 /** Pisahkan baris yang terlihat (ada pekerjaan atau datanya tidak tersedia) dari yang bernilai nol. Nol tidak dibuang: tersedia lewat "Tampilkan semua kategori". */
 export function pisahkanTindakLanjut(kelompok, tampilSemua) {

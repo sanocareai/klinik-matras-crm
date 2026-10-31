@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -30,21 +30,27 @@ export default function FinanceDashboard() {
   const [galatBukti, setGalatBukti] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Hanya respons permintaan TERAKHIR yang boleh mengisi layar: respons periode lama yang terlambat tidak boleh menimpa periode yang baru dipilih.
+  const urutan = useRef(0);
 
   const muat = useCallback(async () => {
+    const saya = ++urutan.current;
     setLoading(true);
     setError(null);
     try {
       const [d, r, b, k] = await Promise.allSettled([api.getFinanceDashboard(periode), api.getFinanceSaldoRiil(), api.getFinanceRekonBackfill(), api.getFinanceReceiptReview()]);
+      if (saya !== urutan.current) return;
       if (d.status === "rejected") throw d.reason;
       setData(d.value);
       setRiil(r.status === "fulfilled" ? r.value : null);
       setBackfill(b.status === "fulfilled" ? b.value : null);
       setBukti(k.status === "fulfilled" ? k.value : null);
     } catch (e) {
+      if (saya !== urutan.current) return;
+      setData(null);
       setError(e.message || "Gagal memuat ringkasan keuangan");
     } finally {
-      setLoading(false);
+      if (saya === urutan.current) setLoading(false);
     }
   }, [periode]);
 
@@ -73,7 +79,7 @@ export default function FinanceDashboard() {
     <HalamanFinance
       className="fin-halaman"
       title="Ringkasan Keuangan"
-      subtitle={data ? `Periode ${periodeLabel} · posisi keuangan dan hal yang perlu ditindaklanjuti.` : "Posisi keuangan dan hal yang perlu ditindaklanjuti."}
+      subtitle={loading ? `Memuat data periode ${tanggalPendek(periode.from)}–${tanggalPendek(periode.to)}…` : data ? `Periode ${periodeLabel} · posisi keuangan dan hal yang perlu ditindaklanjuti.` : "Posisi keuangan dan hal yang perlu ditindaklanjuti."}
       actions={<PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
       loading={loading}
       error={error}

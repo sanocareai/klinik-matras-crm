@@ -4,7 +4,7 @@ import { Uang, SelBukti, tanggalPendek } from "@/features/finance/shared.jsx";
 import { BUKTI_AWAL, potongBukti } from "@/features/finance/ringkasanTampilan.js";
 import { angkaId } from "@/features/finance/RingkasanKecil.jsx";
 
-// "Bukti transaksi perlu diperiksa": lima entri awal, lalu semua entri yang dimuat dengan halaman. Data = respons /finance/bukti-review (tidak ada perubahan backend).
+// "Bukti transaksi perlu diperiksa": ditutup secara default (dibuka lewat "Lihat bukti"); lima entri awal, lalu SEMUA hasil yang dimuat dengan halaman. "Hasil" = yang terdeteksi dari maksimal 200 pengeluaran + 200 pembelian terbaru, bukan seluruh database. Data = respons /finance/bukti-review (tidak ada perubahan backend).
 // Memeriksa/memverifikasi tetap lewat SelBukti (aksi manual pengguna; tidak ada verifikasi otomatis). Aturan "verifikator ≠ pembuat" ditegakkan server.
 export default function BuktiDaftar({ bukti, galat, aksi }) {
   const [mode, setMode] = useState("awal");
@@ -14,9 +14,6 @@ export default function BuktiDaftar({ bukti, galat, aksi }) {
   return (
     <div className="fin-bk" data-testid="bukti-daftar">
       {galat && <p className="fin-galat" role="alert">{galat}</p>}
-      <p className="fin-bk-ringkas">
-        {angkaId(bukti.belumDiverifikasi)} nota menunggu verifikasi orang lain · {angkaId(bukti.tanpaNota)} transaksi wajib nota tetapi belum ada.
-      </p>
       <div className="fin-bk-kepala" aria-hidden="true">
         <span>Keterangan</span><span>Tanggal</span><span>Pencatat</span><span className="fin-kanan">Nominal</span><span>Status dan tindakan</span>
       </div>
@@ -40,11 +37,11 @@ export default function BuktiDaftar({ bukti, galat, aksi }) {
       <div className="fin-bk-kaki">
         {mode === "awal" ? (
           potong.adaLagi
-            ? <Button variant="tertiary" size="sm" className="fin-panel-tautan" aria-controls={idDaftar} onClick={() => { setMode("semua"); setHalaman(0); }}>Lihat semua {angkaId(potong.total)}</Button>
-            : <span className="fin-redup">Menampilkan semua {angkaId(potong.total)}.</span>
+            ? <Button variant="tertiary" size="sm" className="fin-panel-tautan" aria-controls={idDaftar} onClick={() => { setMode("semua"); setHalaman(0); }}>Lihat {angkaId(potong.total)} hasil</Button>
+            : <span className="fin-redup">Menampilkan {angkaId(potong.total)} hasil.</span>
         ) : (
           <>
-            <span className="fin-redup" aria-live="polite">Halaman {potong.halaman + 1} dari {potong.jumlahHalaman} · {angkaId(potong.total)} bukti</span>
+            <span className="fin-redup" aria-live="polite">Halaman {potong.halaman + 1} dari {potong.jumlahHalaman} · {angkaId(potong.total)} hasil</span>
             <span className="fin-bk-nav">
               <Button variant="tertiary" size="sm" disabled={potong.halaman === 0} onClick={() => setHalaman(potong.halaman - 1)}>Sebelumnya</Button>
               <Button variant="tertiary" size="sm" disabled={potong.halaman >= potong.jumlahHalaman - 1} onClick={() => setHalaman(potong.halaman + 1)}>Berikutnya</Button>

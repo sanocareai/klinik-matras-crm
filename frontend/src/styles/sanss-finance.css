@@ -304,3 +304,14 @@
 :root .app-shell.crm-skin .fin-akor-isi [class~="bg-greenbg"] { background: var(--ord-delivered-bg); color: var(--ord-delivered-fg); }
 :root .app-shell.crm-skin .fin-akor-isi [class~="bg-orangebg"] { background: var(--ord-pending-bg); color: var(--ord-pending-fg); }
 :root .app-shell.crm-skin .fin-akor-isi [class~="bg-redbg"] { background: var(--ord-cancelled-bg); color: var(--ord-cancelled-fg); }
+
+/* baris bukti: ringkasan jenis masalah + batas data langsung di dekat angka */
+:root .app-shell.crm-skin .fin-tl-kolom { min-width: 0; }
+:root .app-shell.crm-skin .fin-tl-ket { margin-top: 1px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-tl-jumlah { display: flex; flex-direction: column; align-items: flex-end; }
+:root .app-shell.crm-skin .fin-tl-batas { display: block; max-width: 260px; margin-top: 1px; font-size: 12px; font-weight: 500; line-height: 1.35; text-align: right; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-catatan-tipis { margin-top: 6px; font-size: 12px; }
+@container finpanel (max-width: 639px) {
+  :root .app-shell.crm-skin .fin-tl-jumlah { align-items: flex-start; }
+  :root .app-shell.crm-skin .fin-tl-batas { text-align: left; max-width: none; }
+}

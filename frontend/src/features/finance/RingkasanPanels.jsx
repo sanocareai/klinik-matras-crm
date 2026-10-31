@@ -45,7 +45,7 @@ export function StripStatus({ kualitas, catatan }) {
       {buka && (
         <div id={id} className="fin-strip-rincian">
           {lengkap
-            ? <p>{TEKS_STRIP.lengkap.isi}</p>
+            ? <p>Semua angka di halaman ini dihitung dari jurnal yang sudah dibukukan. Pemeriksaan ini hanya mencakup kekurangan pencatatan (pembayaran belum tercatat, order belum diakui, transaksi belum lengkap, selisih rekening). Konfirmasi rekening dan pencocokan saldo diperiksa terpisah di bagian Saldo rekening.</p>
             : <p>{KALIMAT.penjelasanBanner} Semua angka di halaman ini dihitung dari <b>jurnal yang sudah dibukukan</b>, bukan laporan final.</p>}
           {catatan?.pesan?.length > 0 && <ul>{catatan.pesan.map((p, i) => <li key={i}>{p}</li>)}</ul>}
           <p className="fin-asli">Teks asli sistem: “{LABEL_BANNER}”</p>
@@ -94,7 +94,7 @@ function IkonStatus({ status }) {
   return <span className="fin-tl-ikon fin-tl-ikon-tanpa" aria-hidden="true"><Info size={15} /></span>;
 }
 
-function BarisTindak({ b, navigate }) {
+function BarisTindak({ b, navigate, aksiKustom }) {
   const [buka, setBuka] = useState(false);
   const id = useId();
   const jumlah = b.status === "tanpa-data" ? <span className="fin-redup">{TANPA_DATA}</span>
@@ -103,15 +103,18 @@ function BarisTindak({ b, navigate }) {
   return (
     <li className={`fin-tl-baris fin-tl-${b.status}`} data-testid={`tl-${b.id}`}>
       <IkonStatus status={b.status} />
-      <div className="fin-tl-judul">
-        <span>{b.judul}</span>
-        <button type="button" className="fin-info" aria-expanded={buka} aria-controls={id} aria-label={`Penjelasan: ${b.judul}`} onClick={() => setBuka((v) => !v)}><Info size={15} aria-hidden="true" /></button>
+      <div className="fin-tl-kolom">
+        <div className="fin-tl-judul">
+          <span>{b.judul}</span>
+          <button type="button" className="fin-info" aria-expanded={buka} aria-controls={id} aria-label={`Penjelasan: ${b.judul}`} onClick={() => setBuka((v) => !v)}><Info size={15} aria-hidden="true" /></button>
+        </div>
+        {b.status === "perlu" && b.ringkas && <p className="fin-tl-ket">{b.ringkas}</p>}
       </div>
-      <p className="fin-tl-jumlah">{jumlah}</p>
+      <p className="fin-tl-jumlah">{jumlah}{b.status === "perlu" && b.catatanBatas && <span className="fin-tl-batas">{b.catatanBatas}</span>}</p>
       <p className="fin-tl-nilai">{b.status === "perlu" && b.nilai ? formatUang(b.nilai) : null}</p>
-      {b.tujuan
+      {aksiKustom ?? (b.tujuan
         ? <Button variant="tertiary" size="sm" className="fin-tl-aksi" onClick={() => navigate(b.tujuan)} aria-label={`Lihat: ${b.judul}`}>Lihat <ArrowRight size={14} aria-hidden="true" /></Button>
-        : <span className="fin-tl-aksi" />}
+        : <span className="fin-tl-aksi" />)}
       {buka && <div id={id} className="fin-tl-penjelasan" role="note">{b.penjelasan}</div>}
     </li>
   );
@@ -119,7 +122,8 @@ function BarisTindak({ b, navigate }) {
 
 export function TindakLanjut({ kelompok, bukti, galatBukti, aksiBukti, navigate }) {
   const [semua, setSemua] = useState(false);
-  const idSemua = useId();
+  const [bukaBukti, setBukaBukti] = useState(false);
+  const idSemua = useId(); const idBukti = useId();
   const grup = pisahkanTindakLanjut(kelompok, semua);
   const jumlahNol = grup.reduce((s, g) => s + g.nol.length, 0);
   const adaPekerjaan = kelompok.some((g) => g.baris.some((b) => b.status === "perlu"));
@@ -151,9 +155,12 @@ export function TindakLanjut({ kelompok, bukti, galatBukti, aksiBukti, navigate 
             <ul className="fin-tl">
               {g.terlihat.map((b) => (
                 <React.Fragment key={b.id}>
-                  <BarisTindak b={b} navigate={navigate} />
-                  {b.id === "bukti_transaksi" && b.status === "perlu" && bukti && (
-                    <li className="fin-tl-bukti"><BuktiDaftar bukti={bukti} galat={galatBukti} aksi={aksiBukti} /></li>
+                  <BarisTindak b={b} navigate={navigate}
+                    aksiKustom={b.id === "bukti_transaksi" && b.status === "perlu" && bukti ? (
+                      <Pembuka buka={bukaBukti} onToggle={() => setBukaBukti((v) => !v)} id={idBukti} className="fin-tl-aksi fin-panel-tautan">Lihat bukti</Pembuka>
+                    ) : undefined} />
+                  {b.id === "bukti_transaksi" && b.status === "perlu" && bukti && bukaBukti && (
+                    <li id={idBukti} className="fin-tl-bukti"><BuktiDaftar bukti={bukti} galat={galatBukti} aksi={aksiBukti} /></li>
                   )}
                 </React.Fragment>
               ))}

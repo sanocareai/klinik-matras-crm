@@ -145,3 +145,21 @@ test("sumber logo dicatat: URL asli, tanpa klaim izin; berkas tak dimodifikasi (
   assert.match(doc, /Tidak ada dokumen izin pakai merek yang dimiliki/);
   for (const f of ["bca.svg", "mandiri.png"]) { const h = crypto.createHash("sha256").update(fs.readFileSync(path.join(repo, "src/assets/bank", f))).digest("hex"); assert.ok(doc.includes(h), "hash " + f); }
 });
+
+test("baris bukti: jumlah 'terdeteksi' + ringkasan jenis masalah + batas data langsung di dekat angka; angka dinamis", () => {
+  const kel = susunTindakLanjut({ antrean: antreanContoh, kualitas: kualitasContoh(), riil: riilContoh, bukti: buktiContoh });
+  const b = per(kel, "bukti_transaksi");
+  assert.equal(b.jumlah, 198); assert.equal(b.satuan, "bukti terdeteksi"); assert.equal(b.status, "perlu");
+  assert.equal(b.ringkas, "148 nota menunggu verifikasi · 50 transaksi wajib nota tetapi belum ada");
+  assert.equal(b.catatanBatas, "Dari maksimal 200 pengeluaran dan 200 pembelian terbaru.");
+  const kecil = per(susunTindakLanjut({ antrean: antreanContoh, kualitas: kualitasContoh(), riil: riilContoh, bukti: { ...buktiContoh, items: buktiContoh.items.slice(0, 7), belumDiverifikasi: 4, tanpaNota: 3 } }), "bukti_transaksi");
+  assert.equal(kecil.jumlah, 7); assert.match(kecil.ringkas, /^4 nota .* 3 transaksi/);
+  assert.equal(per(susunTindakLanjut({ antrean: antreanContoh, kualitas: kualitasContoh(), riil: riilContoh, bukti: null }), "bukti_transaksi").ringkas, null, "gagal dimuat: tidak ada ringkasan palsu");
+});
+
+test("strip: kondisi 'lengkap' tidak menyimpulkan seluruh keuangan; menyebut konfirmasi/pencocokan saldo diperiksa terpisah", async () => {
+  const { TEKS_STRIP } = await import("../src/features/finance/ringkasanTampilan.js");
+  assert.equal(TEKS_STRIP.lengkap.judul, "Tidak ada kekurangan pencatatan yang terdeteksi");
+  assert.match(TEKS_STRIP.lengkap.isi, /Konfirmasi rekening dan pencocokan saldo diperiksa terpisah/);
+  assert.ok(!/lengkap menurut/i.test(TEKS_STRIP.lengkap.judul));
+});
