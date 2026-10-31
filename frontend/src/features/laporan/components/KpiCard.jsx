@@ -23,10 +23,14 @@ import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 // styles/sanss-crm.css di bawah .crm-skin (divisi Sales CRM); di Armada/Gudang
 // kelas tone tidak punya aturan sehingga tampilannya tetap sama. Tanpa `tone`,
 // kartu `hero` otomatis "primary" di Sales CRM.
+// `compact` (opsional) — metrik pendukung: padding & angka lebih kecil, hanya
+// diberi gaya oleh sanss-crm.css (kelas .crm-kpi-compact), tempat lain tidak berubah.
 export default function KpiCard({
-  label, numericValue, format, growth, compareLabel, sparkline, hero = false, sub, index = 0, tooltip, tone, icon: Icon,
+  label, numericValue, format, growth, compareLabel, sparkline, hero = false, sub, index = 0, tooltip, tone, icon: Icon, compact = false,
 }) {
   const toneEff = tone || (hero ? "primary" : null);
+  // Arah tren untuk tema (badge di kartu berwarna): naik / turun / datar dibedakan, bukan satu warna.
+  const trend = growth > 0 ? "up" : growth < 0 ? "down" : "flat";
   const animated = useCountUp(numericValue);
   const displayValue = format ? format(animated) : Math.round(animated).toLocaleString("id-ID");
 
@@ -46,20 +50,21 @@ export default function KpiCard({
       // juga (perbaikan tambahan, bukan regresi — sebelumnya kartu KPI
       // Armada ini kelewat dari pilot kaca sejak awal karena rounded-2xl).
       className={cn(
-        "animate-fade-rise relative overflow-hidden rounded-card p-5 shadow-card transition-shadow duration-200 hover:shadow-popover text-ink",
+        "crm-kpi animate-fade-rise relative overflow-hidden rounded-card p-5 shadow-card transition-shadow duration-200 hover:shadow-popover text-ink",
         hero ? "bg-blue-50" : "bg-surface",
-        toneEff && `kpi-tone-${toneEff}`
+        toneEff && `crm-kpi-tone-${toneEff}`,
+        compact && "crm-kpi-compact"
       )}
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="flex items-center gap-1.5">
           {Icon && (
-            <span className="kpi-icon mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
+            <span className="crm-kpi-icon mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
               <Icon size={16} />
             </span>
           )}
-          <p className="text-[13px] font-medium text-ink3">{label}</p>
+          <p className="crm-kpi-label text-[13px] font-medium text-ink3">{label}</p>
           {tooltip && <InfoTooltip text={tooltip} />}
         </span>
         {/* Titik-tiga dekoratif SENGAJA disembunyikan saat ada tooltip —
@@ -81,13 +86,14 @@ export default function KpiCard({
             normal bawaan, tidak di-override) bisa menyusut & wrap ke baris
             kedua kalau kartu genuinely sempit di lebar manapun di masa
             depan — angka Rupiah tidak boleh pernah lenyap diam-diam. */}
-        <p className="min-w-0 text-[26px] font-extrabold leading-tight tabular-nums text-ink">
+        <p className="crm-kpi-value min-w-0 text-[26px] font-extrabold leading-tight tabular-nums text-ink">
           {displayValue}
         </p>
         {hasGrowth && (
           <div
+            data-trend={trend}
             className={cn(
-              "kpi-growth inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
+              "crm-kpi-growth inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
               growth > 0 ? "bg-greenbg text-green"
               : growth < 0 ? "bg-redbg text-red"
               : "bg-inset text-ink2"
@@ -103,12 +109,12 @@ export default function KpiCard({
             caller WAJIB kirim compareLabel (dari lib/dateRange.js) supaya
             teksnya selalu cocok dengan rentang tanggal yang sedang dipilih. */}
         {hasGrowth && compareLabel && (
-          <span className="kpi-compare text-[11px] text-ink3">{compareLabel}</span>
+          <span className="crm-kpi-compare text-[11px] text-ink3">{compareLabel}</span>
         )}
       </div>
 
       {sub && (
-        <p className="kpi-sub mt-1 text-xs text-ink3">{sub}</p>
+        <p className="crm-kpi-sub mt-1 text-xs text-ink3">{sub}</p>
       )}
 
       {sparkline && sparkline.length >= 2 && (

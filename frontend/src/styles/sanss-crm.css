@@ -46,9 +46,18 @@
   --crm-radius-card:  20px;
 
   /* Token bersama yang dibaca seluruh komponen lama + Tailwind (text-accent,
-     bg-surface, bg-inset …) — cukup diganti di sini, tanpa sentuh komponen. */
-  --accent:       #3965FA;
-  --accent-hover: #2B52E0;
+     bg-surface, bg-inset …) — cukup diganti di sini, tanpa sentuh komponen.
+     KONTRAS (diukur dari warna hasil render, revisi 31 Okt): teks sekunder/
+     tersier lama berbasis alpha (60%/40%) hanya 4,45:1 / 2,4:1 di atas putih &
+     #E9EBFF. Diganti warna solid ≥ 4,5:1 di atas putih, kanvas, dan #E9EBFF.
+     --accent sebagai TEKS: #3965FA di atas biru muda 4,17:1 → #2F57E0
+     (≈5:1). Isian solid biru (tombol, pill, gelembung) tetap #3965FA. */
+  --text-primary:   #1B1B39;
+  --text-secondary: #45465F;
+  --text-tertiary:  #5E6079;
+  --text-muted:     #5E6079;
+  --accent:       #2F57E0;
+  --accent-hover: #2346C2;
   --accent-bg:    rgba(57, 101, 250, 0.10);
   --accent-soft:  rgba(57, 101, 250, 0.10);
   --color-primary: #3965FA;
@@ -73,11 +82,15 @@
   --crm-shadow:     0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 36px -22px rgba(0, 0, 0, 0.7);
   --crm-shadow-pop: 0 18px 40px -16px rgba(57, 101, 250, 0.55);
 
-  --accent:       #6E8EFF;   /* teks/ikon biru di atas permukaan gelap (AA) */
-  --accent-hover: #99B7FC;
+  --text-primary:   #F2F3FF;
+  --text-secondary: #C6C9E3;
+  --text-tertiary:  #A6AACB;
+  --text-muted:     #A6AACB;
+  --accent:       #8AA4FF;   /* teks/ikon biru di atas permukaan gelap: #6E8EFF hanya 4,38:1 di chip biru gelap */
+  --accent-hover: #A9BCFF;
   --accent-bg:    rgba(110, 142, 255, 0.18);
   --accent-soft:  rgba(110, 142, 255, 0.18);
-  --color-primary: #6E8EFF;
+  --color-primary: #8AA4FF;
   --bg-inset:   #20213D;
   --bg-subtle:  #1C1D38;
   --bg-hover:   rgba(153, 183, 252, 0.07);
@@ -215,29 +228,46 @@
    Hanya `tone` yang mengubah warna; kartu tanpa tone tetap putih. */
 /* !important pada latar: aturan kaca `[class*="rounded-card"]:not(.kpi-glass-guard)`
    (0,5,1) lebih spesifik dari awalan file ini. */
-:root .app-shell.crm-skin .kpi-tone-primary {
+:root .app-shell.crm-skin .crm-kpi-tone-primary {
   background: var(--crm-primary) !important;
   box-shadow: var(--crm-shadow-pop);
 }
-:root .app-shell.crm-skin .kpi-tone-primary :is(p, span, svg) { color: #FFFFFF; }
-:root .app-shell.crm-skin .kpi-tone-primary .kpi-sub,
-:root .app-shell.crm-skin .kpi-tone-primary .kpi-compare { color: rgba(255, 255, 255, 0.78); }
-:root .app-shell.crm-skin .kpi-tone-primary .kpi-growth { background: var(--crm-lime); }
-:root .app-shell.crm-skin .kpi-tone-primary .kpi-growth,
-:root .app-shell.crm-skin .kpi-tone-primary .kpi-growth svg { color: var(--crm-on-lime); }
-:root .app-shell.crm-skin .kpi-tone-primary .kpi-icon { background: rgba(255, 255, 255, 0.18); color: #FFFFFF; }
+/* Teks di kartu biru: SEMUA putih penuh. Putih di atas #3965FA = 4,76:1;
+   putih 78% (versi sebelumnya) hanya 3,5:1 — gagal AA. */
+:root .app-shell.crm-skin .crm-kpi-tone-primary :is(p, span, svg) { color: #FFFFFF; }
+:root .app-shell.crm-skin .crm-kpi-tone-primary .crm-kpi-icon { background: rgba(255, 255, 255, 0.18); color: #FFFFFF; }
 
-:root .app-shell.crm-skin .kpi-tone-soft { background: var(--crm-soft) !important; }
-:root .app-shell.crm-skin .kpi-tone-soft .kpi-icon { background: var(--crm-panel); color: var(--crm-primary-ink); }
+/* Badge pertumbuhan di kartu biru: arah dibedakan (KpiCard.jsx → data-trend).
+   Naik = lime; turun = merah jelas; nol = netral putih. Kartu lain tetap
+   memakai warna semantik bawaan KpiCard (hijau/merah/abu). */
+:root .app-shell.crm-skin .crm-kpi-tone-primary .crm-kpi-growth svg { color: inherit; }
+:root .app-shell.crm-skin .crm-kpi-tone-primary .crm-kpi-growth[data-trend="up"]   { background: var(--crm-lime); color: var(--crm-on-lime); }
+:root .app-shell.crm-skin .crm-kpi-tone-primary .crm-kpi-growth[data-trend="down"] { background: #FFE4E1; color: #A3170E; }   /* 6,6:1 */
+:root .app-shell.crm-skin .crm-kpi-tone-primary .crm-kpi-growth[data-trend="flat"] { background: #FFFFFF; color: var(--crm-navy); }
 
-:root .app-shell.crm-skin .kpi-tone-lime { background: var(--crm-lime) !important; }
-:root .app-shell.crm-skin .kpi-tone-lime :is(p, span, svg) { color: var(--crm-on-lime); }
-:root .app-shell.crm-skin .kpi-tone-lime .kpi-sub,
-:root .app-shell.crm-skin .kpi-tone-lime .kpi-compare { color: rgba(27, 27, 57, 0.72); }
-:root .app-shell.crm-skin .kpi-tone-lime .kpi-icon { background: rgba(255, 255, 255, 0.7); }
-/* Lime tetap lime di mode gelap; teks gelap di atasnya tetap kontras. */
+:root .app-shell.crm-skin .crm-kpi-tone-soft { background: var(--crm-soft) !important; }
+:root .app-shell.crm-skin .crm-kpi-tone-soft .crm-kpi-icon { background: var(--crm-panel); color: var(--crm-primary-ink); }
 
-:root .app-shell.crm-skin .kpi-icon {
+/* Lime tetap lime di mode gelap; teks gelap solid di atasnya (≥ 10:1). */
+:root .app-shell.crm-skin .crm-kpi-tone-lime { background: var(--crm-lime) !important; }
+:root .app-shell.crm-skin .crm-kpi-tone-lime :is(p, span, svg) { color: var(--crm-on-lime); }
+:root .app-shell.crm-skin .crm-kpi-tone-lime :is(.crm-kpi-sub, .crm-kpi-compare, .crm-kpi-label) { color: #2E2F4A; }
+:root .app-shell.crm-skin .crm-kpi-tone-lime .crm-kpi-icon { background: rgba(255, 255, 255, 0.7); }
+
+/* Kepadatan (mockup): preflight Tailwind mati, jadi <p> di kartu membawa
+   margin bawaan browser 1em → kartu jauh lebih tinggi dari isinya. Margin
+   bawaan dinolkan; jarak yang disengaja (utility mt-*) tetap berlaku. */
+:root .app-shell.crm-skin .crm-kpi p { margin-bottom: 0; }
+:root .app-shell.crm-skin .crm-kpi p:not([class*="mt-"]) { margin-top: 0; }
+:root .app-shell.crm-skin .crm-kpi .crm-kpi-label { font-weight: 600; }
+/* Angka Rupiah panjang tidak boleh terpotong: pecah ke baris berikut. */
+:root .app-shell.crm-skin .crm-kpi .crm-kpi-value { overflow-wrap: anywhere; }
+/* Metrik pendukung (prop compact). */
+:root .app-shell.crm-skin .crm-kpi.crm-kpi-compact { padding: 14px 18px; }
+:root .app-shell.crm-skin .crm-kpi.crm-kpi-compact .crm-kpi-value { font-size: 20px; }
+:root .app-shell.crm-skin .crm-kpi.crm-kpi-compact .crm-kpi-icon { height: 28px; width: 28px; }
+
+:root .app-shell.crm-skin .crm-kpi-icon {
   background: var(--crm-soft);
   color: var(--crm-primary-ink);
 }
@@ -333,6 +363,71 @@
 }
 :root .app-shell.crm-skin .bubble.out { background: var(--crm-primary); color: #FFFFFF; }
 
+/* ── 7. INBOX: header halaman + banner "Menyambung ulang" DI DALAM ALUR ─────
+   Banner bawaan position:absolute top:0 menutupi pencarian, filter, dan header
+   chat. Di tema ini grid mendapat baris sendiri: [judul] [banner] [panel].
+   Baris banner berukuran auto → 0px saat banner tidak ada. Kolom (lebar
+   dihitung JS) tidak berubah. Judul halaman: desktop saja. */
+.inbox-page-head { display: none; }   /* di luar tema: tidak pernah tampil */
+
+:root .app-shell.crm-skin .inbox-body .offline-banner {
+  position: static;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 8px 12px 0;
+  border: 0;
+  border-radius: 14px;
+  background: #FFF4D6;
+  color: #7A3A00;   /* 7,9:1 */
+}
+:root[data-theme="dark"] .app-shell.crm-skin .inbox-body .offline-banner { background: #3A2E10; color: #FFE3A3; }
+
+@media (min-width: 769px) {
+  :root .app-shell.crm-skin .inbox-body:not(.mobile-single-column) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  :root .app-shell.crm-skin .inbox-body:not(.mobile-single-column) > :is(.conversation-list, .chat-window, .customer-panel) { grid-row: 3; }
+  :root .app-shell.crm-skin .inbox-page-head {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding: 14px 16px 2px;
+  }
+  :root .app-shell.crm-skin .inbox-page-sub { margin: 2px 0 0; font-size: 15px; color: var(--text-secondary); }
+  /* Handle resize mulai di bawah judul (tidak menimpa area judul). */
+  :root .app-shell.crm-skin .inbox-body:not(.mobile-single-column) > .inbox-resize-handle { top: 76px; }
+}
+@media (max-width: 768px) {
+  /* HP: tanpa judul (ruang chat diutamakan); banner baris 1, kolom aktif baris 2. */
+  :root .app-shell.crm-skin .inbox-body.mobile-single-column { grid-template-rows: auto minmax(0, 1fr) !important; }
+  :root .app-shell.crm-skin .inbox-body.mobile-single-column .offline-banner { grid-row: 1; margin: 8px 8px 0; }
+  :root .app-shell.crm-skin .inbox-body.mobile-single-column > :not(.offline-banner) { grid-row: 2; }
+}
+
+/* ── 8. KARTU "TANYA SANO" (features/settings/SidebarPromo.jsx) ─────────────
+   Dulu blok gradien biru pekat — lebih berat dari item menu aktif dan, di
+   mode gelap, teks tombol 2,1:1. Sekarang kartu pastel setara navigasi. */
+:root .app-shell.crm-skin .sidebar-promo-card {
+  background: var(--crm-soft) !important;   /* menimpa gradien inline */
+  padding: 12px;
+}
+:root .app-shell.crm-skin .sidebar-promo-card > span.pointer-events-none { display: none; }
+:root .app-shell.crm-skin .sidebar-promo-icon { background: var(--crm-panel); color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin .sidebar-promo-title { color: var(--text-primary); }
+:root .app-shell.crm-skin .sidebar-promo-desc { color: var(--text-secondary); }
+:root .app-shell.crm-skin .sidebar-promo-btn { background: var(--crm-primary); color: #FFFFFF; }
+:root .app-shell.crm-skin .sidebar-promo-btn:hover { opacity: 1; background: #2B52E0; }
+
+/* Daftar percakapan: jam memakai --text-small (alpha 40%, 2,4:1); angka
+   belum dibaca putih di atas --accent (mode gelap terang → 2,4:1); nama sales
+   ungu #7c3aed hardcode hanya 2,4–3:1 di panel gelap. */
+:root .app-shell.crm-skin { --text-small: var(--text-tertiary); }
+:root .app-shell.crm-skin .unread-count-badge { background: var(--crm-primary); color: #FFFFFF; }
+:root[data-theme="dark"] .app-shell.crm-skin :is(.conv-assigned-name, .msg-sender-name) { color: #C4B1FF; }
+
+/* Badge lonceng: putih di atas #FF453A (merah mode gelap) hanya 3,4:1. */
+:root .app-shell.crm-skin .topbar-notif-badge { background: #D70015; }
+
 /* Banner riwayat penanganan: dulu #f8fafc hardcode (strip putih di mode gelap). */
 :root .app-shell.crm-skin .handover-history-banner {
   background: var(--crm-panel);
@@ -342,3 +437,23 @@
 @media (prefers-reduced-motion: reduce) {
   :root .app-shell.crm-skin .crm-pills [role="tab"] { transition: none; }
 }
+
+/* Empat KPI utama Laporan Sales satu baris mulai 1360px (SalesReportTab.jsx
+   .crm-kpi-utama). Di sini, bukan utility min-[1360px]: Tailwind v4 menaruh
+   breakpoint arbitrer SEBELUM sm: di CSS sehingga sm:grid-cols-2 selalu menang. */
+@media (min-width: 1360px) {
+  :root .app-shell.crm-skin .crm-kpi-utama { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Jam pesan: opacity 0.6 bawaan = 1,9:1 di gelembung biru, 2,4:1 di putih. */
+:root .app-shell.crm-skin .bubble-time { opacity: 1; }
+:root .app-shell.crm-skin .bubble.in .bubble-time { color: var(--text-tertiary); }
+:root .app-shell.crm-skin .bubble.out .bubble-time { color: #FFFFFF; }
+:root .app-shell.crm-skin :is(input, textarea)::placeholder { color: var(--text-tertiary); opacity: 1; }
+
+/* Pencarian daftar percakapan: tidak menempel/terpotong sudut panel. */
+:root .app-shell.crm-skin .conv-list-toprow { padding: 14px 12px 0; }
+:root .app-shell.crm-skin .conv-search-bar { padding: 0 2px 8px; border-bottom: 0; }
+:root .app-shell.crm-skin .conv-search-bar .search-input { min-height: 38px; }
+
+:root .app-shell.crm-skin :is(.bubble-meta, .bubble-edited-label, .bubble-quote-author, .bubble-quote-text, .bubble-forwarded) { opacity: 1; }

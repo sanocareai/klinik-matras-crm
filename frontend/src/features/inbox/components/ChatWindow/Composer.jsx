@@ -442,44 +442,28 @@ export default function Composer({ conversation, mediaUploaderRef }) {
       )}
 
       <form className="chat-input" onSubmit={handleSend}>
-        {/* D-121 (redesign ikon) — dulu MessageSquare (bubble chat polos),
-            gampang tertukar sekilas dengan ikon bubble lain di sekitarnya
-            (compose baru, dots menu). LayoutTemplate lebih literal
-            menggambarkan "pilih template". */}
-        <button type="button" onClick={() => setShowTemplates((v) => !v)} className={`chat-action-btn ${showTemplates ? "active" : ""}`} title="Pilih template">
-          <LayoutTemplate size={15} />
-        </button>
-
+        {/* Sisi kiri cukup satu tombol "+" (permintaan Owner, 31 Okt 2026) supaya kolom
+            ketik lega. Template, Saran AI, dan Emoji pindah ke menu "+" — fungsinya sama. */}
         <Suspense fallback={<ActionBtnFallback icon={Paperclip} />}>
           <MediaUploader
             ref={mediaUploaderRef}
             conversationId={conversationId}
             onOpenProduct={() => setShowProductPicker(true)}
             onCreateOrder={!isGroup && conversation.customer?.id ? () => setShowCreateOrder(true) : undefined}
+            extraItems={[
+              { key: "template", label: "Template", Icon: LayoutTemplate, color: "#3965fa", onClick: () => setShowTemplates((v) => !v) },
+              // Saran AI tidak relevan untuk grup (endpoint butuh 1 customer).
+              ...(!isGroup && conversation.customer?.id ? [{ key: "saran", label: "Saran AI", Icon: Sparkles, color: "#7c3aed", onClick: () => setShowSuggestReply((v) => !v) }] : []),
+              { key: "emoji", label: "Emoji", Icon: Smile, color: "#ca8a04", onClick: () => setShowEmoji((v) => !v) },
+            ]}
           />
         </Suspense>
 
-        {/* Wave 5 (redesign Inbox) — "Suggest Reply". Tidak relevan untuk
-            grup (endpoint AI butuh 1 customer, bukan banyak anggota). */}
-        {!isGroup && conversation.customer?.id && (
+        {showEmoji && (
           <div style={{ position: "relative" }}>
-            <button
-              type="button"
-              onClick={() => setShowSuggestReply((v) => !v)}
-              className={`chat-action-btn ${showSuggestReply ? "active" : ""}`}
-              title="Saran balasan AI"
-            >
-              <Sparkles size={16} />
-            </button>
+            <EmojiMartPopup onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />
           </div>
         )}
-
-        <div style={{ position: "relative" }}>
-          <button type="button" onClick={() => setShowEmoji((v) => !v)} className={`chat-action-btn ${showEmoji ? "active" : ""}`} title="Emoji">
-            <Smile size={16} />
-          </button>
-          {showEmoji && <EmojiMartPopup onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />}
-        </div>
 
         {/* Popup format mengambang — gaya WhatsApp: muncul HANYA saat ada
             teks diblok di kotak ketik, mengambang di atas textarea, hilang

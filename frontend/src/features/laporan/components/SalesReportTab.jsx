@@ -147,18 +147,19 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="t-card-title" style={{ margin: 0 }}>Ringkasan tim</h2>
         <button className="btn btn-ghost btn-sm" onClick={() => onExport({ rekonSales: rekon.data })}>
           <Download size={14} /> Export Excel
         </button>
       </div>
 
       {/* ── Ringkasan tim ─────────────────────────────────────────────── */}
-      {/* xl:, bukan lg: (D-113) — sama fix dengan RingkasanTab (3 kolom
-          lebih longgar dari 4, tapi angka Rupiah di sini juga bisa
-          panjang — lebih aman disamakan daripada menunggu laporan sama
-          muncul lagi di breakpoint ini). */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* Empat KPI utama (redesign 31 Okt 2026): 4 kolom HANYA mulai 1360px (aturan di sanss-crm.css .crm-kpi-utama; varian min-[…] Tailwind kalah urutan dari sm:) —
+          di bawahnya 2 kolom, supaya angka Rupiah panjang tidak terjepit
+          (pelajaran D-113). AOV & Chat Spam = metrik pendukung, baris ringkas
+          di bawahnya. Isi & rumus kartu tidak berubah. */}
+      <div className="crm-kpi-utama grid grid-cols-1 gap-4 sm:grid-cols-2">
         <KpiCard
           index={0} hero tone="primary" icon={BarChart3} label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}
@@ -194,15 +195,17 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           }
           tooltip={`Progres closing tim terhadap target BULANAN — SELALU ${labelBulanTarget}, tidak ikut rentang tanggal yang dipilih di atas.`}
         />
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <KpiCard
-          index={4} icon={ShoppingBag} label="AOV Tim"
+          compact index={4} icon={ShoppingBag} label="AOV Tim"
           numericValue={teamAovAll}
           format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
           sub="rata-rata nilai per order, seluruh tim"
           tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
         />
         <KpiCard
-          index={5} icon={ShieldAlert} label="Chat Spam"
+          compact index={5} icon={ShieldAlert} label="Chat Spam"
           numericValue={total?.spamCount || 0}
           format={(v) => Math.round(v).toLocaleString("id-ID")}
           sub={total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani"}

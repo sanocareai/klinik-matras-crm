@@ -233,7 +233,7 @@ function uploadWithProgress(conversationId, formData, onProgress) {
 // Tombol attach + sheet pilihan + modal preview grid sebelum kirim.
 // Drag-drop & paste-clipboard di area chat memanggil addFiles() lewat ref
 // (dipasang dari ChatWindow/index.jsx yang menguasai area drop-nya).
-const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpenProduct, onCreateOrder }, ref) {
+const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpenProduct, onCreateOrder, extraItems = [] }, ref) {
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems]         = useState([]); // { uid, file, previewUrl, mediaType, caption, error }
   const [hd, setHd]               = useState(false); // false = Standar (default, dikompresi)
@@ -405,6 +405,12 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
                 <div className="attach-item-icon" style={{ background: "#db277726" }}><User size={24} style={{ color: "#db2777" }} /></div>
                 <span className="attach-item-label">Kontak</span>
               </button>
+              {extraItems.map(({ key, label, Icon, color, onClick }) => (
+                <button key={key} type="button" className="attach-item" onClick={() => { onClick(); setShowSheet(false); }}>
+                  <div className="attach-item-icon" style={{ background: `${color}26` }}><Icon size={24} style={{ color }} /></div>
+                  <span className="attach-item-label">{label}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>

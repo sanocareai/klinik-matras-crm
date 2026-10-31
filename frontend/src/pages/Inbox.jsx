@@ -316,6 +316,12 @@ export default function Inbox({ user }) {
       style={{ gridTemplateColumns }}
     >
       <UnreadTitle />
+      {/* Judul halaman (desktop) — hanya tampil di tema Sales CRM (sanss-crm.css);
+          di luar tema disembunyikan sehingga grid 3 kolom tidak berubah. */}
+      <div className="inbox-page-head">
+        <h1 className="t-page-title" style={{ margin: 0 }}>Inbox</h1>
+        <p className="inbox-page-sub">Percakapan pelanggan</p>
+      </div>
       {!socketConnected && (
         <div className="offline-banner">
           <span className="offline-banner-dot" /> Menyambung ulang...
