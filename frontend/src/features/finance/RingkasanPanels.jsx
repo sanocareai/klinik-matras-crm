@@ -8,9 +8,10 @@ import { useKontrak, IsiDefinisi } from "@/features/finance/kontrakData.jsx";
 import { KotakPembalik, UangBiaya } from "@/features/finance/biayaNeto.jsx";
 import { penandaDari, ringkasPembalik } from "@/features/finance/biayaNetoLogic.js";
 import {
-  ISTILAH, KALIMAT, TEKS_STRIP, bahanBarisRekening, jenisRekening, keadaanStrip, keteranganRekening, susunPerluDibereskan,
+  CATATAN_POSISI, ISTILAH, KALIMAT, LABEL_POSISI, TEKS_STRIP, bahanBarisRekening, jenisRekening, keadaanStrip, keteranganRekening, susunPerluDibereskan,
 } from "@/features/finance/ringkasanTampilan.js";
 import { LABEL_BANNER, LABEL_REKONSILIASI } from "@/features/finance/ringkasanKualitas.js";
+// Sumber & status izin logo: docs/ASET-LOGO-BANK.md (berkas lokal, tidak dimodifikasi).
 import logoBca from "@/assets/bank/bca.svg";
 import logoMandiri from "@/assets/bank/mandiri.png";
 
@@ -62,7 +63,7 @@ export function StripStatus({ kualitas, catatan }) {
 
 // ─── 3-4. Empat KPI ─────────────────────────────────────────────────────────
 
-export function KpiKartu({ nada, label, nilai, ket, tanggal, info, metrik, onClick, penanda }) {
+export function KpiKartu({ nada, Ikon, label, nilai, ket, tanggal, info, metrik, onClick, penanda, catatanTanggal }) {
   const kontrak = useKontrak();
   const m = metrik ? kontrak?.peta.get(metrik) : null;
   return (
@@ -71,9 +72,10 @@ export function KpiKartu({ nada, label, nilai, ket, tanggal, info, metrik, onCli
       onClick={onClick}
       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(e); } }}
     >
+      {Ikon && <span className="fin-kpi-ubin" aria-hidden="true"><Ikon size={22} /></span>}
       <div className="fin-kpi-label">
         <span>{label}</span>
-        {(m || info) && <InfoTooltip text={m ? <IsiDefinisi m={m} /> : info} lebar={304} />}
+        {(m || info) && <InfoTooltip text={<>{m ? <IsiDefinisi m={m} /> : info}{catatanTanggal && <span className="block" style={{ marginTop: 8 }}><b className="font-semibold text-ink">Tanggal posisi: </b>{catatanTanggal}</span>}</>} lebar={304} />}
       </div>
       <p className="fin-kpi-nilai">{nilai}</p>
       {penanda && <p className="fin-kpi-penanda">{penanda}</p>}
@@ -99,14 +101,15 @@ export function PerluDibereskan({ kualitas, navigate }) {
           const bersih = b.status === "bersih";
           return (
             <li key={b.id} className={`fin-perlu-baris fin-perlu-${b.status}`}>
+              <span className={`fin-perlu-ikon fin-perlu-ikon-${b.status}`} aria-hidden="true">{bersih ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}</span>
               <div className="fin-perlu-isi">
                 <p className="fin-perlu-label">{b.label}</p>
                 <p className="fin-perlu-ket">
-                  {tanpa ? "Data tidak dapat dimuat" : bersih ? "Tidak ada" : b.detailRupiah ? b.detailRupiah.map((d) => `${d.label}: ${formatUang(d.nilai)}`).join(" · ") : b.keterangan}
+                  {tanpa ? "Data tidak dapat dimuat" : bersih ? "Tidak ada" : b.detailRupiah ? (b.detailRupiah.length > 1 ? b.detailRupiah.map((d) => `${d.label}: ${formatUang(d.nilai)}`).join(" · ") : b.detailRupiah[0].label) : b.keterangan}
                 </p>
-                {!tanpa && !bersih && b.detailRupiah && <p className="fin-perlu-ket">Positif = saldo pembukuan lebih tinggi dari saldo terkonfirmasi (per tanggal acuan).</p>}
-                {!tanpa && !bersih && !b.detailRupiah && b.nilai ? <p className="fin-perlu-ket">Senilai {formatUang(b.nilai)}</p> : null}
+                {!tanpa && !bersih && b.detailRupiah && <p className="fin-perlu-ket">Selisih pada tanggal acuan; positif = saldo pembukuan lebih tinggi dari saldo terkonfirmasi.</p>}
               </div>
+              <p className="fin-perlu-nilai">{!tanpa && !bersih && b.nilai ? formatUang(b.nilai) : null}</p>
               <p className="fin-perlu-jumlah">
                 {tanpa ? <span className="fin-redup">{TANPA_DATA}</span>
                   : bersih ? <span className="fin-ok"><CheckCircle2 size={15} aria-hidden="true" /> Aman</span>
@@ -133,7 +136,7 @@ export function LogoBank({ r }) {
   return <span className="fin-logo fin-logo-ikon" data-jenis="BANK_LAIN" data-bank={namaBank || ""}><Landmark size={20} aria-hidden="true" /></span>;
 }
 
-function BarisRekening({ r, x, riil, posisi, navigate }) {
+function BarisRekening({ r, x, riil, navigate }) {
   const [buka, setBuka] = useState(false);
   const bahan = bahanBarisRekening(r, x, riil);
   const idRincian = `fin-rek-${r.id}`;
@@ -153,7 +156,7 @@ function BarisRekening({ r, x, riil, posisi, navigate }) {
         <td data-label="Saldo pembukuan" className="fin-rek-angka">
           <span className="fin-rek-isi">
             <Uang value={r.saldo} className="fin-rek-uang" />
-            <span className="fin-rek-sekunder">Per {tanggalPendek(posisi)}</span>
+            <span className="fin-rek-sekunder">{LABEL_POSISI}</span>
           </span>
         </td>
         <td data-label="Saldo terkonfirmasi" className="fin-rek-angka">
@@ -179,6 +182,7 @@ function BarisRekening({ r, x, riil, posisi, navigate }) {
                 {status ? <span className={`fin-chip fin-chip-${status.tone}`}>{status.label}{bahan.tanggalAcuan && x?.status === "SESUAI" ? ` per ${bahan.tanggalAcuan}` : ""}</span> : <span className="fin-redup">—</span>}
               </p>
               <dl className="fin-detail-daftar">
+                <div><dt>Saldo pembukuan terbaru</dt><dd><Uang value={r.saldo} /><span className="fin-rek-sekunder">{LABEL_POSISI}</span></dd></div>
                 {bahan.baris.filter((b) => b.nilai !== undefined).map((b) => (
                   <div key={b.k}><dt>{b.label}</dt><dd><Uang value={b.nilai} />{b.catatan && <span className="fin-rek-sekunder">{b.catatan}</span>}</dd></div>
                 ))}
@@ -196,21 +200,32 @@ function BarisRekening({ r, x, riil, posisi, navigate }) {
   );
 }
 
-export function SaldoRekening({ data, riil, posisi, navigate }) {
+export function SaldoRekening({ data, riil, navigate }) {
   const [penjelasanDana, setPenjelasanDana] = useState(false);
+  const [tentang, setTentang] = useState(false);
   const petaRiil = new Map((riil?.rekening ?? []).map((r) => [r.id, r]));
   const dana = riil?.danaBelumTeridentifikasi;
   return (
     <section className="fin-panel" aria-labelledby="fin-rek-judul" data-testid="panel-saldo-rekening">
-      <header className="fin-panel-kepala">
+      <header className="fin-panel-kepala fin-panel-kepala-aksi">
+        <div className="fin-panel-kepala-isi">
         <h2 id="fin-rek-judul" className="fin-panel-judul">
           Saldo rekening
           <InfoTooltip lebar={304} text={<>Saldo pembukuan dihitung dari jurnal. Saldo terkonfirmasi adalah konfirmasi pemilik (bukan rekening koran). Pencocokan dilakukan pada tanggal acuan yang sama, jadi transaksi setelah tanggal acuan tidak memengaruhi selisih. <i>Istilah asli: {ISTILAH.pencocokanSaldo.asli}, {ISTILAH.tanggalAcuan.asli.toLowerCase()}.</i></>} />
         </h2>
         <p className="fin-panel-sub">
-          {riil ? <>Saldo terkonfirmasi per {riil.cutoffLabel} (tanggal acuan {tanggalPendek(riil.tanggalBuku)}).</> : "Data saldo terkonfirmasi tidak dapat dimuat."}
+          {riil ? <>Saldo pembukuan terbaru dan saldo terkonfirmasi memakai tanggal berbeda. Saldo terkonfirmasi per {riil.cutoffLabel} (tanggal acuan {tanggalPendek(riil.tanggalBuku)}).</> : "Data saldo terkonfirmasi tidak dapat dimuat."}
         </p>
+        </div>
+        <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id="fin-rek-tentang" className="fin-panel-tautan">Tentang pencocokan saldo</Pembuka>
       </header>
+      {tentang && (
+        <div id="fin-rek-tentang" className="fin-catatan-kaki fin-tentang">
+          <p><b>Apa yang dicocokkan?</b> Saldo pembukuan (dari jurnal) pada tanggal acuan dibandingkan dengan saldo terkonfirmasi pemilik pada tanggal yang sama. Transaksi setelah tanggal acuan tidak ikut memengaruhi selisih.</p>
+          <p>Saldo pembukuan di tabel adalah posisi terbaru, jadi bisa berbeda dari saldo pada tanggal acuan. Selisih dibaca dari sistem, tidak dihitung dari dua angka di tabel.</p>
+          <p className="fin-asli">Istilah asli sistem: {ISTILAH.pencocokanSaldo.asli}; {ISTILAH.tanggalAcuan.asli.toLowerCase()}.</p>
+        </div>
+      )}
       {data.kasBank.length === 0 ? (
         <EmptyState icon={Wallet} title="Belum ada rekening" description="Daftarkan kas & rekening bank supaya uang masuk/keluar punya tempat."
           action={<Button size="sm" onClick={() => navigate("/finance/cash")}>Tambah Rekening</Button>} />
@@ -221,7 +236,7 @@ export function SaldoRekening({ data, riil, posisi, navigate }) {
               <tr><th scope="col">Rekening</th><th scope="col" className="fin-kanan">Saldo pembukuan</th><th scope="col" className="fin-kanan">Saldo terkonfirmasi</th><th scope="col" className="fin-kanan">Rincian</th></tr>
             </thead>
             <tbody>
-              {data.kasBank.map((r) => <BarisRekening key={r.id} r={r} x={petaRiil.get(r.id)} riil={riil} posisi={posisi} navigate={navigate} />)}
+              {data.kasBank.map((r) => <BarisRekening key={r.id} r={r} x={petaRiil.get(r.id)} riil={riil} navigate={navigate} />)}
             </tbody>
           </table>
         </div>
@@ -230,8 +245,8 @@ export function SaldoRekening({ data, riil, posisi, navigate }) {
         <div className="fin-dana" role="note" data-testid="strip-dana-belum-diketahui">
           <div className="fin-dana-baris">
             <AlertTriangle size={16} aria-hidden="true" className="fin-dana-ikon" />
-            <p className="fin-dana-teks"><b>{ISTILAH.sumberDanaBelumDiketahui.tampil}: {formatUang(dana.total)}.</b> Dana ini belum dihitung sebagai pendapatan.</p>
-            <Pembuka buka={penjelasanDana} onToggle={() => setPenjelasanDana((v) => !v)} id="fin-dana-rincian" className="fin-dana-aksi">Lihat penjelasan</Pembuka>
+            <p className="fin-dana-teks"><b>{formatUang(dana.total)} – {ISTILAH.sumberDanaBelumDiketahui.tampil}</b><span className="block">Belum dihitung sebagai pendapatan.</span></p>
+            <Pembuka buka={penjelasanDana} onToggle={() => setPenjelasanDana((v) => !v)} id="fin-dana-rincian" className="fin-dana-aksi">Lihat rincian</Pembuka>
           </div>
           {penjelasanDana && (
             <div id="fin-dana-rincian" className="fin-dana-rincian">
@@ -264,6 +279,7 @@ function BarisLR({ label, children, sub, akhir }) {
 
 export function LabaRugiPanel({ lr, penanda, marginInfo, navigate }) {
   const [penjelasan, setPenjelasan] = useState(false);
+  const [cara, setCara] = useState(false);
   const pembalik = ringkasPembalik(lr);
   const pen = penandaDari({ penanda });
   // Label utama bahasa sederhana; istilah akuntansi asli (dan penjelasan server) tetap ada di tooltip & rincian.
@@ -300,12 +316,21 @@ export function LabaRugiPanel({ lr, penanda, marginInfo, navigate }) {
           )}
         </div>
       )}
+      {cara && (
+        <div id="fin-lr-cara" className="fin-catatan-kaki">
+          <p>{pen.rumusLaba}</p>
+          <p>Pendapatan bersih = pendapatan tercatat − retur & potongan. Laba kotor = pendapatan bersih − biaya pokok (HPP). Laba sementara = laba kotor − biaya operasional.</p>
+        </div>
+      )}
       <p className="fin-catatan-kaki" data-testid="catatan-margin">
         {marginInfo?.tampil
           ? <>Margin bersih {marginInfo.nilai.toFixed(1)}%.</>
           : <>{marginInfo?.alasan ?? "Margin tidak ditampilkan"}. Margin baru ditampilkan setelah data pendapatan lengkap.</>}
       </p>
+      <div className="fin-panel-aksi-baris">
+        <Pembuka buka={cara} onToggle={() => setCara((v) => !v)} id="fin-lr-cara" className="fin-panel-tautan">Cara menghitung laba</Pembuka>
       <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/reports")}>Lihat laporan lengkap <ArrowRight size={14} aria-hidden="true" /></Button>
+      </div>
     </section>
   );
 }

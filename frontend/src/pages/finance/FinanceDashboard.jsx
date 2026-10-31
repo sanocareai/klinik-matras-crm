@@ -14,7 +14,9 @@ import {
 import BuktiReview from "@/features/finance/BuktiReview.jsx";
 import { KenapaBeda, AuditKonsistensi } from "@/features/finance/kontrak.jsx";
 import { StripStatus, KpiKartu, PerluDibereskan, SaldoRekening, LabaRugiPanel } from "@/features/finance/RingkasanPanels.jsx";
-import { todayWIB } from "@/lib/dateRange.js";
+import { IkKasBank } from "@/components/financeIcons.jsx";
+import { IkGrafik, IkStruk, IkPelangganNav } from "@/components/sanssIcons.jsx";
+import { CATATAN_POSISI, LABEL_POSISI } from "@/features/finance/ringkasanTampilan.js";
 import { hitungKualitasData, margin as hitungMargin, pisahkanPiutang, ringkasAging } from "@/features/finance/ringkasanKualitas.js";
 
 // Ringkasan Keuangan — urutan layar (atas → bawah), desain baru 31 Okt 2026 (gaya: styles/sanss-finance.css, panel: features/finance/RingkasanPanels.jsx):
@@ -57,14 +59,12 @@ export default function FinanceDashboard() {
   const lr = data?.labaRugi;
   const antrean = data?.antrean;
   const marginInfo = kualitas && lr ? hitungMargin(kualitas, lr) : null;
-  // Server menghitung saldo/piutang/utang pada tanggal buku hari ini (WIB); tanggalnya tidak ikut dikirim, jadi tanggal yang sama dihitung di sini.
-  const posisi = useMemo(() => todayWIB().format("YYYY-MM-DD"), []);
 
   return (
     <HalamanFinance
       className="fin-halaman"
       title="Ringkasan Keuangan"
-      subtitle={data ? `Periode ${tanggalPendek(periode.from)} – ${tanggalPendek(periode.to)} · dihitung dari jurnal yang sudah dibukukan.` : "Posisi kas, laba rugi sementara, piutang & utang, dan pekerjaan yang menunggu."}
+      subtitle="Lihat posisi keuangan dan hal yang perlu dibereskan."
       actions={<PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
       loading={loading}
       error={error}
@@ -86,31 +86,31 @@ export default function FinanceDashboard() {
             </Card>
           )}
 
-          {/* ── Empat KPI. Saldo/tagihan/utang = posisi tanggal buku hari ini (WIB, sama dengan server); laba = rentang periode yang dipilih. ── */}
+          {/* ── Empat KPI. Saldo/tagihan/utang = posisi tanggal buku hari ini WIB menurut server (tanggalnya tidak dikirim → tidak ditampilkan; tidak memakai jam perangkat); laba = rentang periode dari server. ── */}
           <section aria-label="Angka utama" className="fin-kpi-grid">
             <KpiKartu
-              nada="biru" label="Saldo kas & bank" metrik="kas_bank_buku"
-              nilai={formatUang(data.totalKas)} ket="Menurut pembukuan" tanggal={`Per ${tanggalPendek(posisi)}`}
+              nada="biru" Ikon={IkKasBank} label="Saldo kas & bank" metrik="kas_bank_buku"
+              nilai={formatUang(data.totalKas)} ket="Menurut pembukuan" tanggal={LABEL_POSISI} catatanTanggal={CATATAN_POSISI}
               onClick={() => navigate("/finance/cash")}
               info={`Jumlah saldo seluruh rekening kas, bank, dan e-wallet aktif menurut jurnal di buku besar (${data.kasBank.length} rekening). Bukan saldo koran bank.`}
             />
             <KpiKartu
-              nada="muda" label="Laba sementara" metrik="laba_bersih_sementara"
+              nada="muda" Ikon={IkGrafik} label="Laba sementara" metrik="laba_bersih_sementara"
               nilai={formatUang(lr?.labaBersih ?? 0)} ket="Dari transaksi yang sudah dibukukan" tanggal={`${tanggalPendek(data.periode?.from ?? periode.from)}–${tanggalPendek(data.periode?.to ?? periode.to)}`}
               penanda={(lr?.labaBersih ?? 0) < 0 ? "Rugi sementara" : null}
               onClick={() => navigate("/finance/reports")}
               info="Pendapatan yang SUDAH dibukukan dikurangi seluruh biaya yang sudah dibukukan. Order yang sudah selesai tetapi belum diakui pendapatannya belum ikut; dampak data yang belum lengkap bisa berbeda pada saldo, biaya, dan laba. DP yang belum diserahkan tidak dihitung sebagai pendapatan."
             />
             <KpiKartu
-              nada="lavender" label="Tagihan pelanggan" metrik="piutang_usaha"
-              nilai={formatUang(piutang.bukuBesar)} ket="Piutang dalam pembukuan" tanggal={`Per ${tanggalPendek(posisi)}`}
+              nada="lavender" Ikon={IkStruk} label="Tagihan pelanggan" metrik="piutang_usaha"
+              nilai={formatUang(piutang.bukuBesar)} ket="Piutang dalam pembukuan" tanggal={LABEL_POSISI} catatanTanggal={CATATAN_POSISI}
               penanda={data.piutang.ringkasan?.["90_plus"] > 0 ? "Ada tagihan lewat 90 hari" : null}
               onClick={() => navigate("/finance/receivables")}
               info="Saldo Piutang Usaha menurut jurnal. Terdiri dari tagihan operasional (belum lunas menurut CRM) dan order yang sudah lunas di CRM tetapi pembayarannya belum diverifikasi. Bukan sama dengan pembayaran yang belum tercatat."
             />
             <KpiKartu
-              nada="lime" label="Tagihan supplier" metrik="utang_supplier"
-              nilai={formatUang(data.utang.total)} ket="Utang usaha" tanggal={`Per ${tanggalPendek(posisi)}`}
+              nada="lime" Ikon={IkPelangganNav} label="Tagihan supplier" metrik="utang_supplier"
+              nilai={formatUang(data.utang.total)} ket="Utang usaha" tanggal={LABEL_POSISI} catatanTanggal={CATATAN_POSISI}
               onClick={() => navigate("/finance/suppliers")}
               info="Total tagihan supplier yang sudah disetujui tetapi belum dibayar — kebalikan dari piutang."
             />
@@ -118,7 +118,7 @@ export default function FinanceDashboard() {
 
           <PerluDibereskan kualitas={kualitas} navigate={navigate} />
 
-          <SaldoRekening data={data} riil={riil} posisi={posisi} navigate={navigate} />
+          <SaldoRekening data={data} riil={riil} navigate={navigate} />
 
           <LabaRugiPanel lr={lr} penanda={data?.labaRugiPenanda} marginInfo={marginInfo} navigate={navigate} />
 

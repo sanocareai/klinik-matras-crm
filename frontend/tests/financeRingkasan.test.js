@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { jenisRekening, keteranganRekening, keadaanStrip, susunPerluDibereskan, bahanBarisRekening, STATUS_PENCOCOKAN, ISTILAH } from "../src/features/finance/ringkasanTampilan.js";
+import { jenisRekening, keteranganRekening, normalisasiBank, LABEL_POSISI, CATATAN_POSISI, keadaanStrip, susunPerluDibereskan, bahanBarisRekening, STATUS_PENCOCOKAN, ISTILAH } from "../src/features/finance/ringkasanTampilan.js";
 import { hitungKualitasData } from "../src/features/finance/ringkasanKualitas.js";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -94,7 +94,9 @@ test("halaman: urutan panel, KPI sesuai spesifikasi, tanggal posisi vs rentang, 
   const urut = ["<StripStatus", "fin-kpi-grid", "<PerluDibereskan", "<SaldoRekening", "<LabaRugiPanel"].map((k) => dash.indexOf(k));
   assert.ok(urut.every((i) => i > 0) && urut.every((v, i) => i === 0 || v > urut[i - 1]), "urutan: strip, KPI, perlu dibereskan, saldo rekening, laba rugi");
   for (const k of ['label="Saldo kas & bank"', 'ket="Menurut pembukuan"', 'label="Laba sementara"', 'ket="Dari transaksi yang sudah dibukukan"', 'label="Tagihan pelanggan"', 'ket="Piutang dalam pembukuan"', 'label="Tagihan supplier"', 'ket="Utang usaha"']) assert.ok(dash.includes(k), k);
-  assert.ok(dash.includes("Per ${tanggalPendek(posisi)}") && dash.includes("data.periode?.from ?? periode.from"), "saldo = Per [tanggal posisi]; laba = rentang dari data.periode (bukan tanggal akhir filter)");
+  assert.ok(!dash.includes("posisi)") && !dash.includes("todayWIB"), "tidak ada tanggal dari jam perangkat yang disajikan sebagai tanggal posisi server");
+  assert.equal((dash.match(/tanggal={LABEL_POSISI} catatanTanggal={CATATAN_POSISI}/g) || []).length, 3, "saldo/tagihan pelanggan/tagihan supplier = label posisi terbaru + catatan tooltip");
+  assert.ok(dash.includes("data.periode?.from ?? periode.from"), "laba = rentang dari data.periode (bukan tanggal akhir filter)");
   assert.ok(!dash.includes("Tanggal acuan di rincian"));
   assert.ok(dash.includes("data.totalKas") && dash.includes("lr?.labaBersih") && dash.includes("piutang.bukuBesar") && dash.includes("data.utang.total"), "angka KPI dari sumber lama");
   const p = baca("src/features/finance/RingkasanPanels.jsx");
@@ -121,7 +123,7 @@ test("CSS Finance: semua aturan terkunci ke halaman Ringkasan, tanpa font-family
   const aturan = [...css.matchAll(/(^|\})\s*([^{}@][^{}]*)\{/g)].map((m) => m[2].trim());
   for (const sel0 of aturan) for (const bagian of sel0.replace(/:is\([^)]*\)/g, ":is()").split(",").map((s) => s.trim()).filter((s) => s && !s.startsWith("@media"))) {
     assert.ok(/^:root( \.app-shell\.crm-skin)?/.test(bagian), `terkunci: ${bagian}`);
-    if (bagian.startsWith(":root .app-shell.crm-skin")) assert.ok(/\.fin-(halaman|ring|strip|kpi|panel|perlu|tabel|rek|detail|logo|dana|lr|chip|pembuka|asli|redup|ok|perhatian|galat|catatan)/.test(bagian), `hanya kelas Ringkasan: ${bagian}`);
+    if (bagian.startsWith(":root .app-shell.crm-skin")) assert.ok(/\.fin-(halaman|ring|strip|kpi|panel|perlu|tabel|rek|detail|logo|dana|lr|chip|pembuka|asli|redup|ok|perhatian|galat|catatan|tentang)/.test(bagian), `hanya kelas Ringkasan: ${bagian}`);
   }
 });
 
@@ -134,4 +136,42 @@ test("rekening belum dikonfirmasi: saldo pembukuan pada tanggal acuan tetap tamp
   const b = bahanBarisRekening({ id: "a4", name: "BCA Ops", kind: "BANK", saldo: 9000000 }, { saldoBuku: 7320500, saldoRiil: null, selisih: null, status: "BELUM_DIKONFIRMASI" }, { cutoffLabel: "21 Sep 2026" });
   assert.equal(b.baris.find((z) => z.k === "bukuAcuan").nilai, 7320500);
   assert.ok(b.baris.some((z) => z.k === "belum" && /bukan saldo Rp0/.test(z.teks)));
+});
+
+test("label posisi: tanpa tanggal terverifikasi server; tooltip menjelaskan tanggal buku hari ini WIB dan terpisah dari rentang laba", () => {
+  assert.equal(LABEL_POSISI, "Posisi terbaru dalam pembukuan");
+  assert.match(CATATAN_POSISI, /tanggal buku hari ini \(WIB\)/); assert.match(CATATAN_POSISI, /bukan rentang tanggal laba/);
+  assert.ok(!/\bPer \d/.test(baca("src/features/finance/RingkasanPanels.jsx")), "tidak ada 'Per [tanggal]' dari klien di panel");
+});
+
+test("normalisasi bankName: trim, spasi berlebih/tak-terputus, tanpa membedakan kapital; alias lama tetap; tak dikenal = ikon netral", () => {
+  assert.equal(normalisasiBank("  Bank    Mandiri\t "), "Bank Mandiri");
+  for (const n of ["  bca ", "BCA", "Bca", "bank   central\tasia", "PT. Bank Central Asia Tbk", "pt bank central asia"]) assert.equal(jenisRekening({ kind: "BANK", bankName: n }).jenis, "BCA", n);
+  for (const n of ["MANDIRI", " mandiri  ", "Bank  MANDIRI", "bank mandiri", "PT Bank Mandiri (Persero) Tbk"]) assert.equal(jenisRekening({ kind: "BANK", bankName: n }).jenis, "MANDIRI", n);
+  for (const n of ["BCA Syariah", "Bank Mandiri Taspen", "BNI", "", null, undefined, "bca1"]) assert.equal(jenisRekening({ kind: "BANK", bankName: n, name: "BCA Mandiri" }).jenis, "BANK_LAIN", String(n));
+  assert.equal(jenisRekening({ kind: "KAS", bankName: " BCA " }).jenis, "TUNAI"); assert.equal(jenisRekening({ kind: "EWALLET", bankName: "mandiri" }).jenis, "EWALLET");
+  assert.equal(keteranganRekening({ kind: "BANK", bankName: "  bca  ", accountNumber: "1" }), "bca · 1");
+});
+
+test("sumber logo dicatat: URL asli, tanpa klaim izin; berkas tak dimodifikasi (hash di dokumen = hash berkas)", async () => {
+  const crypto = await import("node:crypto");
+  const doc = fs.readFileSync(path.join(repo, "..", "docs/ASET-LOGO-BANK.md"), "utf8");
+  assert.ok(doc.includes("https://pustaka.bca.co.id/public-assets/logo-bca.svg") && doc.includes("https://bankmandiri.co.id/image/layout_set_logo?img_id=31567"));
+  assert.match(doc, /Tidak ada dokumen izin pakai merek yang dimiliki/);
+  for (const f of ["bca.svg", "mandiri.png"]) { const h = crypto.createHash("sha256").update(fs.readFileSync(path.join(repo, "src/assets/bank", f))).digest("hex"); assert.ok(doc.includes(h), "hash " + f); }
+});
+
+test("Perlu dibereskan: selisih satu rekening menampilkan nilainya; beberapa rekening tidak dijumlahkan", () => {
+  const satu = susunPerluDibereskan(hitungKualitasData({ antrean: {}, catatan: {}, backfill: null, riil: { cutoffLabel: "x", rekening: [{ id: "a", name: "KEM - Sano Bank", status: "SELISIH", selisih: -12088 }] } })).find((b) => b.id === "selisih_rekening");
+  assert.equal(satu.nilai, 12088);
+  const dua = susunPerluDibereskan(hitungKualitasData({ antrean: {}, catatan: {}, backfill: null, riil: { cutoffLabel: "x", rekening: [{ id: "a", name: "A", status: "SELISIH", selisih: 5 }, { id: "b", name: "B", status: "SELISIH", selisih: 7 }] } })).find((b) => b.id === "selisih_rekening");
+  assert.equal(dua.nilai, null); assert.equal(dua.jumlah, 2);
+});
+
+test("kontras tabel/badge lama dibatasi ke .fin-ring (Finance), tanpa menyentuh struktur tabel", () => {
+  const css = baca("src/styles/sanss-finance.css");
+  assert.match(css, /\.fin-ring thead th \{ color: var\(--text-secondary\)/);
+  assert.match(css, /\.fin-ring \[class~="bg-redbg"\]/);
+  const dash = baca("src/pages/finance/FinanceDashboard.jsx");
+  assert.ok(dash.includes("Piutang Paling Lama") && dash.includes("<TH sticky>Order</TH><TH>Pelanggan</TH><TH numeric>Sisa</TH><TH numeric>Umur</TH>"), "struktur tabel tak berubah");
 });

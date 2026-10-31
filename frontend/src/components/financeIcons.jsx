@@ -41,7 +41,7 @@ const IkPembelian = (p) => (
   </Ikon>
 );
 // Kas & Bank — dompet
-const IkKasBank = (p) => (
+export const IkKasBank = (p) => (
   <Ikon {...p}>
     <rect style={S} x="2.8" y="5.2" width="18.4" height="14.2" rx="3.4" />
     <path d="M4.6 6.4a2.2 2.2 0 0 1 2.2-2.2h9.6a1.6 1.6 0 0 1 1.6 1.6v.9H6.8a.9.9 0 0 0 0 1.8h13.4v8.2a2.4 2.4 0 0 1-2.4 2.4H7a2.4 2.4 0 0 1-2.4-2.4z" />

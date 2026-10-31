@@ -3,11 +3,15 @@
 
 const angka = (v) => Number(v) || 0;
 
+/** Rapikan nama bank dari input bebas: trim + gabungkan spasi (termasuk spasi tak-terputus/tab). */
+export function normalisasiBank(v) { return String(v ?? "").replace(/[\s\u00A0]+/g, " ").trim(); }
+
 /** Jenis rekening untuk logo. HANYA dari `kind` dan `bankName` rekening — jangan menebak dari nama rekening/nama pemilik. */
 export function jenisRekening(r) {
   if (r?.kind === "KAS") return { jenis: "TUNAI", namaBank: null };
   if (r?.kind === "EWALLET") return { jenis: "EWALLET", namaBank: null };
-  const bank = String(r?.bankName ?? "").trim();
+  // Normalisasi: trim, spasi berlebih → satu spasi, tanpa membedakan kapital (regex berflag i). Tidak menebak dari nama rekening.
+  const bank = normalisasiBank(r?.bankName);
   if (/^(bca|bank\s+central\s+asia|pt\.?\s*bank\s+central\s+asia(\s+tbk\.?)?)$/i.test(bank)) return { jenis: "BCA", namaBank: "BCA" };
   if (/^(mandiri|bank\s+mandiri|pt\.?\s*bank\s+mandiri(\s*\(persero\)\s*tbk\.?)?)$/i.test(bank)) return { jenis: "MANDIRI", namaBank: "Mandiri" };
   return { jenis: "BANK_LAIN", namaBank: bank || null };
@@ -15,7 +19,7 @@ export function jenisRekening(r) {
 
 /** Teks identitas sekunder rekening: nama bank/jenis + nomor rekening (sama dengan tampilan lama). */
 export function keteranganRekening(r) {
-  const dasar = r.kind === "KAS" ? "Kas tunai" : r.kind === "BANK" ? (r.bankName || "Bank") : "E-wallet";
+  const dasar = r.kind === "KAS" ? "Kas tunai" : r.kind === "BANK" ? (normalisasiBank(r.bankName) || "Bank") : "E-wallet";
   return r.accountNumber ? `${dasar} · ${r.accountNumber}` : dasar;
 }
 
@@ -57,7 +61,7 @@ export function susunPerluDibereskan(kualitas) {
   const selisih = kualitas.butir.filter((b) => b.id.startsWith("selisih_"));
   const nyata = selisih.filter((b) => b.id !== "selisih_rekening" && b.jumlah > 0);
   if (nyata.length > 0) {
-    baris.push({ id: "selisih_rekening", label: "Selisih rekening yang perlu ditinjau", satuanJumlah: "rekening", jumlah: nyata.length, nilai: null, status: "perlu",
+    baris.push({ id: "selisih_rekening", label: "Selisih rekening yang perlu ditinjau", satuanJumlah: "rekening", jumlah: nyata.length, nilai: nyata.length === 1 ? Math.abs(nyata[0].nilai) : null, status: "perlu",
       tujuan: nyata.length === 1 ? nyata[0].tujuan : "/finance/reconciliation", keterangan: nyata.map((b) => b.label.replace(/^Selisih\s+/i, "")).join(", "), detailRupiah: nyata.map((b) => ({ label: b.label.replace(/^Selisih\s+/i, ""), nilai: b.nilai })) });
   } else if (selisih.some((b) => b.jumlah === null)) {
     baris.push({ id: "selisih_rekening", label: "Selisih rekening yang perlu ditinjau", satuanJumlah: "rekening", jumlah: null, nilai: null, status: "tanpa-data", tujuan: "/finance/reconciliation", keterangan: "Data saldo terkonfirmasi tidak dapat dimuat." });
@@ -123,6 +127,7 @@ export const KALIMAT = Object.freeze({
   penyesuaianBiaya: "Ada penyesuaian yang mengurangi biaya.",
 });
 
-/** Label tanggal posisi/rentang untuk KPI. Saldo, tagihan, dan utang = posisi tanggal buku hari ini (WIB, sama dengan server); laba = rentang filter. */
-export function labelPosisi(tanggalPendek, iso) { return `Per ${tanggalPendek(iso)}`; }
-export function labelRentang(tanggalPendek, from, to) { return `${tanggalPendek(from)}–${tanggalPendek(to)}`; }
+/** KPI saldo/tagihan/utang: server TIDAK mengirim tanggal posisi, jadi tidak ada tanggal yang ditampilkan (jam perangkat bukan tanggal terverifikasi server). */
+export const LABEL_POSISI = "Posisi terbaru dalam pembukuan";
+export const CATATAN_POSISI = "Angka ini mengikuti tanggal buku hari ini (WIB) menurut server, bukan rentang tanggal laba di atas. Mengubah periode tidak mengubah angka ini.";
+export const LABEL_RENTANG_LABA = "Rentang periode yang dipilih";
