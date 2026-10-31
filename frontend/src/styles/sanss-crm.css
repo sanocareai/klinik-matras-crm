@@ -552,3 +552,226 @@
 
 /* Label kategori di popup Template: latar putih hardcode di mode gelap. */
 :root .app-shell.crm-skin .template-cat-label { background: var(--bg-inset); color: var(--text-secondary); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   14. KERANGKA BERSAMA — FASE 1 (31 Okt 2026): sidebar, header, tab aplikasi
+   ═══════════════════════════════════════════════════════════════════════════
+   Hanya di bawah .crm-skin (divisi Sales CRM). Menu, urutan, badge, hak akses,
+   drawer, dan fungsi tab TIDAK diubah — hanya tampilan + markup opt-in
+   (Topbar crmShell, SidebarPromo/WorkspaceSwitcher ringkas). Tanpa font baru.
+   Aturan yang menimpa tokens.css memakai !important karena tokens.css memaksa
+   warna/opasitas ikon dengan !important. */
+
+/* ── 14a. SIDEBAR ──────────────────────────────────────────────────────────── */
+/* Ikon SVG duotone (components/sanssIcons.jsx): 21px, biru saat tidak aktif,
+   putih di atas pill biru (aturan ikon aktif ada di bagian 2). */
+:root .app-shell.crm-skin .sidebar-link .nav-icon,
+:root .app-shell.crm-skin .sidebar-link .nav-icon-ai {
+  width: 21px; height: 21px;
+  color: var(--crm-primary-ink) !important;
+  opacity: 1 !important;
+}
+:root .app-shell.crm-skin .sidebar-link.active .nav-icon,
+:root .app-shell.crm-skin .sidebar-link.active .nav-icon-ai { color: #FFFFFF !important; }
+:root .app-shell.crm-skin .sidebar-link {
+  min-height: 44px;
+  padding: 9px 12px;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+:root .app-shell.crm-skin .sidebar-link.active { font-weight: 700; }
+:root .app-shell.crm-skin .sidebar-section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  padding: 16px 12px 6px;
+}
+:root .app-shell.crm-skin .nav-badge { border-radius: 999px; font-weight: 700; }
+/* Pill aktif solid: tanpa garis aksen kiri bawaan (.nav-pill::before di index.css). */
+:root .app-shell.crm-skin .nav-pill::before { content: none; }
+
+/* Pemilih workspace: nama pendek jelas + ubin ikon biru. */
+:root .app-shell.crm-skin .workspace-switcher-trigger.workspace-switcher-ringkas {
+  background: var(--crm-soft) !important;
+  border: 0 !important;
+  border-radius: 16px;
+  padding: 8px 10px;
+  gap: 10px;
+}
+:root .app-shell.crm-skin .workspace-switcher-trigger.workspace-switcher-ringkas:hover { background: var(--crm-soft-2) !important; }
+:root .app-shell.crm-skin .workspace-switcher-ringkas .workspace-switcher-ikon {
+  width: 36px; height: 36px; border-radius: 12px;
+  background: var(--crm-primary) !important; color: #FFFFFF !important;   /* menimpa tint kaca span:first-child */
+}
+:root .app-shell.crm-skin .workspace-switcher-ringkas .workspace-switcher-ikon svg { width: 20px; height: 20px; color: #FFFFFF; }
+:root .app-shell.crm-skin .workspace-switcher-ringkas .workspace-switcher-nama { font-size: 14.5px; font-weight: 700; color: var(--text-primary); }
+:root .app-shell.crm-skin .workspace-switcher-ringkas .min-w-0 > .block:first-child { font-size: 10.5px; letter-spacing: 0.06em; color: var(--text-tertiary) !important; background: transparent !important; }
+
+/* PWA terpasang di HP berlekuk: drawer sidebar tidak menaruh profil di bawah indikator beranda (env() = 0 di tempat lain). */
+@media (max-width: 1024px) {
+  :root .app-shell.crm-skin .sidebar { padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+
+/* "Tanya Sano": tombol bantuan kecil (SidebarPromo ringkas). */
+:root .app-shell.crm-skin .sidebar-help-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 42px; padding: 8px 14px;
+  border: 0; border-radius: 14px;
+  background: var(--crm-soft); color: var(--crm-primary-ink);
+  font: inherit; font-size: 14px; font-weight: 700; text-align: left;
+  cursor: pointer; transition: background 0.16s ease;
+}
+:root .app-shell.crm-skin .sidebar-help-btn:hover { background: var(--crm-soft-2); }
+:root .app-shell.crm-skin .sidebar-help-ikon { width: 20px; height: 20px; flex-shrink: 0; color: var(--crm-primary-ink); }
+
+/* ── 14b. HEADER ───────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .app-content > header {
+  height: 56px;
+  gap: 12px;
+  padding-inline: 20px;
+}
+:root .app-shell.crm-skin .app-content > header .topbar-date { display: none; }
+:root .app-shell.crm-skin .topbar-home { color: var(--text-tertiary); }
+/* Sidebar permanen di desktop (≥1025px): tombol hamburger tidak berguna di sana; di bawahnya sidebar jadi drawer. */
+@media (min-width: 1025px) {
+  :root .app-shell.crm-skin .topbar-hamburger-btn { display: none !important; }
+}
+
+/* HP: remah pertama (Data) disembunyikan Topbar — tanda panah pemisahnya ikut disembunyikan. */
+@media (max-width: 639px) {
+  :root .app-shell.crm-skin .app-content > header nav[aria-label="Breadcrumb"] > svg { display: none; }
+}
+
+/* Kolom pencarian terlihat; membuka palette yang sama dengan Ctrl/⌘ K. */
+:root .app-shell.crm-skin .topbar-searchfield {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1 1 auto; max-width: 560px; min-width: 200px; height: 40px;
+  margin-inline: auto;
+  padding: 0 8px 0 14px;
+  border: 0; border-radius: 14px;
+  background: var(--crm-panel); color: var(--text-tertiary);
+  box-shadow: var(--crm-shadow);
+  font: inherit; font-size: 13.5px; text-align: left; cursor: text;
+  transition: box-shadow 0.16s ease;
+}
+:root .app-shell.crm-skin .topbar-searchfield:hover { box-shadow: var(--crm-shadow-pop); }
+:root .app-shell.crm-skin .topbar-searchfield-teks { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root .app-shell.crm-skin .topbar-searchfield-kbd {
+  flex-shrink: 0; padding: 3px 9px; border-radius: 8px;
+  background: var(--bg-inset); color: var(--text-secondary);
+  font: inherit; font-size: 11.5px; font-weight: 700;
+}
+:root .app-shell.crm-skin .topbar-searchbtn {
+  display: none; align-items: center; justify-content: center;
+  width: 40px; height: 40px; flex-shrink: 0;
+  border: 0; border-radius: 12px;
+  background: var(--crm-panel); color: var(--text-secondary);
+  box-shadow: var(--crm-shadow); cursor: pointer;
+}
+/* Layar sempit: kolom pencarian kembali jadi tombol ikon (palette yang sama). */
+@media (max-width: 1100px) {
+  :root .app-shell.crm-skin .topbar-searchfield { display: none; }
+  :root .app-shell.crm-skin .topbar-searchbtn { display: flex; margin-left: auto; }
+  :root .app-shell.crm-skin .topbar-actions { margin-left: 0; }
+}
+
+/* Aksi kanan: tema, notifikasi, akun — ubin putih rounded seragam 40px. */
+:root .app-shell.crm-skin .topbar-actions { gap: 8px; }
+:root .app-shell.crm-skin .topbar-actions > button,
+:root .app-shell.crm-skin .topbar-actions > [role="switch"] {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--crm-panel); color: var(--text-primary);
+  box-shadow: var(--crm-shadow);
+}
+:root .app-shell.crm-skin .topbar-actions > button:hover { background: var(--crm-soft); }
+/* Tombol tema: hanya ikon aktif (matahari/bulan) di tengah ubin; kenop geser disembunyikan. */
+:root .app-shell.crm-skin .topbar-actions > [role="switch"] { position: relative; margin: 0; padding: 0; }
+:root .app-shell.crm-skin .topbar-actions > [role="switch"] > svg {
+  left: 50%; right: auto; top: 50%; width: 20px; height: 20px;
+  transform: translate(-50%, -50%);
+  color: var(--text-primary);
+}
+:root .app-shell.crm-skin .topbar-actions > [role="switch"] > span { display: none; }
+:root .app-shell.crm-skin .topbar-actions > span.mx-0\.5 { display: none; }
+/* Lonceng: ring badge mengikuti warna ubin. */
+:root .app-shell.crm-skin .topbar-actions .topbar-notif-badge { right: 3px; top: 3px; box-shadow: 0 0 0 2px var(--crm-panel); }
+/* Akun: avatar + nama + panah, tanpa kotak (seperti referensi). */
+:root .app-shell.crm-skin .topbar-actions button[title="Menu akun"] {
+  width: auto; height: 44px; padding: 4px 8px 4px 4px;
+  background: transparent; box-shadow: none; border-radius: 999px;
+}
+:root .app-shell.crm-skin .topbar-actions button[title="Menu akun"]:hover { background: var(--crm-soft); }
+
+/* ── 14c. TAB APLIKASI ─────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .app-content > .tab-strip {
+  height: 42px;
+  padding: 2px 20px 0;
+  gap: 6px;
+  align-items: flex-end;
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+}
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-strip-scroll { align-items: flex-end; gap: 4px; }
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-chip {
+  position: relative;
+  height: 38px;
+  max-width: 240px;
+  padding: 0 8px 0 16px;
+  gap: 8px;
+  border-radius: 14px 14px 0 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-chip:hover { background: var(--crm-soft); color: var(--text-primary); }
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-chip.active {
+  background: var(--crm-panel);
+  color: var(--text-primary);
+  font-weight: 700;
+  box-shadow: var(--crm-shadow);
+}
+/* Penanda tab aktif: garis biru di dasar (seperti referensi). */
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-chip.active::after {
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: 0;
+  height: 3px; border-radius: 3px 3px 0 0; background: var(--crm-primary);
+}
+:root[data-theme="dark"] .app-shell.crm-skin .app-content > .tab-strip .tab-chip.active::after { background: var(--accent); }
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-chip.drag-over { box-shadow: inset 2px 0 0 var(--crm-primary); }
+:root .app-shell.crm-skin .tab-chip-label { min-width: 0; }
+/* Konteks untuk tab berjudul kembar (mis. "Laporan" Sales CRM vs Delivery). */
+:root .app-shell.crm-skin .tab-chip-konteks {
+  display: inline-block;
+  flex-shrink: 1; min-width: 0; max-width: 96px;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--bg-inset); color: var(--text-secondary);
+  font-size: 11px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+:root .app-shell.crm-skin .tab-chip-close { width: 22px; height: 22px; color: var(--text-secondary); }
+:root .app-shell.crm-skin .tab-chip-close:hover { background: var(--crm-soft-2); color: var(--text-primary); }
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-strip-add {
+  width: 32px; height: 32px; margin-bottom: 3px;
+  border-radius: 10px; color: var(--crm-primary-ink);
+}
+:root .app-shell.crm-skin .app-content > .tab-strip .tab-strip-add:hover { background: var(--crm-soft); color: var(--crm-primary-ink); }
+
+/* ── 14d. RUANG VERTIKAL: header → tab → judul halaman ─────────────────────
+   preflight Tailwind mati, jadi <h1>/<p> PageHeader membawa margin bawaan browser
+   (±15px di atas/bawah judul) di atas padding halaman 32px = ±48px kosong di bawah
+   tab. Margin bawaan dinolkan; padding atas halaman dipadatkan. Kelas
+   page-container/page-title/page-subtitle ditambahkan di components/ui/page.jsx
+   (tanpa gaya di luar tema ini). */
+:root .app-shell.crm-skin .page-title { margin: 0; }
+:root .app-shell.crm-skin .page-subtitle { margin-bottom: 0; }
+@media (min-width: 768px) {
+  :root .app-shell.crm-skin .page-body .page-container { padding-top: 20px; }
+}
+
+/* Palette pencarian (di-portal ke body, di luar .app-shell): input tidak diberi cincin fokus kotak —
+   aturan global input:focus-visible (unlayered) mengalahkan utility outline-none Tailwind. */
+.palette-input-ringkas:focus,
+.palette-input-ringkas:focus-visible { outline: none !important; box-shadow: none !important; }

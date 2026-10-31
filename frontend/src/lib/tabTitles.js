@@ -39,6 +39,22 @@ const SEGMENT_LABEL_OVERRIDE = {
   "production-v2": "Status Produksi",
 };
 
+// Fase 1 kerangka bersama Sales CRM — rute Sales CRM satu-segmen yang dibuka lewat URL/bilah alamat (bukan klik menu)
+// dulu berjudul slug Inggris ("Customers", "Orders"); sekarang memakai nama menu di sidebar.
+const SALES_ROOT_LABELS = {
+  customers: "Pelanggan",
+  orders: "Order",
+  products: "Galeri Produk",
+  komplain: "Kasus Komplain",
+  tracking: "Link Pelacakan",
+  broadcast: "Broadcast & Campaign",
+  "broadcast-sales": "Broadcast Team",
+  "sales-intelligence": "Sales Performance Intelligence",
+  copilot: "Tanya Sano",
+  automation: "Otomasi",
+  "pengaturan-sales": "Pengaturan",
+};
+
 const DIVISION_LABELS = {
   armada: "Delivery",
   bengkel: "Produksi",
@@ -87,6 +103,7 @@ export function titleFromPath(rawPath) {
   // Menu Gudang bernama "Beranda" (bukan Dashboard) agar tidak terkesan ada dua dashboard.
   if (divisionSeg === "warehouse" && rawLast === "dashboard") return "Gudang · Beranda";
   if (SEGMENT_LABEL_OVERRIDE[rawLast]) return SEGMENT_LABEL_OVERRIDE[rawLast];
+  if (parts.length === 0 && SALES_ROOT_LABELS[rawLast]) return SALES_ROOT_LABELS[rawLast];
   const label = seg.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   if (AMBIGUOUS_SEGMENTS.has(rawLast) && divisionSeg && DIVISION_LABELS[divisionSeg] && parts.length + 1 > 0 && divisionSeg !== rawLast) {
     return `${DIVISION_LABELS[divisionSeg]} · ${label}`;
@@ -137,4 +154,54 @@ export function dedupeTabs(tabs, activeId) {
     result.push(winnerByPath.get(key));
   }
   return result;
+}
+
+// Fase 1 kerangka bersama Sales CRM (31 Okt 2026) — identitas tab bernama sama.
+// Dua tab bisa berjudul persis sama dari divisi berbeda (mis. menu "Laporan" di
+// Sales CRM dan di Delivery, atau "Dashboard"); tab strip dulu menampilkan
+// keduanya tanpa konteks. Konteks diturunkan HANYA dari data yang sudah ada di
+// tab (path/query) dan HANYA muncul saat ada judul kembar — tab yang judulnya
+// sudah unik tampil seperti biasa. Murni & tanpa efek samping (bisa diuji).
+const KONTEKS_DIVISI = { ...DIVISION_LABELS, b2b: "B2B", marketing: "Marketing" };
+
+export function konteksDivisiTab(path) {
+  const seg = splitPathQuery(path || "").base.split("/").filter(Boolean)[0];
+  if (!seg) return "Sales CRM";
+  return KONTEKS_DIVISI[seg] || "Sales CRM";
+}
+
+// Petunjuk dari query ("?tab=…", "?section=…") bila dua tab sama judul DAN sama divisi.
+function petunjukQuery(path) {
+  const { search } = splitPathQuery(path || "");
+  if (!search) return null;
+  const p = new URLSearchParams(search);
+  const v = p.get("tab") || p.get("section") || p.get("status");
+  return v ? v.replace(/[-_]/g, " ") : null;
+}
+
+// → Map<tabId, string|null>: teks konteks untuk tab berjudul kembar, atau null.
+export function konteksTabKembar(tabs) {
+  const hasil = new Map();
+  const kelompok = new Map();
+  for (const t of tabs) {
+    const k = String(t.title || "").trim().toLowerCase();
+    if (!kelompok.has(k)) kelompok.set(k, []);
+    kelompok.get(k).push(t);
+  }
+  for (const anggota of kelompok.values()) {
+    if (anggota.length < 2) { for (const t of anggota) hasil.set(t.id, null); continue; }
+    const hitung = new Map();
+    for (const t of anggota) { const d = konteksDivisiTab(t.path); hitung.set(d, (hitung.get(d) || 0) + 1); }
+    const urut = new Map();
+    for (const t of anggota) {
+      const d = konteksDivisiTab(t.path);
+      // Judul yang sudah memuat nama divisi ("Delivery · Dashboard") sudah jelas.
+      if (String(t.title).includes(" · ")) { hasil.set(t.id, null); continue; }
+      if (hitung.get(d) === 1) { hasil.set(t.id, d); continue; }
+      const q = petunjukQuery(t.path);
+      const n = (urut.get(d) || 0) + 1; urut.set(d, n);
+      hasil.set(t.id, q ? `${d} · ${q}` : `${d} · ${n}`);
+    }
+  }
+  return hasil;
 }

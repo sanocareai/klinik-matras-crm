@@ -21,7 +21,7 @@ export function PageContainer({ className, fluid, children, ...props }) {
   return (
     <div
       className={cn(
-        "mx-auto w-full p-4 md:p-8",
+        "page-container mx-auto w-full p-4 md:p-8",
         fluid ? "max-w-none" : "max-w-[1400px]",
         className
       )}
@@ -73,11 +73,11 @@ export function PageHeader({ title, subtitle, actions, actionsBelow = false, cla
     return (
       <div className={cn("mb-6", className)}>
         {title && (
-          <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
+          <h1 className="page-title text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
             {title}
           </h1>
         )}
-        {subtitle && <p className="mt-1 max-w-[640px] text-[13px] text-ink2">{subtitle}</p>}
+        {subtitle && <p className="page-subtitle mt-1 max-w-[640px] text-[13px] text-ink2">{subtitle}</p>}
         {children}
         {blokAksi && <div className="mt-4">{blokAksi}</div>}
       </div>
@@ -93,11 +93,11 @@ export function PageHeader({ title, subtitle, actions, actionsBelow = false, cla
     >
       <div className="min-w-[180px] flex-1">
         {title && (
-          <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
+          <h1 className="page-title text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
             {title}
           </h1>
         )}
-        {subtitle && <p className="mt-1 text-[13px] text-ink2">{subtitle}</p>}
+        {subtitle && <p className="page-subtitle mt-1 text-[13px] text-ink2">{subtitle}</p>}
         {children}
       </div>
       {blokAksi}

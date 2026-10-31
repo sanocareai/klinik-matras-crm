@@ -36,6 +36,7 @@ import Avatar from "./Avatar.jsx";
 import { BRAND } from "@/lib/brand.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
+import { IKON_NAV_SALES } from "./sanssIcons.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { FINANCE_HUBS, hubAktif, badgeHub } from "@/lib/financeHubs.js";
@@ -644,6 +645,13 @@ function playNotifSound() {
 // Modul-level (bukan di dalam komponen) karena nilainya tidak pernah
 // berubah selama app hidup.
 const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
+
+// Fase 1 kerangka bersama (31 Okt 2026) — ikon navigasi Sales CRM: keluarga SVG duotone
+// (components/sanssIcons.jsx), dipetakan per RUTE saat render sehingga data menu, urutan,
+// badge, dan hak akses tidak tersentuh. Rute tanpa pemetaan memakai ikon aslinya.
+function denganIkonSales(sections) {
+  return sections.map((s) => ({ ...s, items: s.items.map((it) => (IKON_NAV_SALES[it.to] ? { ...it, Icon: IKON_NAV_SALES[it.to] } : it)) }));
+}
 // Lapisan visual Sales CRM (styles/sanss-crm.css, 31 Okt 2026) — aktif default;
 // localStorage "sanss-crm-skin" = "off" mematikannya untuk banding saat review.
 const CRM_SKIN_OFF = (() => { try { return localStorage.getItem("sanss-crm-skin") === "off"; } catch { return false; } })();
@@ -934,6 +942,12 @@ export default function Layout({ user, onLogout }) {
   // karena admin yang ada sekarang (Gilang, Novi) sama-sama masih punya
   // legacy role=ADMIN.
   const isAdmin = isAdminUser(user);
+  // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): HANYA divisi growth.
+  const crmShell = divisionKey === "growth" && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
+  const halamanCari = crmShell
+    ? visibleSections(division.sections, isAdmin).flatMap((sec) => sec.items.map((it) => ({ to: it.to, label: it.label, section: sec.section })))
+    : undefined;
 
   // SSE: saat ada pesan baru, refresh badge unread & notifikasi langsung tanpa tunggu interval
   // Digabung (debounce 1 dtk): rentetan pesan masuk = 1 fetch unread, bukan 1 per pesan.
@@ -1041,7 +1055,7 @@ export default function Layout({ user, onLogout }) {
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
     <div
-      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", divisionKey === "growth" && !IS_DRIVER_APP && !CRM_SKIN_OFF && "crm-skin")}
+      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin")}
       data-division={divisionKey || "hub"}
       // data-driver-app (9 September 2026) — pagar retheme tipografi APK
       // Driver (styles/driver-app-theme.css). Sama disiplin dgn IS_DRIVER_APP
@@ -1152,6 +1166,7 @@ export default function Layout({ user, onLogout }) {
         {!(IS_DRIVER_APP && driverOnly) && (
           <WorkspaceSwitcher
             activeKey={onHub ? null : divisionKey}
+            ringkas={crmShell}
             collapsed={collapsed}
             userRoles={rolesOf(user)}
             onNavigate={closeMobileMenu}
@@ -1191,7 +1206,8 @@ export default function Layout({ user, onLogout }) {
               di deklarasi state-nya). */}
           <LayoutGroup>
           {(() => {
-            const sectionsVisible = visibleSections(onHub ? HUB_SECTIONS : (divisionKey === "finance" ? denganBadgeFinance(division.sections, antreanFinance) : division.sections), isAdmin);
+            const sectionsBase = visibleSections(onHub ? HUB_SECTIONS : (divisionKey === "finance" ? denganBadgeFinance(division.sections, antreanFinance) : division.sections), isAdmin);
+            const sectionsVisible = crmShell ? denganIkonSales(sectionsBase) : sectionsBase;
             // P8.2 (UI Polish) — seluruh item yang TAMPIL saat ini (lintas
             // section), dipakai lib/sidebarActive.js untuk mendeteksi
             // "saudara" berquery yang lebih spesifik berbagi pathname sama
@@ -1266,7 +1282,7 @@ export default function Layout({ user, onLogout }) {
             divisi Growth. Disembunyikan saat sidebar menyempit: kartunya butuh
             lebar penuh untuk terbaca, dan memaksanya masuk 72px cuma jadi
             kotak tanpa arti. */}
-        {!onHub && divisionKey === "growth" && !collapsed && <SidebarPromo />}
+        {!onHub && divisionKey === "growth" && !collapsed && <SidebarPromo ringkas={crmShell} />}
 
         {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
             onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil
@@ -1325,6 +1341,8 @@ export default function Layout({ user, onLogout }) {
           // WorkspaceSwitcher di atas, alasan sama: chrome tanpa fungsi di
           // APK Driver, TIDAK disembunyikan di PWA/web.
           hideNotifBell={IS_DRIVER_APP && driverOnly}
+          crmShell={crmShell}
+          halaman={halamanCari}
         />
 
         {/* Tab strip dalam-app (D-144) — di antara Topbar dan .page-body,

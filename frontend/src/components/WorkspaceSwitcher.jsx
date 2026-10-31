@@ -4,6 +4,7 @@ import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { applyCustomOrder, getWorkspaceOrder, saveWorkspaceOrder } from "@/lib/sidebarOrder.js";
+import { IkRuangKerja } from "./sanssIcons.jsx";
 
 // Pemilih workspace di PUNCAK sidebar — satu-satunya kontrol untuk berpindah
 // antar divisi (refactor navigasi 2 Agustus 2026).
@@ -26,7 +27,7 @@ import { applyCustomOrder, getWorkspaceOrder, saveWorkspaceOrder } from "@/lib/s
 // dengan urutan di PORTALS (backend/src/constants/permissions.js) — itu
 // daftar hak akses, bukan urutan tampil.
 export const WORKSPACES = [
-  { key: "growth",    label: "Sales CRM & Omnichannel",    to: "/dashboard", Icon: Users,   roles: ["ADMIN", "SALES"] },
+  { key: "growth",    label: "Sales CRM & Omnichannel", short: "Sales CRM",    to: "/dashboard", Icon: Users,   roles: ["ADMIN", "SALES"] },
   { key: "armada",    label: "Delivery & Fulfillment",     to: "/armada",    Icon: Truck,   roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER", "LEADER_DRIVER"] },
   { key: "bengkel",   label: "Production Operations",      to: "/bengkel/ringkasan",   Icon: Wrench,  roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "PRODUCTION_DOCUMENTER"] },
   { key: "warehouse", label: "Warehouse & Inventory Control", to: "/warehouse/dashboard", Icon: Package, roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
@@ -49,8 +50,9 @@ export const WORKSPACE_LABEL = Object.fromEntries(WORKSPACES.map((w) => [w.key, 
 /**
  * @param activeKey  kunci divisi aktif, atau null saat di Main Hub
  * @param collapsed  sidebar sedang menyempit (72px) → tampilkan ikon saja
+ * @param ringkas    (Sales CRM, Fase 1) nama pendek workspace + ubin ikon biru; daftar pilihan tetap memakai nama lengkap
  */
-export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRoles = [], onNavigate }) {
+export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRoles = [], onNavigate, ringkas = false }) {
   const navigate = useNavigate();
   const tersediaAsli = WORKSPACES.filter((w) => w.roles.some((r) => userRoles.includes(r)));
 
@@ -70,6 +72,7 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
   const aktif = WORKSPACES.find((w) => w.key === activeKey) || null;
   const ActiveIcon = aktif?.Icon || LayoutGrid;
   const judul = aktif?.label || "Main Hub";
+  const judulTampil = ringkas && aktif?.short ? aktif.short : judul;
 
   function pergi(to) {
     navigate(to);
@@ -120,6 +123,7 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
           // yang gampang "ketutup" glow biru-nya.
           className={cn(
             "workspace-switcher-trigger mx-3 mt-3 mb-2 flex items-center gap-2.5 rounded-btn px-2.5 py-2 text-left transition-colors",
+            ringkas && "workspace-switcher-ringkas",
             collapsed && "mx-2 justify-center px-0"
           )}
         >
@@ -133,14 +137,14 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
               dirender polos (tone sama dengan label "WORKSPACE" di
               sampingnya, text-ink3) — konsisten dengan ikon MenuItem di
               dropdown yang sama, yang juga polos tanpa kotak berwarna. */}
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center">
-            <ActiveIcon className="h-[18px] w-[18px] text-ink3" strokeWidth={2} />
+          <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center", ringkas && "workspace-switcher-ikon")}>
+            {ringkas ? <IkRuangKerja size={18} /> : <ActiveIcon className="h-[18px] w-[18px] text-ink3" strokeWidth={2} />}
           </span>
           {!collapsed && (
             <>
               <span className="min-w-0 flex-1">
                 <span className="block text-[9px] font-bold uppercase tracking-wide text-ink3">Workspace</span>
-                <span className="block truncate text-[12.5px] font-semibold text-ink">{judul}</span>
+                <span className={cn("block truncate text-[12.5px] font-semibold text-ink", ringkas && "workspace-switcher-nama")}>{judulTampil}</span>
               </span>
               <ChevronsUpDown size={13} className="shrink-0 text-ink3" />
             </>

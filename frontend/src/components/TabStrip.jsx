@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, XCircle } from "lucide-react";
 import { useTabs } from "@/lib/TabsContext.jsx";
+import { konteksTabKembar } from "@/lib/tabTitles.js";
 
 // D-144 — bar tab dalam-app, duduk di antara Topbar (60px, tidak disentuh)
 // dan .page-body. Cuma tampil kalau lebih dari 1 tab ATAU tombol "+" perlu
@@ -22,6 +23,8 @@ export default function TabStrip() {
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [menu, setMenu] = useState(null); // { x, y, tabId }
+  // Konteks hanya untuk tab berjudul kembar (lihat lib/tabTitles.js) — tab lain tampil seperti biasa.
+  const konteks = konteksTabKembar(tabs);
 
   function handleDrop(targetIndex) {
     if (dragIndex != null && dragIndex !== targetIndex) reorderTabs(dragIndex, targetIndex);
@@ -59,14 +62,15 @@ export default function TabStrip() {
               }
               onClick={() => switchTab(tab.id)}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
-              title={tab.title}
+              title={konteks.get(tab.id) ? `${tab.title} — ${konteks.get(tab.id)}` : tab.title}
             >
               <span className="tab-chip-label">{tab.title}</span>
+              {konteks.get(tab.id) && <span className="tab-chip-konteks">{konteks.get(tab.id)}</span>}
               {tabs.length > 1 && (
                 <button
                   type="button"
                   className="tab-chip-close"
-                  aria-label={`Tutup tab ${tab.title}`}
+                  aria-label={`Tutup tab ${tab.title}${konteks.get(tab.id) ? ` (${konteks.get(tab.id)})` : ""}`}
                   onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
                 >
                   <X size={12} />

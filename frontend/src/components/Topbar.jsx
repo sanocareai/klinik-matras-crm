@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, ChevronRight, Menu as MenuIcon, Search, ChevronDown, LogOut } from "lucide-react";
+import { Bell, ChevronRight, Menu as MenuIcon, Search, ChevronDown, LogOut, Home } from "lucide-react";
 import { formatTanggalIndo } from "../utils/format.js";
 import { CommandPalette } from "@/components/ui/command-palette.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { DIVISION_CONTENT } from "@/features/portal/divisionContent.js";
 import { cariItemHub } from "@/lib/financeHubs.js";
 import { useNotificationStore, badgeText } from "@/features/notifications/notificationStore.js";
+import { useTabs } from "@/lib/TabsContext.jsx";
 import Avatar from "./Avatar.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 
@@ -26,6 +27,16 @@ const ROUTE_LABELS = {
   "/customers":   ["Data", "Pelanggan"],
   "/pipeline":    ["Data", "Pipeline"],
   "/products":    ["Data", "Galeri Produk"],
+  // Rute Sales CRM yang sebelumnya tidak punya entri (breadcrumb jatuh ke slug mentah, mis. "orders") — Fase 1
+  // kerangka bersama, 31 Okt 2026. Nama mengikuti menu sidebar; remah pertama = judul section menu.
+  "/orders":      ["Data", "Order"],
+  "/komplain":    ["Data", "Kasus Komplain"],
+  "/tracking":    ["Outreach", "Link Pelacakan"],
+  "/sales-intelligence": ["Analitik", "Sales Performance Intelligence"],
+  "/copilot":     ["AI & Otomasi", "Tanya Sano"],
+  "/pengaturan-sales": ["Pengaturan CRM", "Pengaturan"],
+  "/marketing/pengajuan-biaya": ["Data", "Pengajuan Biaya"],
+  "/marketing/laporan-biaya": ["Data", "Laporan Biaya"],
   "/broadcast":   ["Outreach", "Broadcast & Campaign"],
   "/broadcast-sales": ["Outreach", "Broadcast Team"],
   "/laporan":     ["Analitik", "Laporan"],
@@ -120,9 +131,16 @@ function labelFinance(pathname, search) {
 // showMobileMenu: tombol hamburger disembunyikan di halaman yang memang tidak
 // punya drawer sidebar (saat ini: /portal). Default true supaya semua pemanggil
 // lama berperilaku persis seperti sebelumnya.
-export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout, hideNotifBell = false }) {
+//
+// Fase 1 kerangka bersama Sales CRM (31 Okt 2026): `crmShell` (dipasang Layout hanya untuk
+// divisi Sales CRM) menampilkan kolom pencarian yang terlihat + ikon rumah di breadcrumb;
+// `halaman` = daftar menu yang boleh dilihat pengguna (sumber sama dengan sidebar) untuk
+// palette. Tanpa `crmShell` markup & perilaku Topbar IDENTIK dengan sebelumnya (divisi lain).
+export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout, hideNotifBell = false, crmShell = false, halaman }) {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
+  const { openInActiveTab } = useTabs();
+  const pintasan = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || "") ? "⌘ K" : "Ctrl K";
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Badge lonceng = notifikasi GLOBAL, bukan unread Inbox (#21/#22).
@@ -173,7 +191,18 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             <MenuIcon size={20} />
           </button>
         )}
-        <nav className="flex min-w-0 items-center gap-1 text-[13.5px]">
+        {crmShell && (
+          <button
+            type="button"
+            onClick={() => navigate("/portal")}
+            title="Main Hub"
+            aria-label="Main Hub"
+            className="topbar-home hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hovertint hover:text-accent sm:flex"
+          >
+            <Home size={16} />
+          </button>
+        )}
+        <nav className="flex min-w-0 items-center gap-1 text-[13.5px]" aria-label={crmShell ? "Breadcrumb" : undefined}>
           {crumbs.map((c, i) => (
             <React.Fragment key={i}>
               {i > 0 && <ChevronRight size={13} className="shrink-0 text-ink3" />}
@@ -209,6 +238,32 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
           layar produksi). Klik selalu membuka CommandPalette — modal itu
           SENDIRI sudah "search bar yang muncul saat ikon diklik" yang diminta.
           `group` + transisi width/opacity CSS murni, tanpa JS animasi tambahan. */}
+      {crmShell && (
+        <>
+          {/* Kolom pencarian terlihat (desktop) — membuka palette yang SAMA; di layar sempit
+              berubah jadi tombol ikon (.topbar-searchbtn) lewat CSS. */}
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Cari halaman atau menu"
+            className="topbar-searchfield"
+          >
+            <Search size={17} className="shrink-0" />
+            <span className="topbar-searchfield-teks">Cari halaman atau menu…</span>
+            <kbd className="topbar-searchfield-kbd">{pintasan}</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Cari halaman atau menu"
+            title="Cari"
+            className="topbar-searchbtn"
+          >
+            <Search size={18} />
+          </button>
+        </>
+      )}
+      {!crmShell && (
       <button
         onClick={() => setPaletteOpen(true)}
         aria-label="Cari pelanggan, percakapan, halaman"
@@ -227,9 +282,10 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
           ⌘K
         </kbd>
       </button>
+      )}
 
       {/* Kanan: tanggal + notif + profil */}
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className={(crmShell ? "topbar-actions " : "") + "ml-auto flex items-center gap-1.5"}>
         {/* `topbar-date` (D-051) — penanda supaya bisa disembunyikan
             per-divisi lewat CSS scoped (lihat styles/delivery-dark.css),
             TANPA mengubah tampilannya di divisi lain. */}
@@ -309,7 +365,12 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
         )}
       </div>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        halaman={crmShell ? halaman : undefined}
+        onPilih={crmShell ? (h) => openInActiveTab(h.to, { title: h.label }) : undefined}
+      />
     </header>
   );
 }

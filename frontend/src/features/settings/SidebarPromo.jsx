@@ -1,6 +1,7 @@
 import React from "react";
 import { Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { IkTanyaSano } from "@/components/sanssIcons.jsx";
 
 // ─── KARTU PROMO SIDEBAR (DS v2.1) ───────────────────────────────────────────
 // Padanan kartu "Unlock more with Nexora Pro" di referensi — elemen yang
@@ -21,9 +22,27 @@ import { useNavigate } from "react-router-dom";
 //   1 baris (label + tombol kecil, tanpa deskripsi) — SEBELUMNYA menutupi
 //   section nav lain di layar HP/tablet (masih bisa di-scroll, tapi promo
 //   tidak seharusnya mendominasi ruang navigasi di layar yang sudah sempit).
-export default function SidebarPromo({ collapsed }) {
+// `ringkas` (Fase 1 kerangka bersama Sales CRM, 31 Okt 2026): kartu promo jadi SATU tombol bantuan
+// kecil (ikon + "Tanya Sano") — tujuan sama (/copilot), tanpa deskripsi/tombol kedua, tidak
+// mendominasi sidebar. Tanpa `ringkas` kartu lama tidak berubah.
+export default function SidebarPromo({ collapsed, ringkas = false }) {
   const navigate = useNavigate();
   if (collapsed) return null;
+  if (ringkas) {
+    return (
+      <div className="sidebar-promo-wrap mx-3 mb-2">
+        <button
+          type="button"
+          onClick={() => navigate("/copilot")}
+          className="sidebar-help-btn"
+          aria-label="Buka Tanya Sano"
+        >
+          <IkTanyaSano size={20} className="sidebar-help-ikon" />
+          <span className="sidebar-help-teks">Tanya Sano</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="sidebar-promo-wrap mx-3 mb-2">
