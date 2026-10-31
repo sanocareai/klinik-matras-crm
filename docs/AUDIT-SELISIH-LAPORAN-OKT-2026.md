@@ -11,7 +11,7 @@ Kode live dipastikan identik dengan `a0dbe2fb` (hash isi `rekonSalesFinance.js`,
 | Laporan **Sales** › Nilai Order yang Menjadi Lunas (Tim) | Rp407.817.500 | Order yang **menjadi lunas** di Oktober, milik Tim Sales | tanggal order menjadi lunas (`paidAt`) | Sales aktif + Team Lead; tanpa order tanpa atribusi |
 | Finance › Pemasukan › Uang Masuk (terverifikasi) | Rp431.443.000 (176 order, 185 pembayaran) | Uang pelanggan yang **diterima & diverifikasi** di Oktober | tanggal pembayaran diterima | seluruh perusahaan |
 
-Selisih Rp23.625.500 (uang masuk − Tim) dan Rp3.505.501 (SUM mentah Excel − TOTAL) **bukan** kesalahan hitung; keduanya tertutup persis, sampai nomor dokumen, di bawah. **Penyebabnya bukan PKR dan bukan refund** (PKR di himpunan lunas Oktober = 0 order; refund hanya Rp200.000 pada satu order).
+Selisih Rp23.625.500 (uang masuk − Tim) dan Rp3.505.501 (SUM mentah Excel − TOTAL) **bukan** kesalahan hitung; keduanya tertutup persis, sampai nomor dokumen, di bawah. **Penyebabnya bukan PKR** (tidak ada order PKR di himpunan lunas Oktober). **Refund Rp200.000 (RES-07102026-037, Sofyan) adalah komponen jembatan yang sah, bukan bug refund**: uang masuk Rp4.300.000 dikurangi refund aktif Rp200.000 = Rp4.100.000 = nilai bersih order, sehingga jembatan menutup tanpa sisa. Angka refund itu benar menurut data; yang masih terbuka hanya keputusan koreksi nilai order (bagian F.4).
 
 ## A. Jembatan Rp23.625.500 — Uang Masuk Terverifikasi → Nilai Order Lunas Tim
 
@@ -47,7 +47,9 @@ Semua tujuh order dihitung lunas pada **30 Sep 2026** (`paidAt`), padahal uangny
 | RES-28092026-174 | Kadarwati | Kiki | Rp2.000.000 | `a047384f` Rp2.000.000 2026-10-05 |  |
 | RES-28092026-175 | Kadarwati | Kiki | Rp2.890.000 | `f0b5c128` Rp2.890.000 2026-10-05 |  |
 
-### A3. Refund Rp200.000 (1 order)
+### A3. Refund Rp200.000 (1 order) — komponen sah
+Refund aktif mengurangi uang bersih terhadap nilai order. Pada RES-07102026-037: Payment terverifikasi Rp4.300.000 − refund Rp200.000 = Rp4.100.000 = nilai bersih order (residual Rp0). Ini perilaku jembatan yang benar, bukan bug refund.
+
 | No. Order | Pelanggan | Sales | Nilai jasa (bersih) | Payment terverifikasi | Refund aktif |
 |---|---|---|---|---|---|
 | RES-07102026-037 | Sofyan | Fadlan | Rp4.100.000 | Rp4.300.000 | Rp200.000 |
@@ -160,4 +162,4 @@ Tidak ada bug perhitungan yang mengubah angka Oktober 2026 — ketiga angka acua
 1. **RES-03102026-017 (Rp3.990.000, Sutami)** — pemilik eksplisit Suci (nonaktif), percakapan dipegang Ervina. Tetapkan pemilik ke Ervina lewat "Tetapkan Sales" (Admin, beralasan, teraudit) **atau** putuskan bahwa pemilik nonaktif harus jatuh ke pemegang percakapan. Dampak: Nilai Lunas Tim Oktober +Rp3.990.000 dan Target/komisi Ervina.
 2. **Lima order September dengan pengecualian dicabut (Rp12.685.000)**: RES-27092026-161 (3.505.000), RES-27092026-163 (1.200.000), RES-28092026-173 (3.090.000), RES-28092026-174 (2.000.000), RES-28092026-175 (2.890.000) — uang masuk 1–5 Okt, tanggal lunas tetap 30 Sep. Putuskan: biarkan (September sudah tutup, insentif 120 jt dihitung), atau pindahkan tanggal lunas ke tanggal bayar (mengubah laporan September dan Oktober).
 3. **Order staf lama** NEW-01102026-001 (Rp1.300.000) dan NEW-01102026-002 (DP Rp100.000), pembeli Sulaiman / Emon — masuk omzet perusahaan tetapi bukan Tim. Putuskan: dibiarkan sebagai penjualan staf lama atau dimigrasikan ke modul Penjualan Karyawan.
-4. **RES-07102026-037 (Sofyan)** — refund aktif Rp200.000 pada order lunas; koreksi nilai menunggu konfirmasi Owner (catatan lama).
+4. **RES-07102026-037 (Sofyan) — koreksi nilai order**: refund Rp200.000 sudah benar dan tercatat sebagai komponen jembatan (A3); yang menunggu konfirmasi Owner hanya apakah nilai order dikoreksi. Rilis ini tidak menyentuh koreksi itu.
