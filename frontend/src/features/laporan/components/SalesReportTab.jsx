@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, Info, Crown, Loader2, ExternalLink } from "lucide-react";
+import { Download, Info, Crown, Loader2, ExternalLink, BarChart3, BadgeCheck, Target, Flag, ShoppingBag, ShieldAlert } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -160,7 +160,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           muncul lagi di breakpoint ini). */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
-          index={0} hero label="Nilai Penjualan Tim"
+          index={0} hero tone="primary" icon={BarChart3} label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}
           format={(v) => formatRupiah(Math.round(v))}
           growth={report?.growthTeamGrossValue} compareLabel={cmp}
@@ -168,21 +168,21 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas — “reach”, belum tentu sudah lunas."
         />
         <KpiCard
-          index={1} label="Nilai Order yang Menjadi Lunas"
+          index={1} tone="soft" icon={BadgeCheck} label="Nilai Order yang Menjadi Lunas"
           numericValue={teamCollectedAll}
           format={(v) => formatRupiah(Math.round(v))}
           sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses (perkiraan)`}
           tooltip="Nilai penuh order yang mencapai lunas pada periode ini. Tidak selalu sama dengan uang masuk periode karena DP, ongkir, dan pembayaran lintas periode."
         />
         <KpiCard
-          index={2} label="Konversi Tim"
+          index={2} tone="soft" icon={Target} label="Konversi Tim"
           numericValue={total?.conversionRate || 0}
           format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
           tooltip={`Konversi Tim = (pelanggan pindah ke Transaksi) ÷ (percakapan yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut). Contoh: ${total?.paidCustomers || 0} pindah Transaksi dari ${total?.handled || 0} percakapan ditangani. ⚠️ BEDA dengan "Conversion" di Dashboard (keduanya BENAR, bukan salah satu salah hitung): angka ini basisnya PERCAKAPAN yang ditangani tim di periode ini, TERMASUK lead LAMA (lahir bulan sebelumnya) yang baru closing sekarang; "Conversion" Dashboard basisnya LEAD BARU yang lahir di periode ini saja. Makanya penyebut & pembilangnya beda dan wajar angkanya tidak sama.`}
         />
         <KpiCard
-          index={3} label="Target Tim"
+          index={3} tone="lime" icon={Flag} label="Target Tim"
           numericValue={targetInfo.percentToTarget || 0}
           format={() => (targetInfo.percentToTarget != null ? `${targetInfo.percentToTarget}%` : "—")}
           sub={
@@ -195,14 +195,14 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           tooltip={`Progres closing tim terhadap target BULANAN — SELALU ${labelBulanTarget}, tidak ikut rentang tanggal yang dipilih di atas.`}
         />
         <KpiCard
-          index={4} label="AOV Tim"
+          index={4} icon={ShoppingBag} label="AOV Tim"
           numericValue={teamAovAll}
           format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
           sub="rata-rata nilai per order, seluruh tim"
           tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
         />
         <KpiCard
-          index={5} label="Chat Spam"
+          index={5} icon={ShieldAlert} label="Chat Spam"
           numericValue={total?.spamCount || 0}
           format={(v) => Math.round(v).toLocaleString("id-ID")}
           sub={total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani"}

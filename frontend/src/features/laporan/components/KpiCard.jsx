@@ -17,9 +17,16 @@ import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 // tidak terbaca sama sekali. Sekarang `hero` hanya memberi TINT LATAR lembut
 // (bg-blue-50) sebagai penanda "ini KPI utama tab ini", teksnya SELALU warna
 // gelap normal — tidak ada cabang warna teks terpisah lagi.
+//
+// `tone` ("primary" | "soft" | "lime", opsional) + `icon` (komponen lucide,
+// opsional) — redesign Sales CRM 31 Okt 2026. Warnanya HANYA diberi
+// styles/sanss-crm.css di bawah .crm-skin (divisi Sales CRM); di Armada/Gudang
+// kelas tone tidak punya aturan sehingga tampilannya tetap sama. Tanpa `tone`,
+// kartu `hero` otomatis "primary" di Sales CRM.
 export default function KpiCard({
-  label, numericValue, format, growth, compareLabel, sparkline, hero = false, sub, index = 0, tooltip,
+  label, numericValue, format, growth, compareLabel, sparkline, hero = false, sub, index = 0, tooltip, tone, icon: Icon,
 }) {
+  const toneEff = tone || (hero ? "primary" : null);
   const animated = useCountUp(numericValue);
   const displayValue = format ? format(animated) : Math.round(animated).toLocaleString("id-ID");
 
@@ -40,12 +47,18 @@ export default function KpiCard({
       // Armada ini kelewat dari pilot kaca sejak awal karena rounded-2xl).
       className={cn(
         "animate-fade-rise relative overflow-hidden rounded-card p-5 shadow-card transition-shadow duration-200 hover:shadow-popover text-ink",
-        hero ? "bg-blue-50" : "bg-surface"
+        hero ? "bg-blue-50" : "bg-surface",
+        toneEff && `kpi-tone-${toneEff}`
       )}
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="flex items-center gap-1.5">
+          {Icon && (
+            <span className="kpi-icon mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
+              <Icon size={16} />
+            </span>
+          )}
           <p className="text-[13px] font-medium text-ink3">{label}</p>
           {tooltip && <InfoTooltip text={tooltip} />}
         </span>
@@ -74,7 +87,7 @@ export default function KpiCard({
         {hasGrowth && (
           <div
             className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
+              "kpi-growth inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
               growth > 0 ? "bg-greenbg text-green"
               : growth < 0 ? "bg-redbg text-red"
               : "bg-inset text-ink2"
@@ -90,12 +103,12 @@ export default function KpiCard({
             caller WAJIB kirim compareLabel (dari lib/dateRange.js) supaya
             teksnya selalu cocok dengan rentang tanggal yang sedang dipilih. */}
         {hasGrowth && compareLabel && (
-          <span className="text-[11px] text-ink3">{compareLabel}</span>
+          <span className="kpi-compare text-[11px] text-ink3">{compareLabel}</span>
         )}
       </div>
 
       {sub && (
-        <p className="mt-1 text-xs text-ink3">{sub}</p>
+        <p className="kpi-sub mt-1 text-xs text-ink3">{sub}</p>
       )}
 
       {sparkline && sparkline.length >= 2 && (

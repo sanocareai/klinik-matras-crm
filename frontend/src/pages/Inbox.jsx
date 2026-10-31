@@ -58,7 +58,12 @@ function UnreadTitle() {
 
 export default function Inbox({ user }) {
   const [panelCollapsed, setPanelCollapsedState] = useState(
-    () => localStorage.getItem(PANEL_COLLAPSED_KEY) === "true",
+    // Belum pernah dipilih: layar desktop sempit (< 1280px) mulai dengan panel
+    // detail terlipat supaya chat tetap lega; pilihan user tetap disimpan.
+    () => {
+      const tersimpan = localStorage.getItem(PANEL_COLLAPSED_KEY);
+      return tersimpan == null ? window.innerWidth < 1280 : tersimpan === "true";
+    },
   );
   const [listCollapsed, setListCollapsedState] = useState(
     () => localStorage.getItem(LIST_COLLAPSED_KEY) === "true",

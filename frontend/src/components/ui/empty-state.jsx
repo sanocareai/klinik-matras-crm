@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils.js";
 export function EmptyState({ icon: Icon, title, description, action, className, compact = false, ...props }) {
   return (
     <div
+      data-empty-state=""
       className={cn(
         "flex flex-col items-center justify-center text-center",
         compact ? "gap-1 px-4 py-6" : "gap-2 px-6 py-12",

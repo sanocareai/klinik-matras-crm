@@ -73,6 +73,9 @@ import "./styles/delivery-light.css";
 // hasil build, bukan asumsi).
 import "./styles/driver-app-theme.css";
 import "virtual:driver-fonts";
+// PALING AKHIR — lapisan visual Sales CRM (redesign 31 Okt 2026), dipagari
+// .crm-skin (hanya divisi "growth"); harus setelah tema kaca delivery-*.css.
+import "./styles/sanss-crm.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

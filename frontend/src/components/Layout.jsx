@@ -644,6 +644,9 @@ function playNotifSound() {
 // Modul-level (bukan di dalam komponen) karena nilainya tidak pernah
 // berubah selama app hidup.
 const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
+// Lapisan visual Sales CRM (styles/sanss-crm.css, 31 Okt 2026) — aktif default;
+// localStorage "sanss-crm-skin" = "off" mematikannya untuk banding saat review.
+const CRM_SKIN_OFF = (() => { try { return localStorage.getItem("sanss-crm-skin") === "off"; } catch { return false; } })();
 
 export default function Layout({ user, onLogout }) {
   const location = useLocation();
@@ -1038,7 +1041,7 @@ export default function Layout({ user, onLogout }) {
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
     <div
-      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division")}
+      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", divisionKey === "growth" && !IS_DRIVER_APP && !CRM_SKIN_OFF && "crm-skin")}
       data-division={divisionKey || "hub"}
       // data-driver-app (9 September 2026) — pagar retheme tipografi APK
       // Driver (styles/driver-app-theme.css). Sama disiplin dgn IS_DRIVER_APP

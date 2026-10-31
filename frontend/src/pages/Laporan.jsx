@@ -240,7 +240,7 @@ export default function Laporan() {
     <div className="dash-page" style={{ paddingBottom: 40 }}>
       <div className="page-header">
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Laporan Analitik</h1>
+          <h1 className="t-page-title" style={{ margin: 0 }}>Laporan Analitik</h1>
           <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
             Periode: {formatRangeText(range)}
           </p>
@@ -249,7 +249,7 @@ export default function Laporan() {
           <button className="btn btn-ghost btn-sm" onClick={() => { loadData(); setVersiRefresh((v) => v + 1); }} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
+          <button className="btn btn-primary btn-sm" onClick={handleExport} disabled={loading || exporting}>
             <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
           </button>
           <DateRangePicker value={range} onChange={setRange} />
@@ -257,7 +257,7 @@ export default function Laporan() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <TabsList className="crm-pills">
           {TABS.map((t) => (
             <TabsTrigger key={t} value={t}>{t}</TabsTrigger>
           ))}
