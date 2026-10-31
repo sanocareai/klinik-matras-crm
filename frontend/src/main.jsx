@@ -76,6 +76,8 @@ import "virtual:driver-fonts";
 // PALING AKHIR — lapisan visual Sales CRM (redesign 31 Okt 2026), dipagari
 // .crm-skin (hanya divisi "growth"); harus setelah tema kaca delivery-*.css.
 import "./styles/sanss-crm.css";
+// Dashboard Sales CRM (kartu KPI berwarna, panel komplain ringkas, Sales Overview) — semua aturan di dalam .crm-dash.
+import "./styles/sanss-crm-dashboard.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

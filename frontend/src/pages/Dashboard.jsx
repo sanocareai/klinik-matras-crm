@@ -1,12 +1,11 @@
 import React, { useState } from "react";
-import { Users, ShoppingCart, Wallet, Target } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { formatTanggalIndo, formatRupiahShort } from "../utils/format.js";
 import { makeRange, compareLabel } from "../lib/dateRange.js";
 import { useDashboardData } from "../features/dashboard/hooks/useDashboardData.js";
-import StatCard from "@/components/ui/stat-card.jsx";
+import KpiTile from "../features/dashboard/components/KpiTile.jsx";
 import RevenueOverview from "../features/dashboard/components/RevenueOverview.jsx";
 import PipelineFunnelCard from "../features/dashboard/components/PipelineFunnelCard.jsx";
 import TopRepsCard from "../features/dashboard/components/TopRepsCard.jsx";
@@ -78,7 +77,7 @@ export default function Dashboard({ user }) {
     : null;
 
   return (
-    <PageContainer>
+    <PageContainer className="crm-dash">
       <PageHeader
         title={`Halo, ${userName}`}
         subtitle={`Ringkasan bisnis Anda · ${formatTanggalIndo()}`}
@@ -90,12 +89,20 @@ export default function Dashboard({ user }) {
             prioritas". currentOwner="SALES" — kasus baru dibuka atau
             menunggu follow-up/konfirmasi customer, bukan seluruh kasus
             lintas divisi (itu ada di /komplain). */}
-        <ActiveComplaintsWidget currentOwner="SALES" title="Kasus Komplain Butuh Follow-up" />
+        <ActiveComplaintsWidget currentOwner="SALES" title="Kasus Komplain Butuh Follow-up" ringkas />
 
         {/* ── KPI ── gradasi kedalaman 1→4 di satu baris */}
-        <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <StatCard
-            label="New Leads" icon={Users} depth={1}
+        <section className="crm-kpi-grid">
+          <KpiTile
+            tone="revenue" label="Revenue"
+            value={formatRupiahShort(ov?.totalOrderValue ?? 0)}
+            numericValue={ov?.totalOrderValue ?? 0}
+            format={formatRupiahShort}
+            delta={ov?.growthOrderValue} deltaSuffix={cmp}
+            tooltip="Total nilai order MASUK di periode yang dipilih — belum tentu sudah dibayar lunas."
+          />
+          <KpiTile
+            tone="leads" label="New Leads"
             value={(ov?.newCustomers ?? 0).toLocaleString("id-ID")}
             numericValue={ov?.newCustomers ?? 0}
             format={(n) => Math.round(n).toLocaleString("id-ID")}
@@ -103,24 +110,16 @@ export default function Dashboard({ user }) {
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
             tooltip="Pelanggan baru (Customer dibuat) di periode yang dipilih, chat SPAM dikecualikan. Klik kartu untuk lihat daftarnya."
           />
-          <StatCard
-            label="Total Orders" icon={ShoppingCart} depth={2}
+          <KpiTile
+            tone="orders" label="Total Orders"
             value={(ov?.totalOrders ?? 0).toLocaleString("id-ID")}
             numericValue={ov?.totalOrders ?? 0}
             format={(n) => Math.round(n).toLocaleString("id-ID")}
             delta={ov?.growthOrders} deltaSuffix={cmp}
             tooltip="Jumlah order yang dibuat di periode yang dipilih (order CANCELLED tidak dihitung)."
           />
-          <StatCard
-            label="Revenue" icon={Wallet} depth={3}
-            value={formatRupiahShort(ov?.totalOrderValue ?? 0)}
-            numericValue={ov?.totalOrderValue ?? 0}
-            format={formatRupiahShort}
-            delta={ov?.growthOrderValue} deltaSuffix={cmp}
-            tooltip="Total nilai order MASUK di periode yang dipilih — belum tentu sudah dibayar lunas."
-          />
-          <StatCard
-            label="Conversion" icon={Target} depth={4}
+          <KpiTile
+            tone="conversion" label="Conversion"
             value={konversi != null ? `${konversi}%` : "—"}
             // numericValue SENGAJA undefined kalau konversi null (belum ada
             // data) — StatCard jatuh ke `value` statis "—" apa adanya,

@@ -144,8 +144,11 @@
 :root .app-shell.crm-skin .sidebar-link { border-radius: 14px; }
 :root .app-shell.crm-skin .sidebar-link:hover { background: var(--crm-soft); }
 :root .app-shell.crm-skin .sidebar-link.active,
-:root .app-shell.crm-skin .sidebar-link.active .nav-icon,
 :root .app-shell.crm-skin .sidebar-link.active .nav-label { color: #FFFFFF; opacity: 1; }
+/* KOREKSI 31 Okt: ikon menu aktif tak terlihat (biru di atas pill biru, rasio 1:1) karena tokens.css memaksa
+   `.sidebar-link.active .nav-icon { color: var(--sidebar-accent) !important }` dan --sidebar-accent di tema ini = warna pill. */
+:root .app-shell.crm-skin .sidebar-link.active .nav-icon,
+:root .app-shell.crm-skin .sidebar-link.active .nav-icon-ai { color: #FFFFFF !important; opacity: 1; }
 :root .app-shell.crm-skin .sidebar-link.active:hover { background: transparent; }
 :root .app-shell.crm-skin .sidebar-section-label { color: var(--text-tertiary); }
 :root .app-shell.crm-skin .sidebar-profile { background: var(--crm-soft); border-radius: 16px; }
@@ -158,7 +161,10 @@
 /* ── 3. PERMUKAAN: kartu putih rounded, tanpa kaca ──────────────────────── */
 :root .app-shell.crm-skin .card,
 :root .app-shell.crm-skin .chart-card,
-:root .app-shell.crm-skin [class*="rounded-card"],
+/* KOREKSI 31 Okt: rilis pertama memutihkan SEMUA rounded-card, termasuk kartu berwarna sendiri (StatCard
+   .kpi-glass-guard bg-bluesolid + teks putih → "kartu kosong" di mode terang). Sekarang hanya kartu tanpa warna
+   latar sendiri (atau bg-surface) yang diseragamkan; penanda kpi-glass-guard dikecualikan seperti di tema kaca. */
+:root .app-shell.crm-skin [class*="rounded-card"]:not(.kpi-glass-guard):is(:not([class*="bg-"]), .bg-surface),
 :root .app-shell.crm-skin .rounded-xl.bg-surface,
 :root .app-shell.crm-skin .dh-table {
   background-color: var(--crm-panel);

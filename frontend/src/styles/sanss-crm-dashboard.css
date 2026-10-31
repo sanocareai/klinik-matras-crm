@@ -1,0 +1,129 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DASHBOARD SALES CRM — LAPISAN VISUAL (31 Okt 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Semua aturan berada di dalam `.crm-dash` (kelas di PageContainer Dashboard.jsx), jadi tab/halaman lain tidak
+   berubah. Dimuat SESUDAH sanss-crm.css. Font: TIDAK ada font-family di file ini — tetap Manrope (--font-ui).
+   Warna kartu KPI TETAP di terang maupun gelap (hanya permukaan di sekelilingnya yang mengikuti tema):
+     Nilai Penjualan #3965FA/teks putih · Lead Baru #99B7FC · Total Order #E9EBFF · Konversi #E0FFB7 (teks #1B1B39).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. GRID KPI: 1 kolom (HP) → 2 kolom (sedang) → 4 kolom (≥1360px) ──────────
+   Di CSS, bukan utility Tailwind: varian min-[…] Tailwind v4 diurutkan SEBELUM sm: sehingga kalah. */
+.crm-dash .crm-kpi-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@media (min-width: 640px) { .crm-dash .crm-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1360px) { .crm-dash .crm-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* ── 2. KARTU KPI ────────────────────────────────────────────────────────── */
+.crm-dash .crm-kpi-tile {
+  --kpi-bg: #E9EBFF; --kpi-ink: #1B1B39; --kpi-sub: #3F4160;
+  --kpi-pill: rgba(255, 255, 255, 0.82);
+  --ik-a: #FFFFFF; --ik-b: #DDE2FF;
+  --tile-bg: linear-gradient(145deg, #8E9BFF 0%, #5E6CF2 100%);
+  display: flex; align-items: center; gap: 12px;
+  min-width: 0; padding: 16px 18px; border-radius: 20px;
+  background: var(--kpi-bg); color: var(--kpi-ink);
+  box-shadow: 0 1px 2px rgba(27, 27, 57, 0.06), 0 14px 30px -22px rgba(57, 101, 250, 0.55);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.crm-dash .crm-kpi-tile--klik { cursor: pointer; }
+.crm-dash .crm-kpi-tile--klik:hover { transform: translateY(-1px); box-shadow: 0 18px 34px -20px rgba(57, 101, 250, 0.7); }
+.crm-dash .crm-kpi-tile[data-kpi="revenue"] {
+  --kpi-bg: #3965FA; --kpi-ink: #FFFFFF; --kpi-sub: #FFFFFF;
+  --ik-a: #3965FA; --ik-b: #99B7FC; --tile-bg: linear-gradient(145deg, #FFFFFF 0%, #DCE5FF 100%);
+}
+.crm-dash .crm-kpi-tile[data-kpi="leads"] {
+  --kpi-bg: #99B7FC; --kpi-sub: #26284A;
+  --ik-a: #FFFFFF; --ik-b: #D4E1FF; --tile-bg: linear-gradient(145deg, #5B8CFF 0%, #3965FA 100%);
+}
+.crm-dash .crm-kpi-tile[data-kpi="orders"] {
+  --kpi-bg: #E9EBFF; --kpi-sub: #3F4160;
+  --ik-a: #FFFFFF; --ik-b: #DDE2FF; --tile-bg: linear-gradient(145deg, #8E9BFF 0%, #5563F0 100%);
+}
+.crm-dash .crm-kpi-tile[data-kpi="conversion"] {
+  --kpi-bg: #E0FFB7; --kpi-sub: #2F3A22;
+  --ik-a: #FFFFFF; --ik-b: #C8F5D8; --tile-bg: linear-gradient(145deg, #3FD07A 0%, #12994A 100%);
+}
+.crm-dash .crm-kpi-ikon {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 14px; background: var(--tile-bg);
+  box-shadow: 0 6px 14px -8px rgba(27, 27, 57, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.crm-dash .crm-kpi-ikon svg { display: block; }
+.crm-dash .crm-kpi-isi { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.crm-dash .crm-kpi-isi p { margin: 0; }
+.crm-dash .crm-kpi-label-baris { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.crm-dash .crm-kpi-label { font-size: 13px; font-weight: 600; color: var(--kpi-ink); }
+.crm-dash .crm-kpi-label-baris svg { color: var(--kpi-ink); opacity: 0.85; }
+.crm-dash .crm-kpi-nilai {
+  font-size: clamp(22px, 1.9vw, 28px); font-weight: 800; line-height: 1.12; letter-spacing: -0.02em;
+  color: var(--kpi-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-shadow: none;
+}
+.crm-dash .crm-kpi-delta-baris { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
+.crm-dash .crm-kpi-sub { font-size: 11.5px; line-height: 1.35; color: var(--kpi-sub); }
+.crm-dash .crm-kpi-delta {
+  display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 6px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--kpi-pill);
+}
+/* Arah pertumbuhan — warna semantik pada pil terang (kontras ≥ 4,5:1 di keempat warna kartu). */
+.crm-dash .crm-kpi-delta[data-trend="up"]   { color: #146C2E; }
+.crm-dash .crm-kpi-delta[data-trend="down"] { color: #B3261E; }
+.crm-dash .crm-kpi-delta[data-trend="flat"] { color: #1B1B39; }
+
+/* ── 3. PANEL (Sales Overview, Pipeline, dll.): rounded putih, tanpa garis biru menyala di tepi ─────────── */
+.crm-dash .dh-bar-left::after { content: none !important; display: none !important; }
+:root .app-shell.crm-skin .crm-dash { --crm-chart: #3965FA; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-dash { --crm-chart: #6E8EFF; }
+:root .app-shell.crm-skin .crm-dash .t-card-title { font-size: 18px; font-weight: 700; }
+
+/* ── 4. SALES OVERVIEW: grafik kiri, AOV + Repeat Order kanan ─────────────── */
+.crm-dash .crm-so { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 20px; }
+.crm-dash .crm-so-kepala { grid-column: 1; }
+.crm-dash .crm-so-grafik { grid-column: 1; margin-top: 0 !important; }
+.crm-dash .crm-so-sisi { grid-column: 1; display: flex; flex-wrap: wrap; gap: 6px 28px; }
+.crm-dash .crm-so-sisi:empty { display: none; }
+.crm-dash .crm-so-sisi > div { text-align: left; }
+@media (min-width: 900px) {
+  .crm-dash .crm-so { grid-template-columns: minmax(0, 1fr) 190px; }
+  .crm-dash .crm-so-kepala { grid-row: 1; }
+  .crm-dash .crm-so-grafik, .crm-dash .crm-so > :last-child:not(.crm-so-sisi) { grid-row: 2; }
+  .crm-dash .crm-so-sisi {
+    grid-column: 2; grid-row: 1 / span 2; flex-direction: column; flex-wrap: nowrap; gap: 22px;
+    padding-left: 20px; border-left: 1px solid var(--hairline);
+  }
+}
+
+/* ── 5. PANEL KOMPLAIN RINGKAS ────────────────────────────────────────────── */
+.crm-dash .crm-komplain {
+  --kk-bg: #FFF1F0; --kk-ink: #1B1B39; --kk-sub: #5B3A3C; --kk-aksi: #B3261E; --kk-aksi-bg: #FFFFFF;
+  border-radius: 20px; background: var(--kk-bg); padding: 12px 16px; color: var(--kk-ink);
+  box-shadow: 0 1px 2px rgba(179, 38, 30, 0.06), 0 12px 26px -22px rgba(179, 38, 30, 0.5);
+}
+:root[data-theme="dark"] .app-shell.crm-skin .crm-dash .crm-komplain {
+  --kk-bg: #2A1620; --kk-ink: #F5F6FF; --kk-sub: #E3C3C6; --kk-aksi: #FFB4AB; --kk-aksi-bg: rgba(255, 255, 255, 0.07);
+}
+.crm-dash .crm-komplain-baris { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.crm-dash .crm-komplain-ikon {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px; color: #fff;
+  background: linear-gradient(145deg, #FF7A6B 0%, #E5483C 100%); box-shadow: 0 6px 14px -8px rgba(179, 38, 30, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.crm-dash .crm-komplain-teks { flex: 1 1 220px; min-width: 0; }
+.crm-dash .crm-komplain-judul { margin: 0; font-size: 16px; font-weight: 700; color: var(--kk-ink); }
+.crm-dash .crm-komplain-sub { margin: 2px 0 0; font-size: 12.5px; color: var(--kk-sub); }
+.crm-dash .crm-komplain-rinci, .crm-dash .crm-komplain-aksi {
+  display: inline-flex; align-items: center; gap: 4px; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; color: var(--kk-aksi);
+}
+.crm-dash .crm-komplain-rinci { background: transparent; padding: 8px 6px; border-radius: 10px; }
+.crm-dash .crm-komplain-aksi { background: var(--kk-aksi-bg); padding: 9px 14px; border-radius: 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.crm-dash .crm-putar { transform: rotate(180deg); }
+.crm-dash .crm-komplain-daftar { margin-top: 10px; }
+
+/* ── 6. JARAK & JUDUL ─────────────────────────────────────────────────────
+   Preflight Tailwind mati, jadi h1/h3/p membawa margin bawaan browser (≈1em) → celah tinggi di bawah judul panel
+   dan di header halaman. Dinolkan di Dashboard saja; jarak yang disengaja (utility margin Tailwind) tetap. */
+.crm-dash h1, .crm-dash h3 { margin: 0; }
+.crm-dash h1 + p { margin: 2px 0 0; }
+.crm-dash h1 { font-size: 28px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 800; }
+.crm-dash .t-caption, .crm-dash .t-secondary { margin-block: 0; }
+.crm-dash .crm-so-kepala p { margin-block-end: 0; }
+.crm-dash .crm-so-kepala .t-metric { margin-top: 4px; }
+.crm-dash .crm-so-kepala { margin-bottom: 10px; }

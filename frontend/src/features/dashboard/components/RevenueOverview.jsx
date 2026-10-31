@@ -81,8 +81,8 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
       ) : q.isError ? (
         <p className="t-secondary py-16 text-center">Gagal memuat data penjualan.</p>
       ) : (
-        <>
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="crm-so">
+          <div className="crm-so-kepala flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="t-caption">Total Revenue</p>
               <p className="t-metric mt-1">{formatRupiah(total)}</p>
@@ -99,6 +99,9 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
                 <span className="t-secondary text-[11px]">{formatRangeText(range)}</span>
               </div>
             </div>
+          </div>
+          {/* Kolom samping (tata letak redesain): AOV + Repeat Order — isi & syarat tampil TIDAK berubah. */}
+          <div className="crm-so-sisi">
             {/* AOV di sini (bukan cuma di Laporan) — naik/turunnya Revenue
                 di atas seringkali dijelaskan oleh AOV, bukan jumlah order. */}
             {totalOrders > 0 && (
@@ -137,13 +140,13 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
               description={`Grafik penjualan muncul otomatis begitu ada order — coba perlebar rentang tanggal (mis. "30 hari") kalau "${formatRangeText(range)}" memang belum ada transaksi.`}
             />
           ) : (
-            <div className="mt-5 -ml-1">
+            <div className="crm-so-grafik mt-5 -ml-1">
               <ResponsiveContainer width="100%" height={230}>
                 <AreaChart data={points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor="var(--blue-500)" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="var(--blue-500)" stopOpacity={0} />
+                      <stop offset="0%"   stopColor="var(--crm-chart, var(--blue-500))" stopOpacity={0.24} />
+                      <stop offset="100%" stopColor="var(--crm-chart, var(--blue-500))" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
@@ -167,19 +170,19 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
                   />
                   <Area
                     type="monotone" dataKey="value"
-                    stroke="var(--blue-600)" strokeWidth={2.5}
+                    stroke="var(--crm-chart, var(--blue-600))" strokeWidth={2.5}
                     fill="url(#revFill)"
                     // Dot disembunyikan saat titiknya banyak (harian 30+) —
                     // kalau tidak, garisnya jadi rangkaian bulatan yang ramai.
-                    dot={points.length <= 14 ? { r: 3, fill: "var(--blue-600)", strokeWidth: 0 } : false}
-                    activeDot={{ r: 5, fill: "var(--blue-600)", stroke: "var(--bg-surface)", strokeWidth: 2 }}
+                    dot={points.length <= 14 ? { r: 3, fill: "var(--crm-chart, var(--blue-600))", strokeWidth: 0 } : false}
+                    activeDot={{ r: 5, fill: "var(--crm-chart, var(--blue-600))", stroke: "var(--bg-surface)", strokeWidth: 2 }}
                     isAnimationActive animationDuration={700}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           )}
-        </>
+        </div>
       )}
     </SectionCard>
   );
