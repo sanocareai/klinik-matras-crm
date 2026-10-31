@@ -17,13 +17,13 @@ const ikon = baca("src/components/sanssIcons.jsx");
 const cssTanpaKomentar = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const bagian14 = cssTanpaKomentar.slice(cssTanpaKomentar.indexOf(":root .app-shell.crm-skin .sidebar-link .nav-icon,"));
 
-test("Ikon: setiap menu Sales CRM punya ikon SVG di peta; pemetaan hanya untuk divisi growth", () => {
+test("Ikon: setiap menu Sales CRM punya ikon SVG di peta; pemetaan hanya untuk divisi growth dan Finance (Fase Ringkasan Finance)", () => {
   const growth = layout.slice(layout.indexOf("growth: {"), layout.indexOf("// ── PRODUCTION OPERATIONS"));
   const rute = [...growth.matchAll(/\{ to: "([^"]+)"/g)].map((m) => m[1]);
   assert.ok(rute.length >= 15, "daftar menu growth terbaca");
   for (const r of rute) assert.ok(ikon.includes(`"${r}":`), `ikon untuk ${r}`);
   assert.ok(layout.includes("const sectionsVisible = crmShell ? denganIkonSales(sectionsBase) : sectionsBase;"));
-  assert.ok(layout.includes('const crmShell = divisionKey === "growth" && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
+  assert.ok(layout.includes('const crmShell = (divisionKey === "growth" || divisionKey === "finance") && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
   assert.ok(layout.includes('crmShell && "crm-skin"'));
 });
 
@@ -34,7 +34,7 @@ test("Ikon: keluarga SVG inline (currentColor, tanpa aset/URL luar) — aman unt
 });
 
 test("Menu, urutan, badge, hak akses tidak disentuh: Layout hanya memetakan ikon per rute", () => {
-  assert.ok(layout.includes("denganIkonSales(sections)") && layout.includes("{ ...it, Icon: IKON_NAV_SALES[it.to] }"));
+  assert.ok(layout.includes("denganIkonSales(sections)") && layout.includes("IKON_NAV_SALES[it.to] || (it.hubKey ? IKON_NAV_FINANCE[it.hubKey] : null)") && layout.includes("return Ikon ? { ...it, Icon: Ikon } : it;"));
   assert.ok(!/Pelanggan.*Lainnya|"Lainnya"/.test(layout.slice(layout.indexOf("growth: {"), layout.indexOf("// ── PRODUCTION OPERATIONS"))), "tidak ada pemindahan menu ke Lainnya");
 });
 
