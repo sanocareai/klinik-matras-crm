@@ -78,6 +78,8 @@ import "virtual:driver-fonts";
 import "./styles/sanss-crm.css";
 // Dashboard Sales CRM (kartu KPI berwarna, panel komplain ringkas, Sales Overview) — semua aturan di dalam .crm-dash.
 import "./styles/sanss-crm-dashboard.css";
+// Halaman Pelanggan (Fase 2, 31 Okt 2026) — gaya khusus .crm-pel di bawah tema Sales CRM.
+import "./styles/sanss-crm-pelanggan.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

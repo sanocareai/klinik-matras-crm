@@ -1,0 +1,164 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS SALES CRM — HALAMAN PELANGGAN (Fase 2, 31 Okt 2026, acuan: SANSS-Konsep-Pelanggan.png)
+   ═══════════════════════════════════════════════════════════════════════════
+   Visual saja. Data, filter, pencarian, sorting, pagination, seleksi massal, ekspor, tujuan klik, dan hak akses
+   tidak diubah. Semua aturan di bawah `:root .app-shell.crm-skin .crm-pel` (halaman ini + tema Sales CRM) — halaman
+   lain dan divisi lain tidak terpengaruh. Tidak ada font-family/@import: tetap Manrope (--font-ui).
+   Warna memakai token tema (--crm-*) sehingga terang/gelap otomatis; status diberi warna eksplisit yang kontrasnya
+   diukur ≥ 4,5:1 di atas latar pill-nya. */
+
+/* ── 1. RUANG: konten mengisi lebar setelah sidebar ─────────────────────── */
+:root .app-shell.crm-skin .crm-pel { max-width: none; padding-inline: 24px; padding-bottom: 24px; }
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin .crm-pel { padding-inline: 16px; padding-bottom: 16px; }
+}
+
+/* ── 2. HEADER: judul + jumlah di kiri; aksi di kanan ───────────────────── */
+:root .app-shell.crm-skin .crm-pel .page-title { font-size: 32px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; }
+:root .app-shell.crm-skin .crm-pel .page-subtitle { margin-top: 4px; font-size: 15px; color: var(--text-secondary); }
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin .crm-pel .page-title { font-size: 26px; }
+  /* HP: toolbar dipadatkan jadi tiga baris sempit (tab, filter cepat, filter lanjutan) — tab tanpa ikon supaya tiga tab muat
+     satu baris; chip dan filter menggeser ke samping (tanpa bilah gulir) alih-alih menumpuk ±330px sebelum daftar. */
+  :root .app-shell.crm-skin .crm-pel .crm-pel-tabs { flex-wrap: nowrap; width: 100%; gap: 6px; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-tab { flex: 1 1 0; justify-content: center; padding: 0 6px; gap: 4px; font-size: 12.5px; white-space: nowrap; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-hitung { padding: 1px 6px; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-tab > svg { display: none; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-chips,
+  :root .app-shell.crm-skin .crm-pel .crm-pel-filters {
+    flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; padding-bottom: 4px; scrollbar-width: none;
+  }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-chips::-webkit-scrollbar,
+  :root .app-shell.crm-skin .crm-pel .crm-pel-filters::-webkit-scrollbar { display: none; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-chips > *,
+  :root .app-shell.crm-skin .crm-pel .crm-pel-filters > * { flex-shrink: 0; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-bar1 { gap: 10px; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-bar1 > * { width: 100%; }
+  :root .app-shell.crm-skin .crm-pel .crm-pel-bar2 > .crm-pel-filters { width: 100%; }
+}
+/* Tindakan utama = biru solid; ekspor/kontak = pendukung (putih, tanpa isian biru). */
+:root .app-shell.crm-skin .crm-pel .crm-pel-sekunder {
+  height: 40px; padding-inline: 14px; border-radius: 12px;
+  background: var(--crm-panel); color: var(--text-primary);
+  box-shadow: var(--crm-shadow); font-weight: 600;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-sekunder:hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-utama { height: 40px; padding-inline: 18px; border-radius: 12px; font-weight: 700; }
+
+/* ── 3. TOOLBAR: tab tipe + filter cepat, lalu pencarian + filter lanjutan ─ */
+:root .app-shell.crm-skin .crm-pel .crm-pel-toolbar { gap: 12px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabs { gap: 8px; padding: 0; border-bottom: 0; overflow: visible; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tab {
+  margin: 0; border: 0; border-radius: 999px; height: 40px; padding: 0 16px;
+  background: var(--crm-panel); color: var(--text-primary);
+  box-shadow: var(--crm-shadow); font-weight: 600;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-tab:hover { background: var(--crm-soft); color: var(--text-primary); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tab[aria-current="true"] {
+  background: var(--crm-soft); color: var(--crm-primary-ink);
+  box-shadow: inset 0 0 0 1.5px var(--crm-primary);
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-hitung { background: var(--crm-panel); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tab[aria-current="true"] .crm-pel-hitung { background: var(--crm-panel); color: var(--crm-primary-ink); }
+
+:root .app-shell.crm-skin .crm-pel .crm-pel-chips { gap: 8px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-chip { height: 36px; padding: 0 14px; font-size: 13px; box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-chip[aria-pressed="false"] { background: var(--crm-panel); color: var(--text-primary); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-chip[aria-pressed="false"]:hover { background: var(--crm-soft); }
+
+:root .app-shell.crm-skin .crm-pel .crm-pel-search input[type="search"] {
+  height: 40px; border-radius: 12px; background: var(--crm-panel);
+  box-shadow: var(--crm-shadow); font-size: 14px;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-filters { gap: 8px; }
+/* Layar sedang: pencarian mendapat baris sendiri (placeholder tidak terpotong); filter + Kolom di baris berikutnya. */
+@media (max-width: 1500px) {
+  :root .app-shell.crm-skin .crm-pel .crm-pel-search { flex-basis: 100%; }
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-filters > button,
+:root .app-shell.crm-skin .crm-pel .crm-pel-bar2 > .crm-pel-kolom,
+:root .app-shell.crm-skin .crm-pel .crm-pel-bulk-pilih {
+  height: 40px; padding-inline: 14px; border: 0; border-radius: 12px;
+  background: var(--crm-panel); color: var(--text-primary);
+  box-shadow: var(--crm-shadow); font-weight: 600;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-filters > button[class*="bg-accentbg"],
+:root .app-shell.crm-skin .crm-pel .crm-pel-kolom[class*="bg-accentbg"] {
+  background: var(--crm-soft); color: var(--crm-primary-ink); box-shadow: inset 0 0 0 1.5px var(--crm-primary);
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-kolom { height: 40px; border: 0; border-radius: 12px; box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-kolom:not([class*="bg-accentbg"]) { background: var(--crm-panel); color: var(--text-primary); font-weight: 600; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-reset { height: 40px; border-radius: 12px; color: var(--text-secondary); }
+
+/* ── 4. SELEKSI MASSAL ──────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pel .crm-pel-bulk {
+  border: 0; border-radius: 16px; padding: 10px 14px;
+  background: var(--crm-soft); box-shadow: inset 0 0 0 1.5px var(--crm-primary);
+}
+
+/* ── 5. TABEL ───────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel { border-radius: 20px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel thead th {
+  background: var(--bg-inset); color: var(--text-secondary); border-bottom: 0;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em; padding-block: 14px;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel thead th:first-child { border-top-left-radius: 20px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel thead th:last-child { border-top-right-radius: 20px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel tbody tr { border-bottom-color: var(--hairline, rgba(27, 27, 57, 0.07)); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel tbody tr[data-selected="true"] { background: var(--crm-soft); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel tbody td { padding-block: 14px; padding-inline: 10px; font-size: 14px; color: var(--text-primary); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel thead th { padding-inline: 10px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel td:first-child,
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel th:first-child { padding-left: 16px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-tabel input[type="checkbox"] {
+  width: 18px; height: 18px; margin: 0; border-radius: 5px; accent-color: var(--crm-primary); cursor: pointer;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-nama { font-size: 15px; font-weight: 700; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-kontak { margin-top: 1px; color: var(--text-tertiary); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-nilai { font-size: 14px; font-weight: 700; }
+
+/* Status pipeline: pill tanpa huruf kapital paksa, warna per tahap (kontras ≥ 4,5:1 di atas latarnya). */
+:root .app-shell.crm-skin .crm-pel .crm-pel-stage {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  background: var(--crm-soft); color: var(--crm-primary-ink);
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="NEW"]         { background: #E3EAFF; color: #2347B8; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="PROSPECT"]    { background: #FFF1CC; color: #7A4B00; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="TRANSACTION"] { background: #ECE6FF; color: #5330B8; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="REVIEWED"]    { background: #DDF6E5; color: #11663A; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="SPAM"]        { background: #ECEDF5; color: #4A4C66; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="NEW"]         { background: rgba(110, 142, 255, 0.2); color: #B7C6FF; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="PROSPECT"]    { background: rgba(255, 196, 61, 0.18); color: #FFD97A; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="TRANSACTION"] { background: rgba(160, 130, 255, 0.2); color: #D3C6FF; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="REVIEWED"]    { background: rgba(60, 200, 120, 0.18); color: #9BE8BC; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-stage[data-stage="SPAM"]        { background: rgba(153, 183, 252, 0.12); color: #C6C9E3; }
+
+/* VIP: pill kecil lime-navy seperti aksen pertumbuhan, bukan biru yang sama dengan status. */
+:root .app-shell.crm-skin .crm-pel .crm-pel-vip { background: var(--crm-lime); color: var(--crm-on-lime); font-weight: 800; border-radius: 999px; padding: 2px 8px; }
+
+/* Aksi baris: Profil = tombol lembut; ikon chat = tujuan klik baris. */
+:root .app-shell.crm-skin .crm-pel .crm-pel-profil {
+  height: 32px; border-radius: 10px; padding-inline: 12px;
+  background: var(--crm-soft); color: var(--crm-primary-ink); font-weight: 700;
+}
+:root .app-shell.crm-skin .crm-pel .crm-pel-profil:hover { background: var(--crm-soft-2); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-aksi-chat { color: var(--text-secondary); }
+
+/* ── 6. KONDISI KOSONG / ERROR ──────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pel .crm-pel-error { border-radius: 14px; background: #FFE9E6; color: #A3170E; }
+:root[data-theme="dark"] .app-shell.crm-skin .crm-pel .crm-pel-error { background: rgba(255, 99, 82, 0.14); color: #FFB4A8; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-error button { color: inherit; font-weight: 700; }
+
+/* ── 7. PAGINATION ──────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pel .crm-pel-pager > div { padding-block: 12px 4px; gap: 6px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-pager > div > span:first-child { font-size: 13px; color: var(--text-secondary); margin-right: 8px; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-pager button { height: 36px; min-width: 36px; border-radius: 10px; background: var(--crm-panel); box-shadow: var(--crm-shadow); color: var(--text-primary); }
+:root .app-shell.crm-skin .crm-pel .crm-pel-pager button[aria-current="page"] { background: var(--crm-primary); color: #FFFFFF; box-shadow: none; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-pager select { height: 36px; border-radius: 10px; background: var(--crm-panel); box-shadow: var(--crm-shadow); color: var(--text-primary); }
+
+/* ── 8. HP: kartu pelanggan ─────────────────────────────────────────────── */
+:root .app-shell.crm-skin .crm-pel .crm-pel-kartu { padding: 14px; }
+/* preflight Tailwind mati: <p> membawa margin bawah bawaan browser (±16px) → celah kosong di kartu. */
+:root .app-shell.crm-skin .crm-pel .crm-pel-kartu p { margin-bottom: 0; }
+:root .app-shell.crm-skin .crm-pel .crm-pel-kartu .crm-pel-stage { font-size: 11.5px; padding: 3px 10px; }

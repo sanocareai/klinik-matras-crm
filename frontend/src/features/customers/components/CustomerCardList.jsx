@@ -1,9 +1,11 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, UserRound } from "lucide-react";
+import { AlertTriangle, UserRound, Users } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import {
   formatRupiah, formatPhoneDisplay, STAGE_LABELS, stageVariant, tagClass, isVIP,
 } from "@/utils/format.js";
@@ -16,7 +18,7 @@ import {
 // none di desktop). Sekarang pakai `md:hidden` di sini + `hidden md:block` di
 // CustomersTable — ambangnya sama (768px), tapi aturannya ada DI komponen,
 // bukan terpisah di index.css yang mudah lupa dirawat.
-export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }) {
+export default function CustomerCardList({ rows, loading, emptyMessage, onOpen, hasFilters = false, onResetFilters, gagal = false }) {
   const navigate = useNavigate();
 
   // BUG YANG DIPERBAIKI: tap kartu SEBELUMNYA selalu buka drawer profil —
@@ -40,12 +42,19 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
 
   if (rows.length === 0) {
     return (
-      <p className="py-10 text-center text-[13px] text-ink3 md:hidden">{emptyMessage}</p>
+      <div className="md:hidden">
+        <EmptyState
+          icon={Users}
+          title={gagal ? "Daftar belum dapat ditampilkan" : hasFilters ? "Tidak ada pelanggan yang cocok" : "Belum ada pelanggan"}
+          description={gagal ? "Periksa koneksi, lalu pilih Coba lagi pada pesan di atas." : hasFilters ? emptyMessage : "Pelanggan baru muncul di sini begitu ada chat masuk atau ditambahkan lewat Pelanggan Baru."}
+          action={!gagal && hasFilters && onResetFilters ? <Button variant="secondary" size="sm" onClick={onResetFilters}>Reset filter</Button> : null}
+        />
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2 md:hidden">
+    <div className="crm-pel-kartu-daftar flex flex-col gap-2 md:hidden">
       {rows.map((c) => {
         const displayName = c.name || formatPhoneDisplay(c.phone) || c.instagramHandle || "?";
         return (
@@ -66,7 +75,7 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
             // tetap flat sementara topbar/filter bar/tabel desktop di
             // sekitarnya sudah kaca sejak D-098 — cuma kelihatan bedanya di
             // mobile, karena kartu ini "hidden md:block" kebalikannya (md:hidden).
-            className="w-full cursor-pointer rounded-card bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="crm-pel-kartu w-full cursor-pointer rounded-card bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <div className="flex items-start gap-2.5">
               <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />
@@ -81,10 +90,10 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
                 <p className="mt-0.5 truncate text-[11px] tabular-nums text-ink3">
                   {formatPhoneDisplay(c.phone) || (c.instagramHandle ? "@" + c.instagramHandle : "—")}
                 </p>
+                <Badge variant={stageVariant(c.pipelineStage)} className="crm-pel-stage mt-1.5" data-stage={c.pipelineStage}>
+                  {STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "—"}
+                </Badge>
               </div>
-              <Badge variant={stageVariant(c.pipelineStage)} className="shrink-0">
-                {STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "—"}
-              </Badge>
               {/* Profil tetap bisa dibuka lewat ikon kecil ini — tap kartu
                   sendiri sekarang langsung ke chat (lihat handleCardTap). */}
               <button

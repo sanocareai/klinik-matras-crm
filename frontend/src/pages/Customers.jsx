@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, Download, Contact } from "lucide-react";
+import { Plus, Download, Contact, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import CustomerDrawer from "../components/CustomerDrawer.jsx";
 import Pagination from "../components/Pagination.jsx";
@@ -11,6 +11,8 @@ import CustomersTable from "@/features/customers/components/CustomersTable.jsx";
 import CustomerCardList from "@/features/customers/components/CustomerCardList.jsx";
 import NewCustomerModal from "@/features/customers/components/NewCustomerModal.jsx";
 import BulkActionBar from "@/features/customers/components/BulkActionBar.jsx";
+import KolomMenu from "@/features/customers/components/KolomMenu.jsx";
+import { muatKolom, simpanKolom, toggleKolom } from "@/features/customers/columns.js";
 import {
   formatRupiah, STAGE_LABELS, SOURCE_LABELS, HEALTH_COMPLAINT_LABELS,
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -60,6 +62,13 @@ export default function Customers() {
   const [sortDir, setSortDir]   = useState("desc");
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
+  // Kolom tambahan tabel (menu "Kolom") — preferensi tampilan per perangkat; standar = hanya enam kolom inti.
+  const [kolomTambahan, setKolomTambahan] = useState(() => muatKolom());
+  function handleToggleKolom(key) {
+    setKolomTambahan((prev) => { const next = toggleKolom(prev, key); simpanKolom(next); return next; });
+  }
+  function handleResetKolom() { setKolomTambahan([]); simpanKolom([]); }
 
   const [selected, setSelected] = useState(new Set());
   const [bulkAssigning, setBulkAssigning] = useState(false);
@@ -194,6 +203,9 @@ export default function Customers() {
   // Setiap perubahan filter WAJIB reset ke halaman 1 — kalau tidak, user bisa
   // terjebak di halaman 5 padahal hasil filter cuma 1 halaman (tampak kosong).
   const withReset = (setter) => (v) => { setter(v); setPage(1); };
+
+  // Reset penuh untuk kondisi kosong: filter + tab tipe (resetAllFilters sendiri tidak menyentuh tab).
+  function resetSemua() { resetAllFilters(); setTypeTab("all"); }
 
   const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip || filterConfirmed || filterPeriode.from;
   const emptyMessage = hasFilters || typeTab !== "all"
@@ -340,13 +352,13 @@ export default function Customers() {
   }
 
   return (
-    <PageContainer>
+    <PageContainer fluid className="crm-pel">
       <PageHeader
         title="Pelanggan"
-        subtitle={loading ? "Memuat data pelanggan…" : `${total.toLocaleString("id-ID")} pelanggan`}
+        subtitle={loading ? "Memuat data pelanggan…" : loadError ? "Data pelanggan belum dapat dimuat" : `${total.toLocaleString("id-ID")} pelanggan`}
         actions={
           <>
-            <Button variant="ghost" onClick={handleExport} disabled={loading}>
+            <Button variant="ghost" className="crm-pel-sekunder" onClick={handleExport} disabled={loading}>
               <Download size={15} /> Export Excel
             </Button>
             {/* .vcf untuk diimpor ke buku alamat HP — supaya nama di CRM
@@ -354,13 +366,14 @@ export default function Customers() {
                 tooltip. */}
             <Button
               variant="ghost"
+              className="crm-pel-sekunder"
               onClick={handleExportVCard}
               disabled={loading || exportingVCard}
               title="Unduh kontak lalu impor ke buku alamat HP — TIDAK otomatis sinkron, harus diimpor ulang kalau ada nama baru"
             >
               <Contact size={15} /> {exportingVCard ? "Membuat..." : "Kontak (.vcf)"}
             </Button>
-            <Button onClick={() => setShowModal(true)}>
+            <Button className="crm-pel-utama" onClick={() => setShowModal(true)}>
               <Plus size={16} /> Pelanggan Baru
             </Button>
           </>
@@ -378,6 +391,7 @@ export default function Customers() {
           filterSales={filterSales} onFilterSales={withReset(setFilterSales)}
           cities={cities} salesUsers={salesUsers}
           hasFilters={hasFilters} onReset={resetAllFilters}
+          trailing={<KolomMenu aktif={kolomTambahan} onToggle={handleToggleKolom} onReset={handleResetKolom} />}
         />
 
         {/* Penanda periode aktif — filter tanggal datang dari deep-link
@@ -418,9 +432,12 @@ export default function Customers() {
         )}
 
         {loadError && (
-          <p className="rounded-lg bg-red/10 px-3 py-2 text-[13px] text-red">
-            Gagal memuat data pelanggan: {loadError}
-          </p>
+          <div role="alert" className="crm-pel-error flex flex-wrap items-center gap-3 rounded-lg bg-red/10 px-3 py-2 text-[13px] text-red">
+            <span className="min-w-0 flex-1">Gagal memuat data pelanggan: {loadError}</span>
+            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw size={13} /> Coba lagi
+            </Button>
+          </div>
         )}
 
         {/* Desktop tabel (hidden md:block) & mobile kartu (md:hidden) — aturan
@@ -432,17 +449,22 @@ export default function Customers() {
           selected={selected} onToggleSelect={toggleSelectOne}
           allSelected={items.length > 0 && selected.size === items.length}
           onToggleSelectAll={toggleSelectAll}
+          kolomTambahan={kolomTambahan} gagal={!!loadError}
+          hasFilters={!!hasFilters || typeTab !== "all"} onResetFilters={resetSemua}
         />
         <CustomerCardList
           rows={items} loading={loading} emptyMessage={emptyMessage}
-          onOpen={setDrawerCustomerId}
+          onOpen={setDrawerCustomerId} gagal={!!loadError}
+          hasFilters={!!hasFilters || typeTab !== "all"} onResetFilters={resetSemua}
         />
 
         {!loading && total > 0 && (
-          <Pagination
-            page={page} pageSize={pageSize} total={total}
-            onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
-          />
+          <div className="crm-pel-pager">
+            <Pagination
+              page={page} pageSize={pageSize} total={total}
+              onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
+            />
+          </div>
         )}
       </PageBody>
 
