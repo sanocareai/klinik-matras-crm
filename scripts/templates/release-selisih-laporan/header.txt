@@ -1,0 +1,18 @@
+# RILIS "AUDIT SELISIH LAPORAN" (Finance > Pemasukan, Laporan Sales/Ringkasan, Export Excel, Rekonsiliasi Sales-Finance): WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Export Excel Pemasukan: kolom "Nilai (Rp)" historis dipertahankan; ditambah "Dihitung ke Total?", "Nilai yang Dihitung (Rp)", "Alasan Tidak Dihitung". SUM kolom baru = TOTAL = angka layar. Baris Dikecualikan, Ditolak, Dibatalkan, dan arsip historis
+#     yang tidak dihitung tetap tampil dengan alasan per baris (pembayaran pengganti ditautkan). Layar Pemasukan menampilkan "total dihitung" dan jumlah baris tidak dihitung.
+#   • Rekonsiliasi Sales-Finance: jembatan KOHORT baru (Sudah Lunas order dibuat di periode -> Total Perusahaan lunas di periode) sampai nomor order, dokumen pembayaran (ID, tanggal WIB, rekening, nomor jurnal), alasan pengecualian lunas
+#     (aktif atau sudah dicabut), dan order Penjualan Karyawan dikecualikan dari himpunan lunas-periode (sama dengan kartu Sales). Label/tooltip kartu Sales dan Ringkasan menyebut basis tanggal dan cakupan.
+#   • Rilis ini TIDAK membuat atau mengubah payments, verifikasi, order, jurnal, refund, nota kredit, atau pengecualian lunas; smoke pasca-switch hanya membaca (GET dan POST export) dan tidak membuat data percobaan.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore memakai data produksi nyata Agustus-Oktober 2026: parity layar = API = Excel = SQL, tanpa jejak tulis);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (angka API = hitungan langsung dari tabel; izin 401/403; data identik sebelum vs sesudah).
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi apa pun /
+#     berkas tambahan / proses berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
+#
+#   cat scripts/release-selisih-laporan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/sel.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sel.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/sel.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/selr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/sel.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/sel.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Rollback hanya mengembalikan kolom/label/jembatan lama; tidak ada data yang berubah.
+# (dibangkitkan oleh scripts/gen-release-selisih-laporan.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-selisih-laporan/* + pustaka scripts/lib/{rehearsal,smoke}-selisih-laporan.mjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

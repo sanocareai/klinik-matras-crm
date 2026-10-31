@@ -230,9 +230,10 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
   // Pengecualian lunas (keputusan Owner): order yang tanggal lunasnya DIKUNCI ke periode lain walau uangnya baru masuk sekarang.
   const idLunasLain = ordersLain.filter((o) => o.paymentStatus === "LUNAS" && o.paidAt && (o.paidAt < mulai || o.paidAt >= selesai)).map((o) => o.id);
   const pengecualian = idLunasLain.length
-    ? await db.orderPaidAtPengecualian.findMany({ where: { orderId: { in: idLunasLain }, dicabutAt: null }, select: { orderId: true, paidAtDikunci: true, alasan: true } })
+    ? await db.orderPaidAtPengecualian.findMany({ where: { orderId: { in: idLunasLain } }, select: { orderId: true, paidAtDikunci: true, alasan: true, dicabutAt: true, alasanDicabut: true }, orderBy: { createdAt: "asc" } })
     : [];
-  const pengecualianPerOrder = new Map(pengecualian.map((x) => [x.orderId, x]));
+  const pengecualianPerOrder = new Map(pengecualian.filter((x) => !x.dicabutAt).map((x) => [x.orderId, x]));
+  const pengecualianDicabut = new Map(pengecualian.filter((x) => x.dicabutAt).map((x) => [x.orderId, x])); // dicabut: tanggal lunas TIDAK otomatis pindah ke tanggal bayar — wajib terlihat
 
   // Order bukan-L yang menerima uang periode
   for (const o of ordersLain) {
@@ -247,7 +248,9 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
       const kunci = pengecualianPerOrder.get(o.id);
       tambah(KUNCI.LUNAS_PERIODE_LAIN, info, m.jumlah, {
         pembayaran: m.pay, paidAt: o.paidAt,
-        alasan: kunci ? `Tanggal lunas DIKUNCI ke ${tglWib(kunci.paidAtDikunci)} (pengecualian lunas): ${kunci.alasan}` : `Order dihitung lunas pada ${tglWib(o.paidAt)} (di luar periode ini)`,
+        alasan: kunci ? `Tanggal lunas DIKUNCI ke ${tglWib(kunci.paidAtDikunci)} (pengecualian lunas): ${kunci.alasan}`
+          : pengecualianDicabut.has(o.id) ? `Pengecualian lunas sudah DICABUT ${tglWib(pengecualianDicabut.get(o.id).dicabutAt)} ("${pengecualianDicabut.get(o.id).alasanDicabut ?? "-"}"), tetapi tanggal lunas tetap ${tglWib(o.paidAt)} — pencabutan tidak memindahkannya ke tanggal pembayaran; perlu keputusan Owner`
+          : `Order dihitung lunas pada ${tglWib(o.paidAt)} (di luar periode ini)`,
       });
     } else {
       // DP / parsial: order belum lunas (atau lunas di periode berikutnya). Sertakan pembayaran sebelumnya agar terlihat total DP order ini.

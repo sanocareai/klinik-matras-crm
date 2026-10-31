@@ -428,6 +428,10 @@ test("AUDIT SELISIH OKT 2026: dokumen Payment (ID, rekening, nomor jurnal) di je
   // (2) lunas di periode LAIN tanpa pengecualian (Oktober)
   const oLain = await order(c, { nilai: 900_000, dibuat: "2026-09-02T03:00:00Z", paidAt: new Date("2026-10-05T05:00:00Z") });
   await bayar(oLain, 400_000, "2026-09-14T05:00:00Z", w.kw);
+  // (2b) pengecualian yang sudah DICABUT: tanggal lunas tidak pindah sendiri
+  const oCabut = await order(c, { nilai: 600_000, dibuat: "2026-08-25T03:00:00Z", paidAt: new Date("2026-08-31T16:00:00Z") });
+  await testPrisma.orderPaidAtPengecualian.create({ data: { orderId: oCabut.id, paidAtDikunci: new Date("2026-08-31T16:00:00Z"), alasan: "keringanan", createdById: w.admin.user.id, dicabutAt: new Date("2026-09-20T05:00:00Z"), alasanDicabut: "sudah di tf" } });
+  await bayar(oCabut, 600_000, "2026-09-13T05:00:00Z", w.kw);
   // (3) order Penjualan Karyawan (PKR) bernilai >0 dengan tanggal lunas di periode: BUKAN omzet Sales (trigger DB melarang Payment pada order PKR, jadi tanpa uang masuk)
   const pkr = await testPrisma.finPenjualanKaryawan.create({ data: { nomor: `PKR-UJI-${seq}`, date: new Date("2026-09-15T00:00:00Z"), sellerId: w.kiki.user.id, buyerName: "Kerabat Uji", total: 0 } });
   const oPkr = await order(c, { nilai: 250_000, dibuat: "2026-09-15T03:00:00Z", paidAt: new Date("2026-09-16T05:00:00Z"), pkr: pkr.id });
@@ -443,10 +447,11 @@ test("AUDIT SELISIH OKT 2026: dokumen Payment (ID, rekening, nomor jurnal) di je
   assert.equal(r.residual, 0); assert.equal(r.tahap1.residual, 0); assert.equal(r.tahap2.residual, 0); assert.equal(r.kohort.residual, 0);
 
   const lain = r.detail.LUNAS_PERIODE_LAIN;
-  assert.deepEqual(lain.map((x) => x.nomor).sort(), [oKunci.orderNumber, oLain.orderNumber].sort());
+  assert.deepEqual(lain.map((x) => x.nomor).sort(), [oKunci.orderNumber, oLain.orderNumber, oCabut.orderNumber].sort());
+  assert.match(lain.find((x) => x.nomor === oCabut.orderNumber).alasan, /DICABUT 2026-09-20.*sudah di tf.*tidak memindahkannya.*keputusan Owner/);
   assert.match(lain.find((x) => x.nomor === oKunci.orderNumber).alasan, /DIKUNCI ke 2026-08-31.*keringanan target Agustus/);
   assert.match(lain.find((x) => x.nomor === oLain.orderNumber).alasan, /dihitung lunas pada 2026-10-05/);
-  assert.equal(garis(r, "LUNAS_PERIODE_LAIN").jumlah, 750_000 + 400_000);
+  assert.equal(garis(r, "LUNAS_PERIODE_LAIN").jumlah, 750_000 + 400_000 + 600_000);
 
   // PKR: tidak masuk himpunan lunas-periode (kartu Sales/komisi juga mengecualikannya) — tidak mengembang Total Perusahaan maupun Tanpa Atribusi
   assert.equal(garis(r, "TOTAL_PERUSAHAAN").jumlah, 1_000_000, "hanya oNormal yang lunas di periode (PKR dikecualikan, Rp0)");
