@@ -45,7 +45,7 @@ const Tile = ({ className = "", children }) => (
   <div className={`rounded-card bg-surface p-5 shadow-card ${className}`}>{children}</div>
 );
 
-function Avatar({ name, url }) {
+export function Avatar({ name, url }) {
   const inisial = (name || "?").split(/\s+/).map((s) => s[0]).join("").slice(0, 2).toUpperCase();
   return url
     ? <img src={url} alt="" className="crm-ss-avatar object-cover" />

@@ -1,9 +1,9 @@
 import React from "react";
-import { ChevronRight, Timer, ArrowRightLeft } from "lucide-react";
-import { formatRupiah, STAGE_LABELS, stageClass } from "@/utils/format.js";
+import { Timer, ArrowRightLeft } from "lucide-react";
+import { formatRupiah, formatRupiahShort, STAGE_LABELS, stageDotVar } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+import { Card } from "@/components/ui/card.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
-import ChartCard from "./ChartCard.jsx";
 import { STAGE_INFO } from "../utils/stageInfo.js";
 import Sparkline from "./Sparkline.jsx";
 
@@ -18,7 +18,13 @@ import Sparkline from "./Sparkline.jsx";
 // QUALIFIED/QUOTED/BOOKED/SCHEDULED digabung PROSPECT, COMPLETED/REVIEWED
 // digabung TRANSACTION. SPAM abu-abu netral — bukan "berhasil", bukan
 // "sedang berjalan", jadi dapat treatment visual sendiri.
-// Warna tahap (bidang, bar, titik): SATU sumber — palet tahap bersama (styles/stage-palette.css) lewat stageClass() di utils/format.js.
+// Warna tahap (titik, bar): SATU sumber — palet tahap bersama (styles/stage-palette.css) lewat stageDotVar() di utils/format.js.
+//
+// REDESAIN Sales CRM (1 Nov 2026) — penyajian saja; populasi, periode, nilai, rumus konversi/persentase, definisi tidak berubah:
+//  • "Sales Pipeline Funnel" = POSISI SAAT INI (foto kondisi sekarang): kotak funnel + tabel "Detail per Stage" lama dipadatkan jadi SATU tabel
+//    (stage, jumlah, porsi, nilai, rasio vs stage sebelumnya) — semua angka & tooltip yang sama, tanpa pengulangan.
+//  • "Kecepatan Pipeline" dan "Pergerakan Pipeline" = KEJADIAN perpindahan stage (riwayat pipeline_transitions) — dipisah dan diberi penanda
+//    "Selama periode", supaya tidak tertukar dengan posisi saat ini.
 
 // "3.4" → "3,4 hari" · "0.5" → "12 jam" (di bawah 1 hari lebih enak dibaca
 // dalam jam). null → em-dash, JANGAN "0 hari" (0 berarti "instan", null
@@ -48,9 +54,8 @@ function cariBottleneck(avgDaysInStage) {
 // Penjelasan sederhana tiap bagian (permintaan owner 30 Sep 2026). Definisi
 // stage ada di ../utils/stageInfo.js (dipakai juga kartu Sales per Stage).
 const INFO = {
-  funnel: "Gambaran perjalanan pelanggan dari lead baru sampai transaksi. Tiap kotak = satu stage: angka besar adalah jumlah pelanggan yang SEKARANG ada di stage itu, Rp di bawahnya adalah nilai order pasti mereka (order Menunggu dan Dibatalkan tidak dihitung). Yang dihitung hanya pelanggan yang pertama kali masuk di periode terpilih.",
-  konversi: "Persentase di antara dua kotak = jumlah pelanggan di kotak kanan dibagi jumlah di kotak kiri. Contoh: 2 di Prospek dan 1 di Transaksi berarti 50%. Ini foto kondisi sekarang, bukan hitungan pelanggan yang benar-benar berpindah, jadi hanya patokan kasar. Tanda 0% muncul kalau stage sebelumnya kosong atau stage ini belum ada isinya.",
-  detail: "Rincian angka funnel dalam bentuk tabel, supaya lebih mudah dibandingkan antar stage.",
+  funnel: "Gambaran perjalanan pelanggan dari lead baru sampai transaksi. Tiap baris = satu stage: angka besar adalah jumlah pelanggan yang SEKARANG ada di stage itu, Rp di sebelahnya adalah nilai order pasti mereka (order Menunggu dan Dibatalkan tidak dihitung). Yang dihitung hanya pelanggan yang pertama kali masuk di periode terpilih.",
+  konversi: "Persentase = jumlah pelanggan di stage ini dibagi jumlah di stage sebelumnya (baris di atasnya). Contoh: 2 di Prospek dan 1 di Transaksi berarti 50%. Ini foto kondisi sekarang, bukan hitungan pelanggan yang benar-benar berpindah, jadi hanya patokan kasar. Tanda 0% muncul kalau stage sebelumnya kosong atau stage ini belum ada isinya.",
   jumlah: "Jumlah pelanggan yang sekarang berada di stage itu.",
   nilai: "Total nilai order pasti milik pelanggan di stage itu. Order Menunggu (belum pasti) dan Dibatalkan tidak dihitung.",
   persen: "Porsi stage ini dari SELURUH pelanggan di periode terpilih (termasuk Spam). Rumus: jumlah di stage ini dibagi total semua stage. Semua baris kalau dijumlah = 100%.",
@@ -58,6 +63,8 @@ const INFO = {
   sample: "n = jumlah perpindahan yang dipakai untuk menghitung rata-rata itu. Kalau angkanya kecil (mis. n=2), rata-ratanya belum bisa dipercaya.",
   pergerakan: "Berapa pelanggan MASUK ke tiap stage selama periode terpilih. Beda dengan funnel di atas yang menunjukkan posisi pelanggan saat ini: di sini yang dihitung adalah kejadian perpindahannya.",
 };
+
+const Titik = ({ s }) => <i className="crm-ss-titik" style={{ background: stageDotVar(s) }} aria-hidden="true" />;
 
 export default function PipelineTab({ funnel, velocity }) {
   const total = funnel.reduce((s, f) => s + f.count, 0);
@@ -74,10 +81,10 @@ export default function PipelineTab({ funnel, velocity }) {
   // dan tidak bisa di-backfill, jadi tanpa penjelasan ini widget terlihat
   // seperti fitur rusak padahal sedang menunggu data.
   const pesanKosong = (
-    <div className="flex flex-col items-center gap-1.5 px-6 text-center">
+    <div className="crm-pl-kosong" data-testid="pipeline-data-belum">
       <Timer className="text-ink3" size={26} />
-      <p className="text-sm font-semibold text-ink2">Data belum terkumpul</p>
-      <p className="max-w-md text-xs leading-relaxed text-ink3">
+      <p className="crm-pl-kosong-judul">Data belum terkumpul</p>
+      <p className="crm-pl-kosong-teks">
         Kecepatan pipeline dihitung dari <strong>riwayat perpindahan stage</strong>, yang
         baru mulai dicatat sistem. Perpindahan sebelum fitur ini aktif tidak bisa
         dihitung ulang. Grafik akan terisi sendiri setelah tim memindahkan stage
@@ -87,184 +94,123 @@ export default function PipelineTab({ funnel, velocity }) {
   );
 
   return (
-    <div className="flex flex-col gap-5">
-      <ChartCard
-        title={<span className="inline-flex items-center gap-1.5">Sales Pipeline Funnel <InfoTooltip text={INFO.funnel} /></span>}
-        description="Jumlah pelanggan & konversi antar stage"
-        empty={funnel.length === 0 ? "Belum ada data pipeline." : null}
-      >
-        <div className="flex flex-col gap-0 sm:flex-row sm:items-stretch sm:gap-0">
-          {funnel.map((item, i) => {
-            const prev = funnel[i - 1];
-            const conversion = prev && prev.count > 0 ? Math.round((item.count / prev.count) * 100) : null;
-            return (
-              <React.Fragment key={item.stage}>
-                {i > 0 && (
-                  <div className="flex flex-col items-center justify-center px-1 py-2 sm:py-0">
-                    <ChevronRight className="text-ink3" size={18} />
-                    {conversion != null && (
-                      <span className="flex items-center gap-0.5 text-[11px] font-bold text-ink3">{conversion}% <InfoTooltip text={INFO.konversi} /></span>
-                    )}
-                  </div>
-                )}
-                <div
-                  className={`animate-fade-rise flex-1 rounded-2xl p-4 sm:min-w-0 ${stageClass(item.stage)} stage-field`}
-                  style={{ animationDelay: `${i * 80}ms` }}
-                >
-                  {/* Teks putih dihapus — kartu funnel sekarang permukaan
-                      terang, jadi warna teks ikut tangga tipe normal. */}
-                  <p className="t-metric text-[26px]">{item.count}</p>
-                  <p className="t-body mt-1.5 flex items-center gap-1 font-medium">{item.label} <InfoTooltip text={STAGE_INFO[item.stage]} /></p>
-                  <p className="t-secondary mt-0.5">{formatRupiah(item.value)}</p>
-                </div>
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </ChartCard>
-
-      <ChartCard title={<span className="inline-flex items-center gap-1.5">Detail per Stage <InfoTooltip text={INFO.detail} /></span>}>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr>
-                {[["Stage", null], ["Jumlah", INFO.jumlah], ["Total Nilai", INFO.nilai], ["Persentase", INFO.persen]].map(([h, tip]) => (
-                  <th key={h} className="border-b border-line px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">
-                    <span className="inline-flex items-center gap-1">{h}{tip && <InfoTooltip text={tip} />}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {funnel.map((item) => {
+    <div className="crm-lap-tab" data-testid="tab-pipeline">
+      <div className="crm-lap-baris crm-lap-baris--tren">
+        {/* ── POSISI SAAT INI: funnel + detail per stage dalam satu tabel ───────────────────────────────────── */}
+        <Card className="crm-ss-sebaran crm-pl-posisi" data-testid="pipeline-posisi">
+          <div className="crm-pl-kepala">
+            <h3 className="t-card-title">Sales Pipeline Funnel</h3>
+            <InfoTooltip text={INFO.funnel} />
+            <span className="crm-pl-pil" data-jenis="posisi">Posisi saat ini</span>
+            <p className="crm-mk-deskripsi">Jumlah pelanggan &amp; konversi antar stage</p>
+          </div>
+          {funnel.length === 0 ? (
+            <p className="crm-mk-kosong">Belum ada data pipeline.</p>
+          ) : (
+            <div role="table" aria-label="Posisi pelanggan per stage saat ini" className="crm-ss-tabel">
+              <div role="row" className="crm-ss-baris crm-ss-baris--kepala">
+                <span role="columnheader">Stage</span>
+                <span role="columnheader" className="crm-ss-kanan">Jumlah <InfoTooltip text={INFO.jumlah} /></span>
+                <span role="columnheader" className="crm-ss-kol-bar">Persentase <InfoTooltip text={INFO.persen} /></span>
+                <span role="columnheader" className="crm-ss-kanan">Total Nilai <InfoTooltip text={INFO.nilai} /></span>
+                <span role="columnheader" className="crm-ss-kanan">vs sebelumnya <InfoTooltip text={INFO.konversi} /></span>
+              </div>
+              {funnel.map((item, i) => {
+                const prev = funnel[i - 1];
+                const conversion = prev && prev.count > 0 ? Math.round((item.count / prev.count) * 100) : null;
                 const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : "0";
                 return (
-                  <tr key={item.stage} className="border-b border-line last:border-0">
-                    <td className="px-3 py-3">
-                      <span className="flex items-center gap-2 font-semibold text-ink">
-                        <span className={`h-2.5 w-2.5 rounded-full ${stageClass(item.stage)} stage-dot`} />
-                        {item.label}
-                        <InfoTooltip text={STAGE_INFO[item.stage]} />
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-lg font-bold text-ink">{item.count}</td>
-                    <td className="px-3 py-3 text-ink2">{formatRupiah(item.value)}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-inset">
-                          <div
-                            className={`h-full rounded-full transition-[width] duration-700 ${stageClass(item.stage)} stage-dot`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-bold text-ink2">{pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
+                  <div role="row" className="crm-ss-baris" key={item.stage} data-stage={item.stage}>
+                    <span role="cell" className="crm-ss-tahap"><Titik s={item.stage} /><span className="crm-ss-nama">{item.label}</span><InfoTooltip text={STAGE_INFO[item.stage]} /></span>
+                    <span role="cell" className="crm-ss-lead crm-ss-kanan">{item.count.toLocaleString("id-ID")}</span>
+                    <span role="cell" className="crm-pl-porsi">
+                      <span className="crm-ss-bar"><span style={{ width: `${pct}%`, background: stageDotVar(item.stage) }} /></span>
+                      <b>{pct}%</b>
+                    </span>
+                    <span role="cell" className="crm-ss-nilai crm-ss-kanan" data-label="Nilai" title={formatRupiah(item.value)}>{formatRupiahShort(item.value)}</span>
+                    <span role="cell" className="crm-ss-mandek crm-ss-kanan" data-label="vs sebelumnya">{conversion != null ? `${conversion}%` : "—"}</span>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </ChartCard>
+            </div>
+          )}
+        </Card>
 
-      {/* ── KECEPATAN PIPELINE (dari tabel pipeline_transitions) ───────────── */}
-      <ChartCard
-        index={2}
-        title={<span className="inline-flex items-center gap-1.5">Kecepatan Pipeline <InfoTooltip text={INFO.kecepatan} /></span>}
-        description="Rata-rata lama pelanggan tertahan di tiap stage — makin pendek makin cepat closing"
-        empty={adaData ? null : pesanKosong}
-      >
-        {bottleneck && (
-          <div className="mb-4 flex items-start gap-2.5 rounded-xl bg-orangebg px-3.5 py-3">
-            <Timer className="mt-0.5 shrink-0 text-orange" size={16} />
-            <p className="text-xs leading-relaxed text-ink">
-              Paling lama tertahan di{" "}
-              <strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong> —
-              rata-rata <strong>{formatDurasiHari(bottleneck.avgDays)}</strong>. Ini
-              kandidat bottleneck yang paling layak dibenahi lebih dulu.
-            </p>
+        {/* ── KECEPATAN (kejadian perpindahan stage, dari pipeline_transitions) ──────────────────────────── */}
+        <Card className="crm-pl-kec" data-testid="pipeline-kecepatan">
+          <div className="crm-pl-kepala">
+            <h3 className="t-card-title">Kecepatan Pipeline</h3>
+            <InfoTooltip text={INFO.kecepatan} />
+            <span className="crm-pl-pil" data-jenis="periode">Selama periode</span>
+            <p className="crm-mk-deskripsi">Rata-rata lama pelanggan tertahan di tiap stage — makin pendek makin cepat closing</p>
+          </div>
+          {!adaData ? pesanKosong : (
+            <>
+              {bottleneck && (
+                <div className="crm-pl-bottleneck" data-testid="pipeline-bottleneck">
+                  <Timer className="shrink-0" size={16} aria-hidden="true" />
+                  <p>
+                    Paling lama tertahan di{" "}
+                    <strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong> —
+                    rata-rata <strong>{formatDurasiHari(bottleneck.avgDays)}</strong>. Ini
+                    kandidat bottleneck yang paling layak dibenahi lebih dulu.
+                  </p>
+                </div>
+              )}
+              <ul className="crm-pl-kec-daftar">
+                {avgDays.map((row) => (
+                  <li key={row.stage} className="crm-pl-kec-baris">
+                    <span className="crm-pl-kec-nama"><Titik s={row.stage} /><span>{STAGE_LABELS[row.stage] || row.stage}</span><InfoTooltip text={STAGE_INFO[row.stage]} /></span>
+                    <b className="crm-pl-kec-nilai">{formatDurasiHari(row.avgDays)}</b>
+                    {/* sample = jumlah perpindahan yang jadi dasar rata-rata. Angka kecil = rata-rata belum bisa dipercaya, jadi ditampilkan terbuka. */}
+                    <span className="crm-pl-kec-n" title="Jumlah perpindahan yang jadi dasar perhitungan">
+                      {row.sample > 0 ? <>n={row.sample} <InfoTooltip text={INFO.sample} /></> : "—"}
+                    </span>
+                    <span className="crm-ss-bar crm-pl-kec-bar"><span style={{ width: `${row.avgDays != null ? Math.max((row.avgDays / maxHari) * 100, 2) : 0}%`, background: stageDotVar(row.stage) }} /></span>
+                  </li>
+                ))}
+              </ul>
+              {velocity?.dataStartedAt && (
+                <p className="crm-pl-catatan">
+                  Berdasarkan {totalTrans} perpindahan stage yang tercatat sejak{" "}
+                  {formatTanggal(velocity.dataStartedAt)}.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+      </div>
+
+      {/* ── PERGERAKAN: berapa pelanggan MASUK ke tiap stage selama periode (kejadian, bukan posisi) ────────────── */}
+      <Card className="crm-pl-gerak" data-testid="pipeline-pergerakan">
+        <div className="crm-pl-kepala">
+          <h3 className="t-card-title">Pergerakan Pipeline</h3>
+          <InfoTooltip text={INFO.pergerakan} />
+          <span className="crm-pl-pil" data-jenis="periode">Selama periode</span>
+          <p className="crm-mk-deskripsi">Berapa pelanggan MASUK ke tiap stage pada periode ini (beda dari tabel posisi di atas yang menghitung posisi saat ini)</p>
+        </div>
+        {!adaData ? <p className="crm-mk-kosong" data-testid="pergerakan-belum">Data belum terkumpul — riwayat perpindahan stage baru mulai dicatat (penjelasan di Kecepatan Pipeline).</p> : (
+          <div className="crm-pl-gerak-isi">
+            <div className="crm-pl-gerak-kiri">
+              <ul className="crm-pl-gerak-daftar">
+                {movedTo.map((row) => (
+                  <li key={row.stage} className="crm-pl-gerak-sel">
+                    <span className="crm-pl-gerak-nama"><ArrowRightLeft size={11} className="shrink-0" aria-hidden="true" /><Titik s={row.stage} /><span>{STAGE_LABELS[row.stage] || row.stage}</span><InfoTooltip text={STAGE_INFO[row.stage]} /></span>
+                    <b className="crm-pl-gerak-angka">{row.count.toLocaleString("id-ID")}</b>
+                  </li>
+                ))}
+              </ul>
+              <p className="crm-pl-catatan">Total {totalPindah} perpindahan pada periode terpilih.</p>
+            </div>
+            {velocity?.monthlyWon?.length >= 2 && (
+              <div className="crm-pl-gerak-tren">
+                <p className="crm-pl-gerak-tren-judul">Tren bulanan masuk “Berhasil”</p>
+                <Sparkline data={velocity.monthlyWon} color="#1F9D55" />
+              </div>
+            )}
           </div>
         )}
-
-        {/* BUG YANG DIPERBAIKI (26 Agustus 2026) — pola SAMA dengan BarRow.jsx:
-            3 kolom lebar tetap (w-32 + w-20 + w-14 = 264px) + gap sudah
-            melebihi lebar layar HP SEBELUM bar-nya sendiri dapat ruang, jadi
-            flex-1 bar terjepit sampai nyaris tidak terlihat. Default (mobile)
-            tumpuk 2 baris (label+nilai+sample dulu, bar selebar penuh di
-            bawahnya); sm: ke atas kembali satu baris seperti semula lewat
-            `sm:contents` + `sm:order-*` (lihat catatan panjang di BarRow.jsx). */}
-        <div className="flex flex-col gap-2.5">
-          {avgDays.map((row) => (
-            <div key={row.stage} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-              <div className="flex items-center gap-2 sm:contents">
-                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold text-ink2 sm:w-32 sm:flex-none">
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${stageClass(row.stage)} stage-dot`} />
-                  <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
-                  <InfoTooltip text={STAGE_INFO[row.stage]} />
-                </span>
-                <span className="shrink-0 text-right text-xs font-bold tabular-nums text-ink sm:order-3 sm:w-20">
-                  {formatDurasiHari(row.avgDays)}
-                </span>
-                {/* sample = jumlah perpindahan yang jadi dasar rata-rata. Angka
-                    kecil = rata-rata belum bisa dipercaya, jadi ditampilkan
-                    terbuka daripada menyembunyikan ketidakpastiannya. */}
-                <span className="shrink-0 text-right text-[11px] text-ink3 sm:order-4 sm:w-14" title="Jumlah perpindahan yang jadi dasar perhitungan">
-                  {row.sample > 0 ? <span className="inline-flex items-center gap-0.5">n={row.sample} <InfoTooltip text={INFO.sample} /></span> : "—"}
-                </span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-inset sm:order-2 sm:w-auto sm:flex-1">
-                <div
-                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${stageClass(row.stage)} stage-dot`}
-                  style={{ width: `${row.avgDays != null ? Math.max((row.avgDays / maxHari) * 100, 2) : 0}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {velocity?.dataStartedAt && (
-          <p className="mt-4 border-t border-line pt-3 text-[11px] text-ink3">
-            Berdasarkan {totalTrans} perpindahan stage yang tercatat sejak{" "}
-            {formatTanggal(velocity.dataStartedAt)}.
-          </p>
-        )}
-      </ChartCard>
-
-      <ChartCard
-        index={3}
-        title={<span className="inline-flex items-center gap-1.5">Pergerakan Pipeline <InfoTooltip text={INFO.pergerakan} /></span>}
-        description="Berapa pelanggan MASUK ke tiap stage pada periode ini (beda dari tabel di atas yang menghitung posisi saat ini)"
-        empty={adaData ? null : pesanKosong}
-      >
-        {/* Restrukturisasi 24 Agustus 2026: 8 stage → 4, grid disederhanakan
-            (2x2 di mobile, 1 baris penuh 4 kolom mulai sm — tidak perlu lagi
-            breakpoint xl:grid-cols-8 yang dulu dipakai untuk 8 item). */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {movedTo.map((row) => (
-            <div key={row.stage} className="rounded-xl bg-inset/60 p-3">
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ink2">
-                <ArrowRightLeft size={11} className="shrink-0 text-ink3" />
-                <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
-                <InfoTooltip text={STAGE_INFO[row.stage]} />
-              </p>
-              <p className="mt-1.5 text-xl font-extrabold tabular-nums text-ink">{row.count}</p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-[11px] text-ink3">
-          Total {totalPindah} perpindahan pada periode terpilih.
-        </p>
-
-        {velocity?.monthlyWon?.length >= 2 && (
-          <div className="mt-4 border-t border-line pt-3">
-            <p className="mb-1 text-[11px] font-semibold text-ink2">
-              Tren bulanan masuk “Berhasil”
-            </p>
-            <Sparkline data={velocity.monthlyWon} color="var(--green)" />
-          </div>
-        )}
-      </ChartCard>
+      </Card>
     </div>
   );
 }

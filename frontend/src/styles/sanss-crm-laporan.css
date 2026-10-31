@@ -356,3 +356,86 @@
   .crm-lap .crm-mk-sumber-teks { flex-basis: 80px; }
   .crm-lap .crm-mk-sumber-aksi { width: 100%; }
 }
+
+/* ── 16. PERFORMA TIM & PIPELINE (1 Nov 2026) ─────────────────────────────────────────────────────────────────── */
+/* Warna waktu respons (garis grafik, legenda): tosca — BERBEDA dari biru penjualan dan merah SLA, supaya tiga ukuran tidak tertukar. */
+.crm-lap { --crm-resp: #0B8F7E; }
+:root[data-theme="dark"] .crm-lap { --crm-resp: #4FD6C3; }
+
+.crm-lap .crm-pl-kepala { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 14px; }
+.crm-lap .crm-pl-kepala .crm-mk-deskripsi { flex-basis: 100%; }
+.crm-lap .crm-pl-pil { padding: 2px 10px; border-radius: 999px; background: var(--bg-inset); font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.crm-lap .crm-pl-pil[data-jenis="posisi"] { background: #E9EBFF; color: #2F57E0; }
+:root[data-theme="dark"] .crm-lap .crm-pl-pil[data-jenis="posisi"] { background: rgba(110, 142, 255, 0.18); color: #B8C6FF; }
+.crm-lap .crm-pl-pil[data-jenis="periode"] { background: #E3F6F1; color: #0A6B5E; }
+:root[data-theme="dark"] .crm-lap .crm-pl-pil[data-jenis="periode"] { background: rgba(79, 214, 195, 0.16); color: #7FE3D4; }
+
+/* Pipeline: baris posisi memakai grid Sebaran Tahap (.crm-ss-baris); kolom 3 = bar + persen */
+.crm-lap .crm-pl-porsi { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.crm-lap .crm-pl-porsi .crm-ss-bar { flex: 1; min-width: 40px; }
+.crm-lap .crm-pl-porsi b { min-width: 46px; text-align: right; font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+@container ss (max-width: 560px) { .crm-lap .crm-pl-porsi { grid-area: bar; } }
+
+.crm-lap .crm-pl-kec { display: flex; flex-direction: column; }
+.crm-lap .crm-pl-kec-daftar { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.crm-lap .crm-pl-kec-baris { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 12px; }
+.crm-lap .crm-pl-kec-nama { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-pl-kec-nilai { font-size: 14px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.crm-lap .crm-pl-kec-n { display: inline-flex; align-items: center; gap: 2px; min-width: 52px; justify-content: flex-end; font-size: 12.5px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.crm-lap .crm-pl-kec-bar { grid-column: 1 / -1; height: 8px; }
+.crm-lap .crm-pl-bottleneck { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 16px; padding: 10px 12px; border-radius: 14px; background: #FFF4E5; color: #5A3B0E; }
+.crm-lap .crm-pl-bottleneck svg { margin-top: 2px; color: #C25E00; }
+.crm-lap .crm-pl-bottleneck p { margin: 0; font-size: 13px; line-height: 1.5; }
+.crm-lap .crm-pl-bottleneck strong { color: #1B1B39; }
+:root[data-theme="dark"] .crm-lap .crm-pl-bottleneck { background: #33250F; color: #EBD3A9; }
+:root[data-theme="dark"] .crm-lap .crm-pl-bottleneck strong { color: #F5F6FF; }
+:root[data-theme="dark"] .crm-lap .crm-pl-bottleneck svg { color: #FFC38A; }
+.crm-lap .crm-pl-catatan { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--hairline); font-size: 12.5px; color: var(--text-tertiary); }
+.crm-lap .crm-pl-kosong { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 8px 4px; text-align: center; }
+.crm-lap .crm-pl-kosong-judul { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-secondary); }
+.crm-lap .crm-pl-kosong-teks { margin: 0; max-width: 420px; font-size: 12.5px; line-height: 1.5; color: var(--text-tertiary); }
+
+.crm-lap .crm-pl-gerak-isi { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 32px; }
+.crm-lap .crm-pl-gerak-kiri { flex: 1 1 420px; min-width: 0; }
+.crm-lap .crm-pl-gerak-daftar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.crm-lap .crm-pl-gerak-sel { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 14px; background: var(--bg-inset); }
+.crm-lap .crm-pl-gerak-nama { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-pl-gerak-nama svg { color: var(--text-tertiary); }
+.crm-lap .crm-pl-gerak-angka { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.crm-lap .crm-pl-gerak-kiri .crm-pl-catatan { border-top: 0; padding-top: 0; }
+.crm-lap .crm-pl-gerak-tren { flex: 0 1 280px; min-width: 200px; }
+.crm-lap .crm-pl-gerak-tren-judul { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+
+/* Performa Tim: legenda grafik, tabel rincian */
+.crm-lap .crm-pt-legenda { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 8px; padding: 0; list-style: none; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-pt-legenda li { display: inline-flex; align-items: center; gap: 7px; }
+.crm-lap .crm-pt-legenda li span { font-weight: 400; color: var(--text-tertiary); }
+.crm-lap .crm-pt-legenda i { display: inline-block; flex: 0 0 auto; }
+.crm-lap .crm-pt-legenda i[data-bentuk="batang"] { width: 12px; height: 12px; border-radius: 3px; }
+.crm-lap .crm-pt-legenda i[data-bentuk="garis"] { width: 18px; height: 4px; border-radius: 3px; }
+.crm-lap .crm-pt-grafik { align-self: stretch; }
+.crm-lap .crm-pt-tabel { min-width: 640px; }
+.crm-lap .crm-pt-tabel tfoot th, .crm-lap .crm-pt-tabel tfoot td { border-top: 2px solid var(--hairline); font-weight: 700; color: var(--text-primary); background: var(--bg-surface); }
+.crm-lap .crm-pt-tabel tfoot .crm-ss-kiri { z-index: 1; }
+.crm-lap .crm-pt-tabel tbody tr[data-tl="1"] > * { background: var(--bg-inset); }
+.crm-lap .crm-pt-tabel tbody tr[data-tl="1"] .crm-ss-kiri { background: var(--bg-inset); }
+.crm-lap .crm-pt-mahkota { flex: 0 0 auto; color: var(--crm-primary-ink, #2F57E0); }
+.crm-lap .crm-pt-redup { color: var(--text-tertiary); }
+.crm-lap .crm-pt-tabel tbody td.crm-pt-redup, .crm-lap .crm-pt-tabel tfoot td.crm-pt-redup { color: var(--text-tertiary); font-weight: 500; }
+.crm-lap .crm-pt-respons[data-tone="baik"] { color: #146C2E; }
+.crm-lap .crm-pt-respons[data-tone="lambat"] { color: #B3261E; }
+.crm-lap .crm-pt-respons[data-tone="kosong"] { color: var(--text-tertiary); }
+:root[data-theme="dark"] .crm-lap .crm-pt-respons[data-tone="baik"] { color: #6EE7A0; }
+:root[data-theme="dark"] .crm-lap .crm-pt-respons[data-tone="lambat"] { color: #FFB4AB; }
+.crm-lap .crm-ss-chip[data-merah="1"] { background: #FFE4E1; color: #A3170E; }
+:root[data-theme="dark"] .crm-lap .crm-ss-chip[data-merah="1"] { background: rgba(255, 120, 110, 0.16); color: #FFB4AB; }
+.crm-lap .crm-pt-tabel-panel .crm-pl-kepala { margin-bottom: 12px; }
+@media (max-width: 639px) {
+  .crm-lap .crm-pl-gerak-tren { flex-basis: 100%; }
+  .crm-lap .crm-pl-kec-baris { gap: 6px 10px; }
+}
+
+/* Pipeline: kolom grid posisi lebih lebar untuk header "vs sebelumnya"; angka Performa Tim sejajar dengan teks header (ikon tooltip ± 18px) */
+.crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(190px, 1.5fr) 72px minmax(140px, 2fr) 100px 124px; }
+@container ss (max-width: 560px) { .crm-lap .crm-pl-posisi .crm-ss-baris { grid-template-columns: minmax(0, 1fr) auto; } }
+.crm-lap .crm-pt-tabel tbody td, .crm-lap .crm-pt-tabel tfoot td { padding-right: 30px; }
