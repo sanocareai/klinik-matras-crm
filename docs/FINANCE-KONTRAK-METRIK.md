@@ -11,6 +11,7 @@ Zona waktu semua tanggal: WIB (UTC+7); database & API UTC.
 | TGL_PEMBAYARAN | Tanggal pembayaran diterima | Payment.createdAt (WIB) |
 | TGL_BUKU | Tanggal buku (jurnal) | FinJournalEntry.date |
 | TGL_LUNAS | Tanggal order menjadi Lunas | Order.paidAt (WIB) |
+| TGL_DIBUAT | Tanggal order dibuat | Order.createdAt (WIB) |
 | TGL_DOKUMEN | Tanggal dokumen | tanggal pada dokumen sumber |
 | POSISI | Posisi per tanggal | saldo kumulatif sampai tanggal itu |
 
@@ -60,8 +61,8 @@ Uang pelanggan yang SUDAH diverifikasi Finance, dihitung per tanggal pembayaran 
 | Status dihitung | terverifikasi |
 | Basis tanggal | Tanggal pembayaran diterima |
 | Termasuk | DP, cicilan, dan pelunasan; Ongkir yang ikut dibayar; Pembayaran sebelum tanggal saldo awal (tidak menambah kas) |
-| Tidak termasuk | Pembayaran menunggu/ditolak/dibatalkan; Klaim Lunas yang belum diverifikasi |
-| Pasangan rekonsiliasi | Kas Masuk dari Pelanggan (Menurut Buku); Nilai Order yang Menjadi Lunas — Total Perusahaan; Payment Tercatat |
+| Tidak termasuk | Pembayaran menunggu/ditolak/dibatalkan (tetap tampil sebagai baris di layar & Excel Pemasukan dengan alasan, tetapi nilainya tidak masuk total); Klaim Lunas yang belum diverifikasi |
+| Pasangan rekonsiliasi | Kas Masuk dari Pelanggan (Menurut Buku); Nilai Order yang Menjadi Lunas — Total Perusahaan; Payment Tercatat; Sudah Lunas — Order Dibuat di Periode (Ringkasan Laporan) |
 | Tampil di | Pembayaran & Verifikasi; Pemasukan (Uang Masuk); Rekonsiliasi Sales–Finance |
 | Export | pembayaran, pemasukan, rekon-sales-finance |
 
@@ -119,15 +120,63 @@ Nilai penuh semua order yang mencapai lunas pada periode (basis tanggal lunas), 
 
 | | |
 |---|---|
-| Rumus | Σ Order.value WHERE paidAt di periode AND status bukan CANCELLED/PENDING AND pelanggan bukan SPAM |
-| Sumber | tabel Order |
+| Rumus | Σ nilai bersih order (Order.value − Nota Kredit aktif) WHERE paidAt di periode AND status bukan CANCELLED/PENDING AND pelanggan bukan SPAM AND bukan order Penjualan Karyawan |
+| Sumber | tabel Order + fin_order_credits |
 | Status dihitung | lunas |
 | Basis tanggal | Tanggal order menjadi Lunas |
-| Termasuk | Order tanpa atribusi Sales |
-| Tidak termasuk | Ongkir (bukan nilai jasa); DP order yang belum lunas; Order batal/pending/spam |
-| Pasangan rekonsiliasi | Uang Masuk Terverifikasi; Nilai Order yang Menjadi Lunas — Tim Sales |
+| Termasuk | Order tanpa atribusi Sales; Order lama (dibuat bulan lalu) yang baru lunas pada periode; Order yang tanggal lunasnya dikunci ke periode ini lewat pengecualian lunas |
+| Tidak termasuk | Ongkir (bukan nilai jasa); DP order yang belum lunas; Order batal/pending/spam; Order Penjualan Karyawan (dikelola Finance, di luar omzet Sales); Order yang tanggal lunasnya dikunci ke periode lain walau uangnya masuk sekarang |
+| Pasangan rekonsiliasi | Uang Masuk Terverifikasi; Nilai Order yang Menjadi Lunas — Tim Sales; Sudah Lunas — Order Dibuat di Periode (Ringkasan Laporan) |
 | Tampil di | Rekonsiliasi Sales–Finance |
 | Export | rekon-sales-finance |
+
+### Sudah Lunas — Order Dibuat di Periode (Ringkasan Laporan) (`nilai_order_lunas_kohort_dibuat`)
+
+Nilai order yang DIBUAT pada periode dan sekarang berstatus Lunas (kartu 'Sudah Lunas' di Laporan Ringkasan). Ini kelompok order per tanggal dibuat, BUKAN per tanggal lunas — order bulan lalu yang baru lunas bulan ini tidak ikut.
+
+| | |
+|---|---|
+| Rumus | Σ nilai bersih order WHERE createdAt di periode AND paymentStatus = LUNAS AND status bukan CANCELLED/PENDING AND pelanggan bukan SPAM AND bukan Penjualan Karyawan |
+| Sumber | tabel Order + fin_order_credits |
+| Status dihitung | lunas (saat ini) |
+| Basis tanggal | Tanggal order dibuat |
+| Termasuk | Seluruh perusahaan (termasuk order tanpa atribusi Sales); Order yang dibuat di periode dan sudah lunas, sekalipun lunasnya baru bulan berikutnya |
+| Tidak termasuk | Order lama yang baru lunas pada periode (ikut di Nilai Order yang Menjadi Lunas); Order Penjualan Karyawan; Batal/pending/spam |
+| Pasangan rekonsiliasi | Nilai Order yang Menjadi Lunas — Total Perusahaan; Nilai Order yang Menjadi Lunas — Tim Sales |
+| Tampil di | Laporan Ringkasan (Sudah Lunas); Rekonsiliasi Sales–Finance (jembatan kohort) |
+| Export | rekon-sales-finance |
+
+### Perlu Verifikasi Finance (Semua Periode) (`perlu_verifikasi_finance`)
+
+Tumpukan yang perlu dicek Finance: klaim Lunas dari Sales yang belum punya catatan uang, ditambah pembayaran tercatat yang belum diverifikasi. TIDAK ikut filter tanggal — ini sisa pekerjaan sampai hari ini, bukan arus periode.
+
+| | |
+|---|---|
+| Rumus | COUNT klaim Lunas tanpa Payment cukup + COUNT Payment aktif tanpa verifikasi (semua periode) |
+| Sumber | tabel Order + payments |
+| Status dihitung | menunggu, klaim |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Klaim Lunas lama (sebelum gerbang Klaim Lunas aktif); Pembayaran menunggu verifikasi |
+| Tidak termasuk | Pembayaran ditolak/dibatalkan; Pembayaran yang sudah terverifikasi |
+| Pasangan rekonsiliasi | Klaim Lunas Menunggu Verifikasi; Payment Tercatat |
+| Tampil di | Pemasukan (Ringkasan); Pemasukan (Perlu Verifikasi Finance) |
+| Export | — |
+
+### Pemasukan Lain (`pemasukan_lain`)
+
+Pendapatan di luar penjualan order: pemasukan lain yang dicatat Finance (mis. bunga bank) dan Penjualan Karyawan yang diinput manual. Per tanggal buku jurnal; tidak ikut Order/Laporan Sales.
+
+| | |
+|---|---|
+| Rumus | Σ kredit − debit akun pendapatan non-order pada jurnal sumber PEMASUKAN_LAIN dan PENJUALAN_KARYAWAN |
+| Sumber | jurnal akun pendapatan non-order |
+| Status dihitung | terposting |
+| Basis tanggal | Tanggal buku (jurnal) |
+| Termasuk | Bunga bank dan pemasukan lain-lain; Penjualan Karyawan (input manual Finance, di luar Order) |
+| Tidak termasuk | Pelunasan tagihan Penjualan Karyawan (pendapatan sudah diakui saat penjualan dicatat); Transfer antar-rekening; Setoran modal & pendanaan pihak ketiga |
+| Pasangan rekonsiliasi | Pendapatan Diakui; Uang Masuk Terverifikasi |
+| Tampil di | Pemasukan (Ringkasan, Pemasukan Lain) |
+| Export | pemasukan |
 
 ### Pendapatan Diakui (`pendapatan_diakui`)
 
@@ -206,8 +255,8 @@ Angka kartu di Laporan Sales (dasar komisi): Total Perusahaan dikurangi order ta
 | Status dihitung | lunas |
 | Basis tanggal | Tanggal order menjadi Lunas |
 | Termasuk | Sales aktif dan closing Team Lead |
-| Tidak termasuk | Order tanpa Sales; Closing Admin/Owner selain Team Lead |
-| Pasangan rekonsiliasi | Nilai Order yang Menjadi Lunas — Total Perusahaan; Tanpa Atribusi Sales |
+| Tidak termasuk | Order tanpa Sales; Closing Admin/Owner selain Team Lead; Order Penjualan Karyawan |
+| Pasangan rekonsiliasi | Nilai Order yang Menjadi Lunas — Total Perusahaan; Tanpa Atribusi Sales; Sudah Lunas — Order Dibuat di Periode (Ringkasan Laporan) |
 | Tampil di | Laporan Sales; Rekonsiliasi Sales–Finance |
 | Export | rekon-sales-finance |
 
@@ -601,6 +650,22 @@ Uang yang dipegang driver/PIC untuk biaya operasional dan belum dipertanggungjaw
 | Tampil di | Uang Muka Operasional |
 | Export | uang-muka |
 
+### Uang Muka Supplier Belum Diterapkan (`uang_muka_supplier_belum_diterapkan`)
+
+Uang yang sudah dibayar ke supplier untuk sebuah PO (sebelum atau tanpa faktur) dan belum dipakai mengurangi faktur mana pun. Aset — bukan stok, bukan biaya, dan bukan utang. Utang baru ada setelah faktur disetujui; menerapkan uang muka ke faktur mengurangi sisa utang, bukan kas keluar kedua.
+
+| | |
+|---|---|
+| Rumus | Σ uang muka berstatus Dibayar − penerapan aktif ke faktur − penerapan aktif ke pembelian (alur lama) |
+| Sumber | tabel fin_purchases (kategori Uang Muka Pembelian) + fin_supplier_bill_advance_applications |
+| Status dihitung | dibayar (penerapan yang dibatalkan mengembalikan saldo) |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Uang muka yang dibayar untuk PO atau supplier; Kelebihan uang muka di atas nilai PO (Kredit Supplier, tanpa refund kas otomatis) |
+| Tidak termasuk | Biaya admin bank (beban terpisah); Barang yang belum datang (tidak ada stok/GRNI dari pembayaran); Utang faktur yang belum dibayar |
+| Pasangan rekonsiliasi | Utang Supplier; Komitmen Belum Dibayar; Utang Supplier per Jatuh Tempo (Aging) |
+| Tampil di | Supplier & Utang (Uang Muka Supplier); Detail PO (Uang muka & empat status) |
+| Export | uang-muka-supplier |
+
 ### Nilai Persediaan (`persediaan_nilai`)
 
 Nilai bahan/barang di gudang menurut buku (bertambah dari penerimaan barang, berkurang dari pemakaian produksi/susut/opname). Kuantitas milik Gudang; Finance hanya menilai rupiahnya.
@@ -648,6 +713,38 @@ Beda harga faktur supplier terhadap harga PO untuk bahan yang sudah dipakai prod
 | Pasangan rekonsiliasi | Biaya Bahan Bersih per Unit |
 | Tampil di | Biaya Bahan per Unit; Detail PO (Jejak Biaya Bahan) |
 | Export | biaya-bahan |
+
+### Nilai Penjualan Karyawan (Aktif) (`pkr_nilai_penjualan`)
+
+Total nilai dokumen penjualan karyawan yang masih aktif. Dokumen yang dibatalkan tidak dijumlahkan; nilainya tetap tersimpan sebagai riwayat. Layar menampilkan sepanjang waktu, Export mengikuti periode dan filter yang dipilih.
+
+| | |
+|---|---|
+| Rumus | Σ total dokumen PKR berstatus aktif |
+| Sumber | tabel fin_penjualan_karyawan |
+| Status dihitung | aktif |
+| Basis tanggal | Tanggal dokumen |
+| Termasuk | Dokumen aktif: lunas, dibayar sebagian, belum dibayar |
+| Tidak termasuk | Dokumen dibatalkan (tetap tampil sebagai riwayat, tidak ditagih) |
+| Pasangan rekonsiliasi | Sisa Tagihan Penjualan Karyawan |
+| Tampil di | Penjualan Karyawan |
+| Export | penjualan-karyawan |
+
+### Sisa Tagihan Penjualan Karyawan (`pkr_sisa_ditagih`)
+
+Bagian nilai penjualan karyawan aktif yang belum dibayar atau dipotong dari gaji. Pembayaran yang dibatalkan tidak mengurangi sisa; dokumen yang dibatalkan tidak ditagih (sisanya Rp0).
+
+| | |
+|---|---|
+| Rumus | Σ (total − pembayaran aktif) dokumen PKR berstatus aktif |
+| Sumber | tabel fin_penjualan_karyawan + pembayarannya |
+| Status dihitung | aktif |
+| Basis tanggal | Tanggal dokumen |
+| Termasuk | Sisa dokumen aktif |
+| Tidak termasuk | Dokumen dibatalkan; Pembayaran yang dibatalkan |
+| Pasangan rekonsiliasi | Nilai Penjualan Karyawan (Aktif); Kasbon Belum Dipotong |
+| Tampil di | Penjualan Karyawan |
+| Export | penjualan-karyawan |
 
 ## Laporan keuangan
 

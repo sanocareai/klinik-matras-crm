@@ -105,3 +105,16 @@ test("Kartu 'Kenapa angka Finance dan Sales berbeda?' di Pembayaran & Verifikasi
   for (const t of ["Payment Tercatat", "Payment Terverifikasi", "Kurang / Lebih", "Tgl Bayar · Lunas", "KLAIM_TANPA_PAYMENT", "PAYMENT_MENUNGGU"]) assert.ok(rekon.includes(t), t);
   assert.doesNotMatch(rekon, /Selisih Nominal Lain/);
 });
+
+test("AUDIT SELISIH OKT 2026: jembatan kohort tampil di panel, detail kohort bernama, dokumen pembayaran (ID · rekening · jurnal) tampil, tooltip menyebut basis tanggal", () => {
+  assert.match(rekon, /data\.kohort &&/);
+  for (const k of ["KOHORT_DIBUAT_LUNAS", "KOHORT_LUNAS_DI_LUAR", "KOHORT_DIBUAT_SEBELUM", "KOHORT_BELUM_LUNAS_PAIDAT"]) assert.ok(rekon.includes(k), `${k} belum punya judul detail`);
+  assert.ok(rekon.includes("p.nomorJurnal") && rekon.includes("p.rekening") && rekon.includes("p.ref"), "dokumen pembayaran ditampilkan");
+  assert.ok(!rekon.includes("data.kohort.residual"), "frontend tidak menghitung ulang residual");
+  assert.match(tab, /BASIS: tanggal order DIBUAT/);
+  assert.match(tab, /BASIS: tanggal order MENJADI LUNAS/);
+  const pemasukan = baca("src/pages/finance/FinancePemasukan.jsx");
+  assert.match(pemasukan, /totalTidakDihitung/);
+  assert.match(pemasukan, /Tidak dihitung/);
+  assert.match(pemasukan, /metrik="pemasukan_lain"/);
+});

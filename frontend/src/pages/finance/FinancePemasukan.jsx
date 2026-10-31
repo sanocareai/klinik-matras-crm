@@ -82,7 +82,7 @@ function Daftar({ periode, kategori, opsi, onBuka, judulKosong, statusAwal = "" 
             : { key: "rek", label: "Rekening", value: rekening, onChange: setRekening, options: rekOpsi },
           { key: "st", label: "Status", value: status, onChange: setStatus, options: statusOpsi },
         ]}
-        ringkasan={data ? `${data.total} baris · total ${teksRp(data.totalNilai)}` : ""}
+        ringkasan={data ? `${data.total} baris · total dihitung ${teksRp(data.totalNilai)}${data.totalTidakDihitung?.jumlah ? ` · ${data.totalTidakDihitung.jumlah} baris tidak dihitung (${teksRp(data.totalTidakDihitung.nilai)})` : ""}` : ""}
         onReset={() => { setQ(""); setPihak(""); setRekening(""); setStatus(statusAwal); setStatusBayar(""); }}
       />
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -131,7 +131,7 @@ function Daftar({ periode, kategori, opsi, onBuka, judulKosong, statusAwal = "" 
                   <TD truncate className="font-medium">{b.nomor}</TD>
                   <TD hideBelow="2xl" truncate>{b.sumberLabel}</TD>
                   <TD truncate>{b.pihak ?? "—"}</TD>
-                  <TD truncate title={b.keterangan}>{b.keterangan}</TD>
+                  <TD truncate title={b.alasanTidakDihitung ? `${b.keterangan} — ${b.alasanTidakDihitung}` : b.keterangan}>{b.keterangan}{b.dihitung === false && <Badge variant="neutral" className="ml-1">Tidak dihitung</Badge>}</TD>
                   {pendapatan ? (
                     <TD>
                       {b.statusBayar ? <BadgeStatus label={b.statusBayar.label} nada={b.statusBayar.nada} /> : <span className="text-ink3">—</span>}
@@ -186,8 +186,8 @@ function Ringkasan({ periode, ke }) {
         <KartuAngka label="Total pendapatan gabungan" value={teksRp(r.pendapatanGabungan.nilai)} sub="sistem + historis (setelah deduplikasi)" info={r.pendapatanGabungan.catatan} />
         <KartuAngka label="Piutang masih tersisa" metrik="piutang_usaha" value={teksRp(r.piutangTersisa.nilai)} sub={`${r.piutangTersisa.jumlahOrder} order · per ${tanggalPendek(r.piutangTersisa.perTanggal)}`} info="Sisa tagihan yang belum tertagih menurut buku besar (posisi akhir periode, bukan arus)." />
         <KartuAngka label="Uang masuk terverifikasi" metrik="uang_masuk_terverifikasi" value={teksRp(r.pembayaranMasuk.terverifikasi.nilai)} sub={`${r.pembayaranMasuk.terverifikasi.jumlah} pembayaran`} tone="green" onClick={() => ke("pembayaran")} info="Uang pelanggan yang sudah diverifikasi Finance. Rekening muncul di sini, bukan selalu di pendapatan." />
-        <KartuAngka label="Perlu verifikasi Finance" value={String(r.perluVerifikasiFinance.totalJumlah)} sub={`${r.perluVerifikasiFinance.klaimSales.jumlah} klaim lunas Sales · ${r.perluVerifikasiFinance.pembayaranMenunggu.jumlah} pembayaran menunggu`} tone={r.perluVerifikasiFinance.totalJumlah > 0 ? "orange" : "default"} onClick={() => ke("verifikasi")} info={r.perluVerifikasiFinance.penjelasan} />
-        <KartuAngka label="Pemasukan lain" value={teksRp(r.pemasukanLain.nilai)} sub={`${r.pemasukanLain.jumlah} catatan`} onClick={() => ke("lain")} />
+        <KartuAngka label="Perlu verifikasi Finance" metrik="perlu_verifikasi_finance" value={String(r.perluVerifikasiFinance.totalJumlah)} sub={`${r.perluVerifikasiFinance.klaimSales.jumlah} klaim lunas Sales · ${r.perluVerifikasiFinance.pembayaranMenunggu.jumlah} pembayaran menunggu`} tone={r.perluVerifikasiFinance.totalJumlah > 0 ? "orange" : "default"} onClick={() => ke("verifikasi")} info={r.perluVerifikasiFinance.penjelasan} />
+        <KartuAngka label="Pemasukan lain" metrik="pemasukan_lain" value={teksRp(r.pemasukanLain.nilai)} sub={`${r.pemasukanLain.jumlah} catatan`} onClick={() => ke("lain")} />
         <KartuAngka label="Dana masuk bukan pendapatan" value={teksRp(r.danaMasukBukanPendapatan.nilai)} sub={`${r.danaMasukBukanPendapatan.jumlah} catatan`} onClick={() => ke("dana")} info="Setoran modal dan pinjaman/pendanaan pihak ketiga. Bukan pendapatan." />
       </div>
       {r.danaMasukBukanPendapatan.rincian.length > 0 && (

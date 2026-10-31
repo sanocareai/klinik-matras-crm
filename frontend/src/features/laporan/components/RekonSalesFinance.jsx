@@ -70,11 +70,12 @@ export function KartuRekon({ data, loading, onBuka }) {
  * Satu tahap jembatan Sales–Finance (kartu per baris — TANPA tabel lebar, aman di HP 390px). Semua angka, status, residual, dan "Komponen lain" dari server;
  * komponen ini hanya menampilkan. Tanda tampilan = EFEK langkah (tanda × jumlah): langkah "kurangi" berjumlah negatif (mis. Klaim Lunas tanpa Payment) justru MENAMBAH → "+".
  */
-function TahapRekon({ t, bisaBuka, onBuka }) {
+function TahapRekon({ t, bisaBuka, onBuka, penjelasan }) {
   return (
     <section className="rounded-card bg-surface shadow-card" aria-label={`Tahap ${t.nomor}`} data-testid={`rekon-tahap-${t.nomor}`}>
       <div className="space-y-2 border-b border-line/60 px-3 py-3">
-        <p className="text-[13px] font-bold text-ink">Tahap {t.nomor} · {t.judul}</p>
+        <p className="text-[13px] font-bold text-ink">{t.nomor === "Kohort" ? "Jembatan kohort" : `Tahap ${t.nomor}`} · {t.judul}</p>
+        {penjelasan && <p className="text-[11.5px] leading-snug text-ink3">{penjelasan}</p>}
         <StatusJembatan status={t.status} />
       </div>
       <div>
@@ -141,6 +142,7 @@ export function PanelRekon({ data, loading, error, onBuka }) {
       ) : data?.tahap1 ? (
         <div className="space-y-4">
           <StatusJembatan status={{ perhitungan: data.status.perhitungan, perhitunganLabel: data.status.perhitungan === "COCOK" ? "Perhitungan cocok (kedua tahap)" : "Perhitungan tidak cocok", perluDitinjau: data.status.perluDitinjau }} />
+          {data.kohort && <TahapRekon t={{ ...data.kohort, nomor: "Kohort", judul: data.kohort.judul, komponenLain: null, status: { ...data.kohort.status, perluDitinjau: false, alasanTinjau: [] } }} bisaBuka={bisaBuka} onBuka={onBuka} penjelasan={data.kohort.penjelasan} />}
           <TahapRekon t={data.tahap1} bisaBuka={bisaBuka} onBuka={onBuka} />
           <TahapRekon t={data.tahap2} bisaBuka={bisaBuka} onBuka={onBuka} />
           {data.residual !== 0 && (
@@ -160,6 +162,8 @@ const JUDUL_DETAIL = {
   KLAIM_TANPA_PAYMENT: "Klaim Lunas tanpa Payment", PAYMENT_MENUNGGU: "Payment Menunggu Verifikasi", PAYMENT_KURANG: "Payment Terverifikasi Kurang dari Nilai Order",
   KELEBIHAN_BAYAR: "Kelebihan Bayar / DP Periode Lain", SELISIH_LAIN: "Tak Terklasifikasi",
   TANPA_SALES: "Tanpa Atribusi Sales", DIHITUNG_GANDA: "Dihitung Ganda (dipegang >1 Sales)",
+  KOHORT_DIBUAT_LUNAS: "Sudah Lunas — Order Dibuat di Periode", KOHORT_LUNAS_DI_LUAR: "Dibuat di Periode & Lunas, Tanggal Lunas di Luar Periode / Kosong",
+  KOHORT_DIBUAT_SEBELUM: "Dibuat Sebelum Periode, Lunas di Periode", KOHORT_BELUM_LUNAS_PAIDAT: "Tanggal Lunas di Periode, Status Bayar Kini Bukan Lunas",
 };
 
 /** Daftar order penyusun satu baris bridge. Multi-order pelanggan yang sama dikelompokkan (TIDAK digabung / dianggap duplikat). */
@@ -248,7 +252,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                         <td className="py-2 pr-2 text-right font-semibold tabular-nums">{rpBertanda(b.jumlah)}</td>
                         <td className="py-2 text-[11.5px] text-ink2">
                           {(b.pembayaran || []).length === 0 ? <span className="text-ink3">—</span> : b.pembayaran.map((p) => (
-                            <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
+                            <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}<div className="text-[10.5px] text-ink3">Pembayaran {p.ref}{p.rekening ? ` · ${p.rekening}` : ""}{p.nomorJurnal ? ` · jurnal ${p.nomorJurnal}` : ""}</div></div>
                           ))}
                           {typeof b.dibayarTotal === "number" && <div className="text-ink3">Total dibayar {formatRupiah(b.dibayarTotal)} · sisa {formatRupiah(b.sisaTagihan)}</div>}
                           {b.tindakan && <div className="mt-1 inline-block rounded-full bg-inset px-2 py-0.5 text-[11px] font-medium text-ink2">{b.tindakan.label}</div>}
@@ -297,7 +301,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                     <div className="mt-1 text-[11.5px] text-ink3">Bayar {b.tanggalBayar ? tanggal(b.tanggalBayar) : "—"} · Lunas {b.tanggalLunas ? tanggal(b.tanggalLunas) : "—"}{b.tindakan ? ` · Tindakan: ${b.tindakan.label}` : ""}</div>
                     <div className="mt-2 text-[11.5px] text-ink2">
                       {(b.pembayaran || []).length === 0 ? <span className="text-ink3">Payment: —</span> : b.pembayaran.map((p) => (
-                        <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
+                        <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}<div className="text-[10.5px] text-ink3">Pembayaran {p.ref}{p.rekening ? ` · ${p.rekening}` : ""}{p.nomorJurnal ? ` · jurnal ${p.nomorJurnal}` : ""}</div></div>
                       ))}
                       {typeof b.dibayarTotal === "number" && <div className="text-ink3">Total dibayar {formatRupiah(b.dibayarTotal)} · sisa {formatRupiah(b.sisaTagihan)}</div>}
                       {kunci === "TANPA_SALES" && admin && (

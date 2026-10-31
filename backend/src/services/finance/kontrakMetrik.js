@@ -8,6 +8,7 @@
 //   TGL_PEMBAYARAN  tanggal catatan pembayaran (Payment.createdAt, WIB)
 //   TGL_BUKU        tanggal jurnal buku besar (FinJournalEntry.date) — pengakuan akuntansi
 //   TGL_LUNAS       tanggal order menjadi Lunas (Order.paidAt, WIB; basis komisi Sales)
+//   TGL_DIBUAT      tanggal order DIBUAT (Order.createdAt, WIB) — basis kartu Ringkasan Laporan (Nilai Penjualan / Sudah Lunas / Belum Lunas / AOV)
 //   TGL_DOKUMEN     tanggal dokumen sumber (pengeluaran, pembelian, kasbon, refund, tagihan)
 //   POSISI          posisi (saldo) per tanggal akhir periode / hari ini — bukan arus
 //
@@ -18,6 +19,7 @@ export const BASIS = Object.freeze({
   TGL_PEMBAYARAN: { kunci: "TGL_PEMBAYARAN", label: "Tanggal pembayaran diterima", teknis: "Payment.createdAt (WIB)" },
   TGL_BUKU: { kunci: "TGL_BUKU", label: "Tanggal buku (jurnal)", teknis: "FinJournalEntry.date" },
   TGL_LUNAS: { kunci: "TGL_LUNAS", label: "Tanggal order menjadi Lunas", teknis: "Order.paidAt (WIB)" },
+  TGL_DIBUAT: { kunci: "TGL_DIBUAT", label: "Tanggal order dibuat", teknis: "Order.createdAt (WIB)" },
   TGL_DOKUMEN: { kunci: "TGL_DOKUMEN", label: "Tanggal dokumen", teknis: "tanggal pada dokumen sumber" },
   POSISI: { kunci: "POSISI", label: "Posisi per tanggal", teknis: "saldo kumulatif sampai tanggal itu" },
 });
@@ -50,8 +52,8 @@ export const METRIK = Object.freeze([
   m("uang_masuk_terverifikasi", "Uang Masuk Terverifikasi", "PELANGGAN",
     "Uang pelanggan yang SUDAH diverifikasi Finance, dihitung per tanggal pembayaran diterima. Ini angka uang (sisi Finance), belum tentu sama dengan omzet order yang lunas bulan itu.",
     "Σ Payment.amount WHERE aktif (tidak dibatalkan) AND punya verifikasi, tanggal = Payment.createdAt WIB", "tabel payments + payment_verifications", "terverifikasi", "TGL_PEMBAYARAN",
-    ["DP, cicilan, dan pelunasan", "Ongkir yang ikut dibayar", "Pembayaran sebelum tanggal saldo awal (tidak menambah kas)"], ["Pembayaran menunggu/ditolak/dibatalkan", "Klaim Lunas yang belum diverifikasi"],
-    ["kas_masuk_pelanggan", "nilai_order_lunas_perusahaan", "payment_tercatat"], ["Pembayaran & Verifikasi", "Pemasukan (Uang Masuk)", "Rekonsiliasi Sales–Finance"], ["pembayaran", "pemasukan", "rekon-sales-finance"]),
+    ["DP, cicilan, dan pelunasan", "Ongkir yang ikut dibayar", "Pembayaran sebelum tanggal saldo awal (tidak menambah kas)"], ["Pembayaran menunggu/ditolak/dibatalkan (tetap tampil sebagai baris di layar & Excel Pemasukan dengan alasan, tetapi nilainya tidak masuk total)", "Klaim Lunas yang belum diverifikasi"],
+    ["kas_masuk_pelanggan", "nilai_order_lunas_perusahaan", "payment_tercatat", "nilai_order_lunas_kohort_dibuat"], ["Pembayaran & Verifikasi", "Pemasukan (Uang Masuk)", "Rekonsiliasi Sales–Finance"], ["pembayaran", "pemasukan", "rekon-sales-finance"]),
   m("kas_masuk_pelanggan", "Kas Masuk dari Pelanggan (Menurut Buku)", "PELANGGAN",
     "Uang pelanggan yang benar-benar menambah saldo Kas/Bank di buku besar. Lebih kecil dari Uang Masuk Terverifikasi bila ada pembayaran sebelum tanggal saldo awal (sudah termasuk saldo bank asli).",
     "Σ debit akun Kas/Bank pada jurnal sumber PEMBAYARAN_ORDER (POSTED)", "tabel fin_journal_entries/lines", "terposting", "TGL_BUKU",
@@ -69,14 +71,30 @@ export const METRIK = Object.freeze([
     ["nilai_order_lunas_perusahaan", "klaim_lunas_menunggu"], ["Laporan Sales", "Rekonsiliasi Sales–Finance"], ["rekon-sales-finance"]),
   m("nilai_order_lunas_perusahaan", "Nilai Order yang Menjadi Lunas — Total Perusahaan", "PELANGGAN",
     "Nilai penuh semua order yang mencapai lunas pada periode (basis tanggal lunas), termasuk yang tanpa Sales. Tidak selalu sama dengan uang masuk karena DP, ongkir, dan pembayaran lintas periode.",
-    "Σ Order.value WHERE paidAt di periode AND status bukan CANCELLED/PENDING AND pelanggan bukan SPAM", "tabel Order", "lunas", "TGL_LUNAS",
-    ["Order tanpa atribusi Sales"], ["Ongkir (bukan nilai jasa)", "DP order yang belum lunas", "Order batal/pending/spam"],
-    ["uang_masuk_terverifikasi", "nilai_lunas_tim_sales"], ["Rekonsiliasi Sales–Finance"], ["rekon-sales-finance"]),
+    "Σ nilai bersih order (Order.value − Nota Kredit aktif) WHERE paidAt di periode AND status bukan CANCELLED/PENDING AND pelanggan bukan SPAM AND bukan order Penjualan Karyawan", "tabel Order + fin_order_credits", "lunas", "TGL_LUNAS",
+    ["Order tanpa atribusi Sales", "Order lama (dibuat bulan lalu) yang baru lunas pada periode", "Order yang tanggal lunasnya dikunci ke periode ini lewat pengecualian lunas"],
+    ["Ongkir (bukan nilai jasa)", "DP order yang belum lunas", "Order batal/pending/spam", "Order Penjualan Karyawan (dikelola Finance, di luar omzet Sales)", "Order yang tanggal lunasnya dikunci ke periode lain walau uangnya masuk sekarang"],
+    ["uang_masuk_terverifikasi", "nilai_lunas_tim_sales", "nilai_order_lunas_kohort_dibuat"], ["Rekonsiliasi Sales–Finance"], ["rekon-sales-finance"]),
+  m("nilai_order_lunas_kohort_dibuat", "Sudah Lunas — Order Dibuat di Periode (Ringkasan Laporan)", "PELANGGAN",
+    "Nilai order yang DIBUAT pada periode dan sekarang berstatus Lunas (kartu 'Sudah Lunas' di Laporan Ringkasan). Ini kelompok order per tanggal dibuat, BUKAN per tanggal lunas — order bulan lalu yang baru lunas bulan ini tidak ikut.",
+    "Σ nilai bersih order WHERE createdAt di periode AND paymentStatus = LUNAS AND status bukan CANCELLED/PENDING AND pelanggan bukan SPAM AND bukan Penjualan Karyawan", "tabel Order + fin_order_credits", "lunas (saat ini)", "TGL_DIBUAT",
+    ["Seluruh perusahaan (termasuk order tanpa atribusi Sales)", "Order yang dibuat di periode dan sudah lunas, sekalipun lunasnya baru bulan berikutnya"], ["Order lama yang baru lunas pada periode (ikut di Nilai Order yang Menjadi Lunas)", "Order Penjualan Karyawan", "Batal/pending/spam"],
+    ["nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales"], ["Laporan Ringkasan (Sudah Lunas)", "Rekonsiliasi Sales–Finance (jembatan kohort)"], ["rekon-sales-finance"]),
+  m("perlu_verifikasi_finance", "Perlu Verifikasi Finance (Semua Periode)", "PELANGGAN",
+    "Tumpukan yang perlu dicek Finance: klaim Lunas dari Sales yang belum punya catatan uang, ditambah pembayaran tercatat yang belum diverifikasi. TIDAK ikut filter tanggal — ini sisa pekerjaan sampai hari ini, bukan arus periode.",
+    "COUNT klaim Lunas tanpa Payment cukup + COUNT Payment aktif tanpa verifikasi (semua periode)", "tabel Order + payments", "menunggu, klaim", "POSISI",
+    ["Klaim Lunas lama (sebelum gerbang Klaim Lunas aktif)", "Pembayaran menunggu verifikasi"], ["Pembayaran ditolak/dibatalkan", "Pembayaran yang sudah terverifikasi"],
+    ["klaim_lunas_menunggu", "payment_tercatat"], ["Pemasukan (Ringkasan)", "Pemasukan (Perlu Verifikasi Finance)"], []),
+  m("pemasukan_lain", "Pemasukan Lain", "PELANGGAN",
+    "Pendapatan di luar penjualan order: pemasukan lain yang dicatat Finance (mis. bunga bank) dan Penjualan Karyawan yang diinput manual. Per tanggal buku jurnal; tidak ikut Order/Laporan Sales.",
+    "Σ kredit − debit akun pendapatan non-order pada jurnal sumber PEMASUKAN_LAIN dan PENJUALAN_KARYAWAN", "jurnal akun pendapatan non-order", "terposting", "TGL_BUKU",
+    ["Bunga bank dan pemasukan lain-lain", "Penjualan Karyawan (input manual Finance, di luar Order)"], ["Pelunasan tagihan Penjualan Karyawan (pendapatan sudah diakui saat penjualan dicatat)", "Transfer antar-rekening", "Setoran modal & pendanaan pihak ketiga"],
+    ["pendapatan_diakui", "uang_masuk_terverifikasi"], ["Pemasukan (Ringkasan, Pemasukan Lain)"], ["pemasukan"]),
   m("nilai_lunas_tim_sales", "Nilai Order yang Menjadi Lunas — Tim Sales", "SALES",
     "Angka kartu di Laporan Sales (dasar komisi): Total Perusahaan dikurangi order tanpa Sales, ditambah order yang dihitung untuk lebih dari satu Sales.",
     "nilai_order_lunas_perusahaan − tanpa_atribusi_sales + dihitung_ganda", "tabel Order + atribusi (salesOwnerId / percakapan)", "lunas", "TGL_LUNAS",
-    ["Sales aktif dan closing Team Lead"], ["Order tanpa Sales", "Closing Admin/Owner selain Team Lead"],
-    ["nilai_order_lunas_perusahaan", "tanpa_atribusi_sales"], ["Laporan Sales", "Rekonsiliasi Sales–Finance"], ["rekon-sales-finance"]),
+    ["Sales aktif dan closing Team Lead"], ["Order tanpa Sales", "Closing Admin/Owner selain Team Lead", "Order Penjualan Karyawan"],
+    ["nilai_order_lunas_perusahaan", "tanpa_atribusi_sales", "nilai_order_lunas_kohort_dibuat"], ["Laporan Sales", "Rekonsiliasi Sales–Finance"], ["rekon-sales-finance"]),
   m("tanpa_atribusi_sales", "Tanpa Atribusi Sales", "SALES",
     "Order lunas yang tidak dimiliki Sales mana pun (order internal / pelanggan di luar percakapan Sales). Tetap masuk total perusahaan, tidak ditebak ke Sales.",
     "Σ Order.value lunas periode yang tidak punya pemilik Sales", "tabel Order", "lunas", "TGL_LUNAS", ["Order internal/Owner"], ["Order yang pemilik Sales-nya jelas"],
