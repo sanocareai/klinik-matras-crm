@@ -79,3 +79,10 @@ test("Performa Tim: kolom memakai judul lengkap 'Menggantung' (tooltip definisi 
   assert.doesNotMatch(pt, /label: "Mengg\./);
   assert.doesNotMatch(pt, />Aman</);
 });
+
+test("Pipeline: pesan bottleneck menyebut cakupan (hanya New dan Prospek) — bukan 'paling lama di seluruh pipeline'; pemilihan tahap tidak berubah", () => {
+  assert.ok(pl.includes("Di antara tahap yang masih berjalan (<strong>New</strong> dan <strong>Prospek</strong>)"));
+  assert.ok(pl.includes("Tahap akhir (Transaksi, Reviewed) dan Spam"));
+  assert.doesNotMatch(pl, /<p>\s*Paling lama tertahan di/);
+  assert.match(pl, /r\.stage !== "TRANSACTION" && r\.stage !== "REVIEWED" && r\.stage !== "SPAM" && r\.avgDays != null && r\.sample > 0/);
+});

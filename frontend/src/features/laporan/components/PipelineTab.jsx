@@ -151,10 +151,11 @@ export default function PipelineTab({ funnel, velocity }) {
                 <div className="crm-pl-bottleneck" data-testid="pipeline-bottleneck">
                   <Timer className="shrink-0" size={16} aria-hidden="true" />
                   <p>
-                    Paling lama tertahan di{" "}
+                    Di antara tahap yang masih berjalan (<strong>New</strong> dan <strong>Prospek</strong>), paling lama tertahan di{" "}
                     <strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong> —
                     rata-rata <strong>{formatDurasiHari(bottleneck.avgDays)}</strong>. Ini
-                    kandidat bottleneck yang paling layak dibenahi lebih dulu.
+                    kandidat bottleneck yang paling layak dibenahi lebih dulu. Tahap akhir (Transaksi, Reviewed) dan Spam
+                    tidak diikutkan karena lama di sana tidak berarti macet; angkanya tetap ada di daftar di bawah.
                   </p>
                 </div>
               )}
