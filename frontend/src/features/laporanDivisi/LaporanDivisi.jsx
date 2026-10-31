@@ -47,7 +47,7 @@ function Pemberitahuan({ className, children }) {
 function Chip({ aktif, onClick, children }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={aktif}
-      className={cn("shrink-0 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors max-sm:min-h-11", aktif ? "bg-accent text-white" : "bg-inset text-ink2 hover:bg-hovertint")}>
+      data-aktif={aktif ? "ya" : "tidak"} className={cn("crm-chip shrink-0 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors max-sm:min-h-11", aktif ? "bg-accent text-white" : "bg-inset text-ink2 hover:bg-hovertint")}>
       {children}
     </button>
   );

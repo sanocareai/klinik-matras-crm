@@ -321,7 +321,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
 
   return (
     <>
-      <button type="button" onClick={() => setShowSheet((v) => !v)} className={`chat-action-btn ${showSheet ? "active" : ""}`} title="Lampiran">
+      <button type="button" onClick={() => setShowSheet((v) => !v)} className={`chat-action-btn ${showSheet ? "active" : ""}`} title="Tambah">
         <Plus size={16} />
       </button>
 
@@ -338,7 +338,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
                 ContactModal/media-preview-modal di file yang sama, semua
                 punya `.modal-close`). */}
             <div className="attach-sheet-header">
-              <span className="attach-grid-title">Lampirkan</span>
+              <span className="attach-grid-title">Tambah</span>
               <button type="button" className="modal-close" onClick={() => setShowSheet(false)} title="Batal">
                 <X size={16} />
               </button>

@@ -205,17 +205,24 @@ function EmojiMartPopup({ onSelect, onClose }) {
 
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("keydown", esc); };
   }, [onClose]);
 
   return (
     <div ref={ref} className="emoji-mart-popup">
+      <div className="emoji-mart-popup-head">
+        <span>Emoji</span>
+        <button type="button" className="chat-action-btn" onClick={onClose} title="Tutup emoji" aria-label="Tutup emoji"><X size={16} /></button>
+      </div>
       {Picker && data ? (
         <Picker
           data={data}
           onEmojiSelect={(emoji) => onSelect(emoji.native)}
-          theme="light"
+          theme={document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light"}
+          dynamicWidth
           locale="id"
           previewPosition="none"
           skinTonePosition="none"
@@ -459,11 +466,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           />
         </Suspense>
 
-        {showEmoji && (
-          <div style={{ position: "relative" }}>
-            <EmojiMartPopup onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />
-          </div>
-        )}
+        {showEmoji && <EmojiMartPopup onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />}
 
         {/* Popup format mengambang — gaya WhatsApp: muncul HANYA saat ada
             teks diblok di kotak ketik, mengambang di atas textarea, hilang

@@ -26,7 +26,7 @@ export default function SidebarPromo({ collapsed }) {
   if (collapsed) return null;
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="sidebar-promo-wrap mx-3 mb-2">
       <div
         className="sidebar-promo-card relative flex items-center gap-2.5 overflow-hidden rounded-btn p-3.5 max-md:gap-2 max-md:p-2.5"
         style={{ background: "linear-gradient(140deg, var(--blue-600) 0%, var(--blue-800) 100%)" }}
@@ -41,7 +41,7 @@ export default function SidebarPromo({ collapsed }) {
         </span>
 
         {/* Layar biasa: judul + deskripsi + tombol full-width, ditumpuk vertikal. */}
-        <div className="relative min-w-0 max-md:hidden">
+        <div className="sidebar-promo-body relative min-w-0 max-md:hidden">
           <p className="sidebar-promo-title text-[13px] font-bold leading-snug text-white">Tanya Sano</p>
           <p className="sidebar-promo-desc mt-1 text-[11px] leading-relaxed text-white/70">
             Asisten AI untuk bantu jawab chat & cari info produk lebih cepat.

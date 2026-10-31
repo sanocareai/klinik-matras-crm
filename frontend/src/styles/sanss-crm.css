@@ -457,3 +457,92 @@
 :root .app-shell.crm-skin .conv-search-bar .search-input { min-height: 38px; }
 
 :root .app-shell.crm-skin :is(.bubble-meta, .bubble-edited-label, .bubble-quote-author, .bubble-quote-text, .bubble-forwarded) { opacity: 1; }
+
+/* ── 9. POPUP EMOJI: ikut ruang tersedia ───────────────────────────────────
+   Dipasang relatif ke .chat-input-area (lebar kolom chat), bukan ke tombol:
+   lebar picker tetap 352px dulu melewati tepi kanan layar HP. Berlaku di semua
+   tema karena tombolnya kini di menu "+". */
+.emoji-mart-popup {
+  left: 8px; bottom: calc(100% + 8px);
+  width: min(352px, calc(100% - 16px));
+  background: var(--bg-surface);
+}
+.emoji-mart-popup em-emoji-picker { width: 100%; height: min(380px, 55dvh); display: block; }
+.emoji-mart-popup .emoji-mart-loading { width: 100%; }
+.emoji-mart-popup-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 6px 4px 14px; font-size: 13px; font-weight: 600; color: var(--text-primary);
+}
+
+/* ── 10. HEADER CHAT SEMPIT: nama ellipsis, nomor satu baris ────────────────
+   Nomor lengkap tetap ada di panel detail pelanggan. */
+:root .app-shell.crm-skin .chat-meta-desktop { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+:root .app-shell.crm-skin .chat-meta-desktop .phone-link { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+:root .app-shell.crm-skin .chat-meta-desktop > :not(.phone-link) { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root .app-shell.crm-skin .chat-header-meta { min-width: 0; }
+
+/* ── 11. SIDEBAR: navigasi scroll terpisah dari kartu bantuan & profil ─────
+   Hanya .sidebar-nav yang scroll. Kartu dan profil berada DI BAWAHNYA dalam
+   alur flex. Tepi bawah nav memudar supaya label tidak terlihat terpotong.
+   Layar pendek: kartu jadi satu baris agar menu tetap punya ruang. */
+:root .app-shell.crm-skin .sidebar-nav {
+  min-height: 96px;
+  padding-bottom: 14px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
+}
+:root .app-shell.crm-skin .sidebar-promo-wrap { flex-shrink: 0; margin-top: 6px; }
+:root .app-shell.crm-skin .sidebar-footer { border-top: 1px solid var(--hairline); }
+@media (max-height: 820px) and (min-width: 768px) {
+  :root .app-shell.crm-skin .sidebar-promo-card { padding: 8px 10px; }
+  :root .app-shell.crm-skin .sidebar-promo-desc { display: none; }
+  :root .app-shell.crm-skin .sidebar-promo-body { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  :root .app-shell.crm-skin .sidebar-promo-body .sidebar-promo-btn { margin: 0; width: auto; }
+  :root .app-shell.crm-skin .sidebar-version { display: none; }
+}
+
+/* ── 12. TABLET 769–1024px: sidebar benar-benar drawer ──────────────────────
+   Blok tablet index.css memberi position:fixed + translateX(-100%), tetapi
+   `.glass-division .sidebar { position: relative }` lebih spesifik: sidebar
+   tetap memakan 248px di alur sambil isinya digeser keluar layar = kolom
+   kosong di kiri. Divisi kaca lain punya bug yang sama, di luar lingkup ini. */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root .app-shell.crm-skin .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 400;
+    height: calc(100% - 24px);
+    transform: translateX(calc(-100% - 12px));
+  }
+  :root .app-shell.crm-skin .sidebar.mobile-open { transform: translateX(0); }
+}
+
+/* ── 13. LAPORAN BIAYA: chip & filter ikut tema; fokus keyboard jelas ──────*/
+:root .app-shell.crm-skin .crm-chip[data-aktif="tidak"] { background: var(--crm-panel); color: var(--text-primary); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .crm-chip[data-aktif="tidak"]:hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .fin-glass { background: var(--crm-panel); border: 0; backdrop-filter: none; box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .fin-glass :is(input, select) {
+  background: var(--bg-inset); color: var(--text-primary);
+  border: 1px solid transparent; border-radius: 12px; box-shadow: none;
+}
+:root .app-shell.crm-skin :is(button, a, input, select, textarea, [role="tab"]):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* Nomor telepon didahulukan; chip tahap/sales yang menyusut lebih dulu. */
+:root .app-shell.crm-skin .chat-meta-desktop .phone-link { flex-shrink: 0; }
+@media (max-height: 820px) and (min-width: 768px) {
+  :root .app-shell.crm-skin :is(.sidebar-promo-title, .sidebar-promo-btn) { white-space: nowrap; }
+  :root .app-shell.crm-skin .sidebar-promo-body .sidebar-promo-btn { padding: 5px 10px; }
+}
+/* HP: baris meta tetap disembunyikan (ruang chat), nomor ada di detail pelanggan. */
+@media (max-width: 768px) {
+  :root .app-shell.crm-skin .chat-meta-desktop { display: none; }
+}
+
+/* "Gagal terkirim — Coba lagi": merah di atas gelembung biru nyaris tak terbaca. */
+:root .app-shell.crm-skin .bubble.out .bubble-retry-btn { color: #FFFFFF; font-weight: 700; text-decoration: underline; }
+:root .app-shell.crm-skin .bubble.out.bubble-failed { border: 2px solid #FFE4E1; }
+/* Ring fokus di dalam chip/pill: wadah scroll horizontal memotong outline luar. */
+:root .app-shell.crm-skin :is(.crm-chip, .crm-pills [role="tab"]):focus-visible { outline-offset: -3px; }
+
+
+/* Label kategori di popup Template: latar putih hardcode di mode gelap. */
+:root .app-shell.crm-skin .template-cat-label { background: var(--bg-inset); color: var(--text-secondary); }
