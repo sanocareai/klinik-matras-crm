@@ -824,3 +824,133 @@ test("waive-redelivery: race SUNGGUHAN (dua request bersamaan) -- tepat SATU yan
     .filter((e) => e.eventType === "COMPLAINT_REDELIVERY_WAIVED").length;
   assert.equal(activityCount, 1, "race bersamaan tidak boleh menggandakan activity event");
 });
+
+// ─── HARDENING FINAL (review release-readiness) ────────────────────────────
+
+test("waive-redelivery: HANYA membatalkan job redelivery milik komplain ini -- job LAIN di order yang SAMA (tanpa complaintCaseId) TETAP UTUH", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId, order } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  // Job LAIN pada order yang SAMA, TIDAK terkait komplain ini sama sekali
+  // (mis. job pengiriman original order itu, masih UNSCHEDULED/belum
+  // berjalan) -- cancelOrderDeliveryJobs dasar membatalkan SEMUA job aktif
+  // ORDER itu kalau tidak diberi jobIds; waiver WAJIB mengirim jobIds
+  // persis milik komplain ini, bukan biarkan default-nya menyapu bersih.
+  const unrelatedJob = await testPrisma.job.create({
+    data: { type: "DELIVERY", orderId: order.id, status: "UNSCHEDULED" },
+  });
+  const unrelatedScheduledJob = await testPrisma.job.create({
+    data: { type: "DELIVERY", orderId: order.id, status: "ASSIGNED", driverId: dispatcher.user.id },
+  });
+
+  const waive = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Customer pilih refund" });
+  assert.equal(waive.status, 200, JSON.stringify(waive.body));
+
+  const complaintJob = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(complaintJob.status, "FAILED", "job milik komplain ini HARUS ikut dibatalkan");
+
+  const other1 = await testPrisma.job.findUnique({ where: { id: unrelatedJob.id } });
+  assert.equal(other1.status, "UNSCHEDULED", "job LAIN di order yang sama TIDAK boleh ikut tersapu waiver komplain ini");
+  assert.equal(await testPrisma.deliveryJobCancellation.count({ where: { jobId: unrelatedJob.id } }), 0);
+
+  const other2 = await testPrisma.job.findUnique({ where: { id: unrelatedScheduledJob.id } });
+  assert.equal(other2.status, "ASSIGNED", "job LAIN (sudah ditugaskan driver) di order yang sama TIDAK boleh ikut tersapu");
+  assert.equal(await testPrisma.deliveryJobCancellation.count({ where: { jobId: unrelatedScheduledJob.id } }), 0);
+});
+
+test("waive-redelivery: HANYA membatalkan job milik komplain ini -- job dari KOMPLAIN LAIN (customer/order berbeda) di luar jangkauan sama sekali", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  const otherCase = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const waive = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Customer pilih refund" });
+  assert.equal(waive.status, 200, JSON.stringify(waive.body));
+
+  const otherJob = await testPrisma.job.findUnique({ where: { id: otherCase.deliveryJobId } });
+  assert.equal(otherJob.status, "UNSCHEDULED", "job milik KOMPLAIN LAIN sama sekali tidak boleh tersentuh");
+  assert.equal(await testPrisma.deliveryJobCancellation.count({ where: { jobId: otherCase.deliveryJobId } }), 0);
+});
+
+test("waive-redelivery -- ATOMISITAS: kalau pembatalan job gagal (job aktif di rute yang sudah Selesai), SELURUH transaksi batal -- kasus TIDAK ikut ditandai waived, tidak ada activity, job tidak berubah", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  // Keadaan anomali yang DISENGAJA untuk memicu guard internal
+  // cancelOrderDeliveryJobs (ORDER_CANCEL_ACTIVE_JOB_ON_COMPLETED_ROUTE) --
+  // job masih UNSCHEDULED (lolos klasifikasi notStarted waiver) TAPI
+  // nempel ke rute yang SUDAH status Selesai.
+  const route = await testPrisma.route.create({ data: { code: `RTE-ATOM-${Date.now()}`, date: new Date("2026-09-01"), status: "COMPLETED" } });
+  await testPrisma.job.update({ where: { id: deliveryJobId }, data: { routeId: route.id } });
+
+  const waive = await sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Coba waive saat pembatalan job akan gagal" });
+  assert.equal(waive.status, 409, JSON.stringify(waive.body));
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.redeliveryWaivedAt, null, "SELURUH transaksi harus batal -- kolom waiver TIDAK boleh ikut tertulis");
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+  assert.equal(jobRow.status, "UNSCHEDULED", "job TIDAK boleh berubah kalau transaksi batal");
+  assert.equal(jobRow.routeId, route.id);
+  assert.equal(await testPrisma.deliveryJobCancellation.count({ where: { jobId: deliveryJobId } }), 0, "tombstone TIDAK boleh ikut tertulis kalau transaksi batal");
+
+  const timeline = await sales.api.get(`/api/activity?entityType=complaint&entityId=${caseId}`);
+  assert.ok(!timeline.body.events.some((e) => e.eventType === "COMPLAINT_REDELIVERY_WAIVED"), "activity TIDAK boleh ikut tercatat kalau transaksi batal");
+});
+
+test("waive-redelivery -- RACE dengan driver start: job yang BARU DIMULAI driver TIDAK PERNAH ikut dibatalkan diam-diam; salah satu pemenang jelas, tidak ada keadaan ganda", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId, deliveryJobId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+  await testPrisma.job.update({ where: { id: deliveryJobId }, data: { status: "ASSIGNED", driverId: dispatcher.user.id } });
+
+  const [waiveRes, startRes] = await Promise.all([
+    sales.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Race dengan driver start" }),
+    dispatcher.api.post(`/api/armada/jobs/${deliveryJobId}/start`, { proofPhotoUrls: [] }, { "Idempotency-Key": `race-start-${Date.now()}-${Math.random()}` }),
+  ]);
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  const jobRow = await testPrisma.job.findUnique({ where: { id: deliveryJobId } });
+
+  // Invarian inti (bukan kode status persisnya, yang bergantung siapa menang
+  // lock): TIDAK PERNAH job EN_ROUTE (driver sungguhan sedang jalan) SAMBIL
+  // kasus sudah ditandai redeliveryWaivedAt -- itu artinya job yang sedang
+  // berjalan diam-diam "dianggap tidak perlu redelivery" tanpa penanganan.
+  if (jobRow.status === "EN_ROUTE") {
+    assert.equal(startRes.status, 200, JSON.stringify(startRes.body));
+    assert.equal(caseRow.redeliveryWaivedAt, null, "job yang menang mulai duluan TIDAK BOLEH ikut dianggap diwaive");
+    assert.equal(waiveRes.status, 409, JSON.stringify(waiveRes.body));
+  } else {
+    // Waiver menang lock duluan -> job HARUS benar-benar dibatalkan resmi
+    // (bukan dibiarkan ASSIGNED begitu saja), dan start yang kalah HARUS
+    // gagal jelas (bukan diam-diam sukses menjalankan job yang sudah batal).
+    assert.equal(jobRow.status, "FAILED", JSON.stringify(jobRow));
+    assert.ok(caseRow.redeliveryWaivedAt, "waiver yang menang harus benar-benar tercatat");
+    assert.equal(waiveRes.status, 200, JSON.stringify(waiveRes.body));
+    assert.notEqual(startRes.status, 200, "start yang kalah TIDAK BOLEH diam-diam sukses atas job yang sudah dibatalkan");
+  }
+});
+
+test("waive-redelivery: permission ditolak untuk role TANPA ORDER_WRITE (DRIVER)", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const driver = await clientAs(["DRIVER"]);
+  const { caseId } = await setupKasusMenujuDikirimUlang(sales, dispatcher);
+
+  const r = await driver.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Driver coba waive sendiri" });
+  assert.equal(r.status, 403, JSON.stringify(r.body));
+
+  const caseRow = await testPrisma.complaintCase.findUnique({ where: { id: caseId } });
+  assert.equal(caseRow.redeliveryWaivedAt, null);
+});
+
+test("waive-redelivery: diizinkan untuk role dengan ORDER_WRITE (ADMIN) -- bukan Sales-saja secara kebetulan", async () => {
+  const admin = await clientAs(["ADMIN"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { caseId } = await setupKasusMenujuDikirimUlang(admin, dispatcher);
+
+  const r = await admin.api.post(`/api/complaints/${caseId}/waive-redelivery`, { reason: "Admin menyelesaikan tanpa pengiriman ulang" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+});

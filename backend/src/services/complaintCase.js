@@ -11,6 +11,7 @@
 import { prisma } from "../db.js";
 import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
 import { cancelOrderDeliveryJobs } from "./deliveryJobCancellationService.js";
+import { lockJob } from "./deliveryExecution.js";
 import { generateComplaintCaseNumber } from "./orderNumberGenerator.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { notifyComplaintCaseOwnerChanged, notifyComplaintCaseHighSeverity } from "./pushNotifications.js";
@@ -656,11 +657,43 @@ export async function waiveRedelivery(caseId, reason, userId) {
       throw new ComplaintError("Kasus ini sudah ditandai tidak butuh pengiriman ulang sebelumnya", 409);
     }
     if (notStarted.length > 0) {
+      // HARDENING (review final, poin 2) — klasifikasi notStarted di atas
+      // dibaca SEBELUM transaksi ini (bisa basi: driver bisa saja menekan
+      // "Mulai" tepat di jendela ini). cancelOrderDeliveryJobs SENDIRI
+      // menganggap EN_ROUTE/ARRIVED tetap "cancellable" (dipakai juga untuk
+      // pembatalan order penuh, di mana menarik job yang sedang jalan
+      // memang disengaja) — TIDAK cocok untuk waiver redelivery, yang
+      // HANYA boleh menyentuh job yang belum disentuh driver sama sekali.
+      // Lock baris job (FOR UPDATE NOWAIT, helper SAMA dengan /jobs/:id/
+      // start) lalu baca ULANG status SETELAH terkunci — kalau sudah
+      // berubah (driver menang race, job EN_ROUTE/ARRIVED/COMPLETED/
+      // FAILED), batalkan SELURUH transaksi (termasuk penulisan kolom
+      // waiver di atas, lewat throw -> rollback) daripada diam-diam
+      // membatalkan job yang sudah berjalan.
+      const relocked = [];
+      for (const j of notStarted) {
+        let locked;
+        try {
+          locked = await lockJob(tx, j.id);
+        } catch {
+          throw new ComplaintError(
+            "Job pengiriman ulang sedang diproses (kemungkinan baru dimulai driver) — coba lagi sebentar",
+            409
+          );
+        }
+        if (!JOB_NOT_STARTED_STATUSES.includes(locked.status)) {
+          throw new ComplaintError(
+            `Job pengiriman ulang sudah ${STATUS_LABEL_JOB[locked.status] || locked.status} sejak diperiksa — tidak bisa dibatalkan lewat waiver, rekonsiliasi dulu`,
+            409
+          );
+        }
+        relocked.push(locked);
+      }
       await cancelOrderDeliveryJobs(tx, {
         orderId: kase.orderId,
         reason: `Komplain diselesaikan tanpa pengiriman ulang: ${trimmed}`,
         actorId: userId,
-        jobIds: notStarted.map((j) => j.id),
+        jobIds: relocked.map((j) => j.id),
       });
     }
     await recordActivity(tx, {
