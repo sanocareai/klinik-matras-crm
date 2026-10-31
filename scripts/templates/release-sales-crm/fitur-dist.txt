@@ -1,0 +1,17 @@
+# Teks yang HANYA ada di tampilan baru (tidak ada di dist aktif); teks tampilan lama yang HARUS HILANG (ada di dist aktif, tidak boleh ada di dist baru); fitur live yang HARUS ada di KEDUANYA.
+for s0 in "sanss-crm-skin" "Tutup emoji" "inbox-page-head" "crm-kpi-utama"; do
+  [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks tampilan baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat tampilan baru: ${s0}"
+done
+for s1 in "Pilih template" "Saran balasan AI"; do
+  [ -n "$(grep -lF -- "$s1" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -z "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru MASIH memuat tampilan lama: ${s1}"
+done
+# CSS: lapisan tema baru ada di dist baru, tidak di dist aktif
+[ -z "$(grep -lF -- ".crm-skin" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] .crm-skin SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
+[ -n "$(grep -lF -- ".crm-skin" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru TIDAK memuat lapisan tema .crm-skin"
+for s2 in "Tulis balasan..." "Laporan Analitik" "Nilai Penjualan Tim" "Nilai Order yang Menjadi Lunas" "Uang Masuk Terverifikasi dari Order" "Konversi Tim" "Target Tim" "Menyambung ulang..." "Riwayat Penanganan" "Pilih Template" "Saran Balasan AI" "Buka Sano" "Laporan Divisi belum diaktifkan"; do
+  [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): tampilan baru + lapisan CSS .crm-skin ada, tampilan lama (tombol template/saran AI terpisah) hilang, 13 teks fitur live (Laporan Sales, Inbox, Template, Saran AI, Laporan Biaya) tetap"

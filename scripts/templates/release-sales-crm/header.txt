@@ -1,0 +1,21 @@
+# RILIS FRONTEND-SAJA "redesain Sales CRM" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image.
+# Isi: lapisan visual Sales CRM (styles/sanss-crm.css, dipagari kelas .crm-skin hanya untuk divisi Sales CRM): sidebar mengambang, kartu KPI Laporan Sales berwarna, navigasi pill,
+# Inbox tiga panel rounded + header halaman + banner "Menyambung ulang" di dalam alur (tidak menutupi pencarian/header), composer satu tombol "+" (menu "Tambah": lampiran, Template, Saran AI, Emoji),
+# popup Emoji adaptif, header chat sempit, sidebar dengan area menu yang bisa di-scroll terpisah dari kartu Tanya Sano/profil, drawer tablet, kontras teks AA, Laporan Biaya ikut tema.
+# Layanan, izin, rumus laporan (nilai penjualan / order lunas / uang masuk terverifikasi), fungsi chat, dan menu TIDAK berubah. Font tetap Manrope. Kill switch per peramban: localStorage "sanss-crm-skin" = "off".
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif 60b5df10 (Harga Berlaku otomatis dari PO). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru masih memuat tampilan lama / tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env atau hitungan data berubah.
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-sales-crm.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/scr1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scr1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scr1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scr1.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/scr1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-sales-crm.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-sales-crm/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
