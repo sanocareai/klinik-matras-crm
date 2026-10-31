@@ -1,0 +1,17 @@
+# Teks yang HANYA ada di Dashboard baru (tidak ada di dist aktif); teks fitur live yang HARUS ada di KEDUANYA (termasuk penanda redesain sebelumnya).
+for s0 in "crm-kpi-tile" "komplain perlu ditindaklanjuti" "crm-so-sisi"; do
+  [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks Dashboard baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat Dashboard baru: ${s0}"
+done
+# CSS: lapisan Dashboard (.crm-dash) hanya di dist baru; lapisan tema (.crm-skin) tetap ada di keduanya
+[ -z "$(grep -lF -- ".crm-dash" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] .crm-dash SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
+[ -n "$(grep -lF -- ".crm-dash" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru TIDAK memuat lapisan Dashboard .crm-dash"
+for c0 in ".crm-skin"; do
+  [ -n "$(grep -lF -- "$c0" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$c0" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru KEHILANGAN tema ${c0}"
+done
+for s2 in "Sales Overview" "Total Revenue" "Repeat Order" "Deal Pipeline" "Top Performing Reps" "Needs Action" "Hot Leads" "Recent Activity" "Kasus Komplain Butuh Follow-up" "Kasus Komplain Aktif" "New Leads" "Total Orders" "Conversion" "Lihat semua" "sanss-crm-skin" "Tutup emoji" "inbox-page-head" "Nilai Penjualan Tim"; do
+  [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): Dashboard baru + lapisan CSS .crm-dash ada, tema .crm-skin tetap, 18 teks fitur live (Dashboard, Laporan Sales, Inbox + redesain sebelumnya) tetap"
