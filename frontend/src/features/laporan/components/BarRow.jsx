@@ -37,7 +37,8 @@ const TONE_BAR = {
 // `tumpuk` (opsional, default false = perilaku lama) — SELALU 2 baris (label+angka di atas, bar selebar penuh di bawah),
 // tidak menunggu breakpoint sm: milik VIEWPORT. Dipakai panel Laporan Sales CRM yang berdampingan: lebar panel ≈ 360–420px
 // walau layar lebar, jadi layout satu-baris (label w-28 + angka w-24 + sub w-16) menyisakan bar nyaris 0px.
-export default function BarRow({ label, value, max, display, sub, tone = "accent", tumpuk = false }) {
+// `lebarSub` (opsional, default "sm:w-16" = lama) — lebar kolom catatan di layout satu-baris, untuk nilai Rupiah yang lebih panjang.
+export default function BarRow({ label, value, max, display, sub, tone = "accent", tumpuk = false, lebarSub = "sm:w-16" }) {
   const pct = max > 0 ? Math.max((value / max) * 100, value > 0 ? 2 : 0) : 0;
   return (
     <div className={cn("flex flex-col gap-1.5", !tumpuk && "sm:flex-row sm:items-center sm:gap-3")}>
@@ -49,7 +50,7 @@ export default function BarRow({ label, value, max, display, sub, tone = "accent
           {display ?? value}
         </span>
         {sub !== undefined && (
-          <span className={cn("shrink-0 text-right text-[11px] tabular-nums text-ink3", !tumpuk && "sm:order-4 sm:w-16")}>{sub}</span>
+          <span className={cn("shrink-0 text-right text-[11px] tabular-nums text-ink3", !tumpuk && `sm:order-4 ${lebarSub}`)}>{sub}</span>
         )}
       </div>
       <div className={cn("h-2 w-full overflow-hidden rounded-full bg-inset", !tumpuk && "sm:order-2 sm:w-auto sm:flex-1")}>

@@ -19,6 +19,16 @@ export const IKON_KPI = {
 };
 const IKON_TONE = { revenue: IkonDompet, leads: IkonOrang, orders: IkonTas, conversion: IkonDiagram };
 
+// Angka Rupiah panjang TIDAK dikecilkan sampai sulit dibaca: kalau tidak muat, baris dipecah di titik pemisah ribuan
+// (<wbr> setelah tiap ".") dan CSS `text-wrap: balance` menyeimbangkan dua baris ("Rp25.482." / "000.000"), bukan menyisakan
+// "0" yatim. Nilai penuh tetap utuh di DOM (bisa disalin / dibaca pembaca layar); <wbr> tidak ikut tersalin.
+export function PecahAngka({ teks }) {
+  const bagian = String(teks ?? "").split(".");
+  return bagian.map((b, i) => (i < bagian.length - 1
+    ? <React.Fragment key={i}>{b}.<wbr /></React.Fragment>
+    : <React.Fragment key={i}>{b}</React.Fragment>));
+}
+
 export default function KpiLap({
   tone = "orders", ikon, label, numericValue, format, value, growth, compareLabel, sub, tooltip, onClick, className,
 }) {
@@ -35,7 +45,7 @@ export default function KpiLap({
   return (
     <div
       data-kpi={tone}
-      data-len={String(tampil ?? "").length > 17 ? "xl" : String(tampil ?? "").length > 13 ? "l" : undefined}
+      data-len={String(tampil ?? "").length > 13 ? "l" : undefined}
       className={cn("crm-kpi-tile crm-lap-kpi", onClick && "crm-kpi-tile--klik", className)}
       onClick={onClick}
       role={onClick ? "button" : undefined}
@@ -48,7 +58,7 @@ export default function KpiLap({
           <p className="crm-kpi-label">{label}</p>
           {tooltip && <InfoTooltip text={tooltip} />}
         </span>
-        <p className="crm-kpi-nilai">{tampil}</p>
+        <p className="crm-kpi-nilai"><PecahAngka teks={tampil} /></p>
         {adaGrowth && (
           <span className="crm-kpi-delta-baris">
             <span className="crm-kpi-delta" data-trend={trend}>

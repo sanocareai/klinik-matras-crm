@@ -54,7 +54,7 @@ test("Komponen bersama (KpiCard, ChartCard, LaporanSkeleton) TIDAK diubah; BarRo
   assert.doesNotMatch(skeleton, /crm-lap/);
   assert.match(barRow, /tumpuk = false/);
   // tanpa tumpuk, kelas sm: lama tetap dipasang
-  for (const kelas of ["sm:flex-row sm:items-center sm:gap-3", "sm:contents", "sm:w-28 sm:flex-none", "sm:order-3 sm:w-24", "sm:order-4 sm:w-16", "sm:order-2 sm:w-auto sm:flex-1"]) {
+  for (const kelas of ["sm:flex-row sm:items-center sm:gap-3", "sm:contents", "sm:w-28 sm:flex-none", "sm:order-3 sm:w-24", "sm:order-2 sm:w-auto sm:flex-1"]) {
     assert.ok(barRow.includes(kelas), kelas);
   }
   assert.match(barRow, /!tumpuk &&/);
@@ -106,9 +106,7 @@ test("KpiLap: format pertumbuhan sama dengan KpiCard (tanpa pembulatan baru); da
   assert.match(kpiCard, /`\$\{growth > 0 \? "\+" : ""\}\$\{growth\}%`/);
   assert.match(kpiLap, /const adaGrowth = growth !== undefined && growth !== null/);
   assert.match(kpiLap, /numericValue != null/);   // tanpa angka → `value` statis (mis. "—"), tidak dipaksa 0
-  // angka panjang mengecil, tidak terpotong
-  assert.match(kpiLap, /data-len=/);
-  assert.match(cssTanpaKomentar, /data-len="xl"/);
+  assert.match(kpiLap, /PecahAngka/);
 });
 
 test("Kolom KPI mengikuti lebar isi tab (container query), 4 kolom hanya ≥1180px", () => {

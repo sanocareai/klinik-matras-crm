@@ -144,9 +144,10 @@
   .crm-lap .crm-lap-alert-baris { gap: 4px 12px; }
 }
 
-/* Angka Rupiah panjang (≥14 / ≥18 karakter) mengecil supaya tetap satu baris di kartu 4 kolom */
-.crm-lap .crm-lap-kpi[data-len="l"] .crm-kpi-nilai { font-size: clamp(16px, 1.2vw, 19px); }
-.crm-lap .crm-lap-kpi[data-len="xl"] .crm-kpi-nilai { font-size: clamp(14px, 1vw, 16px); }
+/* Angka Rupiah panjang (≥14 karakter): ukuran turun HANYA sedikit (tetap ≥ 18px, mudah dibaca) dan baris dipecah di titik pemisah
+   ribuan (<wbr> dari PecahAngka) lalu diseimbangkan; nilai penuh tetap utuh di DOM. */
+.crm-lap .crm-lap-kpi[data-len="l"] .crm-kpi-nilai { font-size: clamp(18px, 1.4vw, 22px); }
+.crm-lap.crm-dash .crm-kpi-nilai, .crm-lap .crm-lap-metrik-nilai { text-wrap: balance; overflow-wrap: normal; word-break: normal; }
 
 /* ── 10. KONTRAS (diukur dari piksel render, 1 Nov 2026) ──────────────────────
    Teks hijau/merah kecil di atas latar tipis (pil konversi, "Aman", % target) hanya 3,9–4,4:1; kepala tabel rincian 3,6:1. */
@@ -155,3 +156,105 @@
 :root[data-theme="dark"] .crm-lap .crm-lap-tab .text-green { color: #6EE7A0; }
 :root[data-theme="dark"] .crm-lap .crm-lap-tab .text-red { color: #FFB4AB; }
 .crm-lap .crm-lap-tab table thead th, .crm-lap .crm-lap-tab table thead th span { color: var(--text-secondary); }
+
+/* ── 11. ORDER PER STATUS | PENDAPATAN PER KATEGORI ──────────────────────────────────────────────────────────── */
+.crm-lap .crm-lap-baris--dua { align-items: start; }
+@container laptab (min-width: 1040px) { .crm-lap .crm-lap-baris--dua { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ── 12. SALES PER STAGE: Sebaran Tahap (≈65%) | Perlu Perhatian (≈35%) | tabel Per sales ───────────────────── */
+.crm-lap .crm-ss { display: flex; flex-direction: column; gap: 16px; }
+.crm-lap .crm-ss-kepala { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.crm-lap .crm-ss-atas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@container laptab (min-width: 960px) { .crm-lap .crm-ss-atas { grid-template-columns: minmax(0, 13fr) minmax(0, 7fr); } }
+.crm-lap .crm-ss-judul { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 14px; }
+.crm-lap .crm-ss-sebaran .crm-ss-judul { justify-content: space-between; }
+.crm-lap .crm-ss-total { display: inline-flex; align-items: baseline; gap: 5px; font-size: 14px; color: var(--text-secondary); }
+.crm-lap .crm-ss-total strong { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.crm-lap .crm-ss-kanan { text-align: right; justify-self: end; font-variant-numeric: tabular-nums; }
+
+/* Sebaran Tahap: lima baris (titik palet bersama, nama, lead, bar, nilai, mandek) */
+.crm-lap .crm-ss-sebaran { container-type: inline-size; container-name: ss; }
+.crm-lap .crm-ss-baris {
+  display: grid; grid-template-columns: minmax(150px, 1.4fr) 64px minmax(110px, 2fr) 100px 84px; align-items: center; gap: 0 14px;
+  padding: 12px; border-bottom: 1px solid var(--hairline);
+}
+.crm-lap .crm-ss-baris:last-child { border-bottom: 0; }
+.crm-lap .crm-ss-baris--kepala { padding: 8px 12px; border-bottom: 0; border-radius: 12px; background: var(--bg-inset); font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-ss-baris--kepala > span { display: inline-flex; align-items: center; gap: 4px; }
+.crm-lap .crm-ss-baris--kepala > .crm-ss-kanan { justify-content: flex-end; }
+.crm-lap .crm-ss-tahap { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-ss-nama { min-width: 0; overflow-wrap: anywhere; }
+.crm-lap .crm-ss-titik { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; }
+.crm-lap .crm-ss-lead { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.crm-lap .crm-ss-bar { display: block; height: 10px; border-radius: 999px; background: var(--bg-inset); overflow: hidden; }
+.crm-lap .crm-ss-bar > span { display: block; height: 100%; border-radius: 999px; transition: width 0.6s ease-out; }
+.crm-lap .crm-ss-nilai { font-size: 13.5px; color: var(--text-primary); }
+.crm-lap .crm-ss-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 32px; padding: 2px 10px; border-radius: 999px;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.crm-lap .crm-ss-chip[data-ada="1"] { background: #FFF1DC; color: #9A4A00; }
+.crm-lap .crm-ss-chip[data-ada="0"] { font-weight: 600; color: var(--text-secondary); }
+:root[data-theme="dark"] .crm-lap .crm-ss-chip[data-ada="1"] { background: rgba(255, 169, 77, 0.16); color: #FFC38A; }
+@container ss (max-width: 560px) {
+  .crm-lap .crm-ss-baris--kepala { display: none; }
+  .crm-lap .crm-ss-baris { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "tahap lead" "bar bar" "nilai mandek"; row-gap: 8px; padding: 12px 4px; }
+  .crm-lap .crm-ss-tahap { grid-area: tahap; }
+  .crm-lap .crm-ss-lead { grid-area: lead; }
+  .crm-lap .crm-ss-bar { grid-area: bar; }
+  .crm-lap .crm-ss-nilai { grid-area: nilai; justify-self: start; text-align: left; }
+  .crm-lap .crm-ss-mandek { grid-area: mandek; }
+  .crm-lap .crm-ss-nilai::before, .crm-lap .crm-ss-mandek::before { content: attr(data-label) " "; margin-right: 4px; font-size: 12px; color: var(--text-tertiary); }
+}
+
+/* Perlu Perhatian: angka utama, tanpa donut / kartu bertingkat */
+.crm-lap .crm-ss-perhatian { display: flex; flex-direction: column; }
+.crm-lap .crm-ss-perhatian .crm-ss-judul { margin-bottom: 8px; }
+.crm-lap .crm-ss-ikon {
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 12px; color: #fff;
+  background: linear-gradient(145deg, #8E9BFF 0%, #5563F0 100%); box-shadow: 0 6px 12px -8px rgba(27, 27, 57, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.crm-lap .crm-ss-ikon[data-ada="1"] { background: linear-gradient(145deg, #FFA94D 0%, #E8730C 100%); }
+.crm-lap .crm-ss-blok { display: flex; flex-direction: column; gap: 4px; padding: 14px 0; border-top: 1px solid var(--hairline); }
+.crm-lap .crm-ss-judul + .crm-ss-blok { padding-top: 6px; border-top: 0; }
+.crm-lap .crm-ss-angka { font-size: 40px; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.crm-lap .crm-ss-angka--rp { font-size: 28px; text-wrap: balance; }
+.crm-lap .crm-ss-label { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-ss-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 13px; color: var(--text-tertiary); }
+
+/* Per sales: tabel perbandingan; HP = gulir mendatar DI DALAM panel (teks tidak dikecilkan), kolom Sales menempel di kiri */
+.crm-lap .crm-ss-persales .crm-ss-judul { margin-bottom: 12px; }
+.crm-lap .crm-ss-pil { padding: 3px 12px; border-radius: 999px; background: var(--bg-inset); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-ss-gulir { overflow-x: auto; border-radius: 12px; }
+.crm-lap .crm-ss-gulir:focus-visible { outline: 2px solid #3965FA; outline-offset: 2px; }
+.crm-lap .crm-ss-tabel-sales { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.crm-lap .crm-ss-tabel-sales th, .crm-lap .crm-ss-tabel-sales td { padding: 11px 14px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crm-lap .crm-ss-tabel-sales thead th { padding-block: 10px; background: var(--bg-inset); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-ss-tabel-sales thead th .crm-ss-titik { width: 9px; height: 9px; margin-right: 6px; }
+.crm-lap .crm-ss-tabel-sales thead th:first-child { border-radius: 12px 0 0 12px; }
+.crm-lap .crm-ss-tabel-sales thead th:last-child { border-radius: 0 12px 12px 0; }
+.crm-lap .crm-ss-tabel-sales tbody th, .crm-lap .crm-ss-tabel-sales tbody td { border-bottom: 1px solid var(--hairline); color: var(--text-primary); font-weight: 500; }
+.crm-lap .crm-ss-tabel-sales tbody tr:last-child th, .crm-lap .crm-ss-tabel-sales tbody tr:last-child td { border-bottom: 0; }
+.crm-lap .crm-ss-tabel-sales .crm-ss-kiri { position: sticky; left: 0; text-align: left; }
+.crm-lap .crm-ss-tabel-sales thead .crm-ss-kiri { z-index: 2; }
+.crm-lap .crm-ss-tabel-sales tbody .crm-ss-kiri { z-index: 1; background: var(--bg-surface); font-weight: 600; }
+.crm-lap .crm-ss-tabel-sales .crm-ss-tebal { font-weight: 700; }
+.crm-lap .crm-ss-orang { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.crm-lap .crm-ss-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  background: #E9EBFF; color: #2F57E0; font-size: 11px; font-weight: 700;
+}
+:root[data-theme="dark"] .crm-lap .crm-ss-avatar { background: rgba(110, 142, 255, 0.18); color: #B8C6FF; }
+.crm-lap .crm-ss-nama-sales { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-lap .crm-ss-kaki { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-top: 12px; font-size: 12.5px; color: var(--text-tertiary); }
+.crm-lap .crm-ss-semua {
+  display: block; margin: 14px auto 0; padding: 8px 16px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--bg-inset); color: var(--crm-primary-ink, #2F57E0); font: inherit; font-size: 13px; font-weight: 700;
+}
+
+/* ── 13. PENYELARASAN SETELAH PREVIEW (1 Nov 2026) ─────────────────────────────────────────────────────────── */
+.crm-lap .crm-ss-baris { grid-template-columns: minmax(200px, 1.5fr) 64px minmax(110px, 2fr) 100px 84px; }
+/* angka sejajar dengan teks header (header memuat ikon tooltip ± 18px di kanan teks) */
+.crm-lap .crm-ss-tabel-sales tbody td:not(:nth-child(2)) { padding-right: 32px; }
+.crm-lap .crm-lap-baris--dua { align-items: stretch; }
+.crm-lap .crm-lap-grid-panel { grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); align-items: stretch; }

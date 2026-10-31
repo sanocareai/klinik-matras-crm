@@ -420,8 +420,8 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
       {/* ── SALES PER STAGE (30 Sep 2026, permintaan owner, gaya bento) ── */}
       <StageBySalesCard range={range} onGoTab={onGoTab} />
 
-      {/* ── 4. PANEL SEBARAN — berdampingan (auto-fit), urutan baca sama dengan versi lama ──────────────────────── */}
-      <div className="crm-lap-grid-panel">
+      {/* ── 4. ORDER PER STATUS | PENDAPATAN PER KATEGORI — dua panel sejajar bila ruang cukup (.crm-lap-baris--dua) ───── */}
+      <div className="crm-lap-baris crm-lap-baris--dua">
         <ChartCard
           index={6}
           title={<span className="inline-flex items-center gap-1.5">Order per Status <InfoTooltip text={INFO_STATUS} /></span>}
@@ -431,18 +431,19 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           <div className="flex flex-col gap-2.5">
             {statusRows.map((r) => (
               <BarRow
-                key={r.status} tumpuk
+                key={r.status} lebarSub="sm:w-20"
                 label={ORDER_STATUS_LABELS[r.status] || r.status}
                 value={r.count} max={statusMax}
                 display={`${r.count} order`}
-                sub={STATUS_TANPA_OMSET.has(r.status) ? `${formatRupiahShort(r.value)} · tidak masuk omset` : formatRupiahShort(r.value)}
+                sub={formatRupiahShort(r.value)}
                 tone={STATUS_TONE[r.status] || "accent"}
               />
             ))}
           </div>
           <p className="mt-3 border-t border-line pt-3 text-[11px] text-ink3">
             Total <strong className="text-ink2">{statusRows.reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong> order ·
-            masuk omset <strong className="text-ink2">{statusRows.filter((r) => !STATUS_TANPA_OMSET.has(r.status)).reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong>
+            masuk omset <strong className="text-ink2">{statusRows.filter((r) => !STATUS_TANPA_OMSET.has(r.status)).reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong> ·
+            nilai Menunggu dan Dibatalkan tidak masuk omset
           </p>
         </ChartCard>
 
@@ -455,7 +456,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           <div className="flex flex-col gap-2.5">
             {kategori.map((r) => (
               <BarRow
-                key={r.category} tumpuk
+                key={r.category} lebarSub="sm:w-20"
                 label={CATEGORY_LABELS[r.category] || r.category}
                 value={r.value} max={katMax}
                 display={formatRupiahShort(r.value)}
@@ -464,7 +465,10 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
             ))}
           </div>
         </ChartCard>
+      </div>
 
+      {/* ── 5. PANEL SEBARAN LAIN — berdampingan (auto-fit) ─────────────────────────────────────────────────────── */}
+      <div className="crm-lap-grid-panel">
         {/* "Dari mana pelanggan datang" — SPAM dikecualikan (custWhereKonversi di backend) supaya jumlahnya sepadan
             dengan KPI "New Leads" — dulu leadSourceBreakdown tidak punya konsumen UI sama sekali. */}
         <ChartCard
