@@ -1,5 +1,5 @@
-import React from "react";
-import { Timer, ArrowRightLeft } from "lucide-react";
+import React, { useState } from "react";
+import { Timer, ArrowRightLeft, Info } from "lucide-react";
 import { formatRupiah, formatRupiahShort, STAGE_LABELS, stageDotVar } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -60,9 +60,23 @@ const INFO = {
   nilai: "Total nilai order pasti milik pelanggan di stage itu. Order Menunggu (belum pasti) dan Dibatalkan tidak dihitung.",
   persen: "Porsi stage ini dari SELURUH pelanggan di periode terpilih (termasuk Spam). Rumus: jumlah di stage ini dibagi total semua stage. Semua baris kalau dijumlah = 100%.",
   kecepatan: "Rata-rata berapa lama pelanggan tinggal di satu stage sebelum dipindah ke stage berikutnya. Makin pendek makin cepat closing. Dihitung dari riwayat perpindahan stage yang dicatat sistem.",
+  cakupanTerlama: "Perbandingan ini hanya mencakup New dan Prospek. Transaksi, Reviewed, dan Spam tidak ikut dipilih. Durasi tahap tersebut tetap ditampilkan di bawah.",
   sample: "n = jumlah perpindahan yang dipakai untuk menghitung rata-rata itu. Kalau angkanya kecil (mis. n=2), rata-ratanya belum bisa dipercaya.",
   pergerakan: "Berapa pelanggan MASUK ke tiap stage selama periode terpilih. Beda dengan funnel di atas yang menunjukkan posisi pelanggan saat ini: di sini yang dihitung adalah kejadian perpindahannya.",
 };
+
+// Penjelasan yang dibuka lewat KLIK/TAP dan KEYBOARD (Enter/Spasi; Esc menutup) — bukan hover saja. Teks tampil inline di bawah kalimat (tanpa portal), jadi tidak terpotong di HP.
+function PenjelasanKlik({ id, teks }) {
+  const [buka, setBuka] = useState(false);
+  return (
+    <>
+      <button type="button" className="crm-pl-info" aria-expanded={buka} aria-controls={id} aria-label="Penjelasan cakupan perbandingan" onClick={() => setBuka((v) => !v)} onKeyDown={(e) => { if (e.key === "Escape") setBuka(false); }} data-testid="bottleneck-info">
+        <Info size={14} aria-hidden="true" />
+      </button>
+      {buka && <span id={id} className="crm-pl-info-isi" role="note" data-testid="bottleneck-info-isi">{teks}</span>}
+    </>
+  );
+}
 
 const Titik = ({ s }) => <i className="crm-ss-titik" style={{ background: stageDotVar(s) }} aria-hidden="true" />;
 
@@ -151,11 +165,10 @@ export default function PipelineTab({ funnel, velocity }) {
                 <div className="crm-pl-bottleneck" data-testid="pipeline-bottleneck">
                   <Timer className="shrink-0" size={16} aria-hidden="true" />
                   <p>
-                    Di antara tahap yang masih berjalan (<strong>New</strong> dan <strong>Prospek</strong>), paling lama tertahan di{" "}
-                    <strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong> —
-                    rata-rata <strong>{formatDurasiHari(bottleneck.avgDays)}</strong>. Ini
-                    kandidat bottleneck yang paling layak dibenahi lebih dulu. Tahap akhir (Transaksi, Reviewed) dan Spam
-                    tidak diikutkan karena lama di sana tidak berarti macet; angkanya tetap ada di daftar di bawah.
+                    Di antara New dan Prospek, waktu rata-rata terlama ada di{" "}
+                    <strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong>:{" "}
+                    <strong>{formatDurasiHari(bottleneck.avgDays)}</strong>.{" "}
+                    <PenjelasanKlik id="penjelasan-terlama" teks={INFO.cakupanTerlama} />
                   </p>
                 </div>
               )}

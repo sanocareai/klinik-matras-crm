@@ -555,3 +555,12 @@
 /* Kontras badge "Perlu ditinjau" (komponen bersama StatusJembatan) di dalam panel Rekonsiliasi: 4,1:1 → ≥ 4,5:1 */
 .crm-lap .crm-rk-tahap-status [class*="text-orange"] { color: #8F4400; }
 :root[data-theme="dark"] .crm-lap .crm-rk-tahap-status [class*="text-orange"] { color: #FFC38A; }
+
+/* Pipeline: ikon info yang dibuka lewat klik/tap/keyboard (catatan inline, tidak terpotong di HP) */
+.crm-lap .crm-pl-bottleneck p { display: block; }
+.crm-lap .crm-pl-info { display: inline-flex; vertical-align: -2px; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; margin-left: 2px; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; color: #8F4400; }
+.crm-lap .crm-pl-info[aria-expanded="true"] { background: rgba(194, 94, 0, 0.14); }
+.crm-lap .crm-pl-info:focus-visible { outline: 2px solid #3965FA; outline-offset: 1px; }
+.crm-lap .crm-pl-info-isi { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(194, 94, 0, 0.25); font-size: 12.5px; line-height: 1.5; }
+:root[data-theme="dark"] .crm-lap .crm-pl-info { color: #FFC38A; }
+:root[data-theme="dark"] .crm-lap .crm-pl-info[aria-expanded="true"] { background: rgba(255, 195, 138, 0.16); }

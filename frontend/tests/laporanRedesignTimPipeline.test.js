@@ -80,9 +80,14 @@ test("Performa Tim: kolom memakai judul lengkap 'Menggantung' (tooltip definisi 
   assert.doesNotMatch(pt, />Aman</);
 });
 
-test("Pipeline: pesan bottleneck menyebut cakupan (hanya New dan Prospek) — bukan 'paling lama di seluruh pipeline'; pemilihan tahap tidak berubah", () => {
-  assert.ok(pl.includes("Di antara tahap yang masih berjalan (<strong>New</strong> dan <strong>Prospek</strong>)"));
-  assert.ok(pl.includes("Tahap akhir (Transaksi, Reviewed) dan Spam"));
-  assert.doesNotMatch(pl, /<p>\s*Paling lama tertahan di/);
-  assert.match(pl, /r\.stage !== "TRANSACTION" && r\.stage !== "REVIEWED" && r\.stage !== "SPAM" && r\.avgDays != null && r\.sample > 0/);
+test("Pipeline: pesan durasi terlama ringkas + ikon info (klik/keyboard) yang menyebut cakupan; tanpa saran prioritas; pemilihan tahap tidak berubah", () => {
+  assert.ok(pl.includes("Di antara New dan Prospek, waktu rata-rata terlama ada di"));
+  assert.ok(pl.includes("<strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong>:"), "nama tahap dinamis");
+  assert.ok(pl.includes("<strong>{formatDurasiHari(bottleneck.avgDays)}</strong>."), "angka dinamis");
+  assert.ok(pl.includes('<PenjelasanKlik id="penjelasan-terlama" teks={INFO.cakupanTerlama} />'));
+  assert.ok(pl.includes("aria-expanded={buka}") && pl.includes("aria-controls={id}") && pl.includes('e.key === "Escape"'), "tombol: aria-expanded, aria-controls, Esc");
+  assert.ok(pl.includes("Perbandingan ini hanya mencakup New dan Prospek. Transaksi, Reviewed, dan Spam tidak ikut dipilih. Durasi tahap tersebut tetap ditampilkan di bawah."));
+  assert.doesNotMatch(pl.split("\n").filter((baris) => !baris.trimStart().startsWith("//")).join("\n"), /kandidat bottleneck|paling layak dibenahi|Paling lama tertahan di/, "teks tampil tanpa saran prioritas (komentar kode tidak dihitung)");
+  assert.match(pl, /r.stage !== "TRANSACTION" && r.stage !== "REVIEWED" && r.stage !== "SPAM" && r.avgDays != null && r.sample > 0/);
+  assert.ok(pl.includes("onClick={() => setBuka((v) => !v)}"), "dibuka lewat klik/tap dan keyboard (tombol native), bukan hover saja");
 });
