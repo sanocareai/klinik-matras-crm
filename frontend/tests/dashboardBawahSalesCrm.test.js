@@ -19,7 +19,8 @@ const ikon = baca(K + "MiniIkon.jsx");
 const css = baca("src/styles/sanss-crm-dashboard.css");
 
 test("Dashboard: bagian bawah memakai grid tanpa peregangan tinggi dan menyalakan mode ringkas", () => {
-  assert.equal((dash.match(/className="crm-bawah grid grid-cols-1 gap-4 lg:grid-cols-2"/g) || []).length, 2, "dua baris kartu berpasangan");
+  assert.equal((dash.match(/className="crm-bawah grid grid-cols-1 gap-4 lg:grid-cols-2"/g) || []).length, 1, "baris Needs Action + Hot Leads");
+  assert.equal((dash.match(/className="crm-utama"/g) || []).length, 2, "dua baris utama ±65/35");
   assert.ok(dash.includes("<PipelineFunnelCard range={range} ringkas />"));
   assert.ok(/<RecentActivityCard\s+ringkas\b/.test(dash));
   assert.ok(css.includes(".crm-dash .crm-bawah { align-items: start; }"), "kartu sedikit isi tidak dipaksa setinggi tetangga");
@@ -75,7 +76,7 @@ test("Ikon: SVG buatan sendiri (berisi dua warna), bukan emoji; ubin 32px rounde
 
 test("CSS bagian bawah: semua selektor di dalam .crm-dash; tanpa font-family; HP satu kolom", () => {
   const tanpaKomentar = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const isi = tanpaKomentar.replace(/@media[^{]*\{/g, "");
+  const isi = tanpaKomentar.replace(/@(media|container)[^{]*\{/g, "");
   for (const m of isi.matchAll(/([^{}]+)\{[^{}]*\}/g)) for (const sel of m[1].split(",").map((x) => x.trim()).filter(Boolean)) assert.ok(/\.crm-dash(\s|$)/.test(sel), `selektor di luar .crm-dash: ${sel}`);
   assert.ok(!/font-family|@import|@font-face/.test(tanpaKomentar), "font tetap Manrope");
   assert.ok(!/min-height\s*:\s*\d{3}/.test(tanpaKomentar), "tanpa tinggi minimum besar");

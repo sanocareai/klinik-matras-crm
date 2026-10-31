@@ -77,7 +77,7 @@ export default function Dashboard({ user }) {
     : null;
 
   return (
-    <PageContainer className="crm-dash">
+    <PageContainer fluid className="crm-dash">
       <PageHeader
         title={`Halo, ${userName}`}
         subtitle={`Ringkasan bisnis Anda · ${formatTanggalIndo()}`}
@@ -148,20 +148,30 @@ export default function Dashboard({ user }) {
             aslinya (Deal Pipeline dapat ruang cukup untuk trapesiumnya
             benar-benar kelihatan). Tetap ikut `range` yang sama dari date
             picker header. */}
-        <RevenueOverview
-          range={range}
-          repeatRate={ov?.repeatRate}
-          repeatCustomers={ov?.repeatCustomers}
-          customersWithOrders={ov?.customersWithOrders}
-        />
-
-        {/* ── Dua kolom: corong + leaderboard ── */}
-        <section className="crm-bawah grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* ── Baris utama 1 (≥1280px: ±65% | ±35%; di bawahnya satu kolom): Sales Overview + Deal Pipeline.
+            Tinggi dua panel diselaraskan (stretch) — susunan mengikuti referensi desain 31 Okt 2026. ── */}
+        <section className="crm-utama">
+          <RevenueOverview
+            range={range}
+            repeatRate={ov?.repeatRate}
+            repeatCustomers={ov?.repeatCustomers}
+            customersWithOrders={ov?.customersWithOrders}
+          />
           <PipelineFunnelCard range={range} ringkas />
-          <TopRepsCard range={range} />
         </section>
 
-        {/* ── Dua kolom: antrean tindakan + lead panas ── */}
+        {/* ── Baris utama 2: Top Performing Reps (kiri) + Recent Activity (kanan; lima dulu, "Lihat semua" membuka sisanya) ── */}
+        <section className="crm-utama">
+          <TopRepsCard range={range} />
+          <RecentActivityCard
+            ringkas
+            items={d.recentActivity.data?.items}
+            loading={d.recentActivity.isLoading}
+            error={d.recentActivity.isError}
+          />
+        </section>
+
+        {/* ── Baris berikut (ringkas): antrean tindakan + lead panas ── */}
         <section className="crm-bawah grid grid-cols-1 gap-4 lg:grid-cols-2">
           <TaskQueueCard
             items={d.followUps.data?.items}
@@ -174,20 +184,6 @@ export default function Dashboard({ user }) {
             error={d.hotLeads.isError}
           />
         </section>
-
-        {/* ── Recent Activity (30 Agustus 2026) — dipindah dari command
-            center /portal/growth (DivisionPage.jsx), yang di sana cuma
-            empty state jujur karena dulu belum ada datanya. Sekarang jadi
-            satu-satunya tempatnya, dengan data nyata (order + lead baru +
-            perpindahan pipeline). Lihat catatan navigasi di Portal.jsx —
-            klik kartu workspace sekarang langsung ke sini, bukan mampir
-            command center dulu. ── */}
-        <RecentActivityCard
-          ringkas
-          items={d.recentActivity.data?.items}
-          loading={d.recentActivity.isLoading}
-          error={d.recentActivity.isError}
-        />
       </PageBody>
 
       <LeadsDetailModal

@@ -22,7 +22,7 @@ test("Dashboard: empat KpiTile berwarna (revenue, leads, orders, conversion); St
   // urutan mengikuti acuan: Revenue → Leads → Orders → Conversion
   const urut = ["revenue", "leads", "orders", "conversion"].map((t) => dash.indexOf(`tone="${t}"`));
   assert.deepEqual([...urut].sort((a, b) => a - b), urut);
-  assert.ok(dash.includes('<PageContainer className="crm-dash">'), "lingkup .crm-dash");
+  assert.ok(dash.includes('<PageContainer fluid className="crm-dash">'), "lingkup .crm-dash");
 });
 
 test("Dashboard: data, rumus, dan tooltip tetap (tidak ada perubahan perhitungan)", () => {
@@ -46,7 +46,7 @@ test("KpiTile: arah pertumbuhan dibedakan (naik/turun/datar); ikon SVG buatan se
 test("CSS Dashboard: SEMUA aturan berada di dalam .crm-dash; tanpa font-family; warna kartu sesuai permintaan", () => {
   const tanpaKomentar = css.replace(/\/\*[\s\S]*?\*\//g, "");
   // buang pembungkus @media (isi aturannya tetap diperiksa), lalu periksa tiap selektor
-  const isi = tanpaKomentar.replace(/@media[^{]*\{/g, "");
+  const isi = tanpaKomentar.replace(/@(media|container)[^{]*\{/g, "");
   let n = 0;
   for (const m of isi.matchAll(/([^{}]+)\{[^{}]*\}/g)) {
     for (const sel of m[1].split(",").map((x) => x.trim()).filter(Boolean)) { n++; assert.ok(/\.crm-dash(\s|$)/.test(sel), `selektor di luar .crm-dash: ${sel}`); }

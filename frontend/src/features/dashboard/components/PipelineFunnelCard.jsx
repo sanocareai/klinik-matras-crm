@@ -6,9 +6,13 @@ import Funnel from "@/components/ui/funnel.jsx";
 import { api } from "@/api.js";
 import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
 import { toApiParams } from "@/lib/dateRange.js";
+import { MiniTile, IkAlur, IkCentang } from "./MiniIkon.jsx";
+import { IkonOrang, IkonTas } from "./KpiTile.jsx";
 
 // Urutan tahap & sumber data (analytics/pipeline-funnel) tidak berubah.
 const TAHAP = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED"];
+// Ikon per tahap (hanya mode ringkas; tampilan, bukan data).
+const IKON_TAHAP = { NEW: { Ikon: IkonOrang, tone: "blue" }, PROSPECT: { Ikon: IkAlur, tone: "indigo" }, TRANSACTION: { Ikon: IkonTas, tone: "blue" }, REVIEWED: { Ikon: IkCentang, tone: "green" } };
 
 // `ringkas` (OPSIONAL, default false — PipelineWidget memakai kartu ini dan TIDAK berubah): bar horizontal per tahap —
 // nama tahap, jumlah lead, nilai; panjang bar = jumlah lead ÷ jumlah terbesar × 100% (tanpa batas minimum); jumlah 0 → tanpa isian.
@@ -47,6 +51,7 @@ export default function PipelineFunnelCard({ range, className, ringkas = false }
         <ul className="crm-pipe" data-testid="pipeline-bar">
           {stages.map((s) => (
             <li key={s.key} className="crm-pipe-baris" data-stage={s.key}>
+              <MiniTile className="crm-pipe-ikon" tone={IKON_TAHAP[s.key].tone} Ikon={IKON_TAHAP[s.key].Ikon} />
               <span className="crm-pipe-nama">{s.label}</span>
               <span className="crm-pipe-jumlah">{s.count}</span>
               <span className="crm-pipe-nilai">{s.value}</span>

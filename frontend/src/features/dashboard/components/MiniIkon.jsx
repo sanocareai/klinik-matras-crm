@@ -55,6 +55,15 @@ export function IkAlur(props) {
   );
 }
 
+export function IkCentang(props) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <circle cx="12" cy="12" r="9.200" fill="var(--ik-a)" />
+      <path d="M7.800 12.300l2.900 2.900 5.600-5.900" fill="none" stroke="var(--ik-b)" strokeWidth="2.400" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // Ubin ikon kecil. `tone`: blue | indigo | green | orange. Ukuran lewat CSS (.crm-ik-tile = 32px, rounded 10px).
 export function MiniTile({ tone = "blue", Ikon, className }) {
   return (
