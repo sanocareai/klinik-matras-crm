@@ -68,8 +68,8 @@ test("ROLLBACK: kembali ke baseline (folder BASE, image SAMA yang memuat hotfix)
 });
 
 test("teks dist: Ringkasan Finance revisi ada, fitur live tetap, logo bank terbangun, gerbang data mengabaikan kolom pesan", () => {
-  assert.ok(script.includes('for s0 in "bukti terdeteksi" "Umur tagihan pelanggan" "Pencatatan terbaru" "Pemeriksaan angka" "Tidak ada kekurangan pencatatan yang terdeteksi" "Tampilkan semua kategori"; do'));
-  assert.ok(script.includes('for c1 in ".fin-tl-baris" ".fin-rek-item" ".fin-bk-item" ".fin-tg-stat" ".fin-umur-bar" ".fin-dua"; do'), "aturan Finance revisi hanya di dist baru");
+  assert.ok(script.includes('for s0 in "bukti terdeteksi" "Umur tagihan pelanggan" "Pencatatan terbaru" "Pemeriksaan angka" "Tidak ada kekurangan pencatatan yang terdeteksi" "Kategori aktif"; do'));
+  assert.ok(script.includes('for c1 in ".fin-tl-baris" ".fin-rek-item" ".fin-bk-item" ".fin-tg-stat" ".fin-umur-bar" ".fin-dua" ".fin-pill" ".fin-nav"; do'), "aturan Finance revisi hanya di dist baru");
   for (const f of [".fin-kpi-grid", ".fin-logo-merek", ".fin-lr-akhir", ".crm-rk-alur", ".crm-pl-posisi", ".crm-pt-legenda", "rekon-tahap-tombol", "Rasio antar tahap", "crm-pt-tabel", ".ord-chip", ".crm-ord-toolbar", "Metrik lainnya", "crm-ord-kelengkapan", "Posisi terbaru dalam pembukuan", "Gerbang verifikasi pembayaran"]) assert.ok(script.includes(f), `fitur live tetap dijaga: ${f}`);
   for (const f of ["Piutang Paling Lama", "Aging Piutang", "Jurnal Terakhir", "Perlu dibereskan"]) assert.ok(!script.includes('"' + f + '"'), `teks yang sengaja diganti tidak lagi dijaga: ${f}`);
   for (const f of ["Sales Overview", "Deal Pipeline", "crm-pel-tabel", "pelanggan-kolom:v1", "Total estimasi nilai", "Seret kartu ke sini", "crm-pipe-kolom", ".stage-field", ".crm-pipe-toolbar"]) assert.ok(script.includes(f), f);

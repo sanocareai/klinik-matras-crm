@@ -1,10 +1,10 @@
 # Teks yang HANYA ada di Ringkasan Finance revisi (tidak ada di dist aktif d8d07412); teks fitur live (Finance sfr1, Laporan fase 2, Order, dst) yang HARUS ada di KEDUANYA.
-for s0 in "bukti terdeteksi" "Umur tagihan pelanggan" "Pencatatan terbaru" "Pemeriksaan angka" "Tidak ada kekurangan pencatatan yang terdeteksi" "Tampilkan semua kategori"; do
+for s0 in "bukti terdeteksi" "Umur tagihan pelanggan" "Pencatatan terbaru" "Pemeriksaan angka" "Tidak ada kekurangan pencatatan yang terdeteksi" "Kategori aktif"; do
   [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks Finance baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat Finance baru: ${s0}"
 done
 # CSS: lapisan Finance (.fin-*) hanya di dist baru; lapisan sebelumnya (termasuk Laporan fase 2) tetap ada
-for c1 in ".fin-tl-baris" ".fin-rek-item" ".fin-bk-item" ".fin-tg-stat" ".fin-umur-bar" ".fin-dua"; do
+for c1 in ".fin-tl-baris" ".fin-rek-item" ".fin-bk-item" ".fin-tg-stat" ".fin-umur-bar" ".fin-dua" ".fin-pill" ".fin-nav"; do
   [ -z "$(grep -lF -- "$c1" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$c1" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
