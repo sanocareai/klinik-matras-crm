@@ -276,6 +276,7 @@ export const EVENT_TYPES = Object.freeze({
   COMPLAINT_FOLLOW_UP_LOGGED: "COMPLAINT_FOLLOW_UP_LOGGED",
   COMPLAINT_CUSTOMER_CONFIRMED: "COMPLAINT_CUSTOMER_CONFIRMED",
   COMPLAINT_CANCELLED: "COMPLAINT_CANCELLED",
+  COMPLAINT_REDELIVERY_WAIVED: "COMPLAINT_REDELIVERY_WAIVED",
 
   // Finance (D-180). DOCUMENT_APPROVED/REJECTED/CANCELLED/POSTED di atas
   // DIPAKAI ULANG untuk dokumen finance — jenis keputusannya sama persis,
@@ -694,6 +695,8 @@ export function formatActivitySentence(event) {
       return "Customer mengonfirmasi komplain SELESAI";
     case EVENT_TYPES.COMPLAINT_CANCELLED:
       return metadata.reason ? `Kasus komplain dibatalkan — ${metadata.reason}` : "Kasus komplain dibatalkan";
+    case EVENT_TYPES.COMPLAINT_REDELIVERY_WAIVED:
+      return `Diselesaikan tanpa pengiriman ulang — ${metadata.reason || "tanpa keterangan"}`;
 
     // ── Finance (D-180) ───────────────────────────────────────────────
     case EVENT_TYPES.JOURNAL_REVERSED:

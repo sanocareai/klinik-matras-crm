@@ -498,6 +498,7 @@ model User {
   unitRevisionsCreated       UnitRevision[]           @relation("UnitRevisionCreator")
   complaintCasesCreated      ComplaintCase[]          @relation("ComplaintCreator")
   complaintCasesConfirmed    ComplaintCase[]          @relation("ComplaintCustomerConfirmer")
+  complaintCasesRedeliveryWaived ComplaintCase[]      @relation("ComplaintRedeliveryWaiver")
   goodsReceiptsCreated       GoodsReceipt[]           @relation("GoodsReceiptCreator")
   goodsReceiptsArrivalRecorded GoodsReceipt[]         @relation("GoodsReceiptArrivalRecorder")
   goodsReceiptEvents         GoodsReceiptEvent[]      @relation("GoodsReceiptEventActor")
@@ -3467,6 +3468,21 @@ model ComplaintCase {
   customerConfirmedBy   User?     @relation("ComplaintCustomerConfirmer", fields: [customerConfirmedById], references: [id], onDelete: SetNull)
 
   cancelReason String? @map("cancel_reason") // wajib diisi kalau status DIBATALKAN
+
+  // Gerbang redelivery (31 Oktober 2026, insiden Sony RES-27082026-183) —
+  // KONFIRMASI_CUSTOMER/SELESAI SEKARANG menolak kasus yang punya Job
+  // DELIVERY aktif (complaintCaseId sama, belum COMPLETED+POD) — lihat
+  // assertRedeliveryCompleted() di complaintCase.js. Kasus yang resolusinya
+  // SENGAJA TIDAK lewat pengiriman ulang fisik (refund, kompensasi lain,
+  // atau redelivery yang sudah diputuskan batal dilanjutkan) butuh JALAN
+  // KELUAR eksplisit — kolom ini itu: SATU-SATUNYA cara melewati gerbang,
+  // WAJIB alasan, tercatat siapa & kapan (pola sama dengan cancelReason/
+  // customerConfirmedAt di atas: kolom cukup untuk v1, bukan tabel ledger
+  // terpisah). TIDAK PERNAH diisi otomatis oleh sistem.
+  redeliveryWaivedAt       DateTime? @map("redelivery_waived_at")
+  redeliveryWaivedById     String?   @map("redelivery_waived_by")
+  redeliveryWaivedBy       User?     @relation("ComplaintRedeliveryWaiver", fields: [redeliveryWaivedById], references: [id], onDelete: SetNull)
+  redeliveryWaivedReason   String?   @map("redelivery_waived_reason")
 
   // QC yang memverifikasi hasil rework kasus ini (opsional — hanya kasus
   // yang benar-benar lewat produksi ulang yang mengisi ini). SetNull: QC

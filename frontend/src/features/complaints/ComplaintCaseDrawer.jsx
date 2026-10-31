@@ -13,6 +13,7 @@ import {
 } from "./complaintLabels.js";
 import {
   KEADAAN, TAHAP, tahapDari, aksiUtama, aksiLain, pilihanCara, bisaAksi, pesanIzin, kasusTutup, PRIORITAS_BAHAN, TERTAHAN,
+  REDELIVERY_GATE_STATUSES,
 } from "./complaintFlow.js";
 import ComplaintStepper from "./ComplaintStepper.jsx";
 
@@ -63,7 +64,7 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
   const [rootCause, setRootCause] = useState("");
   const [resolution, setResolution] = useState("");
   const [resolutionCost, setResolutionCost] = useState("");
-  const [panel, setPanel] = useState(null); // null | "cara" | "bahan" | "qc" | "tindakLanjut" | "batal" | "selesai"
+  const [panel, setPanel] = useState(null); // null | "cara" | "bahan" | "qc" | "tindakLanjut" | "batal" | "selesai" | "waiveRedelivery"
   const [alasan, setAlasan] = useState("");
   const [tindakLanjut, setTindakLanjut] = useState("");
   const [bukaPenyebab, setBukaPenyebab] = useState(null); // null = ikut tahap
@@ -77,6 +78,8 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
   const [qcTests, setQcTests] = useState([]);
   const [qcId, setQcId] = useState("");
 
+  const [waiveReason, setWaiveReason] = useState("");
+
   const load = useCallback(() => {
     if (!caseId) return;
     setLoading(true); setError("");
@@ -84,7 +87,7 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
       .then(([c, act]) => {
         setKase(c); setActivity(act.events || []);
         setRootCause(c.rootCause || ""); setResolution(c.resolution || ""); setResolutionCost(c.resolutionCost != null ? String(c.resolutionCost) : "");
-        setPanel(null); setAlasan("");
+        setPanel(null); setAlasan(""); setWaiveReason("");
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -92,7 +95,7 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
 
   useEffect(() => {
     if (open) load();
-    else { setKase(null); setActivity([]); setError(""); setPanel(null); setAlasan(""); setTindakLanjut(""); setBukaPenyebab(null); setBukaLinimasa(false); setBukaDetail(false); setMatId(""); setQcId(""); }
+    else { setKase(null); setActivity([]); setError(""); setPanel(null); setAlasan(""); setWaiveReason(""); setTindakLanjut(""); setBukaPenyebab(null); setBukaLinimasa(false); setBukaDetail(false); setMatId(""); setQcId(""); }
   }, [open, load]);
 
   const berubah = () => { load(); onChanged?.(); };
@@ -138,6 +141,7 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
     if (a.jenis === "tautkanQc") return bukaQc();
     if (a.jenis === "tindakLanjut") return setPanel("tindakLanjut");
     if (a.jenis === "batal") return setPanel("batal");
+    if (a.jenis === "waiveRedelivery") return setPanel("waiveRedelivery");
     return undefined;
   }
 
@@ -159,6 +163,27 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
       ))}
     </div>
   );
+
+  // Gerbang redelivery (31 Okt 2026, insiden Sony RES-27082026-183) — cermin
+  // FRONTEND dari assertRedeliveryCompleted di backend/services/complaintCase.js:
+  // job DELIVERY tertaut kasus ini yang BELUM COMPLETED dengan bukti foto, ATAU
+  // kasus belum pernah punya job DELIVERY sama sekali. HANYA untuk ditampilkan
+  // (backend yang MENEGAKKAN) — supaya staf tahu KENAPA sebelum mencoba, bukan
+  // cuma baca pesan error sesudahnya. REDELIVERY_GATE_STATUSES dari
+  // complaintFlow.js (SATU sumber, dipakai juga oleh aksiLain() untuk
+  // menu "Selesaikan tanpa pengiriman ulang").
+  const deliveryJobs = kase ? (kase.jobs || []).filter((j) => j.type === "DELIVERY") : [];
+  const outstandingRedeliveryJobs = kase && !kase.redeliveryWaivedAt
+    ? deliveryJobs.filter((j) => !(j.status === "COMPLETED" && (j.proofPhotoUrls?.length || 0) > 0))
+    : [];
+  const neverHadRedeliveryJob = !!(kase && !kase.redeliveryWaivedAt && deliveryJobs.length === 0
+    && REDELIVERY_GATE_STATUSES.includes(kase.status));
+  const redeliveryLocked = outstandingRedeliveryJobs.length > 0 || neverHadRedeliveryJob;
+
+  function kirimWaiveRedelivery() {
+    if (!waiveReason.trim()) { setError("Alasan wajib diisi"); return; }
+    jalankan(async () => { await api.waiveComplaintRedelivery(caseId, waiveReason.trim()); setPanel(null); setWaiveReason(""); });
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => (o ? null : onClose())}>
@@ -219,6 +244,31 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
                     </div>
                   )}
                 </div>
+
+                {/* 2b. Gerbang redelivery (31 Okt 2026, insiden Sony RES-27082026-183) — tampil sebelum langkah berikutnya supaya staf tahu KENAPA sebelum mencoba, bukan cuma baca pesan error sesudahnya. Backend yang menegakkan (assertRedeliveryCompleted); ini cuma cermin. */}
+                {redeliveryLocked && (
+                  <div className="rounded-xl bg-orangebg px-3 py-2.5" data-testid="banner-gerbang-redelivery">
+                    <p className="flex items-center gap-1.5 text-[13px] font-semibold text-orange"><Lock size={14} aria-hidden="true" /> Belum bisa konfirmasi/selesaikan kasus</p>
+                    {outstandingRedeliveryJobs.length > 0 ? (
+                      <>
+                        <p className="mt-1 text-[12px] text-ink2">Job pengiriman ulang berikut belum tuntas dengan bukti foto:</p>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12px] text-ink2">
+                          {outstandingRedeliveryJobs.map((j) => (
+                            <li key={j.id}>{JOB_STATUS_LABEL[j.status] || j.status}{j.status === "COMPLETED" ? " (tanpa bukti foto)" : ""}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-[12px] text-ink2">Kasus ini belum pernah punya job pengiriman ulang — buat tugas kirim ulang kalau memang perlu, atau pilih "Selesaikan tanpa pengiriman ulang" lewat menu Tindakan lainnya.</p>
+                    )}
+                  </div>
+                )}
+                {kase.redeliveryWaivedAt && (
+                  <p className="rounded-xl bg-inset/60 px-3 py-2.5 text-[12px] text-ink2" data-testid="catatan-waive-redelivery">
+                    Diselesaikan tanpa pengiriman ulang {formatTanggalJam(kase.redeliveryWaivedAt)}
+                    {kase.redeliveryWaivedBy?.name ? ` oleh ${kase.redeliveryWaivedBy.name}` : ""} — {kase.redeliveryWaivedReason}
+                  </p>
+                )}
 
                 {/* 3. SATU langkah berikutnya */}
                 {!tutup && utama && (
@@ -320,6 +370,17 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
                         <div className="flex gap-2">
                           <button type="button" disabled={busy} onClick={kirimBatal} className="min-h-11 rounded-btn bg-red px-3 py-2 text-[12.5px] font-bold text-white disabled:opacity-50 sm:min-h-9">Ya, batalkan</button>
                           <button type="button" onClick={() => setPanel(null)} className="rounded-btn px-3 py-2 text-[12.5px] font-semibold text-ink3 hover:bg-hovertint">Tidak jadi</button>
+                        </div>
+                      </div>
+                    )}
+                    {panel === "waiveRedelivery" && (
+                      <div className="mt-3 space-y-2 rounded-xl bg-surface p-2.5" data-testid="panel-waive-redelivery">
+                        <p className="text-[12.5px] font-semibold text-ink">Selesaikan tanpa pengiriman ulang?</p>
+                        <p className="text-[11.5px] text-ink3">Pakai ini kalau kasus memang tidak akan dikirim ulang secara fisik (mis. customer pilih refund) — bukan cara memintas job yang belum selesai.</p>
+                        <textarea value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} rows={2} placeholder="Kenapa diselesaikan tanpa pengiriman ulang (wajib) — mis. customer pilih refund" aria-label="Alasan menyelesaikan tanpa pengiriman ulang" className={INPUT} />
+                        <div className="flex gap-2">
+                          <button type="button" disabled={busy} onClick={kirimWaiveRedelivery} className="min-h-11 rounded-btn bg-accent px-3 py-2 text-[12.5px] font-bold text-white disabled:opacity-50 sm:min-h-9">Simpan</button>
+                          <button type="button" onClick={() => { setPanel(null); setWaiveReason(""); }} className="rounded-btn px-3 py-2 text-[12.5px] font-semibold text-ink3 hover:bg-hovertint">Batal</button>
                         </div>
                       </div>
                     )}

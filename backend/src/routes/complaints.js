@@ -20,6 +20,7 @@ import {
   ComplaintError, complaintCaseInclude, STATUS_LABEL,
   createComplaintCase, updateComplaintFields, transitionStatus,
   createDeliveryTask, linkQcFitTest, logFollowUp, confirmCustomer,
+  waiveRedelivery,
 } from "../services/complaintCase.js";
 
 export const complaintsRouter = express.Router();
@@ -221,10 +222,28 @@ complaintsRouter.post("/:id/follow-up", requirePermission(P.ORDER_WRITE), async 
 });
 
 // POST /api/complaints/:id/confirm-customer — Dijaga ORDER_WRITE (Sales).
-// SATU-SATUNYA jalan mencapai status SELESAI.
+// SATU-SATUNYA jalan mencapai status SELESAI. Sejak 31 Oktober 2026 (insiden
+// Sony) menolak kasus yang punya Job DELIVERY aktif terkait — lihat
+// assertRedeliveryCompleted di services/complaintCase.js.
 complaintsRouter.post("/:id/confirm-customer", requirePermission(P.ORDER_WRITE), async (req, res) => {
   try {
     const kase = await confirmCustomer(req.params.id, req.user.id);
+    res.json(kase);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/complaints/:id/waive-redelivery — { reason } Dijaga ORDER_WRITE
+// (Sales, permission SAMA dengan confirm-customer — ini keputusan resolusi,
+// bukan aksi divisi Delivery). SATU-SATUNYA jalan melewati gerbang redelivery
+// tanpa job DELIVERY benar-benar COMPLETED+POD — lihat waiveRedelivery di
+// services/complaintCase.js untuk kapan ini relevan dan kenapa job yang
+// BELUM berjalan ikut dibatalkan (bukan dibiarkan nyangkut) sebagai bagian
+// dari aksi yang sama.
+complaintsRouter.post("/:id/waive-redelivery", requirePermission(P.ORDER_WRITE), async (req, res) => {
+  try {
+    const kase = await waiveRedelivery(req.params.id, req.body.reason, req.user.id);
     res.json(kase);
   } catch (err) {
     handleErr(err, res);

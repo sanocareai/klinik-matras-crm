@@ -107,9 +107,14 @@ export function aksiUtama(kase) {
   if (!kase || kasusTutup(kase)) return null;
   if (kase.status === "MENUNGGU_CUSTOMER") {
     // Bila solusi sudah disepakati, pelanggan yang ditunggu = konfirmasi; bila belum, pelanggan yang ditunggu = informasi untuk pemeriksaan.
+    // BUG DIPERBAIKI (ditemukan QA gerbang redelivery, 31 Okt 2026) — kedua
+    // cabang ini TIDAK PERNAH menyertakan `izin`, jadi izinOk(utama.izin)
+    // selalu membaca PERAN_AKSI[undefined] (kosong) dan SELALU false —
+    // tombol aksi utama MENUNGGU_CUSTOMER terkunci untuk SEMUA peran
+    // (termasuk ADMIN), bukan cuma yang memang tidak berwenang.
     return kase.resolution
-      ? { jenis: "status", ke: "KONFIRMASI_CUSTOMER", label: "Pelanggan sudah menjawab — minta konfirmasi", bantuan: "Pelanggan sudah membalas? Lanjutkan ke konfirmasi." }
-      : { jenis: "status", ke: "INVESTIGASI", label: "Pelanggan sudah menjawab — lanjut periksa", bantuan: "Informasi dari pelanggan sudah ada? Lanjutkan pemeriksaan." };
+      ? { jenis: "status", ke: "KONFIRMASI_CUSTOMER", izin: "UBAH_STATUS", label: "Pelanggan sudah menjawab — minta konfirmasi", bantuan: "Pelanggan sudah membalas? Lanjutkan ke konfirmasi." }
+      : { jenis: "status", ke: "INVESTIGASI", izin: "UBAH_STATUS", label: "Pelanggan sudah menjawab — lanjut periksa", bantuan: "Informasi dari pelanggan sudah ada? Lanjutkan pemeriksaan." };
   }
   const a = UTAMA[kase.status]; if (!a) return null;
   const izin = a.jenis === "konfirmasi" ? "KONFIRMASI" : a.jenis === "tugasKirim" ? "TUGAS_KIRIM" : "UBAH_STATUS";
@@ -127,6 +132,14 @@ export function pilihanCara(kase) {
   ].filter(Boolean);
 }
 
+// Status dari mana "Selesaikan tanpa pengiriman ulang" relevan — SAMA dengan
+// WAIVE_ALLOWED_STATUSES di backend/services/complaintCase.js. Gerbang
+// redelivery (31 Okt 2026, insiden Sony RES-27082026-183): assertRedelivery
+// Completed() di backend menolak KONFIRMASI_CUSTOMER/SELESAI kalau job
+// DELIVERY tertaut kasus ini belum tuntas (atau belum pernah dibuat sama
+// sekali) — ini satu-satunya jalan melewatinya selain menuntaskan job-nya.
+export const REDELIVERY_GATE_STATUSES = Object.freeze(["DIKIRIM_ULANG", "MENUNGGU_CUSTOMER", "KONFIRMASI_CUSTOMER"]);
+
 // "Tindakan lainnya": semua transisi sah selain aksi utama, ditambah aksi lintas divisi. Pembatalan selalu terakhir dan wajib alasan.
 export function aksiLain(kase) {
   if (!kase || kasusTutup(kase)) return [];
@@ -134,6 +147,12 @@ export function aksiLain(kase) {
   const hasil = [];
   for (const ke of izinkan) {
     if (ke === "DIBATALKAN") continue;
+    // DIKIRIM_ULANG WAJIB lewat jenis "tugasKirim" (createDeliveryTask, satu
+    // transaksi dengan pembuatan Job) — backend menolak transisi manual ke
+    // status ini (pola sama dengan SELESAI, lihat transitionStatus di
+    // complaintCase.js). Tanpa pengecualian ini, loop generik di bawah
+    // menawarkan "Tandai sudah dikirim" yang akan 400 kalau diklik.
+    if (ke === "DIKIRIM_ULANG") continue;
     if (utama?.jenis === "status" && utama.ke === ke) continue;
     if (dari === "ACTION_REQUIRED" && ["DIJADWALKAN", "SIAP_DIKIRIM", "MENUNGGU_JADWAL", "MENUNGGU_MATERIAL"].includes(ke)) continue; // sudah ada di "Mulai kerjakan solusi"
     hasil.push({ jenis: "status", ke, label: labelTransisi(dari, ke), izin: "UBAH_STATUS" });
@@ -143,6 +162,9 @@ export function aksiLain(kase) {
   hasil.push({ jenis: "mintaBahan", izin: "MINTA_BAHAN", label: "Minta bahan" });
   if (kase.unit?.id) hasil.push({ jenis: "tautkanQc", izin: "TAUTKAN_QC", label: "Tautkan hasil QC" });
   hasil.push({ jenis: "tindakLanjut", izin: "KONFIRMASI", label: "Catat tindak lanjut ke pelanggan" });
+  if (REDELIVERY_GATE_STATUSES.includes(dari) && !kase.redeliveryWaivedAt) {
+    hasil.push({ jenis: "waiveRedelivery", izin: "KONFIRMASI", label: "Selesaikan tanpa pengiriman ulang" });
+  }
   if (izinkan.includes("DIBATALKAN")) hasil.push({ jenis: "batal", ke: "DIBATALKAN", izin: "UBAH_STATUS", label: "Batalkan kasus", bahaya: true });
   return hasil;
 }

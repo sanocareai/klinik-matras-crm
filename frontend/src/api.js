@@ -1504,6 +1504,7 @@ export const api = {
   linkComplaintQc: (id, qcFitTestId) => request(`/complaints/${id}/link-qc`, { method: "POST", body: JSON.stringify({ qcFitTestId }) }),
   logComplaintFollowUp: (id, note) => request(`/complaints/${id}/follow-up`, { method: "POST", body: JSON.stringify({ note }) }),
   confirmComplaintCustomer: (id) => request(`/complaints/${id}/confirm-customer`, { method: "POST" }),
+  waiveComplaintRedelivery: (id, reason) => request(`/complaints/${id}/waive-redelivery`, { method: "POST", body: JSON.stringify({ reason }) }),
   // Buka lagi order yang terlanjur "Terkirim" tanpa job Pengiriman yang
   // pernah selesai (8 September 2026) — lihat catatan panjang di
   // routes/orders.js POST /:id/reopen-for-delivery.
