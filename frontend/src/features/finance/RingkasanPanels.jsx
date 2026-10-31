@@ -80,7 +80,7 @@ export function KpiKartu({ nada, Ikon, label, nilai, ket, info, metrik, onClick,
         </div>
       </div>
       {penanda && <p className="fin-kpi-penanda">{penanda}</p>}
-      <p className="fin-kpi-nilai">{nilai}</p>
+      <p className="fin-kpi-nilai">{nilai.split(".").map((s, i, arr) => (i < arr.length - 1 ? <React.Fragment key={i}>{s}.<wbr /></React.Fragment> : s))}</p>
       <p className="fin-kpi-ket">{ket}</p>
     </div>
   );
