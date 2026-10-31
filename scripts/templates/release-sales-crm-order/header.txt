@@ -1,0 +1,23 @@
+# RILIS FRONTEND-SAJA "Sales CRM — Fase Order (KPI, toolbar, papan, palet workflow Order & pembayaran)" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image.
+# Isi: halaman Order — header + empat KPI prioritas (Total Order, Nilai Order, Belum Lunas, Mandek) + panel "Metrik lainnya" (enam metrik lama); cakupan tiap angka ditulis jujur (agregat penuh server vs dari order yang dimuat);
+# toolbar satu kelompok (pencarian, tanggal, filter utama, Papan/Tabel, Refresh, Export) + "Filter lainnya"; papan berkolom rounded berbidang warna (lebar minimum 280px + gulir); kartu: nama, ID, nilai, baris berlabel Order/Bayar/Pipeline/Milestone, progres, jadwal logistik, sales.
+# PALET WORKFLOW ORDER & PEMBAYARAN sendiri (styles/order-palette.css; terpisah dari palet tahap) dipakai Orders, kartu Pipeline, Pelanggan, Inbox; kontras ≥ 4,5:1 (badge "Menunggu" dan "Wajib Dilengkapi" diperbaiki). ORDER_STATUS_VARIANT/PAYMENT_STATUS_VARIANT TIDAK diubah (Delivery/Produksi).
+# Perbaikan: klik item dropdown di kartu Order tidak membuka rincian; Reset filter ikut mereset Penjual. Data, endpoint, aturan transisi, hak akses, ekspor TIDAK berubah. Backend rilis aktif (3786430a) dibawa apa adanya — rilis ini frontend-saja.
+# PWA TIDAK berubah: manifest, service worker, index.html, vite.config.js, aset publik tidak ada di allowlist. Font tetap Manrope (tidak ada font-family/@import baru), logo SANSS asli dipertahankan.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif 3786430a (backend anti-dobel media webhook; frontend = Fase Pipeline e20b5c74). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-sales-crm-order.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/sor1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sor1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sor1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sor1.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sor1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-sales-crm-order.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-sales-crm-order/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
