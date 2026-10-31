@@ -12,16 +12,17 @@ const cek = (nama, ok, d = "") => { n += 1; if (!ok) gagal += 1; console.log(`${
 // Dijalankan HANYA pada DB salinan (nama "rehearsal_*" atau "*_test"): ada satu tulisan uji (bahan uji dibuat lalu dihapus) di salinan itu.
 const nm = (await prisma.$queryRawUnsafe("select current_database() as n"))[0].n;
 if (!/^rehearsal_|_test$/.test(nm)) { cek("uji kompatibilitas kode lama hanya pada DB salinan", false, nm); await prisma.$disconnect(); process.exit(1); }
+const total = Number((await prisma.$queryRawUnsafe("select count(*)::int n from materials"))[0].n);
 const kolom = Number((await prisma.$queryRawUnsafe("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='materials' and column_name in ('photo_file','photo_updated_at')"))[0].n);
 cek("skema salinan SUDAH memuat kolom foto (kode lama berjalan di atas skema BARU)", kolom === 2, `${kolom} kolom`);
 const { stokLokasi } = await imp("src/services/stokLokasi.js");
 let hasil = null; let galat = "";
 try { hasil = await stokLokasi(prisma); } catch (e) { galat = String(e?.message ?? e).slice(0, 200); }
-cek("kode lama: Stok & Lokasi (stokLokasi) berjalan tanpa galat dan mengembalikan seluruh bahan", !!hasil && Array.isArray(hasil.rows) && hasil.rows.length > 0, galat || `${hasil?.rows?.length} bahan`);
+cek("kode lama: Stok & Lokasi (stokLokasi) berjalan tanpa galat dan mengembalikan SELURUH bahan di database", !!hasil && Array.isArray(hasil.rows) && hasil.rows.length === total, galat || `${hasil?.rows?.length}/${total} bahan`);
 cek("kode lama: baris tidak memuat kolom foto (tidak tahu, tidak error)", !!hasil && hasil.rows.every((r) => !("fotoUrl" in r) && !("photoFile" in r)));
 let semua = null; galat = "";
 try { semua = await prisma.material.findMany({ take: 50 }); } catch (e) { galat = String(e?.message ?? e).slice(0, 200); }
-cek("kode lama: prisma.material.findMany tidak terganggu kolom tak dikenal", Array.isArray(semua) && semua.length > 0, galat);
+cek("kode lama: prisma.material.findMany tidak terganggu kolom tak dikenal", Array.isArray(semua) && semua.length === Math.min(50, total), galat || `${semua?.length} dari ${total}`);
 const kode = `REH-KOMPAT-${Date.now().toString(36)}`.toUpperCase(); let ok = false; galat = "";
 try {
   const m = await prisma.material.create({ data: { code: kode, name: "Uji kompatibilitas kode lama (salinan)", unit: "PCS" } });
