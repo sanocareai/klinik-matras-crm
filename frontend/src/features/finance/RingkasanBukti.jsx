@@ -1,8 +1,8 @@
 import React, { useId, useState } from "react";
-import { Button } from "@/components/ui/button.jsx";
 import { Uang, SelBukti, tanggalPendek } from "@/features/finance/shared.jsx";
 import { BUKTI_AWAL, potongBukti } from "@/features/finance/ringkasanTampilan.js";
-import { angkaId } from "@/features/finance/RingkasanKecil.jsx";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Pembuka, TombolLembut, angkaId } from "@/features/finance/RingkasanKecil.jsx";
 
 // "Bukti transaksi perlu diperiksa": ditutup secara default (dibuka lewat "Lihat bukti"); lima entri awal, lalu SEMUA hasil yang dimuat dengan halaman. "Hasil" = yang terdeteksi dari maksimal 200 pengeluaran + 200 pembelian terbaru, bukan seluruh database. Data = respons /finance/bukti-review (tidak ada perubahan backend).
 // Memeriksa/memverifikasi tetap lewat SelBukti (aksi manual pengguna; tidak ada verifikasi otomatis). Aturan "verifikator ≠ pembuat" ditegakkan server.
@@ -37,15 +37,15 @@ export default function BuktiDaftar({ bukti, galat, aksi }) {
       <div className="fin-bk-kaki">
         {mode === "awal" ? (
           potong.adaLagi
-            ? <Button variant="tertiary" size="sm" className="fin-panel-tautan" aria-controls={idDaftar} onClick={() => { setMode("semua"); setHalaman(0); }}>Lihat {angkaId(potong.total)} hasil</Button>
+            ? <Pembuka buka={false} onToggle={() => { setMode("semua"); setHalaman(0); }} id={idDaftar} className="fin-lembut">Lihat {angkaId(potong.total)} hasil</Pembuka>
             : <span className="fin-redup">Menampilkan {angkaId(potong.total)} hasil.</span>
         ) : (
           <>
             <span className="fin-redup" aria-live="polite">Halaman {potong.halaman + 1} dari {potong.jumlahHalaman} · {angkaId(potong.total)} hasil</span>
             <span className="fin-bk-nav">
-              <Button variant="tertiary" size="sm" disabled={potong.halaman === 0} onClick={() => setHalaman(potong.halaman - 1)}>Sebelumnya</Button>
-              <Button variant="tertiary" size="sm" disabled={potong.halaman >= potong.jumlahHalaman - 1} onClick={() => setHalaman(potong.halaman + 1)}>Berikutnya</Button>
-              <Button variant="tertiary" size="sm" onClick={() => { setMode("awal"); setHalaman(0); }}>Tampilkan {BUKTI_AWAL} awal saja</Button>
+              <TombolLembut disabled={potong.halaman === 0} onClick={() => setHalaman(potong.halaman - 1)} kiri={<ChevronLeft size={16} aria-hidden="true" />}>Sebelumnya</TombolLembut>
+              <TombolLembut disabled={potong.halaman >= potong.jumlahHalaman - 1} onClick={() => setHalaman(potong.halaman + 1)} kanan={<ChevronRight size={16} aria-hidden="true" />}>Berikutnya</TombolLembut>
+              <TombolLembut onClick={() => { setMode("awal"); setHalaman(0); }}>Tampilkan {BUKTI_AWAL} awal saja</TombolLembut>
             </span>
           </>
         )}

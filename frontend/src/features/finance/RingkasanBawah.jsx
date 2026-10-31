@@ -1,11 +1,10 @@
 import React, { useId, useState } from "react";
-import { ArrowRight, Loader2, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button.jsx";
+import { ClipboardCheck, Lightbulb, Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/api.js";
 import { LABEL_SUMBER_JURNAL, Uang, formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { IsiKenapaBeda } from "@/features/finance/kontrak.jsx";
 import { KETERANGAN_UMUR, dasarUmurTertua } from "@/features/finance/ringkasanTampilan.js";
-import { Pembuka, InfoBuka, Cakupan, angkaId } from "@/features/finance/RingkasanKecil.jsx";
+import { Pembuka, NavLink, Akordeon, InfoBuka, Cakupan, angkaId } from "@/features/finance/RingkasanKecil.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // Bagian bawah Ringkasan Keuangan: tagihan pelanggan, pencatatan terbaru, pemeriksaan angka, penjelasan, informasi sistem.
@@ -87,7 +86,7 @@ export function TagihanPelanggan({ piutang, aging, teratas, navigate }) {
             </ul>
           </>
         )}
-        <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/receivables")}>Lihat semua tagihan <ArrowRight size={14} aria-hidden="true" /></Button>
+        <NavLink className="fin-panel-aksi" onClick={() => navigate("/finance/receivables")}>Lihat semua tagihan</NavLink>
       </div>
     </section>
   );
@@ -123,9 +122,9 @@ export function PencatatanTerbaru({ jurnal, navigate }) {
       )}
       <div className="fin-panel-aksi-baris">
         {lengkap.length > JURNAL_AWAL
-          ? <Pembuka buka={semua} onToggle={() => setSemua((v) => !v)} id={idDaftar} className="fin-panel-tautan">{semua ? `Tampilkan ${JURNAL_AWAL} saja` : `Tampilkan ${angkaId(lengkap.length)} jurnal terbaru`}</Pembuka>
+          ? <Pembuka buka={semua} onToggle={() => setSemua((v) => !v)} id={idDaftar} className="fin-lembut">{semua ? `Tampilkan ${JURNAL_AWAL} saja` : `Tampilkan ${angkaId(lengkap.length)} jurnal terbaru`}</Pembuka>
           : <span />}
-        <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/journal")}>Lihat semua jurnal <ArrowRight size={14} aria-hidden="true" /></Button>
+        <NavLink className="fin-panel-aksi" onClick={() => navigate("/finance/journal")}>Lihat semua jurnal</NavLink>
       </div>
       <p className="fin-panel-sub fin-catatan-tipis">Halaman jurnal membuka bulan berjalan; ubah rentang tanggal di sana untuk periode lain.</p>
     </section>
@@ -150,34 +149,27 @@ function PemeriksaanAngka() {
   }
   const d = s.data;
   return (
-    <div className="fin-akor">
-      <Pembuka buka={buka} onToggle={toggle} id={id} className="fin-akor-tombol" ikon>
-        <ShieldCheck size={16} aria-hidden="true" /> <span className="fin-akor-judul">Pemeriksaan angka</span>
-        {d && <span className={`fin-chip ${d.ringkasan.perluDitinjau ? "fin-chip-perhatian" : "fin-chip-green"}`}>{d.ringkasan.perluDitinjau ? `${d.ringkasan.perluDitinjau} perlu ditinjau` : "Tidak ada hitung ganda"}</span>}
-      </Pembuka>
-      {buka && (
-        <div id={id} className="fin-akor-isi">
-          {s.loading && <p className="fin-redup"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Memeriksa…</p>}
-          {s.error && <p className="fin-redup">Belum bisa dimuat: {s.error}</p>}
-          {d && (
-            <>
-              <p className="fin-redup">Pemeriksaan hitung ganda dan konsistensi angka. Hanya membaca data — tidak ada yang diubah. Dijalankan {formatTanggalPendek(d.dibuatPada)}.</p>
-              <ul className="fin-pa">
-                {d.pemeriksaan.map((p) => (
-                  <li key={p.kunci}>
-                    <div className="fin-pa-kepala"><b>{p.judul}</b><span className={`fin-chip ${p.status === "OK" ? "fin-chip-green" : "fin-chip-perhatian"}`}>{p.status === "OK" ? "Tidak ada hitung ganda" : `${p.jumlahTemuan} perlu ditinjau`}</span></div>
-                    <p className="fin-redup">{p.pertanyaan}</p>
-                    {p.catatan && <p className="fin-redup">{p.catatan}</p>}
-                    {p.status !== "OK" && p.nilai > 0 && <p className="fin-perhatian">Nilai terdampak {formatUang(p.nilai)}</p>}
-                  </li>
-                ))}
-              </ul>
-              <Button size="sm" variant="neutral" onClick={() => { setS({ loading: false, data: null, error: null }); setBuka(false); }}>Tutup</Button>
-            </>
-          )}
-        </div>
+    <Akordeon buka={buka} onToggle={toggle} id={id} Ikon={ClipboardCheck} judul="Pemeriksaan angka"
+      status={d ? <span className={`fin-chip ${d.ringkasan.perluDitinjau ? "fin-chip-perhatian" : "fin-chip-green"}`}>{d.ringkasan.perluDitinjau ? `${d.ringkasan.perluDitinjau} perlu ditinjau` : "Tidak ada hitung ganda"}</span> : null}>
+      {s.loading && <p className="fin-redup"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Memeriksa…</p>}
+      {s.error && <p className="fin-redup">Belum bisa dimuat: {s.error}</p>}
+      {d && (
+        <>
+          <p className="fin-redup">Pemeriksaan hitung ganda dan konsistensi angka. Hanya membaca data — tidak ada yang diubah. Dijalankan {formatTanggalPendek(d.dibuatPada)}.</p>
+          <ul className="fin-pa">
+            {d.pemeriksaan.map((p) => (
+              <li key={p.kunci}>
+                <div className="fin-pa-kepala"><b>{p.judul}</b><span className={`fin-chip ${p.status === "OK" ? "fin-chip-green" : "fin-chip-perhatian"}`}>{p.status === "OK" ? "Tidak ada hitung ganda" : `${p.jumlahTemuan} perlu ditinjau`}</span></div>
+                <p className="fin-redup">{p.pertanyaan}</p>
+                {p.catatan && <p className="fin-redup">{p.catatan}</p>}
+                {p.status !== "OK" && p.nilai > 0 && <p className="fin-perhatian">Nilai terdampak {formatUang(p.nilai)}</p>}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="fin-tombol" onClick={() => { setS({ loading: false, data: null, error: null }); setBuka(false); }}><span>Tutup</span></button>
+        </>
       )}
-    </div>
+    </Akordeon>
   );
 }
 
@@ -185,14 +177,9 @@ function KenapaAngkaBeda({ periode }) {
   const [buka, setBuka] = useState(false);
   const id = useId();
   return (
-    <div className="fin-akor">
-      <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-akor-tombol"><span className="fin-akor-judul">Kenapa angkanya berbeda?</span></Pembuka>
-      {buka && (
-        <div id={id} className="fin-akor-isi">
-          <IsiKenapaBeda metrik={["uang_masuk_terverifikasi", "kas_masuk_pelanggan", "pendapatan_diakui", "piutang_usaha", "uang_keluar_kas", "beban_diakui"]} from={periode.from} to={periode.to} denganJembatan />
-        </div>
-      )}
-    </div>
+    <Akordeon buka={buka} onToggle={() => setBuka((v) => !v)} id={id} Ikon={Lightbulb} judul="Kenapa angkanya berbeda?">
+      <IsiKenapaBeda metrik={["uang_masuk_terverifikasi", "kas_masuk_pelanggan", "pendapatan_diakui", "piutang_usaha", "uang_keluar_kas", "beban_diakui"]} from={periode.from} to={periode.to} denganJembatan />
+    </Akordeon>
   );
 }
 
@@ -200,21 +187,14 @@ function InfoSistem({ gate }) {
   const [buka, setBuka] = useState(false);
   const id = useId();
   return (
-    <div className="fin-akor">
-      <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-akor-tombol">
-        <ShieldCheck size={16} aria-hidden="true" /> <span className="fin-akor-judul">Gerbang verifikasi pembayaran</span>
-        <span className={`fin-chip ${gate.enabled ? "fin-chip-green" : "fin-chip-neutral"}`}>{gate.enabled ? "Aktif" : "Tidak aktif"}</span>
-      </Pembuka>
-      {buka && (
-        <div id={id} className="fin-akor-isi">
-          <p>
-            {gate.enabled
-              ? "Status bayar order di CRM hanya bergerak setelah pembayaran diverifikasi finance. Pembayaran yang tercatat sebelum gerbang ini dinyalakan tetap dihitung apa adanya."
-              : "Status bayar order di CRM mengikuti SELURUH pembayaran yang tercatat, terverifikasi atau belum. Verifikasi di sini murni pencocokan setoran. Nyalakan gerbangnya di Pengaturan kalau tim sudah siap."}
-          </p>
-        </div>
-      )}
-    </div>
+    <Akordeon buka={buka} onToggle={() => setBuka((v) => !v)} id={id} Ikon={ShieldCheck} judul="Gerbang verifikasi pembayaran"
+      status={<span className={`fin-chip ${gate.enabled ? "fin-chip-green" : "fin-chip-neutral"}`}>{gate.enabled ? "Aktif" : "Tidak aktif"}</span>}>
+      <p>
+        {gate.enabled
+          ? "Status bayar order di CRM hanya bergerak setelah pembayaran diverifikasi finance. Pembayaran yang tercatat sebelum gerbang ini dinyalakan tetap dihitung apa adanya."
+          : "Status bayar order di CRM mengikuti SELURUH pembayaran yang tercatat, terverifikasi atau belum. Verifikasi di sini murni pencocokan setoran. Nyalakan gerbangnya di Pengaturan kalau tim sudah siap."}
+      </p>
+    </Akordeon>
   );
 }
 

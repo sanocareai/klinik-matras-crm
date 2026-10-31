@@ -1,5 +1,5 @@
 import React, { useId, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Info, Landmark, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Info, Landmark, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
@@ -12,7 +12,7 @@ import {
   pisahkanTindakLanjut, semuaKomponenNol,
 } from "@/features/finance/ringkasanTampilan.js";
 import { LABEL_BANNER } from "@/features/finance/ringkasanKualitas.js";
-import { Pembuka, Cakupan, angkaId } from "@/features/finance/RingkasanKecil.jsx";
+import { Pembuka, NavLink, Cakupan, angkaId } from "@/features/finance/RingkasanKecil.jsx";
 import BuktiDaftar from "@/features/finance/RingkasanBukti.jsx";
 // Sumber & status izin logo: docs/ASET-LOGO-BANK.md (berkas lokal, tidak dimodifikasi).
 import logoBca from "@/assets/bank/bca.svg";
@@ -94,27 +94,35 @@ function IkonStatus({ status }) {
   return <span className="fin-tl-ikon fin-tl-ikon-tanpa" aria-hidden="true"><Info size={15} /></span>;
 }
 
-function BarisTindak({ b, navigate, aksiKustom }) {
+/** Satu baris pekerjaan. Seluruh baris dapat diklik lewat SATU tombol (pola "stretched": ::after menutup baris) — tombol info berada di luar tombol itu
+ * (tidak bersarang) dan di atasnya (z-index), sehingga klik info tidak menjalankan navigasi/pembukaan baris.
+ * `toggle` = { buka, onToggle, id, label }: baris yang membuka isi di tempat (chevron bawah); tanpa itu baris menuju `b.tujuan` (chevron kanan). */
+function BarisTindak({ b, navigate, toggle }) {
   const [buka, setBuka] = useState(false);
-  const id = useId();
+  const id = useId(); const idJumlah = useId();
   const jumlah = b.status === "tanpa-data" ? <span className="fin-redup">{TANPA_DATA}</span>
     : b.status === "bersih" ? <span className="fin-ok">{b.labelBersih ?? "Tidak ada"}</span>
       : <span className={b.id === "selisih_rekening" ? "fin-galat" : "fin-perhatian"}>{angkaId(b.jumlah)} {b.satuan}</span>;
+  const bisaDiklik = !!toggle || !!b.tujuan;
   return (
-    <li className={`fin-tl-baris fin-tl-${b.status}`} data-testid={`tl-${b.id}`}>
+    <li className={`fin-tl-baris fin-tl-${b.status}${bisaDiklik ? " fin-tl-klikable" : ""}`} data-testid={`tl-${b.id}`} data-buka={toggle ? String(toggle.buka) : undefined}>
       <IkonStatus status={b.status} />
-      <div className="fin-tl-kolom">
-        <div className="fin-tl-judul">
-          <span>{b.judul}</span>
-          <button type="button" className="fin-info" aria-expanded={buka} aria-controls={id} aria-label={`Penjelasan: ${b.judul}`} onClick={() => setBuka((v) => !v)}><Info size={15} aria-hidden="true" /></button>
-        </div>
-        {b.status === "perlu" && b.ringkas && <p className="fin-tl-ket">{b.ringkas}</p>}
+      <div className="fin-tl-teks">
+        {bisaDiklik ? (
+          <button type="button" className="fin-tl-klik" aria-describedby={idJumlah}
+            {...(toggle ? { "aria-expanded": toggle.buka, "aria-controls": toggle.id, onClick: toggle.onToggle } : { onClick: () => navigate(b.tujuan) })}>
+            {b.judul}{toggle && <span className="fin-sr-saja"> ({toggle.label})</span>}
+          </button>
+        ) : <span className="fin-tl-klik fin-tl-klik-mati">{b.judul}</span>}
+        {b.status === "perlu" && b.ringkas && <span className="fin-tl-ket">{b.ringkas}</span>}
       </div>
-      <p className="fin-tl-jumlah">{jumlah}{b.status === "perlu" && b.catatanBatas && <span className="fin-tl-batas">{b.catatanBatas}</span>}</p>
-      <p className="fin-tl-nilai">{b.status === "perlu" && b.nilai ? formatUang(b.nilai) : null}</p>
-      {aksiKustom ?? (b.tujuan
-        ? <Button variant="tertiary" size="sm" className="fin-tl-aksi" onClick={() => navigate(b.tujuan)} aria-label={`Lihat: ${b.judul}`}>Lihat <ArrowRight size={14} aria-hidden="true" /></Button>
-        : <span className="fin-tl-aksi" />)}
+      <p id={idJumlah} className="fin-tl-jumlah">{jumlah}{b.status === "perlu" && b.catatanBatas && <span className="fin-tl-batas">{b.catatanBatas}</span>}</p>
+      <p className="fin-tl-nilai">
+        {b.status === "perlu" && b.nilai ? formatUang(b.nilai) : null}
+        {toggle && <span className="fin-tl-mini" aria-hidden="true">{toggle.label}</span>}
+      </p>
+      <button type="button" className="fin-info fin-tl-info" aria-expanded={buka} aria-controls={id} aria-label={`Penjelasan: ${b.judul}`} onClick={() => setBuka((v) => !v)}><Info size={16} aria-hidden="true" /></button>
+      {bisaDiklik && (toggle ? <ChevronDown size={18} aria-hidden="true" className="fin-chev fin-tl-chev" /> : <ChevronRight size={18} aria-hidden="true" className="fin-tl-chev" />)}
       {buka && <div id={id} className="fin-tl-penjelasan" role="note">{b.penjelasan}</div>}
     </li>
   );
@@ -134,14 +142,19 @@ export function TindakLanjut({ kelompok, bukti, galatBukti, aksiBukti, navigate 
       <header className="fin-panel-kepala fin-panel-kepala-aksi">
         <div className="fin-panel-kepala-isi">
           <h2 id="fin-tl-judul" className="fin-panel-judul">Perlu ditindaklanjuti</h2>
-          <p className="fin-panel-sub">Setiap kategori dihitung sendiri dan bisa saling tumpang tindih, jadi tidak dijumlahkan.</p>
+          <p className="fin-panel-sub">Setiap kategori dihitung terpisah dan bisa saling tumpang tindih, jadi tidak dijumlahkan.</p>
         </div>
         {jumlahNol > 0 && (
-          <Pembuka buka={semua} onToggle={() => setSemua((v) => !v)} id={idSemua} className="fin-panel-tautan">
-            {semua ? "Sembunyikan kategori tanpa pekerjaan" : `Tampilkan semua kategori (${jumlahNol} tanpa pekerjaan)`}
+          <Pembuka buka={semua} onToggle={() => setSemua((v) => !v)} id={idSemua} className="fin-pill"
+            ikonKiri={null}>
+            {semua
+              ? <span>Kategori aktif</span>
+              : <><span>Semua kategori</span><span className="fin-lencana" aria-label={`${jumlahNol} kategori tanpa pekerjaan disembunyikan`}>{jumlahNol}</span></>}
           </Pembuka>
         )}
       </header>
+      {semua && jumlahNol > 0 && <p className="fin-panel-sub fin-ket-semua">Menampilkan semua kategori, termasuk {jumlahNol} kategori tanpa pekerjaan.</p>}
+      {!semua && jumlahNol > 0 && <p className="fin-sr-saja">{jumlahNol} kategori tanpa pekerjaan disembunyikan.</p>}
       {!adaPekerjaan && !adaTanpaData && !semua && (
         <p className="fin-kosong">Tidak ada pekerjaan tercatat pada kategori yang diperiksa.</p>
       )}
@@ -153,17 +166,18 @@ export function TindakLanjut({ kelompok, bukti, galatBukti, aksiBukti, navigate 
               <Cakupan>{g.cakupan}</Cakupan>
             </div>
             <ul className="fin-tl">
-              {g.terlihat.map((b) => (
-                <React.Fragment key={b.id}>
-                  <BarisTindak b={b} navigate={navigate}
-                    aksiKustom={b.id === "bukti_transaksi" && b.status === "perlu" && bukti ? (
-                      <Pembuka buka={bukaBukti} onToggle={() => setBukaBukti((v) => !v)} id={idBukti} className="fin-tl-aksi fin-panel-tautan">Lihat bukti</Pembuka>
-                    ) : undefined} />
-                  {b.id === "bukti_transaksi" && b.status === "perlu" && bukti && bukaBukti && (
-                    <li id={idBukti} className="fin-tl-bukti"><BuktiDaftar bukti={bukti} galat={galatBukti} aksi={aksiBukti} /></li>
-                  )}
-                </React.Fragment>
-              ))}
+              {g.terlihat.map((b) => {
+                const adaBukti = b.id === "bukti_transaksi" && b.status === "perlu" && bukti;
+                return (
+                  <React.Fragment key={b.id}>
+                    <BarisTindak b={b} navigate={navigate}
+                      toggle={adaBukti ? { buka: bukaBukti, onToggle: () => setBukaBukti((v) => !v), id: idBukti, label: "Lihat bukti" } : undefined} />
+                    {adaBukti && bukaBukti && (
+                      <li id={idBukti} className="fin-tl-bukti"><BuktiDaftar bukti={bukti} galat={galatBukti} aksi={aksiBukti} /></li>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </ul>
           </div>
         ))}
@@ -189,7 +203,7 @@ function BarisRekening({ r, x, riil, navigate }) {
   const { terkonfirmasi: tk, status } = bahan;
   const sekunder = keteranganRekening({ ...r, accountNumber: null });
   return (
-    <li className="fin-rek-item" data-testid="baris-rekening">
+    <li className="fin-rek-item" data-testid="baris-rekening" data-buka={String(buka)}>
       <div className="fin-rek-id">
         <LogoBank r={r} />
         <span className="fin-rek-nama">
@@ -218,7 +232,7 @@ function BarisRekening({ r, x, riil, navigate }) {
         </div>
       </div>
       <div className="fin-rek-aksi">
-        <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={idRincian} className="fin-rek-tombol"><span className="fin-sr-saja">{r.name}: </span>Rincian</Pembuka>
+        <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={idRincian} className="fin-rek-tombol"><span className="fin-sr-saja">{r.name}: </span>{buka ? "Tutup" : "Rincian"}</Pembuka>
       </div>
       {buka && (
         <div id={idRincian} className="fin-detail">
@@ -234,9 +248,7 @@ function BarisRekening({ r, x, riil, navigate }) {
           </dl>
           {bahan.baris.filter((b) => b.teks).map((b) => <p key={b.k} className="fin-detail-teks">{b.teks}</p>)}
           {!!bahan.danaBelumDikenal && <p className="fin-detail-teks fin-detail-perhatian">Termasuk {formatUang(bahan.danaBelumDikenal)} dengan sumber dana belum diketahui.</p>}
-          <Button variant="tertiary" size="sm" className="fin-detail-aksi" onClick={() => navigate(x?.periodeId ? `/finance/reconciliation?periode=${x.periodeId}` : "/finance/reconciliation")}>
-            Buka {ISTILAH.pencocokanSaldo.tampil.toLowerCase()} <ArrowRight size={14} aria-hidden="true" />
-          </Button>
+          <NavLink className="fin-detail-aksi" onClick={() => navigate(x?.periodeId ? `/finance/reconciliation?periode=${x.periodeId}` : "/finance/reconciliation")}>Buka {ISTILAH.pencocokanSaldo.tampil.toLowerCase()}</NavLink>
         </div>
       )}
     </li>
@@ -260,7 +272,7 @@ export function SaldoRekening({ data, riil, navigate }) {
             <span>Pencocokan sementara, tanpa rekening koran.</span>
           </p>
         </div>
-        <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id={idTentang} className="fin-panel-tautan">Tentang pencocokan saldo</Pembuka>
+        <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id={idTentang} className="fin-pill fin-pill-info" ikonKiri={<Info size={16} aria-hidden="true" />} title="Tentang pencocokan saldo (rekonsiliasi rekening)">Tentang saldo</Pembuka>
       </header>
       {tentang && (
         <div id={idTentang} className="fin-catatan-kaki fin-tentang">
@@ -294,7 +306,7 @@ export function SaldoRekening({ data, riil, navigate }) {
           )}
         </div>
       )}
-      <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/reconciliation")}>Buka {ISTILAH.pencocokanSaldo.tampil.toLowerCase()} <ArrowRight size={14} aria-hidden="true" /></Button>
+      <NavLink className="fin-panel-aksi" onClick={() => navigate("/finance/reconciliation")}>Buka {ISTILAH.pencocokanSaldo.tampil.toLowerCase()}</NavLink>
     </section>
   );
 }
@@ -341,7 +353,7 @@ export function LabaRugiPanel({ lr, penanda, marginInfo, periodeLabel, navigate 
         <div className="fin-lr-nol" data-testid="laba-rugi-nol">
           <div className="fin-lr-baris fin-lr-akhir"><span className="fin-lr-nol-label">Laba sementara</span><span className="fin-lr-nol-nilai"><Uang value={0} /></span></div>
           <p className="fin-panel-sub">{TEKS_LABA_NOL}</p>
-          <Pembuka buka={rinci} onToggle={() => setRinci((v) => !v)} id={idRinci} className="fin-panel-tautan">Lihat rincian perhitungan</Pembuka>
+          <Pembuka buka={rinci} onToggle={() => setRinci((v) => !v)} id={idRinci} className="fin-lembut">Lihat rincian perhitungan</Pembuka>
           {rinci && <div id={idRinci}>{baris}</div>}
         </div>
       ) : baris}
@@ -369,8 +381,8 @@ export function LabaRugiPanel({ lr, penanda, marginInfo, periodeLabel, navigate 
         </div>
       )}
       <div className="fin-panel-aksi-baris">
-        <Pembuka buka={cara} onToggle={() => setCara((v) => !v)} id={idCara} className="fin-panel-tautan">Cara menghitung laba</Pembuka>
-        <Button variant="tertiary" size="sm" className="fin-panel-aksi" onClick={() => navigate("/finance/reports")}>Lihat laporan lengkap <ArrowRight size={14} aria-hidden="true" /></Button>
+        <Pembuka buka={cara} onToggle={() => setCara((v) => !v)} id={idCara} className="fin-lembut">Cara menghitung laba</Pembuka>
+        <NavLink className="fin-panel-aksi" onClick={() => navigate("/finance/reports")}>Lihat laporan lengkap</NavLink>
       </div>
     </section>
   );
