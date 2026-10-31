@@ -49,7 +49,7 @@ test("pin migrasi: sha256, hasil pemindai DDL, dan diff schema.prisma cocok deng
   assert.match(sql, /SET LOCAL lock_timeout = '5s';/); assert.match(sql, /SET LOCAL statement_timeout = '30s';/);
   assert.match(sql, /kunci ACCESS EXCLUSIVE/, "wording migrasi: ADD COLUMN tetap memerlukan kunci");
   assert.ok(!/metadata-only|tanpa kunci|tidak mengunci/i.test(sql), "tidak boleh mengklaim tanpa kunci");
-  assert.ok(!/DEFAULT|NOT NULL|UPDATE|INSERT|DELETE|CREATE INDEX/i.test(sql.split("\n").filter((l) => !l.startsWith("--")).join("\n")), "kolom nullable tanpa default, tanpa backfill/indeks");
+  assert.ok(!/\b(DEFAULT|NOT NULL|UPDATE|INSERT|DELETE|CREATE INDEX)\b/i.test(sql.split("\n").filter((l) => !l.startsWith("--")).join("\n")), "kolom nullable tanpa default, tanpa backfill/indeks");
 });
 
 test("pemindai DDL: menolak mutan (batas waktu longgar/dibuang, DEFAULT, tabel lain, DML/DDL tambahan, urutan terbalik)", () => {
@@ -78,7 +78,9 @@ test("production: tidak ada unggahan/foto contoh/perubahan bahan oleh skrip; smo
   assert.match(smoke, /TIDAK ada jejak tulis akibat smoke/); assert.match(smoke, /unggah\/hapus\/putar TANPA token = 401/);
   assert.ok(!/prisma\.material\.(create|update|delete)/.test(smoke), "smoke tidak mengubah bahan");
   const rekon = baca("backend/scripts/rekonsiliasi-foto-bahan.mjs"); assert.ok(!/unlink|rmSync|\.delete|\.update|DELETE|UPDATE|writeFile/.test(rekon.replace(/\/\/.*$/gm, "")), "rekonsiliasi baca-saja");
-  assert.ok(!/docker (system|builder|image|volume) prune|docker rmi .*-f|rm -rf (\/|~|\$HOME|\$RELEASES|\$PERSIST)/.test(script), "tidak ada pembersihan/penghapusan paralel (prune)");
+  assert.ok(!/docker (system|builder|image|volume|container) prune|docker rmi .*-f/.test(script), "tidak ada prune/penghapusan image paksa");
+  const rmRf = script.split("\n").filter((l) => !l.startsWith("#") && /rm -rf/.test(l));
+  assert.ok(rmRf.every((l) => /\/bk\/reh-data \/bk\/reh-uploads \/bk\/reh-dd|"\$NEW_DIR"|"\$T"/.test(l)), `rm -rf hanya untuk direktori sementara rehearsal / release dir yang dibuat skrip: ${rmRf.join(" | ").slice(0, 300)}`);
 });
 
 test("disk: gerbang 5 GiB tidak diturunkan dan diperiksa di awal, setelah build, setelah rehearsal, sebelum migrasi, sebelum switch; kebutuhan menetap/puncak dihitung", () => {
