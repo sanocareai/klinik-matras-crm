@@ -67,7 +67,7 @@ test("ROLLBACK: kembali ke baseline (folder BASE, image SAMA yang memuat hotfix)
 });
 
 test("teks dist: Order/palet workflow baru ada, fitur live tetap, gerbang data mengabaikan kolom pesan", () => {
-  assert.ok(script.includes('for s0 in "Metrik lainnya" "Lihat cakupan angka" "crm-ord-kolom" "Filter lainnya"; do'));
+  assert.ok(script.includes('for s0 in "Metrik lainnya" "Lihat cakupan angka" "crm-ord-kolom" "crm-ord-kelengkapan"; do'));
   assert.ok(script.includes('for c1 in ".ord-chip" ".crm-ord-toolbar" ".crm-ord-kolom"; do'), "aturan Order/palet CSS hanya di dist baru");
   for (const f of ["Sales Overview", "Deal Pipeline", "crm-pel-tabel", "pelanggan-kolom:v1", "Total estimasi nilai", "Seret kartu ke sini", "crm-pipe-kolom", ".stage-field", ".crm-pipe-toolbar"]) assert.ok(script.includes(f), f);
   assert.ok(script.includes('[ "${FP_1%|*}" = "${FP_0%|*}" ] || die "hitungan data BERUBAH selama rilis (selain pesan)'), "lima kolom pertama dijaga");
