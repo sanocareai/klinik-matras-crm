@@ -176,6 +176,17 @@ async function itemJurnal(db, { dari, sampai }) {
   return { baris, terpotong };
 }
 
+// Pengganti pembayaran yang dibatalkan/ditolak: (1) pembayaran aktif bernominal SAMA pada order yang sama ("NOMINAL_SAMA", mis. salah tanggal lalu dicatat ulang); bila tidak ada,
+// (2) pembayaran aktif LAIN pada order yang sama ("ORDER_SAMA", mis. salah input nominal Rp1 sementara pembayaran benar sudah tercatat). Tidak ada pembayaran aktif → null (uangnya tidak terganti).
+function pilihPengganti(p, aktif) {
+  const wib = (d) => tgl(new Date(d.getTime() + 7 * 3600 * 1000));
+  const bentuk = (g) => ({ id: g.id, tanggal: wib(g.createdAt), nominal: uang(g.amount), terverifikasi: (g.verifications?.length ?? 0) > 0 });
+  const sama = aktif.find((x) => x.orderId === p.orderId && x.amount === p.amount);
+  if (sama) return { ...bentuk(sama), kecocokan: "NOMINAL_SAMA", semua: [bentuk(sama)] };
+  const lain = aktif.filter((x) => x.orderId === p.orderId);
+  return lain.length ? { ...bentuk(lain[0]), kecocokan: "ORDER_SAMA", semua: lain.slice(0, 3).map(bentuk) } : null;
+}
+
 async function itemPembayaran(db, { from, to }) {
   const pays = await db.payment.findMany({
     where: { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } },
@@ -190,6 +201,12 @@ async function itemPembayaran(db, { from, to }) {
   ]);
   const jurnalByKey = new Map(jurnal.map((j) => [j.idempotencyKey, j]));
   const gapById = new Map(gaps.map((g) => [g.sourceId, g]));
+  // Pembayaran dibatalkan/ditolak sering diganti pembayaran BARU untuk order yang sama (mis. "Dikoreksi — salah tanggal"). Tautkan supaya terlihat
+  // bahwa uangnya TIDAK hilang dan TIDAK terhitung dua kali: yang dihitung hanya pengganti yang aktif.
+  const orderBatal = [...new Set(pays.filter((p) => p.cancelledAt).map((p) => p.orderId))];
+  const penggantiAktif = orderBatal.length
+    ? await db.payment.findMany({ where: { orderId: { in: orderBatal }, cancelledAt: null }, select: { id: true, orderId: true, amount: true, createdAt: true, verifications: { select: { id: true }, take: 1 } }, orderBy: { createdAt: "asc" } })
+    : [];
   const NADA = { MENUNGGU: "warning", TERVERIFIKASI: "success", DITOLAK: "danger", DIBATALKAN: "neutral" };
   return pays.map((p) => {
     const status = statusDari(p, ditolak);
@@ -202,6 +219,8 @@ async function itemPembayaran(db, { from, to }) {
       nomor: p.order?.orderNumber ?? "—", sumber: "PEMBAYARAN_ORDER", sumberLabel: `Pembayaran pelanggan (${p.method})`, pihak: p.order?.customer?.name ?? null,
       keterangan: `Pembayaran ${p.method} untuk order ${p.order?.orderNumber ?? ""}`.trim(), rekening: p.cashAccount?.name ?? null, nilai: uang(p.amount),
       status, statusLabel: LABEL_STATUS[status], nada: NADA[status], kategori: "PEMBAYARAN", kategoriLabel: KATEGORI.PEMBAYARAN.label, sub, subLabel: SUB_LABEL[sub],
+      alasanBatal: p.cancelReason ?? null,
+      pengganti: p.cancelledAt ? pilihPengganti(p, penggantiAktif) : null,
       perluTinjau: belumBuku, catatan: belumBuku ? (gap ? "Terverifikasi tetapi belum masuk buku besar: rekening kas/bank belum dipetakan. Selesaikan lewat Data belum lengkap di web." : "Terverifikasi tetapi tidak ada jurnal penerimaan") : null,
       tautan: { jurnal: j ? { id: j.id, nomor: j.entryNumber } : null, pembayaran: { id: p.id }, invoice: null, order: p.order ? { id: p.order.id, nomor: p.order.orderNumber } : null, dokumen: null },
       _nilai: toMoney(p.amount), _bruto: null, _retur: null,
@@ -259,7 +278,46 @@ async function tambahStatusBayar(db, baris) {
 async function kumpulkan(db, p, { termasukHistoris = true } = {}) {
   const [j, pay, his] = await Promise.all([itemJurnal(db, p), itemPembayaran(db, p), termasukHistoris ? legacyItems(db, p) : []]);
   await tambahStatusBayar(db, j.baris);
-  return { baris: [...j.baris, ...pay, ...his], terpotong: j.terpotong };
+  const semua = [...j.baris, ...pay, ...his];
+  tandaiDihitung(semua);
+  return { baris: semua, terpotong: j.terpotong };
+}
+
+// ── DIHITUNG KE TOTAL? ────────────────────────────────────────────────────────────────────────────────────────
+// SATU aturan untuk total layar, kolom Excel "Dihitung ke total?", dan rekap: baris Dikecualikan (bukan pemasukan) serta pembayaran Ditolak/Dibatalkan
+// TETAP tampil sebagai baris (jejak audit) tetapi nilainya TIDAK ikut total. Setiap baris yang tidak dihitung WAJIB membawa alasan tertulis.
+export const ALASAN_DIKECUALIKAN = Object.freeze({
+  TRANSFER: "Transfer antar-rekening — memindahkan uang antar rekening sendiri, bukan pemasukan",
+  SALDO_AWAL: "Saldo awal / koreksi saldo — bukan pemasukan",
+  PEMBALIKAN_BIAYA: "Pembalikan pengeluaran — mengembalikan biaya, bukan pemasukan",
+  PELUNASAN_PIUTANG_KARYAWAN: "Pelunasan tagihan penjualan karyawan — pendapatannya sudah diakui saat penjualan dicatat, bukan pemasukan baru",
+});
+const ddmmyyyy = (kunci) => (kunci ? kunci.split("-").reverse().join("/") : "");
+export function statusHitungTotal(b) {
+  // Arsip historis: legacyPendapatan.js sudah menentukan sendiri baris mana yang dihitung (SIAP / Perlu Ditinjau yang DITERIMA, bukan yang diabaikan). Total layar
+  // dulu menjumlahkan SEMUA baris arsip (termasuk Duplikat/Perlu Ditinjau) — sekarang sama dengan kartu "Pendapatan historis".
+  if (b.kategori === "HISTORIS") {
+    if (b.dihitung) return { dihitung: true, alasan: null };
+    const sebab = b.statusLabel === "Diabaikan (keputusan)" ? "Diabaikan atas keputusan peninjau" : b.status === "DUPLIKAT" ? "Duplikat arsip lain atau order sistem — tidak dihitung dua kali" : "Perlu ditinjau dan belum diputuskan diterima";
+    return { dihitung: false, alasan: `Arsip sebelum sistem tidak dihitung: ${sebab}` };
+  }
+  if (b.kategori === "DIKECUALIKAN") return { dihitung: false, alasan: ALASAN_DIKECUALIKAN[b.sub] ?? "Dikecualikan dari pemasukan" };
+  if (b.status === "DITOLAK" || b.status === "DIBATALKAN") {
+    const dasar = b.status === "DITOLAK" ? "Pembayaran ditolak Finance — uang tidak dianggap diterima" : "Pembayaran dibatalkan — uang tidak dianggap diterima";
+    const sebab = b.alasanBatal ? ` (${b.alasanBatal})` : "";
+    const ganti = !b.pengganti ? ". Tidak ada pembayaran aktif lain pada order ini — uangnya tidak terganti"
+      : b.pengganti.kecocokan === "NOMINAL_SAMA" ? `. Sudah digantikan pembayaran ${String(b.pengganti.id).slice(0, 8)} tanggal ${ddmmyyyy(b.pengganti.tanggal)} (nominal sama) untuk order yang sama — ${b.pengganti.terverifikasi ? "hanya pengganti itu yang dihitung" : "pengganti masih menunggu verifikasi, belum dihitung"}`
+      : `. Pembayaran aktif pada order yang sama: ${b.pengganti.semua.map((g) => `${String(g.id).slice(0, 8)} tanggal ${ddmmyyyy(g.tanggal)} Rp${Number(g.nominal).toLocaleString("id-ID")}${g.terverifikasi ? "" : " (menunggu verifikasi)"}`).join("; ")} — hanya pembayaran aktif itu yang dihitung`;
+    return { dihitung: false, alasan: `${dasar}${sebab}${ganti}` };
+  }
+  return { dihitung: true, alasan: null };
+}
+function tandaiDihitung(baris) {
+  for (const b of baris) {
+    const h = statusHitungTotal(b);
+    b.dihitung = h.dihitung; b.alasanTidakDihitung = h.alasan;
+    b.nilaiDihitung = h.dihitung ? uang(b._nilai) : "0.00";
+  }
 }
 
 function cocok(b, f) {
@@ -368,16 +426,19 @@ export async function pemasukanTersaring(db, q = {}) {
   if (q.rekening && /^[0-9a-f-]{36}$/i.test(String(q.rekening))) rekeningNama = (await db.finCashAccount.findUnique({ where: { id: q.rekening }, select: { name: true } }))?.name ?? null;
   const filter = { kategori, status: q.status || null, rekening: rekeningNama ?? (q.rekening && !/^[0-9a-f-]{36}$/i.test(String(q.rekening)) ? q.rekening : null), sumber: q.sumber || null, statusBayar: q.statusBayar || null, pihak: q.pihak || null, q: q.q ? String(q.q).slice(0, 80) : null };
   const tampil = baris.filter((b) => cocok(b, filter)).sort((a, b) => (b.tanggal ?? "").localeCompare(a.tanggal ?? "") || String(b.nomor).localeCompare(String(a.nomor)));
-  const total = tampil.length ? uang(sumMoney(tampil.filter((b) => b.kategori !== "DIKECUALIKAN" && b.status !== "DITOLAK" && b.status !== "DIBATALKAN").map((b) => b._nilai))) : "0.00";
-  return { p, kategori, tampil, terpotong, totalNilai: total };
+  const dihitung = tampil.filter((b) => b.dihitung);
+  const tidak = tampil.filter((b) => !b.dihitung);
+  const total = dihitung.length ? uang(sumMoney(dihitung.map((b) => b._nilai))) : "0.00";
+  const totalTidakDihitung = { jumlah: tidak.length, nilai: tidak.length ? uang(sumMoney(tidak.map((b) => b._nilai))) : "0.00" };
+  return { p, kategori, tampil, terpotong, totalNilai: total, totalTidakDihitung };
 }
 
 export async function daftarPemasukan(db, q = {}) {
-  const { p, kategori, tampil, terpotong, totalNilai: total } = await pemasukanTersaring(db, q);
+  const { p, kategori, tampil, terpotong, totalNilai: total, totalTidakDihitung } = await pemasukanTersaring(db, q);
   const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 100);
   const page = Math.max(parseInt(q.page, 10) || 1, 1);
   const potong = tampil.slice((page - 1) * limit, page * limit);
-  return { periode: { from: p.from, to: p.to }, kategori, items: potong.map(bersih), page, limit, total: tampil.length, totalNilai: total, adaLagi: page * limit < tampil.length, terpotong, diperbaruiPada: new Date().toISOString() };
+  return { periode: { from: p.from, to: p.to }, kategori, items: potong.map(bersih), page, limit, total: tampil.length, totalNilai: total, totalTidakDihitung, adaLagi: page * limit < tampil.length, terpotong, diperbaruiPada: new Date().toISOString() };
 }
 
 // ── OPSI ────────────────────────────────────────────────────────────────────────────────────────────────────────

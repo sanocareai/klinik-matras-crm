@@ -57,7 +57,7 @@ export const KARTU_REKON = {
   TANPA_SALES: { label: "Tanpa Atribusi Sales", sub: "tetap masuk total perusahaan", tip: "Order lunas yang tidak dimiliki Sales mana pun (order internal / pelanggan di luar percakapan Sales). TIDAK diberikan ke Sales secara tebakan; tetap dihitung di total perusahaan." },
 };
 // Daftar metrik penjelasan "Kenapa angkanya berbeda?" (sama dengan panel lama di tab Sales).
-const METRIK_KENAPA = ["uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"];
+const METRIK_KENAPA = ["uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_kohort_dibuat", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"];
 
 const rupiahAtauKosong = (n) => (n == null ? "—" : formatRupiah(n));
 // Langkah: tanda 0 = angka awal/hasil; selain itu tampil sebagai EFEK (tanda × jumlah): "+" menambah, "−" mengurangi (aturan lama, tidak diubah).
@@ -119,7 +119,7 @@ function TahapRekon({ t, nama, bisaBuka, onBuka, kunciDariLabel }) {
     <section className="crm-rk-tahap" data-buka={buka ? "1" : "0"} aria-label={`Tahap ${t.nomor}`} data-testid={`rekon-tahap-${t.nomor}`}>
       <button type="button" className="crm-rk-tahap-kepala" aria-expanded={buka} aria-controls={id} onClick={() => setBuka((v) => !v)} data-testid={`rekon-tahap-tombol-${t.nomor}`}>
         <span className="crm-rk-no" aria-hidden="true">{t.nomor}</span>
-        <span className="crm-rk-tahap-nama">Tahap {t.nomor} · {nama}</span>
+        <span className="crm-rk-tahap-nama">{t.nomor === "K" ? "Jembatan kohort" : `Tahap ${t.nomor}`} · {nama}</span>
         {t.status.perluDitinjau && <span className="crm-rk-chip" data-testid={`rekon-tinjau-${t.nomor}`}>Perlu ditinjau · {t.status.alasanTinjau.length}</span>}
         <span className="crm-rk-tahap-selisih">Selisih <b data-ok={cocok ? "1" : "0"}>{rpBertanda(t.residual)}</b></span>
         <span className="crm-rk-tahap-aksi">{buka ? "Tutup perhitungan" : "Lihat perhitungan"}{buka ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}</span>
@@ -236,6 +236,8 @@ export function PanelRekon({ data, loading, error, onBuka }) {
           </div>
 
           <div className="crm-rk-tahap-daftar">
+            {/* Jembatan KOHORT (audit selisih Okt 2026): "Sudah Lunas" di Ringkasan (order DIBUAT di periode) → order yang LUNAS di periode. Dari server (data.kohort), tidak dihitung ulang. */}
+            {data.kohort && <TahapRekon t={{ ...data.kohort, nomor: "K", komponenLain: null, status: { ...data.kohort.status, perluDitinjau: false, alasanTinjau: [] } }} nama="Sudah Lunas (dibuat) → Lunas di periode" bisaBuka={bisaBuka} onBuka={onBuka} kunciDariLabel={kunciDariLabel} />}
             <TahapRekon t={t1} nama="Pembayaran → Order lunas perusahaan" bisaBuka={bisaBuka} onBuka={onBuka} kunciDariLabel={kunciDariLabel} />
             <TahapRekon t={t2} nama="Perusahaan → Tim Sales" bisaBuka={bisaBuka} onBuka={onBuka} kunciDariLabel={kunciDariLabel} />
           </div>
@@ -258,6 +260,8 @@ const JUDUL_DETAIL = {
   KLAIM_TANPA_PAYMENT: "Klaim Lunas tanpa Payment", PAYMENT_MENUNGGU: "Payment Menunggu Verifikasi", PAYMENT_KURANG: "Payment Terverifikasi Kurang dari Nilai Order",
   KELEBIHAN_BAYAR: "Kelebihan Bayar / DP Periode Lain", SELISIH_LAIN: "Tak Terklasifikasi",
   TANPA_SALES: "Tanpa Atribusi Sales", DIHITUNG_GANDA: "Dihitung Ganda (dipegang >1 Sales)",
+  KOHORT_DIBUAT_LUNAS: "Sudah Lunas — Order Dibuat di Periode", KOHORT_LUNAS_DI_LUAR: "Dibuat di Periode & Lunas, Tanggal Lunas di Luar Periode / Kosong",
+  KOHORT_DIBUAT_SEBELUM: "Dibuat Sebelum Periode, Lunas di Periode", KOHORT_BELUM_LUNAS_PAIDAT: "Tanggal Lunas di Periode, Status Bayar Kini Bukan Lunas",
 };
 
 /** Daftar order penyusun satu baris bridge. Multi-order pelanggan yang sama dikelompokkan (TIDAK digabung / dianggap duplikat). */
@@ -346,7 +350,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                         <td className="py-2 pr-2 text-right font-semibold tabular-nums">{rpBertanda(b.jumlah)}</td>
                         <td className="py-2 text-[11.5px] text-ink2">
                           {(b.pembayaran || []).length === 0 ? <span className="text-ink3">—</span> : b.pembayaran.map((p) => (
-                            <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
+                            <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}<div className="text-[10.5px] text-ink3">Pembayaran {p.ref}{p.rekening ? ` · ${p.rekening}` : ""}{p.nomorJurnal ? ` · jurnal ${p.nomorJurnal}` : ""}</div></div>
                           ))}
                           {typeof b.dibayarTotal === "number" && <div className="text-ink3">Total dibayar {formatRupiah(b.dibayarTotal)} · sisa {formatRupiah(b.sisaTagihan)}</div>}
                           {b.tindakan && <div className="mt-1 inline-block rounded-full bg-inset px-2 py-0.5 text-[11px] font-medium text-ink2">{b.tindakan.label}</div>}
@@ -395,7 +399,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                     <div className="mt-1 text-[11.5px] text-ink3">Bayar {b.tanggalBayar ? tanggal(b.tanggalBayar) : "—"} · Lunas {b.tanggalLunas ? tanggal(b.tanggalLunas) : "—"}{b.tindakan ? ` · Tindakan: ${b.tindakan.label}` : ""}</div>
                     <div className="mt-2 text-[11.5px] text-ink2">
                       {(b.pembayaran || []).length === 0 ? <span className="text-ink3">Payment: —</span> : b.pembayaran.map((p) => (
-                        <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
+                        <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}<div className="text-[10.5px] text-ink3">Pembayaran {p.ref}{p.rekening ? ` · ${p.rekening}` : ""}{p.nomorJurnal ? ` · jurnal ${p.nomorJurnal}` : ""}</div></div>
                       ))}
                       {typeof b.dibayarTotal === "number" && <div className="text-ink3">Total dibayar {formatRupiah(b.dibayarTotal)} · sisa {formatRupiah(b.sisaTagihan)}</div>}
                       {kunci === "TANPA_SALES" && admin && (

@@ -165,14 +165,14 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           format={(v) => formatRupiah(Math.round(v))}
           growth={report?.growthTeamGrossValue} compareLabel={cmp}
           sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
-          tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas — “reach”, belum tentu sudah lunas."
+          tooltip="BASIS: tanggal order DIBUAT. Total nilai bersih (setelah Nota Kredit) order tim — Sales aktif + closing pribadi Team Lead — yang dibuat di periode ini. Tidak termasuk order batal/menunggu/spam, order Penjualan Karyawan, dan order tanpa atribusi Sales. Belum tentu sudah lunas."
         />
         <KpiLap
           tone="leads" ikon="centang" label="Nilai Order yang Menjadi Lunas"
           numericValue={teamCollectedAll}
           format={(v) => formatRupiah(Math.round(v))}
           sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses (perkiraan)`}
-          tooltip="Nilai penuh order yang mencapai lunas pada periode ini. Tidak selalu sama dengan uang masuk periode karena DP, ongkir, dan pembayaran lintas periode."
+          tooltip="Nilai penuh order yang mencapai lunas pada periode ini. Tidak selalu sama dengan uang masuk periode karena DP, ongkir, dan pembayaran lintas periode. BASIS: tanggal order MENJADI LUNAS (bukan tanggal dibuat), nilai bersih setelah Nota Kredit — termasuk order bulan lalu yang baru lunas sekarang. Tidak termasuk order tanpa atribusi Sales dan order Penjualan Karyawan. Rinciannya ada di Rekonsiliasi di bawah."
         />
         <KpiLap
           tone="orders" ikon="alur" label="Konversi Tim"

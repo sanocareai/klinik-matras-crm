@@ -1,0 +1,8 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT hotfix performa dan fitur live lain (gerbang kode live membuktikan kode di container == folder == baseline diset sebelum switch).
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Web (frontend/dist) dikembalikan bersama folder release sebelumnya. Kode lama kembali ke Excel Pemasukan tanpa kolom "Dihitung ke Total?" dan rekonsiliasi tanpa jembatan kohort; angka Sales/Finance di database tidak berubah.
+Payments, verifikasi, order, jurnal, refund, nota kredit, dan pengecualian lunas tidak disentuh oleh rilis ini: tidak ada yang perlu dibalik.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup; gunakan hanya atas keputusan Owner.

@@ -37,11 +37,16 @@ test("Empat kartu lama dilebur tanpa kehilangan tooltip/subjudul/klik; 'Kenapa a
   for (const f of ["Payment terverifikasi yang diterima di periode ini", "Uang muka/DP terverifikasi untuk order yang belum lunas", "Bagian Payment yang menutup ongkir", "TIDAK diberikan ke Sales secara tebakan"]) assert.ok(rekon.includes(f), f);
   assert.match(rekon, /onBuka\("UANG_MASUK"\)/);
   assert.match(rekon, /<IsiKenapaBeda metrik=\{METRIK_KENAPA\} \/>/);
-  assert.match(rekon, /"uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"/);
+  assert.match(rekon, /"uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_kohort_dibuat", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"/);
   assert.doesNotMatch(tab, /<KenapaBeda|<KartuRekon/);
   assert.match(kontrak, /export function IsiKenapaBeda/);
   assert.match(kontrak, /<IsiKenapaBeda metrik=\{metrik\} from=\{from\} to=\{to\} denganJembatan=\{denganJembatan\} \/>/, "KenapaBeda (Finance) memakai isi yang sama");
   assert.match(rekon, /Nilai order lunas bukan metrik yang sama dengan uang masuk/);
+});
+
+test("Audit selisih Okt 2026: jembatan kohort ikut sebagai akordeon (nomor K) di panel redesain, memakai data.kohort dari server", () => {
+  assert.ok(rekon.includes('data.kohort && <TahapRekon t={{ ...data.kohort, nomor: "K"'));
+  assert.ok(rekon.includes('t.nomor === "K" ? "Jembatan kohort"'));
 });
 
 test("Akses rincian order tidak berubah: modal + tetapkan Sales hanya Admin tetap ada; Export Excel tetap membawa rekonSales", () => {

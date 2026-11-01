@@ -228,7 +228,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           numericValue={uang?.collectedValue || 0}
           format={(v) => formatRupiah(Math.round(v))}
           sub={uang?.collectedRate != null ? `${uang.collectedRate}% dari nilai penjualan` : "—"}
-          tooltip="Nilai order yang statusnya sudah ditandai LUNAS oleh sales, dari order di periode yang dipilih di atas."
+          tooltip="BASIS: tanggal order DIBUAT. Nilai bersih order yang dibuat di periode ini dan SEKARANG berstatus Lunas — seluruh perusahaan (termasuk order tanpa atribusi Sales). BEDA dengan kartu 'Nilai Order yang Menjadi Lunas' di tab Sales (basis tanggal lunas, hanya Tim Sales): order lama yang baru lunas bulan ini tidak ikut di sini. Jembatan lengkapnya ada di tab Sales › Rekonsiliasi."
         />
         <KpiLap
           tone="orders" ikon="tas"
@@ -236,7 +236,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           numericValue={uang?.outstandingValue || 0}
           format={(v) => formatRupiah(Math.round(v))}
           sub="nilai order yang belum tercatat lunas"
-          tooltip="Nilai Penjualan dikurangi Sudah Lunas — order yang statusnya DP atau belum dibayar sama sekali."
+          tooltip="BASIS: tanggal order DIBUAT. Nilai Penjualan dikurangi Sudah Lunas — order yang dibuat di periode ini dan statusnya DP atau belum dibayar."
         />
         <KpiLap
           tone="conversion" ikon="diagram"
