@@ -444,7 +444,7 @@ export default function FinanceSuppliers() {
                       { label: "Terbayar", value: formatUang(b.terbayar) },
                       { label: "Jatuh Tempo", value: b.dueDate ? tanggalPendek(b.dueDate) : "—" },
                       { label: "Tanggal", value: tanggalPendek(b.billDate) },
-                      { label: "Ref Supplier", value: b.supplierRef },
+                      { label: "Nomor faktur supplier", value: b.supplierRef },
                       { label: "Keterangan", value: b.description, span: true },
                     ]}
                     actions={<RowActions primary={a.primary} items={a.items} />}

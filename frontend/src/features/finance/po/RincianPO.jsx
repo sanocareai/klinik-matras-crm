@@ -18,7 +18,9 @@ import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { IkAlur, IkBahan, IkHarga, IkKedatangan } from "@/components/financeIconsPO.jsx";
 import { IkJam } from "@/components/financeIconsBiaya.jsx";
 import { ChipStatusPO, BarPenerimaan } from "./DaftarPO.jsx";
-import { aksiRincian, statusTampil, ringkasPenerimaan, angkaBaris, langkahBerikut, keteranganTermin } from "./poTampilan.js";
+import { BagianFakturSupplier, DialogNomorFaktur, PeringatanDuplikatNomor, useTagihanSupplier } from "./FakturSupplierPO.jsx";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiRincian, statusTampil, ringkasPenerimaan, angkaBaris, langkahBerikut, keteranganTermin, nomorSupplierBermakna, TEKS_NOMOR_BELUM_DIISI } from "./poTampilan.js";
 import PanelKedatangan, { LegendaProgres } from "@/features/kedatangan/PanelKedatangan.jsx";
 import {
   LABEL_STATUS_PENERIMAAN, teksJumlah, kalimatEvent, labelSatuan, nilaiBelumDiterima,
@@ -56,6 +58,8 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah }) {
   const [dialog, setDialog] = useState(null); // "batal" | "revisi"
   const [infoHarga, setInfoHarga] = useState("");
   const [faktur, setFaktur] = useState(null); // { editBillId? } — formulir faktur
+  const [nomorUntuk, setNomorUntuk] = useState(null); // faktur yang nomor supplier-nya dilengkapi/diubah (metadata saja)
+  const [riwayatUntuk, setRiwayatUntuk] = useState(null);
   const [setujuiFaktur, setSetujuiFaktur] = useState(null); // evaluasi faktur yang butuh catatan tinjauan harga
   const [tolakFaktur, setTolakFaktur] = useState(null);
   const [bayarUm, setBayarUm] = useState(false); // dialog Bayar Uang Muka
@@ -131,6 +135,9 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah }) {
             po={po} segar={segar} izin={izin}
             onBayarUangMuka={() => setBayarUm(true)}
             onUbahFaktur={(billId) => setFaktur({ editBillId: billId })}
+            onCatatFaktur={() => setFaktur({})}
+            onEditNomor={setNomorUntuk}
+            onRiwayatFaktur={setRiwayatUntuk}
             onSetujuiFaktur={setSetujuiFaktur}
             onTolakFaktur={setTolakFaktur}
             onTerapkanUangMuka={(fk) => setTerapkanUm({ billId: fk.id, nomor: fk.supplierRef || fk.billNumber })}
@@ -152,6 +159,10 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah }) {
           onSubmit={async (alasan) => { try { await api.batalkanPenerapanUangMuka(batalUm.id, alasan, `umb-${idKunci()}`); setBatalUm(null); await segarkan(); } catch (e) { setGalat(e.message || "Gagal membatalkan penerapan"); } }}
         />
       )}
+      {nomorUntuk && po && (
+        <DialogNomorFaktur faktur={nomorUntuk} supplier={po.supplier} poNumber={po.poNumber} onClose={() => setNomorUntuk(null)} onSaved={async () => { setNomorUntuk(null); await segarkan(); }} />
+      )}
+      {riwayatUntuk && <RiwayatVersiDialog jenis="bills" id={riwayatUntuk.id} nomor={riwayatUntuk.nomorInternal} onClose={() => setRiwayatUntuk(null)} />}
       {faktur && po && (
         <ModalFaktur
           key={faktur.editBillId || "baru"} po={po} editBillId={faktur.editBillId} onClose={() => setFaktur(null)}
@@ -286,7 +297,7 @@ function RincianJumlah({ id, l, a, kartu = false }) {
   );
 }
 
-function IsiDetail({ po, segar, izin, onBayarUangMuka, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
+function IsiDetail({ po, segar, izin, onBayarUangMuka, onCatatFaktur, onEditNomor, onRiwayatFaktur, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
   const barisLaku = po.status !== "DRAFT";
   const st = statusTampil(po.status);
   const ring = ringkasPenerimaan(po);
@@ -381,19 +392,12 @@ function IsiDetail({ po, segar, izin, onBayarUangMuka, onUbahFaktur, onSetujuiFa
       <BagianPO judul="Uang muka, faktur, dan pembayaran" Ikon={IkHarga} id="pod-dok">
         <DaftarUangMukaPO po={po} admin={admin} onBatalkan={onBatalkanPenerapan} />
 
-        <section id="seksi-faktur" data-testid="seksi-faktur" className="fin-pod-faktur">
-          <h4 className="fin-pod-sub">Faktur supplier atas PO ini</h4>
-          {fakturPO.length === 0 ? (
-            <p className="fin-pod-ket">{["DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI"].includes(po.status) ? "Belum ada faktur. Klik “Catat faktur” setelah faktur supplier diterima." : "Faktur bisa dicatat setelah PO disetujui."}</p>
-          ) : (
-            <div className="fin-pod-faktur-daftar">
-              {fakturPO.map((fk) => (
-                <KartuFaktur key={fk.id} fk={fk} ringkas={(po.keuangan?.faktur || []).find((x) => x.id === fk.id)} adaUangMuka={(po.keuangan?.uangMukaBelumDiterapkan ?? 0) > 0} segar={segar} onUbah={onUbahFaktur} onSetujui={onSetujuiFaktur} onTolak={onTolakFaktur} onTerapkanUangMuka={onTerapkanUangMuka} onGalat={onGalat} onSegarkan={onSegarkan} />
-              ))}
-            </div>
+        <BagianFakturSupplier
+          po={po} izin={izin} segar={segar} onCatat={onCatatFaktur} onEditNomor={onEditNomor} onRiwayat={onRiwayatFaktur}
+          renderRincian={(fk) => (
+            <KartuFaktur fk={fk} ringkas={(po.keuangan?.faktur || []).find((x) => x.id === fk.id)} adaUangMuka={(po.keuangan?.uangMukaBelumDiterapkan ?? 0) > 0} segar={segar} onUbah={onUbahFaktur} onSetujui={onSetujuiFaktur} onTolak={onTolakFaktur} onTerapkanUangMuka={onTerapkanUangMuka} onGalat={onGalat} onSegarkan={onSegarkan} />
           )}
-          <p className="fin-pod-ket">Faktur dan pembayarannya tidak menambah stok. Jumlah yang menagih lebih dari barang baik yang belum ditagih akan <strong>tertahan</strong>; beda harga wajib tinjauan Finance (tanpa toleransi otomatis).</p>
-        </section>
+        />
 
         <RiwayatPembayaranPO po={po} />
 
@@ -438,8 +442,10 @@ function KartuFaktur({ fk, ringkas, adaUangMuka, segar, onUbah, onSetujui, onTol
   return (
     <div className="rounded-lg border border-line p-3 text-[12.5px]" data-testid="kartu-faktur">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[12px] font-semibold text-ink">{fk.supplierRef || fk.billNumber}</span>
-        <span className="text-ink3">{fk.billNumber}</span>
+        {nomorSupplierBermakna(fk.supplierRef)
+          ? <span className="font-mono text-[12px] font-semibold text-ink">{fk.supplierRef}</span>
+          : <span className="text-[12px] font-semibold text-orange">{TEKS_NOMOR_BELUM_DIISI}</span>}
+        <span className="text-ink3" title="Nomor tagihan SANSS">{fk.billNumber}</span>
         <Badge variant={st.variant}>{st.label}</Badge>
         <span className="ml-auto tabular-nums text-ink">{formatUang(fk.amount)}</span>
         <button type="button" className="text-[12px] font-semibold text-accent" onClick={() => setBuka((v) => !v)}>{buka ? "Sembunyikan" : "Pencocokan"}</button>
@@ -562,6 +568,7 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
     return () => { batal = true; };
   }, [po.id, editBillId, mengubah]);
 
+  const tagihanSupplier = useTagihanSupplier(po.supplier?.id);
   const galatForm = f ? (galatFaktur(f, { edit: mengubah }) || galatTermin(termin, { perluTanggal: false })) : "Memuat…";
   const total = f ? totalFaktur(f.lines) : 0;
   const barisPO = new Map((p?.barisPO || []).map((b) => [b.purchaseOrderLineId, b]));
@@ -596,10 +603,16 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
     >
       {!f ? <p className="py-6 text-[13px] text-ink3">{galat || "Memuat…"}</p> : (
         <div className="space-y-3">
+          <dl className="fin-pof-asal" data-testid="asal-faktur-po">
+            <div><dt>Supplier</dt><dd>{po.supplier?.name}</dd></div>
+            <div><dt>Faktur atas</dt><dd className="font-mono">{po.poNumber}</dd></div>
+          </dl>
+          <p className="fin-pof-dampak" data-testid="dampak-catat-faktur">Mencatat faktur tidak berarti barang sudah diterima atau sudah dibayar. Faktur disimpan sebagai Menunggu Persetujuan: belum ada jurnal sampai disetujui, tidak menambah stok, dan tidak membuat pembayaran.</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Nomor faktur supplier" required><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} placeholder="mis. 2327/CR/EB/10/2026" aria-label="Nomor faktur supplier" /></Field>
+            <Field label="Nomor faktur supplier" required hint="Nomor yang tertera di faktur dari supplier. Bukan nomor tagihan SANSS (BILL-…) dan bukan nomor PO."><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} placeholder="mis. 2327/CR/EB/10/2026" aria-label="Nomor faktur supplier" /></Field>
             <Field label="Tanggal faktur" required><Input type="date" value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></Field>
           </div>
+          <PeringatanDuplikatNomor supplierId={po.supplier?.id} nomor={f.supplierRef} kecualiId={editBillId || null} tagihan={tagihanSupplier} />
           <TerminFaktur purchaseOrderId={po.id} supplierId={po.supplier?.id} tanggalFaktur={f.billDate} value={termin} onChange={setTermin} />
 
           {p.penerimaan.length > 0 && (

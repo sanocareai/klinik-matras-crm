@@ -181,3 +181,55 @@ export function keteranganTermin(termin) {
   const dasar = "Jatuh tempo dihitung per penerimaan, dari tanggal barang tiba.";
   return termin.alasan ? "Diganti: " + termin.alasan + ". " + dasar : dasar;
 }
+
+// ── Nomor faktur supplier (atribut TAGIHAN/faktur, bukan header PO) ─────────────────────────────────────────────────────────────────────────
+// Kolom yang dipakai: fin_supplier_bills.supplier_ref ("Nomor faktur/invoice menurut SUPPLIER", tidak unik global). Nomor internal = billNumber (BILL-…); nomor PO = poNumber (PO-…).
+// Tidak ada fitur Nomor Faktur Pajak di sistem. Aturan "bermakna" sama dengan server (jenisTagihan.nomorFakturBermakna): isian pengisi seperti "---" bukan nomor faktur.
+export const nomorSupplierBermakna = (ref) => { const t = String(ref ?? "").trim(); return /[\p{L}\p{N}]/u.test(t) ? t : null; };
+export const STATUS_FAKTUR_AKTIF = Object.freeze(["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"]);
+export const NOMOR_SUPPLIER_MAKS = 100; // sama dengan server (koreksiLanjutan.normalisasiInfoTagihan)
+export const TEKS_NOMOR_BELUM_DIISI = "Nomor supplier belum diisi";
+export const ALASAN_LENGKAPI = "Melengkapi nomor faktur supplier yang belum diisi";
+
+/**
+ * Semua faktur/tagihan yang terhubung ke PO ini, satu baris per dokumen:
+ *   • faktur atas PO (po.faktur; purchaseOrderId = PO ini), dan
+ *   • tagihan LAMA yang tertaut lewat penerimaan barang PO ini (goodsReceiptId) tetapi tidak punya purchaseOrderId.
+ * Tidak ada penautan otomatis berdasarkan nominal/nama: hanya hubungan yang tersimpan di data.
+ */
+export function daftarFakturPO(po) {
+  const hasil = new Map();
+  for (const f of po?.faktur || []) {
+    hasil.set(f.id, { id: f.id, nomorInternal: f.billNumber, nomorSupplier: nomorSupplierBermakna(f.supplierRef), mentah: f.supplierRef ?? "", status: f.status, nilai: f.amount ?? null, sumber: "PO", penerimaan: null });
+  }
+  for (const r of po?.penerimaan || []) {
+    for (const t of r.finSupplierBills || []) {
+      if (hasil.has(t.id) || t.lewatPO) continue;
+      hasil.set(t.id, { id: t.id, nomorInternal: t.billNumber, nomorSupplier: nomorSupplierBermakna(t.supplierRef), mentah: t.supplierRef ?? "", status: t.status, nilai: t.amount ?? null, sumber: "PENERIMAAN", penerimaan: r.receiptNumber });
+    }
+  }
+  return [...hasil.values()];
+}
+
+export function ringkasKelengkapanFaktur(daftar) {
+  const aktif = daftar.filter((d) => !["DITOLAK", "DIBATALKAN"].includes(d.status));
+  const belum = aktif.filter((d) => !d.nomorSupplier).length;
+  return { jumlah: daftar.length, aktif: aktif.length, belumBernomor: belum, lengkap: daftar.length > 0 && belum === 0 };
+}
+
+/** Validasi isian nomor. Nilai dipertahankan apa adanya (nol di depan, garis miring, tanda hubung); hanya spasi luar dipangkas. */
+export function periksaNomorSupplier(isian, awal = "") {
+  const nilai = String(isian ?? "").trim();
+  if (!nilai) return { nilai, galat: "Isi nomor faktur supplier." };
+  if (!nomorSupplierBermakna(nilai)) return { nilai, galat: "Isi nomor yang tertera di faktur supplier (memuat huruf atau angka)." };
+  if (nilai.length > NOMOR_SUPPLIER_MAKS) return { nilai, galat: `Terlalu panjang (maksimal ${NOMOR_SUPPLIER_MAKS} karakter).` };
+  if (nilai === String(awal ?? "").trim()) return { nilai, galat: null, sama: true };
+  return { nilai, galat: null, sama: false };
+}
+
+/** Faktur lain dari SUPPLIER YANG SAMA dengan nomor yang sama (tanpa membedakan huruf besar/kecil) yang masih aktif — aturan yang sama dengan server saat menyimpan/menyetujui. Dokumen itu sendiri tidak dihitung. */
+export function cariDuplikatNomor({ tagihan, supplierId, nomor, kecualiId = null }) {
+  const n = nomorSupplierBermakna(nomor)?.toLowerCase();
+  if (!n) return [];
+  return (tagihan || []).filter((b) => b.id !== kecualiId && (b.supplierId ?? b.supplier?.id) === supplierId && String(b.supplierRef ?? "").trim().toLowerCase() === n && STATUS_FAKTUR_AKTIF.includes(b.status));
+}
