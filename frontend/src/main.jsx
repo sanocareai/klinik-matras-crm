@@ -94,8 +94,6 @@ import "./styles/sanss-finance.css";
 import "./styles/sanss-finance-biaya.css";
 // Invoice Pelanggan (1 Nov 2026) — gaya khusus kelas fin-inv*; berdiri sendiri (tidak bergantung pada gaya halaman Finance lain).
 import "./styles/sanss-finance-invoice.css";
-// Kas & Bank (1 Nov 2026) — gaya khusus kelas fin-ks*; berdiri sendiri (tidak bergantung pada gaya halaman Finance lain).
-import "./styles/sanss-finance-kasbank.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

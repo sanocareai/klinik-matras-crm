@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUrlTab } from "@/lib/useUrlTab.js";
+// Gaya Kas & Bank (kelas fin-ks*) diimpor dari halaman ini agar ikut chunk lazy-nya dan main.jsx (berkas bersama) tidak berubah.
+import "@/styles/sanss-finance-kasbank.css";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
