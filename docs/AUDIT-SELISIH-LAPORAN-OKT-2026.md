@@ -173,3 +173,28 @@ Live pindah ke `50b7e190` (Sales CRM Laporan fase 2/slp2: akordeon Rekonsiliasi,
 2. **Lima order September dengan pengecualian dicabut (Rp12.685.000)**: RES-27092026-161 (3.505.000), RES-27092026-163 (1.200.000), RES-28092026-173 (3.090.000), RES-28092026-174 (2.000.000), RES-28092026-175 (2.890.000) — uang masuk 1–5 Okt, tanggal lunas tetap 30 Sep. Putuskan: biarkan (September sudah tutup, insentif 120 jt dihitung), atau pindahkan tanggal lunas ke tanggal bayar (mengubah laporan September dan Oktober).
 3. **Order staf lama** NEW-01102026-001 (Rp1.300.000) dan NEW-01102026-002 (DP Rp100.000), pembeli Sulaiman / Emon — masuk omzet perusahaan tetapi bukan Tim. Putuskan: dibiarkan sebagai penjualan staf lama atau dimigrasikan ke modul Penjualan Karyawan.
 4. **RES-07102026-037 (Sofyan) — koreksi nilai order**: refund Rp200.000 sudah benar dan tercatat sebagai komponen jembatan (A3); yang menunggu konfirmasi Owner hanya apakah nilai order dikoreksi. Rilis ini tidak menyentuh koreksi itu.
+
+## G. Catatan kontrak data untuk integrasi redesain Pemasukan (1 Nov 2026, base live 925cd796)
+
+Berlaku untuk daftar Pemasukan (`GET /finance/pemasukan/daftar`), Excel Pemasukan, dan panel Rekonsiliasi Sales–Finance. Tidak ada migrasi dan tidak ada perubahan schema.prisma.
+
+**Satu aturan "dihitung ke total"** — `statusHitungTotal()` di `services/finance/pemasukan.js`. Total layar, kolom Excel, dan rekap memakai fungsi itu; jangan dihitung ulang di UI.
+
+Field BARU pada tiap baris `items[]` (semua baris tetap dikirim, termasuk yang tidak dihitung — itu kebijakan tampilan, bukan perhitungan):
+- `dihitung` (boolean) — true bila ikut total aktif.
+- `alasanTidakDihitung` (string | null) — WAJIB terisi bila `dihitung=false`: transfer antar-rekening, saldo awal, pembalikan biaya, pelunasan piutang karyawan, pembayaran ditolak/dibatalkan (beserta alasan batal dan pembayaran pengganti), atau arsip historis yang tidak dihitung.
+- `nilaiDihitung` (string desimal) — sama dengan `nilai` bila dihitung, `"0.00"` bila tidak. SUM kolom ini = `totalNilai`.
+- Baris pembayaran: `alasanBatal` (string | null) dan `pengganti` (`{ id, tanggal, nominal, terverifikasi, kecocokan: "NOMINAL_SAMA" | "ORDER_SAMA", semua[] }` | null; hanya diisi bila dibatalkan/ditolak).
+
+Field TOP-LEVEL:
+- `totalNilai` — **MAKNA BERUBAH**: sekarang total baris yang `dihitung` saja. Dulu pembayaran ditolak/dibatalkan dan Dikecualikan sudah keluar, tetapi arsip HISTORIS ikut dijumlah semuanya (termasuk Duplikat/Perlu Ditinjau); kini arsip historis yang tidak dihitung ikut keluar, sama dengan kartu "Pendapatan historis". Total periode yang memuat arsip historis dapat lebih kecil dari sebelumnya.
+- `totalTidakDihitung` — BARU: `{ jumlah, nilai }`; `nilai` = jumlah nilai mentah baris yang tidak dihitung.
+- `total` — TETAP: jumlah baris hasil filter (semua, termasuk yang tidak dihitung). Invarian: `total = jumlah dihitung + totalTidakDihitung.jumlah`; `totalNilai + totalTidakDihitung.nilai = jumlah mentah`. Ketiganya dihitung atas seluruh hasil filter, bukan halaman aktif.
+
+Excel Pemasukan: kolom BARU "Dihitung ke Total?", "Nilai yang Dihitung (Rp)", "Alasan Tidak Dihitung". Kolom "Nilai (Rp)" tetap nilai tiap baris apa adanya, jadi SUM mentahnya lebih besar dari TOTAL. Baris TOTAL kini berada di kolom "Nilai yang Dihitung" dan berlabel "TOTAL DIHITUNG (n dari N baris)". Sheet Rekap: kolom "Nilai" diganti nama "Nilai Semua Baris (Rp)", ditambah "Baris Tidak Dihitung" dan "Nilai yang Dihitung (Rp)". Pemakai Excel yang merujuk posisi kolom lama perlu menyesuaikan.
+
+Rekonsiliasi Sales–Finance (`data.kohort` dan drilldown): jembatan kohort "dibuat di periode & Lunas" → "lunas di periode (Total Perusahaan)" dengan nomor dokumen; baris membawa `tanggalDibuat` dan dokumen pembayaran; alasan pengecualian lunas per order (dikunci / dicabut / lunas periode lain). Order Penjualan Karyawan kini dikeluarkan dari himpunan Sales/Total Perusahaan di panel ini dan ditampilkan sebagai "Order tidak dihitung" (selaras kontrak: di luar omzet Sales).
+
+Kontrak metrik (`kontrakMetrik.js`): basis tanggal BARU `TGL_DIBUAT`; metrik BARU `nilai_order_lunas_kohort_dibuat`, `perlu_verifikasi_finance`, `pemasukan_lain`. Dua kartu Ringkasan Pemasukan ("Perlu verifikasi Finance", "Pemasukan lain") WAJIB memakai `metrik="perlu_verifikasi_finance"` / `metrik="pemasukan_lain"`; kartu baru lain yang menampilkan nilai uang wajib diklasifikasi (tes `financeKontrakMetrik`).
+
+Untuk UI redesain: baris yang `dihitung=false` boleh tetap tampil untuk penelusuran, tetapi HARUS ditandai ("Tidak dihitung" + alasan) dan angka total/ringkasan wajib memakai `totalNilai` / `totalTidakDihitung` dari server, bukan penjumlahan kolom di klien.
