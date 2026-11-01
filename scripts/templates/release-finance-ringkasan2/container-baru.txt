@@ -1,0 +1,6 @@
+# backend IDENTIK: kode di dalam container SETELAH switch == folder release baru == kode di container SEBELUM switch (image sama, backend/ tidak berubah)
+docker exec "$CID_NEW" sh -c 'cd /app && { for x in src prisma scripts tests; do [ -d "$x" ] && find "$x" -type f; done; } | LC_ALL=C sort | xargs sha256sum && sha256sum package.json package-lock.json' > "$BK_DIR/container-sha-baru.txt" || die "gagal membaca kode di dalam container baru"
+( cd "$NEW_DIR/backend" && { for x in src prisma scripts tests; do [ -d "$x" ] && find "$x" -type f; done; } | LC_ALL=C sort | xargs sha256sum && sha256sum package.json package-lock.json ) > "$BK_DIR/dir-sha-baru.txt"
+cmp -s "$BK_DIR/container-sha-baru.txt" "$BK_DIR/dir-sha-baru.txt" || die "kode di container baru BERBEDA dari folder release baru"
+cmp -s "$BK_DIR/container-sha-baru.txt" "$BK_DIR/container-sha.txt" || die "kode backend di container BERUBAH setelah switch (harus identik dengan sebelum switch)"
+ok "backend identik: kode di container sebelum == sesudah switch == folder release baru ($(wc -l < "$BK_DIR/container-sha-baru.txt" | tr -d ' ') berkas)"
