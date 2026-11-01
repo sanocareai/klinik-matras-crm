@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka, kalimatEventUangMuka, KALIMAT_UANG_MUKA, URUTAN_STATUS_EMPAT, varianStatusEmpat, tautanKeuangan, KALIMAT_SIMPAN_KE_STOK } from "../src/features/finance/uangMukaLogic.js";
+import { sumberPO } from "./_poSumber.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
@@ -70,7 +71,7 @@ test("pemasangan: api, PO (tombol Bayar Uang Muka, dua kelompok, tooltip, pering
   assert.match(um, /title=\{definisi\}/); assert.match(um, /aria-label=\{`Arti \$\{label\}`\}/, "definisi bisa dibuka di layar sentuh");
   assert.doesNotMatch(um, /Sisa Utang"[^<]*sisaKomitmen|\bsisaKomitmen\b[^\n]{0,60}"Sisa utang"/, "sisa komitmen tidak diberi label utang");
   assert.doesNotMatch(um, /\b(Upload|Cancel|Save|Loading|Retry|Delete|Submit|Pay)\b/);
-  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const po = sumberPO();
   assert.match(po, /data-testid="bayar-uang-muka"/); assert.match(po, /<PanelKelompokPO po=\{po\} \/>/); assert.match(po, /<PeringatanUangMukaPO po=\{po\} \/>/); assert.match(po, /<DaftarUangMukaPO/); assert.match(po, /data-testid="terapkan-uang-muka"/); assert.match(po, /<ModalBayarUangMuka/); assert.match(po, /<ModalTerapkanUangMuka/);
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.match(sup, /Uang Muka Supplier Belum Diterapkan/); assert.match(sup, /<TabelUangMukaSupplier/); assert.match(sup, /modul="uang-muka-supplier"/); assert.match(sup, /label: "Terapkan Uang Muka"/); assert.match(sup, /<ModalTerapkanUangMuka/);
@@ -87,7 +88,7 @@ test("empat status PO: urutan tetap (barang, faktur, utang, pembayaran), varian 
 });
 
 test("pemasangan layar empat status: panel di detail PO, anchor ke faktur & riwayat pembayaran, ?cari= di Supplier & Pembelian, petunjuk di drawer Gudang; tanpa hitung ulang uang di frontend", () => {
-  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const po = sumberPO();
   assert.match(po, /<StatusEmpatPO po=\{po\}/); assert.match(po, /<RiwayatPembayaranPO po=\{po\} \/>/); assert.match(po, /id="seksi-faktur"/);
   const um = baca("../src/features/finance/UangMukaPO.jsx");
   for (const t of ["1. Progres barang", "2. Faktur supplier", "3. Utang", "4. Pembayaran"]) assert.ok(um.includes(t) || baca("../src/features/finance/uangMukaLogic.js").includes(t), t);
@@ -108,6 +109,6 @@ test("rincian pembayaran & utang dipisah: uang muka dibayar, uang muka dialokasi
 test("aksi pembayaran awal mudah ditemukan: tombol di kartu Pembayaran (hanya bila server mengizinkan), catatan PO draf, sisa belum dibayar di rincian", () => {
   const um = baca("../src/features/finance/UangMukaPO.jsx");
   for (const t of ["onBayarUangMuka && k.bolehBayarUangMuka", 'data-testid="bayar-uang-muka-status"', 'testid="r-sisa-belum-dibayar"', "Sisa belum dibayar"]) assert.ok(um.includes(t), t);
-  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const po = sumberPO();
   for (const t of ["<StatusEmpatPO po={po} onBayarUangMuka={onBayarUangMuka} />", 'data-testid="draf-belum-bisa-dibayar"', "tidak perlu menunggu barang datang, Simpan ke Stok, atau faktur supplier"]) assert.ok(po.includes(t), t);
 });

@@ -39,7 +39,7 @@ export const FINANCE_HUBS = Object.freeze([
   {
     key: "pembelian", label: "Pembelian & Supplier", ikon: "pembelian",
     items: [
-      { key: "po", label: "Purchase Order", to: "/finance/purchase-orders" },
+      { key: "po", label: "Pesanan (PO)", to: "/finance/purchase-orders" },
       { key: "pembelian", label: "Pembelian/Faktur", to: "/finance/purchases", badge: "pembelianMenunggu" },
       { key: "supplier", label: "Supplier & Utang", to: "/finance/suppliers", tabs: ["tagihan", "pembayaran", "supplier", ""], badge: "tagihanMenunggu" },
       { key: "aging", label: "Jadwal & Aging", to: "/finance/suppliers?tab=aging", tabs: ["aging"] },
