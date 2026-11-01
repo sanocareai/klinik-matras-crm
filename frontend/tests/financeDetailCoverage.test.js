@@ -38,14 +38,20 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
   for (const f of PANEL) {
     const s = baca(path.join(halaman, f));
     assert.match(s, /<PanelDetail spec=\{panelRincian\}/, `${f}: PanelDetail tidak dipasang`);
+    // Pengeluaran merender daftarnya lewat features/finance/PengeluaranPanels.jsx (klikBuka ada di sana; halaman hanya menyambungkan onBuka ke panel).
+    if (f === "FinanceExpenses.jsx") { assert.match(s, /onBuka=\{\(e\) => setPanelRincian\(/, `${f}: onBuka daftar harus membuka panel rincian`); continue; }
     assert.match(s, /klikBuka\(\(\) => (setPanelRincian|onBuka)\(/, `${f}: baris tabel belum bisa diklik (klikBuka)`);
   }
+  const panelPengeluaran = baca(path.join(akar, "src/features/finance/PengeluaranPanels.jsx"));
+  assert.match(panelPengeluaran, /klikBuka\(buka\)/, "Pengeluaran: baris daftar harus bisa diklik (klikBuka)");
+  assert.match(panelPengeluaran, /propBaris\(\(\) => onBuka\(e\)\)/, "Pengeluaran: klik baris memanggil onBuka(e)");
   assert.match(baca(path.join(halaman, "FinancePayments.jsx")), /klikBuka\(\(\) => bukaDialog\("detail", p\)\)/, "Pembayaran: klik baris harus membuka detail");
   assert.match(baca(path.join(akar, "src/features/finance/KoreksiPembayaran.jsx")), /<PanelDetail spec=\{specPembayaran\(/, "Detail Pembayaran harus panel samping");
 });
 
 test("halaman berdaftar dengan kartu (HP) juga bisa dibuka: RowCard memakai onClick", () => {
-  for (const f of ["FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePayments.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
+  // Pengeluaran tidak lagi memakai RowCard: satu daftar <li> melayani desktop & HP (CSS container query); seluruh baris diklik lewat klikBuka (diuji di atas).
+  for (const f of ["FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePayments.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
     const s = baca(path.join(halaman, f));
     const kartu = (s.match(/<RowCard\n/g) || []).length;
     const ber = (s.match(/<RowCard\n\s+key=\{[^}]+\}\n\s+onClick=/g) || []).length;
