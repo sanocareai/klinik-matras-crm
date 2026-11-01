@@ -49,7 +49,12 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   const L = s.split("\n"); const ia = L.findIndex((l) => l.startsWith("ALLOWED_RE=")); must(ia > 0 && L[ia + 1].startsWith("FRONTEND_SRC_EXPECT="), "ALLOWED_RE");
   L[ia] = `ALLOWED_RE='^(${berkas.map(esc).join("|")})$'`; L[ia + 1] = `FRONTEND_SRC_EXPECT="${fe}"`; s = L.join("\n");
   r("! printf '%s\\n' \"$CHANGED\" | grep -qE '^(backend/|", "! printf '%s\\n' \"$CHANGED\" | grep -vE '^" + TES_BACKEND_RE + "$' | grep -qE '^(backend/|");
-  r('diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit "$PREV_DIR/backend"', 'diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit --exclude=financeKontrakMetrik.test.js --exclude=pemeriksaMetrikUi.js "$PREV_DIR/backend"');
+  // identik-backend: diff penuh, lalu HANYA selisih yang dikecualikan eksplisit (dua berkas tes pemeriksa kontrak metrik) yang boleh tersisa. Direktori tests/helpers yang baru muncul
+  // dilaporkan diff sebagai "Only in …/tests: helpers" — diterima HANYA bila isinya persis pemeriksaMetrikUi.js. Selisih lain di backend/ (kode produksi, prisma, scripts, package, tes lain) tetap menggagalkan rilis.
+  r('diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit "$PREV_DIR/backend" "$NEW_DIR/backend" >/dev/null || die "backend/ di release baru BERBEDA dari release aktif (rilis ini frontend-saja)"',
+    'BDIFF="$(diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit "$PREV_DIR/backend" "$NEW_DIR/backend" 2>&1 | grep -vE "/backend/tests/(financeKontrakMetrik\\.test\\.js|helpers/pemeriksaMetrikUi\\.js) and |^Only in .*/backend/tests/helpers: pemeriksaMetrikUi\\.js$|^Only in ${NEW_DIR}/backend/tests: helpers$" || true)"\n' +
+    '[ -z "$BDIFF" ] || die "backend/ di release baru BERBEDA dari release aktif (rilis ini frontend-saja; hanya dua berkas tes pemeriksa kontrak metrik yang dikecualikan): $(printf %s "$BDIFF" | head -3)"\n' +
+    '[ ! -d "$NEW_DIR/backend/tests/helpers" ] || [ "$(ls -A "$NEW_DIR/backend/tests/helpers")" = "pemeriksaMetrikUi.js" ] || die "backend/tests/helpers berisi berkas selain pemeriksaMetrikUi.js"');
   r('--preflight-only) MODE=preflight;; --rollback) MODE=rollback;;', '--preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;;');
   r('BK_DIR="$HOME/release-backups/gpm-${DEPLOY_SHORT}-${TS}"', 'BK_DIR="$HOME/release-backups/finance-verifikasi-${DEPLOY_SHORT}-${TS}"');
   r("/tmp/release-gudang-pintu-masuk.lock", "/tmp/release-finance-verifikasi.lock");

@@ -23,7 +23,8 @@ test("skrip: sintaks bash valid; FRONTEND-SAJA (allowlist tanpa backend/, prisma
   // backend/: HANYA dua berkas tes pemeriksa kontrak metrik (kategori tes, eksplisit); tidak ada jalur backend lain.
   const jalurBackend = [...allow.matchAll(/backend\/[A-Za-z0-9_.\\/-]+/g)].map((m) => m[0].replace(/\\/g, ""));
   assert.deepEqual(jalurBackend.sort(), ["backend/tests/financeKontrakMetrik.test.js", "backend/tests/helpers/pemeriksaMetrikUi.js"]);
-  assert.ok(script.includes("--exclude=financeKontrakMetrik.test.js --exclude=pemeriksaMetrikUi.js"), "gerbang identik-backend mengecualikan hanya dua berkas tes");
+  assert.ok(script.includes("BDIFF=") && script.includes("backend/tests/(financeKontrakMetrik\\.test\\.js|helpers/pemeriksaMetrikUi\\.js) and ") && script.includes("tests/helpers: pemeriksaMetrikUi\\.js$") && script.includes("= \"pemeriksaMetrikUi.js\""), "gerbang identik-backend: diff penuh, hanya dua berkas tes yang dikecualikan (helpers hanya bila isinya persis satu berkas)");
+  assert.ok(!script.includes("--exclude=financeKontrakMetrik"), "tanpa --exclude per nama berkas (menyembunyikan direktori baru)");
   assert.ok(script.includes("grep -vE '^backend/tests/(financeKontrakMetrik"), "gerbang daftar-berkas-berubah mengecualikan hanya dua berkas tes");
   assert.ok(script.includes('grep -vxE "tests/(financeKontrakMetrik') && script.includes('container-sha-tanpa-tes.txt'), "perbandingan hash container mengecualikan hanya dua berkas tes");
   assert.ok(script.includes('FRONTEND_SRC_EXPECT="'), "daftar frontend/src diaudit");
