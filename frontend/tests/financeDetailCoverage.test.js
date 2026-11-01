@@ -13,12 +13,13 @@ const baca = (p) => fs.readFileSync(p, "utf8").split("\r\n").join("\n");
 // Memakai PanelDetail + klikBuka (klik baris/kartu membuka panel samping).
 const PANEL = [
   "FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx",
-  "FinanceSuppliers.jsx", "FinanceCash.jsx", "FinanceLedger.jsx", "FinanceReconciliation.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx",
+  "FinanceSuppliers.jsx", "FinanceLedger.jsx", "FinanceReconciliation.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx",
 ];
 // Detail lewat dialog/panel milik komponen lain yang dipanggil dari baris.
 const DETAIL_SENDIRI = {
   "FinancePayments.jsx": "baris/kartu membuka PanelPemeriksaan (pemeriksaan bukti + tindakan) via DaftarPembayaran.bukaBaris → onPeriksa",
   "FinancePemasukan.jsx": "klik baris memanggil onBuka(b) → rincian sumber pemasukan",
+  "FinanceCash.jsx": "Kas & Bank (redesain): klik kartu rekening membuka Mutasi Buku; klik baris mutasi/transfer/pemasukan lain membuka RincianKb (panel samping sendiri, features/finance/kasbank/); menu rekening punya Rincian rekening",
   "FinanceInvoices.jsx": "klik baris memanggil onBuka(inv) → RincianInvoice (panel samping sendiri, features/finance/InvoicePanels.jsx); tombol chevron membuka rincian yang sama",
   "FinanceJournal.jsx": "klik baris membuka detail jurnal (setDetail)",
   "FinanceBiayaBahan.jsx": "klik unit membuka panel jejak biaya (JejakBiayaBahan) di sebelah daftar",
@@ -46,6 +47,11 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
   const panelPengeluaran = baca(path.join(akar, "src/features/finance/PengeluaranPanels.jsx"));
   assert.match(panelPengeluaran, /klikBuka\(buka\)/, "Pengeluaran: baris daftar harus bisa diklik (klikBuka)");
   assert.match(panelPengeluaran, /propBaris\(\(\) => onBuka\(e\)\)/, "Pengeluaran: klik baris memanggil onBuka(e)");
+  const panelKas = baca(path.join(akar, "src/features/finance/kasbank/TransferPanels.jsx"));
+  assert.ok(panelKas.includes("klikBuka(buka)"), "Kas & Bank: baris transfer/pemasukan lain harus bisa diklik (klikBuka)");
+  assert.ok(panelKas.includes("propBaris(() => onBuka(t))"), "Kas & Bank: klik baris transfer memanggil onBuka(t)");
+  assert.ok(baca(path.join(akar, "src/features/finance/kasbank/MutasiBukuKb.jsx")).includes("propBaris(() => onBuka(b))"), "Kas & Bank: klik baris mutasi memanggil onBuka(b)");
+  assert.ok(baca(path.join(halaman, "FinanceCash.jsx")).includes("<RincianKb spec={panelRincian}"), "Kas & Bank: RincianKb tidak dipasang");
   const panelInvoice = baca(path.join(akar, "src/features/finance/InvoicePanels.jsx"));
   assert.match(panelInvoice, /klikBuka\(buka\)/, "Invoice: baris daftar harus bisa diklik (klikBuka)");
   assert.match(panelInvoice, /propBaris\(\(\) => onBuka\(inv\)\)/, "Invoice: klik baris memanggil onBuka(inv)");

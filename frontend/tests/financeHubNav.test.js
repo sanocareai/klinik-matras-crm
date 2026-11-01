@@ -43,8 +43,10 @@ test("rute lama membuka hub + tab yang benar (deep-link)", () => {
   cek("/finance/suppliers", "?tab=aging", "pembelian", "aging");
   cek("/finance/suppliers", "?tab=pembayaran", "pembelian", "supplier");
   cek("/finance/cash", "", "kas", "saldo");
-  cek("/finance/cash", "?tab=mutasi", "kas", "mutasi");
-  cek("/finance/cash", "?tab=transfer", "kas", "saldo");
+  cek("/finance/cash", "?tab=mutasi", "kas", "saldo"); // deep link lama: daftar rekening → Mutasi Buku
+  cek("/finance/cash", "?tab=rekening", "kas", "saldo");
+  cek("/finance/cash", "?tab=transfer", "kas", "transfer");
+  cek("/finance/cash", "?tab=pemasukan", "kas", "pemasukan-lain");
   cek("/finance/reconciliation", "?periode=2026-09", "kas", "rekon-bank");
   cek("/finance/penjualan-karyawan", "", "karyawan", "penjualan-karyawan");
   cek("/finance/persediaan-awal", "", "persediaan", "persediaan-awal");
@@ -118,7 +120,9 @@ test("judul tab & breadcrumb Finance berbahasa Indonesia dari definisi hub (buka
   assert.equal(titleFromPath("/finance/payments?tab=lunas_crm"), "Rekonsiliasi Sales–Finance");
   // Pindah ?tab= di halaman Finance memperbarui judul tab aktif (satu path, beberapa item hub).
   assert.match(baca("../src/lib/TabsContext.jsx"), /const judulFinance = resolved\.startsWith\("\/finance\/"\) \? titleFromPath\(resolved\) : null;/);
-  assert.equal(titleFromPath("/finance/cash?tab=mutasi"), "Mutasi Buku");
+  assert.equal(titleFromPath("/finance/cash?tab=mutasi"), "Rekening");
+  assert.equal(titleFromPath("/finance/cash?tab=transfer"), "Transfer antar-rekening");
+  assert.equal(titleFromPath("/finance/cash?tab=pemasukan"), "Pemasukan lain");
   assert.equal(titleFromPath("/finance/suppliers?tab=aging"), "Jadwal & Aging");
   const ENGLISH = ["Receivables", "Payments", "Invoices", "Cash", "Expenses", "Purchases", "Suppliers", "Journal", "Ledger", "Reconciliation", "Reports", "Accounts", "Settings", "Dashboard"];
   for (const r of petaRuteLama().map((x) => x.rute)) {

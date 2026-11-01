@@ -87,12 +87,15 @@ test("status: enam status resmi punya label & warna; hari ini WIB", () => {
 
 test("Pemasangan: Kas & Bank memakai kartu per rekening dengan 4 tab; tombol export per tab; kartu memuat saldo buku, saldo bank, selisih, belum cocok, terakhir direkonsiliasi", () => {
   const cash = baca("src/pages/finance/FinanceCash.jsx");
-  assert.match(cash, /<RekonRekening rekening=\{semuaRekening\} periode=\{periode\} \/>/);
-  const rek = baca("src/features/finance/RekonRekening.jsx");
-  for (const t of ["Saldo buku", "Saldo bank", "Selisih", "Belum cocok", "Terakhir direkonsiliasi"]) assert.ok(rek.includes(t), `kartu: ${t}`);
-  assert.match(rek, /<MutasiRekening[^>]*rekeningTetap/);
-  assert.match(rek, /<MutasiBank /); assert.match(rek, /<PencocokanBank /); assert.match(rek, /<PanelRekon /);
-  assert.match(rek, /banner-exception-tanpa-rekening/, "exception jurnal lama (Fee Farhan) tampil di kartu");
+  assert.ok(cash.includes("<DetailRekening"), "detail rekening terpasang");
+  assert.ok(cash.includes("api.getRekonKartu("), "kartu rekening memakai GET /rekon-bank/kartu");
+  // Kartu rekening (redesain): saldo pembukuan, status pencocokan (saldo koran/hitung fisik, selisih), baris belum dipasangkan, terakhir direkonsiliasi.
+  const kartu = baca("src/features/finance/kasbank/KasBankPanels.jsx") + baca("src/features/finance/kasbank/kasBankTampilan.js");
+  for (const t of ["Saldo pembukuan", "selisih", "belum dipasangkan", "Direkonsiliasi sampai", "Belum pernah direkonsiliasi", "OPNAME_FISIK"]) assert.ok(kartu.includes(t), `kartu: ${t}`);
+  const rek = baca("src/features/finance/kasbank/DetailRekening.jsx");
+  assert.ok(rek.includes("<MutasiBukuKb "), "Mutasi Buku = bagian pertama detail rekening");
+  assert.ok(rek.includes("<MutasiBank ") && rek.includes("<PencocokanBank ") && rek.includes("<PanelRekon "), "akses Mutasi Rekening, Pencocokan, Rekonsiliasi dipertahankan");
+  assert.ok(kartu.includes("banner-exception-tanpa-rekening"), "exception jurnal lama (Fee Farhan) tampil di halaman rekening");
   assert.match(baca("src/features/finance/MutasiBank.jsx"), /<TombolExportExcel[^>]*modul="mutasi-bank"/s);
   assert.match(baca("src/features/finance/PencocokanBank.jsx"), /<TombolExportExcel[^>]*modul="pencocokan-bank"/s);
   assert.match(baca("src/features/finance/PanelRekon.jsx"), /<TombolExportExcel[^>]*modul="rekonsiliasi-rekening"/s);

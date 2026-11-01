@@ -1,64 +1,68 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUrlTab } from "@/lib/useUrlTab.js";
-import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
-import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban, ListOrdered } from "lucide-react";
-import RekonRekening from "@/features/finance/RekonRekening.jsx";
-import { Card, CardContent } from "@/components/ui/card.jsx";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, Pilihan, InputUang,
-  TombolAksi, PeriodePicker, periodeDefault, tanggalPendek,
+  HalamanFinance, Pilihan, InputUang, TombolAksi, PeriodePicker, periodeDefault, tanggalPendek, formatUang,
 } from "@/features/finance/shared.jsx";
-import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
-import { RowActions, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
+import { useTertunda, cocok } from "@/features/finance/FilterBar.jsx";
+import { RowActions } from "@/features/finance/RowActions.jsx";
 import { KoreksiDialog, RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiTransferAtauPemasukan } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
+import { hariIniWib } from "@/features/finance/rekonBankLogic.js";
+import {
+  TAB_KAS, tabAktifKas, saringRekening, cakupanTotal, saringTransfer, kalimatTransfer, statusPencocokan, catatanKartu,
+  LABEL_JENIS,
+} from "@/features/finance/kasbank/kasBankTampilan.js";
+import {
+  TotalSaldo, StripPencocokan, BannerTanpaRekening, ToolbarRekening, DaftarRekening, RincianKb, TombolSalin, tampilUang,
+} from "@/features/finance/kasbank/KasBankPanels.jsx";
+import DetailRekening from "@/features/finance/kasbank/DetailRekening.jsx";
+import {
+  ToolbarTransfer, DaftarTransfer, specTransfer, ToolbarPemasukanLain, DaftarPemasukanLain, specPemasukanLain,
+} from "@/features/finance/kasbank/TransferPanels.jsx";
+import { LogoBank } from "@/features/finance/RingkasanPanels.jsx";
 
-// Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
-const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
-const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]);
-const LABEL_JENIS = { KAS: "Kas tunai", BANK: "Rekening bank", EWALLET: "E-wallet / QRIS" };
-
-// KAS & BANK — rekening yang benar-benar dipegang perusahaan, mutasi antar
-// rekening, dan pemasukan di luar order.
+// KAS & BANK — rekening yang benar-benar dipegang perusahaan, transfer antar rekening, dan pemasukan di luar order.
 //
 // Saldo di sini SELALU "menurut buku besar" — hasil penjumlahan seluruh
-// jurnal yang menyentuh rekening itu. Saldo "menurut bank" ada di halaman
-// Rekonsiliasi; memisahkan keduanya adalah inti rekonsiliasi itu sendiri,
-// jadi keduanya tidak boleh ditampilkan seolah satu angka.
-
-const TAB = [
-  { key: "rekening", label: "Rekening", Icon: Wallet, penjelasan: "Semua tempat uang perusahaan disimpan — kas tunai, rekening bank, dan e-wallet — beserta saldo terkini masing-masing." },
-  { key: "mutasi", label: "Mutasi & Rekonsiliasi", Icon: ListOrdered, penjelasan: "Per rekening (PT Sano, KEM, Uang Kas): saldo buku, saldo bank/kas, selisih, dan yang belum cocok. Buka satu rekening untuk Mutasi Buku, Mutasi Rekening (bank), Pencocokan, dan Rekonsiliasi." },
-  { key: "transfer", label: "Mutasi Antar Rekening", Icon: ArrowLeftRight, penjelasan: "Riwayat perpindahan uang dari satu rekening perusahaan ke rekening lain, misalnya setor tunai dari kas ke bank." },
-  { key: "pemasukan", label: "Pemasukan Lain", Icon: TrendingUp, penjelasan: "Uang masuk yang BUKAN dari pembayaran pelanggan — jual barang bekas, bunga bank, klaim asuransi, dan sejenisnya." },
-];
+// jurnal yang menyentuh rekening itu. Saldo "menurut bank" (rekening koran / hitung fisik kas)
+// ditampilkan terpisah di kartu rekening dan di tab Rekonsiliasi; memisahkan keduanya adalah inti
+// rekonsiliasi itu sendiri, jadi keduanya tidak boleh ditampilkan seolah satu angka.
+//
+// Navigasi antar bagian (Rekening / Transfer antar-rekening / Pemasukan lain / Rekonsiliasi Bank) = tab hub di lib/financeHubs.js (satu lapis, tanpa tab ganda di halaman).
+// Tampilan (kartu rekening, Mutasi Buku, transfer, rincian): features/finance/kasbank/*. File ini memuat data dan menyambungkan aksi;
+// endpoint, izin, aturan transfer, dan koreksi/pembatalan SAMA dengan sebelumnya. Deep link lama (?tab=rekening|mutasi|transfer|pemasukan) tetap berlaku:
+// "mutasi" menampilkan daftar rekening yang sama (rekening → Mutasi Buku).
 
 export default function FinanceCash() {
-  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
-  const [tab, setTab] = useUrlTab(["rekening", "mutasi", "transfer", "pemasukan"], "rekening"); // ?tab= (deep-link hub Kas & Bank)
+  const [panelRincian, setPanelRincian] = useState(null); // spec rincian samping (rekening / transfer / pemasukan lain)
+  const [tab, setTab] = useUrlTab([...TAB_KAS], "rekening"); // ?tab= (deep-link hub Kas & Bank)
+  const tabUi = tabAktifKas(tab);
+  // Pindah bagian lewat tab hub (Rekening / Transfer antar-rekening / Pemasukan lain) menutup Mutasi Buku yang sedang terbuka.
+  useEffect(() => { setTerpilih(null); }, [tabUi]);
   const [periode, setPeriode] = useState(periodeDefault);
   const [rekening, setRekening] = useState(null);
   const [transfers, setTransfers] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [akunPendapatan, setAkunPendapatan] = useState([]);
+  const [kartu, setKartu] = useState(null);
+  const [ex, setEx] = useState(null);
+  const [kartuGagal, setKartuGagal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [modal, setModal] = useState(null); // "rekening" | "transfer" | "pemasukan"
   const [editRekening, setEditRekening] = useState(null); // akun yang sedang diedit, null = mode "tambah baru"
+  const [terpilih, setTerpilih] = useState(null); // id rekening yang Mutasi Bukunya terbuka
   // Koreksi (dokumen sudah berjurnal) & riwayat versi: { jenis: "transfers"|"other-income", doc }
   const [koreksiUntuk, setKoreksiUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
@@ -73,27 +77,28 @@ export default function FinanceCash() {
   const [qP, setQP] = useState("");
   const [fAkun, setFAkun] = useState("");
   const [fMasuk, setFMasuk] = useState("");
+  const qRtunda = useTertunda(qR);
+  const pernahMuat = useRef(false);
+  // Respons permintaan LAMA yang terlambat (ganti periode cepat) tidak boleh menimpa data periode yang baru dipilih.
+  const urutan = useRef(0);
 
   const semuaRekening = rekening?.accounts || [];
-  const rekeningTampil = useMemo(() => semuaRekening.filter((a) =>
-    (!fJenis || a.kind === fJenis) &&
-    (!fStatusR || (fStatusR === "aktif") === !!a.active) &&
-    cocok(qR, a.name, a.kind, LABEL_JENIS[a.kind], a.accountNumber, a.bankName, a.accountHolder, a.account?.code, a.account?.name, angka(a.saldo), a.active ? "aktif" : "nonaktif")
-  ), [semuaRekening, qR, fJenis, fStatusR]);
-  const transferTampil = useMemo(() => transfers.filter((t) =>
-    (!fDari || t.fromAccount?.name === fDari) &&
-    (!fKe || t.toAccount?.name === fKe) &&
-    (!fStatusT || (fStatusT === "batal") === !!t.cancelledAt) &&
-    cocok(qT, t.transferNumber, t.date, tanggalPendek(t.date), t.fromAccount?.name, t.toAccount?.name, angka(t.amount), angka(t.feeAmount), t.note, t.notes, t.cancelledAt ? "dibatalkan" : "terposting")
-  ), [transfers, qT, fDari, fKe, fStatusT]);
+  const sakelarAktif = !!kartu?.sakelarAktif;
+  const kartuDari = (id) => kartu?.rekening?.find((r) => r.id === id) || null;
+  const rekeningTampil = useMemo(() => saringRekening(semuaRekening, { q: qRtunda, jenis: fJenis, status: fStatusR }), [semuaRekening, qRtunda, fJenis, fStatusR]);
+  const transferTampil = useMemo(() => saringTransfer(transfers, { q: qT, dari: fDari, ke: fKe, status: fStatusT, tanggalPendek }), [transfers, qT, fDari, fKe, fStatusT]);
   const pemasukanTampil = useMemo(() => incomes.filter((i) =>
     (!fAkun || i.account?.name === fAkun) &&
     (!fMasuk || i.cashAccount?.name === fMasuk) &&
-    cocok(qP, i.incomeNumber, i.date, tanggalPendek(i.date), i.description, i.account?.code, i.account?.name, i.cashAccount?.name, angka(i.amount))
+    cocok(qP, i.incomeNumber, i.date, tanggalPendek(i.date), i.description, i.account?.code, i.account?.name, i.cashAccount?.name, `${Math.round(Number(i.amount) || 0)} ${(Number(i.amount) || 0).toLocaleString("id-ID")}`)
   ), [incomes, qP, fAkun, fMasuk]);
+  const unik = (arr) => [...new Set(arr.filter(Boolean))].sort();
 
-  const muat = useCallback(async () => {
-    setLoading(true);
+  // { diam: true } = muat ulang di latar belakang (setelah simpan/koreksi): layar tidak berubah jadi "memuat".
+  const muat = useCallback(async (opsi) => {
+    const diam = opsi?.diam === true;
+    const saya = ++urutan.current;
+    if (!diam) setLoading(true);
     setError(null);
     try {
       const [r, t, i, a] = await Promise.all([
@@ -102,25 +107,39 @@ export default function FinanceCash() {
         api.getFinanceOtherIncome(periode),
         api.getFinanceAccounts(),
       ]);
+      if (saya !== urutan.current) return;
       setRekening(r);
       setTransfers(t.transfers);
       setIncomes(i.incomes);
       setAkunPendapatan(a.accounts.filter((x) => x.type === "PENDAPATAN" && x.isPostable && x.active));
     } catch (e) {
-      setError(e.message || "Gagal memuat data kas & bank");
+      if (saya !== urutan.current) return;
+      if (diam) setPesan(e.message || "Gagal menyegarkan data kas & bank");
+      else setError(e.message || "Gagal memuat data kas & bank");
     } finally {
-      setLoading(false);
+      if (!diam && saya === urutan.current) setLoading(false);
     }
   }, [periode]);
 
-  useEffect(() => { muat(); }, [muat]);
+  // Kartu pencocokan (saldo rekening koran/hitung fisik, selisih) & jurnal tanpa rekening: posisi HARI INI, terpisah dari periode transfer/pemasukan.
+  const muatKartu = useCallback(async () => {
+    setKartuGagal(false);
+    try {
+      const [k, e] = await Promise.all([api.getRekonKartu({ to: hariIniWib() }), api.getRekonExceptionTanpaRekening()]);
+      setKartu(k); setEx(e);
+    } catch { setKartuGagal(true); }
+  }, []);
+
+  useEffect(() => { muat({ diam: pernahMuat.current }); pernahMuat.current = true; }, [muat]);
+  useEffect(() => { muatKartu(); }, [muatKartu]);
 
   async function aksi(fn) {
     try {
       await fn();
       setModal(null);
       setEditRekening(null);
-      await muat();
+      await muat({ diam: true });
+      muatKartu();
     } catch (e) {
       setPesan(e.message);
     }
@@ -153,7 +172,8 @@ export default function FinanceCash() {
     if (!confirm(`Hapus rekening "${a.name}" secara permanen? Aksi ini tidak bisa dibatalkan.`)) return;
     try {
       await api.deleteFinanceCashAccount(a.id);
-      await muat();
+      await muat({ diam: true });
+      muatKartu();
     } catch (e) {
       // 409 = sudah punya transaksi — pesan dari backend sudah mengarahkan
       // ke "nonaktifkan lewat Edit", tampilkan apa adanya.
@@ -161,261 +181,138 @@ export default function FinanceCash() {
     }
   }
 
+  // Rincian rekening: identitas lengkap (nomor penuh bisa disalin), akun COA, dan status pencocokan beserta sumbernya.
+  function bukaRincianRekening(a) {
+    const k = a.active ? kartuDari(a.id) : null;
+    const st = a.active ? statusPencocokan({ kind: a.kind, k, sakelarAktif, kartuTermuat: !!kartu, kartuGagal }) : { label: "Tidak dihitung (rekening nonaktif)" };
+    const sumberLabel = k?.sumberSaldoBank === "OPNAME_FISIK" ? "Hitung fisik kas" : k?.sumberSaldoBank === "REKENING_KORAN" ? "Rekening koran yang diimpor" : null;
+    const catatan = catatanKartu({ k, sakelarAktif });
+    setPanelRincian({
+      judul: a.name, sub: LABEL_JENIS[a.kind], logo: <LogoBank r={a} />, chip: a.active ? { label: "Aktif", nada: "hijau" } : { label: "Nonaktif", nada: "redup" },
+      ringkas: [["Saldo pembukuan", a.active ? tampilUang(a.saldo) : "Tidak dihitung"], ["Posisi", a.active ? tanggalPendek(hariIniWib()) : "—"]],
+      bagian: [
+        { judul: "Rekening", baris: [["Jenis", LABEL_JENIS[a.kind]], ["Bank / penyedia", a.bankName], ["Nomor rekening", a.accountNumber ? <span className="fin-ks-nomor-lengkap">{a.accountNumber} <TombolSalin teks={a.accountNumber} /></span> : null], ["Atas nama", a.accountHolder], ["Akun COA", a.account ? `${a.account.code} · ${a.account.name}` : null], ["Catatan", a.notes]] },
+        { judul: "Pencocokan & konfirmasi", baris: [["Status", st.label], ["Sumber saldo pembanding", sumberLabel], ["Saldo pembanding", k?.saldoBank != null ? `${tampilUang(k.saldoBank)}${k.tanggalSaldoBank ? ` per ${tanggalPendek(k.tanggalSaldoBank)}` : ""}` : null], ["Selisih dengan buku", k?.selisih != null ? tampilUang(k.selisih) : null], ["Baris belum dipasangkan", k?.belumCocok > 0 ? String(k.belumCocok) : null], ["Terakhir direkonsiliasi", catatan.find((c) => c.tanggal)?.tanggal ? tanggalPendek(catatan.find((c) => c.tanggal).tanggal) : null]] },
+      ],
+      catatan: [{ teks: "Saldo pembukuan = jumlah seluruh jurnal rekening ini. Saldo rekening koran atau hitung fisik adalah sumber terpisah dan tidak otomatis sama; keduanya dibandingkan di Rekonsiliasi." }],
+      aksi: (
+        <>
+          <button type="button" className="fin-ks-r-tombol-lembut" onClick={() => { setPanelRincian(null); setEditRekening(a); }}>Edit rekening</button>
+          <button type="button" className="fin-ks-r-tombol" onClick={() => { setPanelRincian(null); setTerpilih(a.id); }}>Buka mutasi buku</button>
+        </>
+      ),
+    });
+  }
+
+  const rekDetail = terpilih ? semuaRekening.find((a) => a.id === terpilih) : null;
+  const periodeDiHeader = tabUi !== "rekening";
+
   return (
     <HalamanFinance
+      className="fin-halaman"
       title="Kas & Bank"
-      subtitle="Saldo tiap rekening menurut buku besar, mutasi antar rekening sendiri, dan pemasukan di luar order."
+      subtitle="Saldo pembukuan dan aktivitas rekening perusahaan."
       loading={loading}
       error={error}
       onRetry={muat}
       actions={
         <>
-          {tab !== "rekening" && <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
-          {tab !== "mutasi" && (
-            <Button size="sm" onClick={() => setModal(tab)}>
+          {periodeDiHeader && <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
+          {!rekDetail && (
+            <Button size="sm" onClick={() => setModal(tabUi)}>
               <Plus size={14} />
-              {tab === "rekening" ? "Rekening Baru" : tab === "transfer" ? "Catat Transfer" : "Catat Pemasukan"}
+              {tabUi === "rekening" ? "Rekening baru" : tabUi === "transfer" ? "Catat transfer" : "Catat pemasukan"}
             </Button>
           )}
         </>
       }
     >
-      {pesan && (
-        <Card className="bg-redbg">
-          <CardContent className="flex items-center justify-between gap-3 py-3">
-            <p className="text-[13px] text-ink">{pesan}</p>
-            <Button size="sm" variant="neutral" onClick={() => setPesan(null)}>Tutup</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {TAB.map((t) => (
-          <Button
-            key={t.key} size="sm"
-            variant={tab === t.key ? "secondary" : "neutral"}
-            onClick={() => setTab(t.key)}
-          >
-            <t.Icon size={14} /> {t.label}
-          </Button>
-        ))}
-      </div>
-      <p className="text-[13px] leading-relaxed text-ink3">
-        {TAB.find((t) => t.key === tab)?.penjelasan}
-      </p>
-
-      {tab === "mutasi" && <RekonRekening rekening={semuaRekening} periode={periode} />}
-
-      {tab === "rekening" && (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KartuAngka
-              label="Total Kas & Bank" metrik="kas_bank_buku" value={formatUang(rekening?.totalSaldo ?? 0)} sub="Menurut buku besar"
-              info="Jumlah semua rekening yang masih Aktif. Ini angka 'uang kita ada berapa sekarang', dihitung dari seluruh jurnal yang pernah tercatat — bukan tebakan."
-            />
-            {(rekening?.accounts || []).filter((a) => a.active).slice(0, 3).map((a) => (
-              <KartuAngka
-                key={a.id} label={a.name} value={formatUang(a.saldo)} sub={a.kind === "KAS" ? "Kas tunai" : a.bankName || a.kind}
-                info={`Saldo rekening ini menurut buku besar sistem. Kalau beda dengan mutasi bank asli, cek halaman Rekonsiliasi Bank — jangan diubah manual di sini.`}
-              />
-            ))}
+      <div className="fin-ring fin-ks">
+        {pesan && (
+          <div className="fin-ks-pesan" role="alert">
+            <p>{pesan}</p>
+            <button type="button" className="fin-tombol" onClick={() => setPesan(null)}><span>Tutup</span></button>
           </div>
+        )}
 
-          <Penjelasan>
-            Angka di sini adalah saldo <strong>menurut buku besar</strong> — hasil seluruh jurnal yang menyentuh
-            rekening itu. Saldo menurut koran bank bisa berbeda (transfer yang belum masuk, biaya admin yang
-            belum dicatat); mencocokkan keduanya adalah pekerjaan halaman Rekonsiliasi Bank.
-          </Penjelasan>
-
-          <FilterBar
-            q={qR} onQ={setQR}
-            placeholder="Cari nama, bank, nomor, saldo…"
-            filters={[
-              { key: "jenis", label: "Jenis", value: fJenis, onChange: setFJenis, options: Object.entries(LABEL_JENIS) },
-              { key: "status", label: "Status", value: fStatusR, onChange: setFStatusR, options: [["aktif", "Aktif"], ["nonaktif", "Nonaktif"]] },
-            ]}
-            ringkasan={rekeningTampil.length === semuaRekening.length ? `${semuaRekening.length} rekening` : `${rekeningTampil.length} dari ${semuaRekening.length} rekening`}
-            onReset={() => { setQR(""); setFJenis(""); setFStatusR(""); }}
+        {tabUi === "rekening" && rekDetail && (
+          <DetailRekening
+            key={rekDetail.id} rek={rekDetail} periode={periode} onPeriode={setPeriode} sakelarAktif={sakelarAktif}
+            onKembali={() => { setTerpilih(null); muatKartu(); }} onRincian={() => bukaRincianRekening(rekDetail)} onBerubah={muatKartu}
           />
+        )}
 
-          <Card className="overflow-hidden">
-            <JudulKartu
-              title="Daftar Rekening"
-              description="Kas tunai, rekening bank, dan e-wallet yang dipegang perusahaan."
-              info="Rekening 'Nonaktif' bukan berarti dihapus — riwayat transaksinya tetap tersimpan, cuma tidak lagi muncul sebagai pilihan saat mencatat transaksi baru. Kalau sebuah rekening ternyata dobel input dan belum pernah dipakai sama sekali, hapus saja lewat tombol di kolom Aksi."
-            />
-
-            {(rekening?.accounts || []).length === 0 ? (
-              <CardContent>
-                <EmptyState
-                  icon={Wallet}
-                  title="Belum ada rekening"
-                  description="Tanpa rekening, pembayaran yang masuk tidak punya tempat dan akan menumpuk di Data Belum Lengkap."
-                  action={<Button size="sm" onClick={() => setModal("rekening")}>Tambah Rekening</Button>}
-                />
-              </CardContent>
-            ) : rekeningTampil.length === 0 ? (
-              <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada rekening yang cocok dengan pencarian ini.</p></CardContent>
-            ) : (
-              <TableWrap className="dh-table">
-                <Table fixed>
-                  <THead>
-                    <TR>
-                      <TH sticky width={160}>Nama</TH>
-                      <TH width={100}>Jenis</TH>
-                      <TH width={170} hideBelow="wide">Nomor</TH>
-                      <TH width={170} hideBelow="wide">Akun COA</TH>
-                      <TH numeric width={140}>Saldo Buku</TH>
-                      <TH width={100}>Status</TH>
-                      <TH width={92}>Aksi</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {rekeningTampil.map((a) => (
-                      <TR key={a.id} {...klikBuka(() => setPanelRincian(specOtomatis(a)))}>
-                        <TD sticky truncate className="font-medium">{a.name}</TD>
-                        <TD><Badge variant="neutral">{a.kind}</Badge></TD>
-                        <TD hideBelow="wide" truncate className="text-[12px] text-ink2">
-                          {a.accountNumber ? `${a.bankName || ""} ${a.accountNumber}`.trim() : "—"}
-                          {a.accountHolder && <span className="block truncate text-ink3">a.n. {a.accountHolder}</span>}
-                        </TD>
-                        <TD hideBelow="wide" truncate className="font-mono text-[12px]">{a.account?.code} · {a.account?.name}</TD>
-                        <TD numeric><Uang value={a.saldo} className="font-bold" /></TD>
-                        <TD>{a.active ? <Badge variant="green">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>}</TD>
-                        <TD>
-                          <div className="flex items-center gap-1">
-                            <Button size="icon" variant="neutral" title="Edit" onClick={() => setEditRekening(a)}>
-                              <Pencil size={14} />
-                            </Button>
-                            <Button size="icon" variant="neutral" title="Hapus" onClick={() => hapusRekening(a)}>
-                              <Trash2 size={14} />
-                            </Button>
-                          </div>
-                        </TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              </TableWrap>
+        {tabUi === "rekening" && !rekDetail && (
+          <>
+            <TotalSaldo total={rekening?.totalSaldo ?? 0} cakupan={cakupanTotal({ accounts: semuaRekening, hariIni: hariIniWib() })} />
+            {kartuGagal && (
+              <div className="fin-ks-pesan" role="alert"><p>Status pencocokan rekening tidak dapat dimuat. Saldo pembukuan di bawah tetap berlaku.</p><button type="button" className="fin-tombol" onClick={muatKartu}><span>Coba lagi</span></button></div>
             )}
-          </Card>
-        </>
-      )}
+            <StripPencocokan tampil={!!kartu && !sakelarAktif} />
+            <BannerTanpaRekening ex={ex} />
+            <section className="fin-panel fin-ks-panel" aria-label="Daftar rekening">
+              <ToolbarRekening
+                q={qR} setQ={setQR} jenis={fJenis} setJenis={setFJenis} status={fStatusR} setStatus={setFStatusR}
+                tampil={rekeningTampil.length} total={semuaRekening.length} aktif={[qR.trim(), fJenis, fStatusR].filter(Boolean).length}
+                onReset={() => { setQR(""); setFJenis(""); setFStatusR(""); }}
+              />
+              <DaftarRekening
+                semua={semuaRekening} tampil={rekeningTampil} kartuDari={kartuDari} kartuTermuat={!!kartu} kartuGagal={kartuGagal} sakelarAktif={sakelarAktif}
+                onBuka={(a) => setTerpilih(a.id)} onRincian={bukaRincianRekening} onEdit={(a) => setEditRekening(a)} onHapus={hapusRekening}
+                onBaru={() => setModal("rekening")} onReset={() => { setQR(""); setFJenis(""); setFStatusR(""); }}
+              />
+            </section>
+          </>
+        )}
 
-      {tab === "transfer" && (
-        <>
-        <FilterBar
-          q={qT} onQ={setQT}
-          placeholder="Cari nomor, rekening, nominal…"
-          filters={[
-            { key: "dari", label: "Dari", value: fDari, onChange: setFDari, options: unik(transfers.map((t) => t.fromAccount?.name)) },
-            { key: "ke", label: "Ke", value: fKe, onChange: setFKe, options: unik(transfers.map((t) => t.toAccount?.name)) },
-            { key: "status", label: "Status", value: fStatusT, onChange: setFStatusT, options: [["posting", "Terposting"], ["batal", "Dibatalkan"]] },
-          ]}
-          ringkasan={transferTampil.length === transfers.length ? `${transfers.length} mutasi` : `${transferTampil.length} dari ${transfers.length} mutasi`}
-          onReset={() => { setQT(""); setFDari(""); setFKe(""); setFStatusT(""); }}
-        />
-        <Card className="overflow-hidden">
-          <JudulKartu
-            title="Mutasi Antar Rekening"
-            description="Setor tunai ke bank, tarik tunai, pindah antar bank. Bukan pendapatan & bukan beban —
-              laporan arus kas sengaja tidak menghitungnya sebagai uang masuk/keluar."
-            info="Kenapa dipisah dari Pengeluaran/Pemasukan: uang yang pindah dari kas ke bank tetap uang milik perusahaan yang sama, cuma beda tempat penyimpanan — bukan uang baru masuk atau keluar dari perusahaan. Kalau dicatat sebagai pemasukan/pengeluaran, laba rugi akan salah baca."
-          />
-          {transferTampil.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">{transfers.length === 0 ? "Belum ada mutasi di periode ini." : "Tidak ada mutasi yang cocok dengan pencarian ini."}</p></CardContent>
-          ) : (
-            <TableWrap className="dh-table">
-              <Table fixed>
-                <THead>
-                  <TR>
-                    <TH sticky width={124}>Nomor</TH>
-                    <TH width={92} className="whitespace-nowrap">Tanggal</TH>
-                    <TH>Dari</TH>
-                    <TH>Ke</TH>
-                    <TH numeric width={128}>Nominal</TH>
-                    <TH width={116}>Status</TH>
-                    <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
-                  </TR>
-                </THead>
-                <TBody>
-                  {transferTampil.map((t) => (
-                    <TR key={t.id} {...klikBuka(() => setPanelRincian(specOtomatis(t)))}>
-                      <TD sticky className="font-mono text-[12px]">{t.transferNumber}</TD>
-                      <TD className="whitespace-nowrap">{tanggalPendek(t.date)}</TD>
-                      <TD truncate>{t.fromAccount?.name}</TD>
-                      <TD truncate>{t.toAccount?.name}</TD>
-                      <TD numeric><NominalDenganBiaya d={t} /></TD>
-                      <TD>
-                        {t.cancelledAt
-                          ? <Badge variant="red">Dibatalkan</Badge>
-                          : <Badge variant="green">Terposting</Badge>}
-                      </TD>
-                      <TD><RowActions {...menuTransfer(t)} /></TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
-          )}
-        </Card>
-        </>
-      )}
+        {tabUi === "transfer" && (
+          <section className="fin-panel fin-ks-panel" aria-label="Transfer antar-rekening">
+            <div className="fin-ks-panel-kepala">
+              <div className="fin-ks-panel-judul">
+                <h2>Transfer antar-rekening</h2>
+                <p>Setor tunai ke bank, tarik tunai, pindah antar bank. Bukan pendapatan dan bukan beban — laporan arus kas sengaja tidak menghitungnya sebagai uang masuk/keluar.</p>
+              </div>
+            </div>
+            <ToolbarTransfer
+              q={qT} setQ={setQT} dari={fDari} setDari={setFDari} ke={fKe} setKe={setFKe} status={fStatusT} setStatus={setFStatusT}
+              opsiDari={unik(transfers.map((t) => t.fromAccount?.name))} opsiKe={unik(transfers.map((t) => t.toAccount?.name))}
+              hasil={kalimatTransfer({ tampil: transferTampil.length, termuat: transfers.length })}
+              aktif={[qT.trim(), fDari, fKe, fStatusT].filter(Boolean).length} onReset={() => { setQT(""); setFDari(""); setFKe(""); setFStatusT(""); }}
+            />
+            <DaftarTransfer
+              transfers={transfers} tampil={transferTampil} accounts={semuaRekening}
+              nominal={(t) => <NominalDenganBiaya d={t} />}
+              renderAksi={(t) => <RowActions {...menuTransfer(t)} />}
+              onBuka={(t) => setPanelRincian(specTransfer(t))} onBaru={() => setModal("transfer")}
+              onReset={() => { setQT(""); setFDari(""); setFKe(""); setFStatusT(""); }}
+            />
+          </section>
+        )}
 
-      {tab === "pemasukan" && (
-        <>
-        <FilterBar
-          q={qP} onQ={setQP}
-          placeholder="Cari nomor, keterangan, nominal…"
-          filters={[
-            { key: "akun", label: "Akun", value: fAkun, onChange: setFAkun, options: unik(incomes.map((i) => i.account?.name)) },
-            { key: "masuk", label: "Masuk ke", value: fMasuk, onChange: setFMasuk, options: unik(incomes.map((i) => i.cashAccount?.name)) },
-          ]}
-          ringkasan={pemasukanTampil.length === incomes.length ? `${incomes.length} pemasukan` : `${pemasukanTampil.length} dari ${incomes.length} pemasukan`}
-          onReset={() => { setQP(""); setFAkun(""); setFMasuk(""); }}
-        />
-        <Card className="overflow-hidden">
-          <JudulKartu
-            title="Pemasukan di Luar Order"
-            description="Penjualan aset bekas, bunga bank, klaim asuransi. Pembayaran dari pelanggan TIDAK dicatat di
-              sini — itu mengalir sendiri dari Order & Pengiriman."
-            info="Kalau yang mau dicatat adalah pembayaran dari pelanggan (DP, cicilan, pelunasan), catatannya BUKAN di sini — cari order-nya di CRM, pembayaran akan otomatis muncul di halaman Pembayaran & Verifikasi."
-          />
-          {pemasukanTampil.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">{incomes.length === 0 ? "Belum ada pemasukan lain di periode ini." : "Tidak ada pemasukan yang cocok dengan pencarian ini."}</p></CardContent>
-          ) : (
-            <TableWrap className="dh-table">
-              <Table fixed>
-                <THead>
-                  <TR>
-                    <TH sticky width={124}>Nomor</TH>
-                    <TH width={92} className="whitespace-nowrap">Tanggal</TH>
-                    <TH>Keterangan</TH>
-                    <TH width={190} hideBelow="wide">Akun</TH>
-                    <TH width={150}>Masuk ke</TH>
-                    <TH numeric width={128}>Nominal</TH>
-                    <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
-                  </TR>
-                </THead>
-                <TBody>
-                  {pemasukanTampil.map((i) => (
-                    <TR key={i.id} {...klikBuka(() => setPanelRincian(specOtomatis(i)))}>
-                      <TD sticky className="font-mono text-[12px]">{i.incomeNumber}</TD>
-                      <TD className="whitespace-nowrap">{tanggalPendek(i.date)}</TD>
-                      <TD truncate>{i.description}</TD>
-                      <TD hideBelow="wide" truncate className="text-[12px]">{i.account ? `${i.account.code} · ${i.account.name}` : "—"}</TD>
-                      <TD truncate>{i.cashAccount?.name}</TD>
-                      <TD numeric><Uang value={i.amount} /></TD>
-                      <TD><RowActions {...menuPemasukan(i)} /></TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
-          )}
-        </Card>
-        </>
-      )}
+        {tabUi === "pemasukan" && (
+          <section className="fin-panel fin-ks-panel" aria-label="Pemasukan lain">
+            <div className="fin-ks-panel-kepala">
+              <div className="fin-ks-panel-judul">
+                <h2>Pemasukan lain (di luar order)</h2>
+                <p>Penjualan aset bekas, bunga bank, klaim asuransi. Pembayaran dari pelanggan tidak dicatat di sini — itu mengalir dari Order dan Pengiriman. Ringkasan dan analisis pemasukan ada di halaman Pemasukan.</p>
+              </div>
+            </div>
+            <ToolbarPemasukanLain
+              q={qP} setQ={setQP} akun={fAkun} setAkun={setFAkun} masuk={fMasuk} setMasuk={setFMasuk}
+              opsiAkun={unik(incomes.map((i) => i.account?.name))} opsiMasuk={unik(incomes.map((i) => i.cashAccount?.name))}
+              hasil={pemasukanTampil.length === incomes.length ? `${incomes.length} pemasukan` : `${pemasukanTampil.length} dari ${incomes.length} pemasukan`}
+              aktif={[qP.trim(), fAkun, fMasuk].filter(Boolean).length} onReset={() => { setQP(""); setFAkun(""); setFMasuk(""); }}
+            />
+            <DaftarPemasukanLain
+              incomes={incomes} tampil={pemasukanTampil} accounts={semuaRekening}
+              nominal={(i) => <NominalDenganBiaya d={i} />}
+              renderAksi={(i) => <RowActions {...menuPemasukan(i)} />}
+              onBuka={(i) => setPanelRincian(specPemasukanLain(i))} onBaru={() => setModal("pemasukan")}
+              onReset={() => { setQP(""); setFAkun(""); setFMasuk(""); }}
+            />
+          </section>
+        )}
+      </div>
 
       {koreksiUntuk?.jenis === "transfers" && (
         <KoreksiDialog
@@ -437,7 +334,7 @@ export default function FinanceCash() {
           }}
           resolusi={(f, v) => (f === "fromAccountId" || f === "toAccountId" ? semuaRekening.find((r) => r.id === v)?.name : null)}
           onClose={() => setKoreksiUntuk(null)}
-          onSaved={() => { setKoreksiUntuk(null); muat(); }}
+          onSaved={() => { setKoreksiUntuk(null); muat({ diam: true }); muatKartu(); }}
         />
       )}
       {koreksiUntuk?.jenis === "other-income" && (
@@ -460,7 +357,7 @@ export default function FinanceCash() {
           resolusi={(f, v) => (f === "cashAccountId" ? semuaRekening.find((r) => r.id === v)?.name
             : f === "accountId" ? akunPendapatan.find((a) => a.id === v)?.name : null)}
           onClose={() => setKoreksiUntuk(null)}
-          onSaved={() => { setKoreksiUntuk(null); muat(); }}
+          onSaved={() => { setKoreksiUntuk(null); muat({ diam: true }); muatKartu(); }}
         />
       )}
       {versiUntuk && <RiwayatVersiDialog jenis={versiUntuk.jenis} id={versiUntuk.doc.id} nomor={versiUntuk.nomor} onClose={() => setVersiUntuk(null)} />}
@@ -484,7 +381,7 @@ export default function FinanceCash() {
         akunPendapatan={akunPendapatan}
         onSubmit={(d) => aksi(() => api.createFinanceOtherIncome(d))}
       />
-      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
+      <RincianKb spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }
@@ -513,8 +410,9 @@ function ModalRekeningIsi({ open, onClose, initial, onSubmit }) {
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
-      title={editMode ? `Edit — ${initial?.name}` : "Rekening Baru"}
+      title={editMode ? `Edit — ${initial?.name}` : "Rekening baru"}
       description={editMode ? "Jenis rekening tidak bisa diubah setelah dibuat." : "Kas tunai, rekening bank, atau e-wallet."}
+      className="w-[520px]"
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
@@ -522,60 +420,98 @@ function ModalRekeningIsi({ open, onClose, initial, onSubmit }) {
         </>
       }
     >
-      <div className="space-y-3">
-        <Field label="Nama rekening" required hint="Yang mudah dikenali tim, mis. “BCA Operasional”">
-          <Input value={f.name} onChange={(e) => set("name", e.target.value)} />
-        </Field>
-        {editMode ? (
-          <Field label="Jenis">
-            <Input value={f.kind === "KAS" ? "Kas tunai" : f.kind === "EWALLET" ? "E-wallet / QRIS" : "Rekening bank"} disabled />
+      <div className="fin-ks-form">
+        <section className="fin-ks-form-grup" aria-label="Identitas rekening">
+          <Field label="Nama rekening" required hint="Yang mudah dikenali tim, mis. “BCA Operasional”">
+            <Input value={f.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-        ) : (
-          <Field label="Jenis">
-            <Pilihan value={f.kind} onChange={(v) => set("kind", v)}>
-              <option value="KAS">Kas tunai</option>
-              <option value="BANK">Rekening bank</option>
-              <option value="EWALLET">E-wallet / QRIS</option>
-            </Pilihan>
-          </Field>
-        )}
+          {editMode ? (
+            <Field label="Jenis">
+              <Input value={f.kind === "KAS" ? "Kas tunai" : f.kind === "EWALLET" ? "E-wallet / QRIS" : "Rekening bank"} disabled />
+            </Field>
+          ) : (
+            <Field label="Jenis">
+              <Pilihan value={f.kind} onChange={(v) => set("kind", v)}>
+                <option value="KAS">Kas tunai</option>
+                <option value="BANK">Rekening bank</option>
+                <option value="EWALLET">E-wallet / QRIS</option>
+              </Pilihan>
+            </Field>
+          )}
+          {editMode && initial?.account && (
+            <p className="fin-ks-form-info">Akun COA: {initial.account.code} · {initial.account.name} (dikelola otomatis, tidak diubah dari sini)</p>
+          )}
+        </section>
         {f.kind !== "KAS" && (
-          <>
-            <Field label="Nama bank / penyedia">
-              <Input value={f.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="BCA" />
-            </Field>
-            <Field label="Nomor rekening">
-              <Input value={f.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} />
-            </Field>
+          <section className="fin-ks-form-grup" aria-label="Data bank">
+            <div className="fin-ks-form-dua">
+              <Field label="Nama bank / penyedia">
+                <Input value={f.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="BCA" />
+              </Field>
+              <Field label="Nomor rekening">
+                <Input value={f.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} />
+              </Field>
+            </div>
             <Field label="Atas nama">
               <Input value={f.accountHolder} onChange={(e) => set("accountHolder", e.target.value)} />
             </Field>
-          </>
+          </section>
         )}
-        <Field label="Catatan">
-          <Input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Opsional" />
-        </Field>
-        {editMode && (
-          <Field label="Status" hint="Nonaktifkan kalau rekening ini tidak dipakai lagi tapi riwayat transaksinya harus tetap ada (tidak bisa dihapus permanen).">
-            <Pilihan value={f.active ? "1" : "0"} onChange={(v) => set("active", v === "1")}>
-              <option value="1">Aktif</option>
-              <option value="0">Nonaktif</option>
-            </Pilihan>
+        <section className="fin-ks-form-grup" aria-label="Catatan dan status">
+          <Field label="Catatan">
+            <Input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Opsional" />
           </Field>
-        )}
+          {editMode && (
+            <Field label="Status" hint="Nonaktifkan kalau rekening ini tidak dipakai lagi tapi riwayat transaksinya harus tetap ada (tidak bisa dihapus permanen).">
+              <Pilihan value={f.active ? "1" : "0"} onChange={(v) => set("active", v === "1")}>
+                <option value="1">Aktif</option>
+                <option value="0">Nonaktif</option>
+              </Pilihan>
+            </Field>
+          )}
+        </section>
       </div>
     </Modal>
+  );
+}
+
+function PilihRekeningKs({ label, value, onChange, rekening, error, required = true }) {
+  const dipilih = rekening.find((r) => r.id === value);
+  return (
+    <div className="fin-ks-pilih-rek">
+      <Field label={label} required={required} error={error}>
+        <Pilihan value={value} onChange={onChange}>
+          <option value="">— pilih —</option>
+          {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </Pilihan>
+      </Field>
+      <div className="fin-ks-pilih-info" aria-live="polite">
+        {dipilih ? (
+          <>
+            <LogoBank r={dipilih} />
+            <span><span className="fin-ks-label-kecil">Saldo pembukuan saat ini</span><span className="fin-ks-nilai">{tampilUang(dipilih.saldo)}</span></span>
+          </>
+        ) : <span className="fin-ks-redup">Pilih rekening untuk melihat saldonya</span>}
+      </div>
+    </div>
   );
 }
 
 function ModalTransferIsi({ open, onClose, rekening, onSubmit }) {
   const [f, setF] = useState({ date: "", fromAccountId: "", toAccountId: "", amount: "", feeAmount: "", reference: "", notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const sama = f.fromAccountId && f.fromAccountId === f.toAccountId;
   const valid = f.fromAccountId && f.toAccountId && f.fromAccountId !== f.toAccountId && Number(f.amount) > 0;
+  const nominal = Number(f.amount) || 0;
+  const biaya = Number(f.feeAmount) || 0;
+  const asal = rekening.find((r) => r.id === f.fromAccountId);
+  const tujuan = rekening.find((r) => r.id === f.toAccountId);
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
-      title="Catat Mutasi Antar Rekening"
+      title="Catat transfer antar-rekening"
+      description="Memindahkan uang antar rekening perusahaan sendiri. Bukan pendapatan dan bukan beban."
+      className="w-[640px]"
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
@@ -583,39 +519,43 @@ function ModalTransferIsi({ open, onClose, rekening, onSubmit }) {
         </>
       }
     >
-      <div className="space-y-3">
-        <Field label="Tanggal">
-          <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} />
-        </Field>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Dari rekening" required>
-            <Pilihan value={f.fromAccountId} onChange={(v) => set("fromAccountId", v)}>
-              <option value="">— pilih —</option>
-              {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Pilihan>
+      <div className="fin-ks-form">
+        <section className="fin-ks-form-grup fin-ks-form-pasang" aria-label="Rekening asal dan tujuan">
+          <PilihRekeningKs label="Dari rekening" value={f.fromAccountId} onChange={(v) => set("fromAccountId", v)} rekening={rekening} />
+          <span className="fin-ks-form-panah" aria-hidden="true">→</span>
+          <PilihRekeningKs label="Ke rekening" value={f.toAccountId} onChange={(v) => set("toAccountId", v)} rekening={rekening} error={sama ? "Tidak boleh sama" : undefined} />
+        </section>
+        <section className="fin-ks-form-grup" aria-label="Nominal dan tanggal">
+          <div className="fin-ks-form-dua">
+            <Field label="Nominal" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+            <Field label="Tanggal">
+              <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} />
+            </Field>
+          </div>
+          <Field
+            label="Biaya admin transfer"
+            hint="Dicatat TERPISAH, tidak dikurangkan dari nominal — supaya saldo rekening tujuan cocok dengan mutasi bank"
+          >
+            <InputUang value={f.feeAmount} onChange={(v) => set("feeAmount", v)} />
           </Field>
-          <Field label="Ke rekening" required error={f.fromAccountId && f.fromAccountId === f.toAccountId ? "Tidak boleh sama" : undefined}>
-            <Pilihan value={f.toAccountId} onChange={(v) => set("toAccountId", v)}>
-              <option value="">— pilih —</option>
-              {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Pilihan>
-          </Field>
-        </div>
-        <Field label="Nominal" required>
-          <InputUang value={f.amount} onChange={(v) => set("amount", v)} />
-        </Field>
-        <Field
-          label="Biaya admin transfer"
-          hint="Dicatat TERPISAH, tidak dikurangkan dari nominal — supaya saldo rekening tujuan cocok dengan mutasi bank"
-        >
-          <InputUang value={f.feeAmount} onChange={(v) => set("feeAmount", v)} />
-        </Field>
-        <Field label="Referensi">
-          <Input value={f.reference} onChange={(e) => set("reference", e.target.value)} placeholder="Nomor transaksi bank" />
-        </Field>
-        <Field label="Catatan">
-          <Input value={f.notes} onChange={(e) => set("notes", e.target.value)} />
-        </Field>
+        </section>
+        <section className="fin-ks-form-grup" aria-label="Referensi dan catatan">
+          <div className="fin-ks-form-dua">
+            <Field label="Referensi"><Input value={f.reference} onChange={(e) => set("reference", e.target.value)} placeholder="Nomor transaksi bank" /></Field>
+            <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+          </div>
+        </section>
+        {valid && (
+          <section className="fin-ks-dampak" aria-label="Dampak transfer" data-testid="dampak-transfer">
+            <p className="fin-ks-dampak-judul">Dampak pada saldo</p>
+            <dl>
+              <div><dt>{asal?.name} berkurang</dt><dd className="fin-ks-nilai-keluar">{tampilUang(nominal + biaya)}</dd></div>
+              <div><dt>{tujuan?.name} bertambah</dt><dd className="fin-ks-nilai-masuk">{tampilUang(nominal)}</dd></div>
+              {biaya > 0 && <div><dt>Biaya admin (dicatat terpisah)</dt><dd>{tampilUang(biaya)}</dd></div>}
+            </dl>
+            <p className="fin-ks-dampak-ket">Mengikuti aturan yang sama dengan daftar transfer: total keluar = nominal + biaya admin. Saldo akhir dihitung server setelah disimpan.</p>
+          </section>
+        )}
       </div>
     </Modal>
   );
@@ -628,8 +568,9 @@ function ModalPemasukanIsi({ open, onClose, rekening, akunPendapatan, onSubmit }
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
-      title="Catat Pemasukan Lain"
+      title="Catat pemasukan lain"
       description="Pemasukan yang BUKAN dari order pelanggan."
+      className="w-[520px]"
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
@@ -637,25 +578,31 @@ function ModalPemasukanIsi({ open, onClose, rekening, akunPendapatan, onSubmit }
         </>
       }
     >
-      <div className="space-y-3">
-        <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
-        <Field label="Keterangan" required>
-          <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Penjualan mesin jahit bekas" />
-        </Field>
-        <Field label="Nominal" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
-        <Field label="Akun pendapatan" required>
-          <Pilihan value={f.accountId} onChange={(v) => set("accountId", v)}>
-            <option value="">— pilih —</option>
-            {akunPendapatan.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
-          </Pilihan>
-        </Field>
-        <Field label="Uang masuk ke" required>
-          <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
-            <option value="">— pilih —</option>
-            {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </Pilihan>
-        </Field>
-        <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      <div className="fin-ks-form">
+        <section className="fin-ks-form-grup" aria-label="Pemasukan">
+          <Field label="Keterangan" required>
+            <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Penjualan mesin jahit bekas" />
+          </Field>
+          <div className="fin-ks-form-dua">
+            <Field label="Nominal" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+            <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
+          </div>
+        </section>
+        <section className="fin-ks-form-grup" aria-label="Akun dan rekening">
+          <Field label="Akun pendapatan" required>
+            <Pilihan value={f.accountId} onChange={(v) => set("accountId", v)}>
+              <option value="">— pilih —</option>
+              {akunPendapatan.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
+            </Pilihan>
+          </Field>
+          <Field label="Uang masuk ke" required>
+            <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
+              <option value="">— pilih —</option>
+              {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </Pilihan>
+          </Field>
+          <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+        </section>
       </div>
     </Modal>
   );

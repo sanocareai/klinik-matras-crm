@@ -49,8 +49,10 @@ export const FINANCE_HUBS = Object.freeze([
   {
     key: "kas", label: "Kas & Bank", ikon: "kas",
     items: [
-      { key: "saldo", label: "Saldo Rekening", to: "/finance/cash?tab=rekening", tabs: ["rekening", "transfer", "pemasukan", ""] },
-      { key: "mutasi", label: "Mutasi Buku", to: "/finance/cash?tab=mutasi", tabs: ["mutasi"] },
+      // Redesain Kas & Bank: Rekening → (kartu rekening) → Mutasi Buku; Transfer antar-rekening; Pemasukan lain (akses lama). ?tab=mutasi (deep link lama) tetap membuka daftar rekening.
+      { key: "saldo", label: "Rekening", to: "/finance/cash?tab=rekening", tabs: ["rekening", "mutasi", ""] },
+      { key: "transfer", label: "Transfer antar-rekening", to: "/finance/cash?tab=transfer", tabs: ["transfer"] },
+      { key: "pemasukan-lain", label: "Pemasukan lain", to: "/finance/cash?tab=pemasukan", tabs: ["pemasukan"] },
       { key: "rekon-bank", label: "Rekonsiliasi Bank", to: "/finance/reconciliation" },
     ],
   },
