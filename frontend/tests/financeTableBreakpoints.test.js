@@ -57,7 +57,22 @@ const HARUS_2XL = [
 // yang terbukti mengolapskan kolom Keterangan.
 // FinanceSuppliers.jsx (B3.3.1, 25 Sep 2026) ikut pola ini: tier dari lebar container dengan fungsi tier sendiri
 // (useContainerTier(tierTagihan) — lihat features/finance/tierTagihan.js), colgroup per tier, tanpa hideBelow.
-const HARUS_PAKAI_TIER_HOOK = ["FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceSuppliers.jsx"];
+// Pengeluaran (FinanceExpenses.jsx) KELUAR dari pola tier-hook/CardList sejak redesain sfp1: satu daftar <li> + CSS container query di panel (tes di bawah).
+const HARUS_PAKAI_TIER_HOOK = ["FinancePurchases.jsx", "FinanceSuppliers.jsx"];
+
+test("Pengeluaran (sfp1): daftar satu-DOM dengan container query; tanpa class tampil/sembunyi viewport, tanpa hideBelow/mid, tanpa CardList/TableWrap ganda", () => {
+  const rd = (p) => fs.readFileSync(path.join(__dirname, "..", p), "utf8").split("\r\n").join("\n");
+  const halaman = bacaSumber("FinanceExpenses.jsx");
+  const panel = rd("src/features/finance/PengeluaranPanels.jsx");
+  const css = rd("src/styles/sanss-finance-biaya.css");
+  for (const [nama, src] of [["FinanceExpenses.jsx", halaman], ["PengeluaranPanels.jsx", panel]]) {
+    assert.ok(!/<CardList|<TableWrap|CARD_VIEW_CLASS/.test(src), nama + ": tidak boleh merender CardList/TableWrap ganda");
+    assert.ok(!src.includes('hideBelow="') && !/<T[HD]\s[^>]*\bmid\b/.test(src), nama + ": tanpa hideBelow/mid");
+    assert.ok(!/\b(md|lg|xl|2xl|max-md|max-lg):(hidden|block|flex|grid)\b/.test(src), nama + ": tanpa class tampil/sembunyi viewport");
+  }
+  assert.ok(panel.includes("fin-by-baris"), "daftar Pengeluaran memakai satu kelas baris");
+  assert.ok(/@container finpanel \(min-width: 980px\)/.test(css), "tabel desktop dipilih lewat container query lebar panel, bukan viewport");
+});
 
 test("D-193b: halaman kolom-gabungan (Klasifikasi/Pembayaran) pakai useContainerTier, bukan hideBelow/mid CSS untuk kolom itu", () => {
   for (const nama of HARUS_PAKAI_TIER_HOOK) {
