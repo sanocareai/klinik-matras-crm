@@ -17,7 +17,7 @@ const PANEL = [
 ];
 // Detail lewat dialog/panel milik komponen lain yang dipanggil dari baris.
 const DETAIL_SENDIRI = {
-  "FinancePayments.jsx": "baris membuka DetailPembayaranDialog (panel samping) via bukaDialog(\"detail\")",
+  "FinancePayments.jsx": "baris/kartu membuka PanelPemeriksaan (pemeriksaan bukti + tindakan) via DaftarPembayaran.bukaBaris → onPeriksa",
   "FinancePemasukan.jsx": "klik baris memanggil onBuka(b) → rincian sumber pemasukan",
   "FinanceJournal.jsx": "klik baris membuka detail jurnal (setDetail)",
   "FinanceBiayaBahan.jsx": "klik unit membuka panel jejak biaya (JejakBiayaBahan) di sebelah daftar",
@@ -45,13 +45,16 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
   const panelPengeluaran = baca(path.join(akar, "src/features/finance/PengeluaranPanels.jsx"));
   assert.match(panelPengeluaran, /klikBuka\(buka\)/, "Pengeluaran: baris daftar harus bisa diklik (klikBuka)");
   assert.match(panelPengeluaran, /propBaris\(\(\) => onBuka\(e\)\)/, "Pengeluaran: klik baris memanggil onBuka(e)");
-  assert.match(baca(path.join(halaman, "FinancePayments.jsx")), /klikBuka\(\(\) => bukaDialog\("detail", p\)\)/, "Pembayaran: klik baris harus membuka detail");
-  assert.match(baca(path.join(akar, "src/features/finance/KoreksiPembayaran.jsx")), /<PanelDetail spec=\{specPembayaran\(/, "Detail Pembayaran harus panel samping");
+  // Verifikasi pembayaran: klik baris/kartu MEMBUKA panel pemeriksaan (tidak memverifikasi); panel memuat bukti, rekening tujuan, dan tindakan.
+  const daftarBayar = baca(path.join(akar, "src/features/finance/verifikasi/DaftarPembayaran.jsx"));
+  assert.match(daftarBayar, /onClick=\{\(e\) => bukaBaris\(e, p\)\}/, "Pembayaran: klik baris harus membuka panel pemeriksaan");
+  assert.match(daftarBayar, /fin-vf-kartu-klik" onClick=\{\(e\) => bukaBaris\(e, p\)\}/, "Pembayaran: kartu (HP) juga bisa dibuka");
+  assert.match(baca(path.join(halaman, "FinancePayments.jsx")), /<PanelPemeriksaan model=\{panel\}/, "Pembayaran: PanelPemeriksaan harus dipasang");
 });
 
 test("halaman berdaftar dengan kartu (HP) juga bisa dibuka: RowCard memakai onClick", () => {
   // Pengeluaran tidak lagi memakai RowCard: satu daftar <li> melayani desktop & HP (CSS container query); seluruh baris diklik lewat klikBuka (diuji di atas).
-  for (const f of ["FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePayments.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
+  for (const f of ["FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
     const s = baca(path.join(halaman, f));
     const kartu = (s.match(/<RowCard\n/g) || []).length;
     const ber = (s.match(/<RowCard\n\s+key=\{[^}]+\}\n\s+onClick=/g) || []).length;

@@ -191,7 +191,7 @@ function GalatDialog({ galat }) {
   return galat ? <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p> : null;
 }
 
-function ModalAlasan({ modal, onClose, onKirim, galat }) {
+export function ModalAlasan({ modal, onClose, onKirim, galat }) {
   const [alasan, setAlasan] = useState("");
   const [sibuk, setSibuk] = useState(false);
   useEffect(() => { if (modal) { setAlasan(modal.jenis === "minta" ? "Mohon kirim bukti transfer/pembayaran yang jelas" : ""); setSibuk(false); } }, [modal]);
@@ -219,7 +219,7 @@ function ModalAlasan({ modal, onClose, onKirim, galat }) {
   );
 }
 
-function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim, galat }) {
+export function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim, galat }) {
   const k = modal?.klaim;
   const [f, setF] = useState({ method: "TRANSFER", cashAccountId: "", date: "", amount: "" });
   const [sibuk, setSibuk] = useState(false);

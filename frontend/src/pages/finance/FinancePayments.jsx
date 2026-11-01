@@ -1,49 +1,56 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useUrlTab } from "@/lib/useUrlTab.js";
-import { ShieldCheck, Image as ImageIcon, Split, Eye, PenLine, FileEdit, History } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card.jsx";
+import { ChevronDown, ChevronUp, ShieldCheck, Split, Eye, PenLine, FileEdit, History } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
-import { Input } from "@/components/ui/input.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
-import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
-import {
-  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  PeriodePicker, periodeDefault, tanggalJam, InputUang, Foto,
-} from "@/features/finance/shared.jsx";
-import FilterBar from "@/features/finance/FilterBar.jsx";
+import { HalamanFinance, formatUang, TombolAksi, periodeDefault, tanggalJam, InputUang } from "@/features/finance/shared.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
-import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import KartuSelisihSalesFinance from "@/features/finance/KartuSelisihSalesFinance.jsx";
 import { saringPembayaran } from "@/features/finance/saringPembayaran.js";
-import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
-import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
-import { CardList, RowCard } from "@/features/finance/cards.jsx";
-import { klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { nilaiBersihOrder } from "@/utils/format.js";
-import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
+import { EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
+import RingkasanAntrean from "@/features/finance/verifikasi/RingkasanAntrean.jsx";
+import DaftarPembayaran from "@/features/finance/verifikasi/DaftarPembayaran.jsx";
+import AntreanKlaim from "@/features/finance/verifikasi/AntreanKlaim.jsx";
+import PanelPemeriksaan from "@/features/finance/verifikasi/PanelPemeriksaan.jsx";
+import { modelPembayaran } from "@/features/finance/verifikasi/modelPemeriksaan.jsx";
+import {
+  ANTREAN, LABEL_CARA_BAYAR, LABEL_TAB_EXPORT, SEMUA_PERIODE, TAB_URL, antreanDari, buatPenjaga, labelPeriode, ringkasPeriode, statusServer, teksGerbang,
+} from "@/features/finance/verifikasi/verifikasiLogic.js";
+import "@/styles/sanss-finance-pemasukan.css";
+import "@/styles/sanss-finance-verifikasi.css";
 
-// Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
-// titik-tiga — foto bukti PISAH ke kolomnya sendiri (BuktiThumb), bukan
-// ikut jadi tombol di kolom Aksi.
-function aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog }) {
+// VERIFIKASI PEMBAYARAN (dulu "Pembayaran & Verifikasi"). Redesain tampilan 1 Nov 2026 (gaya Ringkasan/Pemasukan Finance). TAMPILAN SAJA: endpoint, rumus,
+// jurnal, izin, gerbang verifikasi, dan penyaringan tidak berubah.
+//
+// Halaman ini TIDAK mencatat pembayaran baru — itu dikerjakan Sales (saat konfirmasi order) dan driver (di stop pengiriman). Di sini Finance MEMERIKSA
+// bukti dan rekening tujuan, lalu memverifikasi, dan bila perlu memecah satu pembayaran ke beberapa order.
+// Verifikasi memakai endpoint LAMA (POST /armada/payments/:id/verify untuk jalan cepat; POST /finance/pembayaran/:id/verifikasi untuk dialog dengan pilihan
+// rekening) — tidak dibuatkan jalur kedua. "Bukti terunggah" bukan "bukti terverifikasi", dan halaman ini tidak mencocokkan mutasi bank.
+//
+// Dua antrean yang BERBEDA (tidak dijumlahkan): order ditandai lunas oleh Sales (belum ada catatan pembayaran) dan pembayaran menunggu verifikasi.
+// Komponen presentasi ada di features/finance/verifikasi/*.
+
+const SARING_AWAL = Object.freeze({ q: "", metode: "", verif: "", alokasi: "", bukti: "", rekening: "" });
+
+// Aksi PALING RELEVAN jadi tombol utama; sisanya masuk menu titik-tiga. Foto bukti dilihat lewat panel pemeriksaan (klik baris atau "Periksa").
+function aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog, periksa }) {
   // B3.7 — menu untuk uang masuk terverifikasi (dan versi yang sudah diganti): tombol nonaktif TETAP tampil beserta alasan + arah tindakan dari server.
   const m = p.menuKoreksi;
   const nonaktif = (x) => (x && !x.aktif ? { disabled: true, alasan: [x.alasan, x.arah].filter(Boolean).join(" ") } : {});
   const menuB37 = m && (p.terverifikasi || p.replacesPaymentId || p.replacedBy) ? [
     { separator: true },
-    { key: "detail", label: "Lihat Detail", icon: Eye, onClick: () => bukaDialog("detail", p) },
     { key: "info", label: "Edit Informasi", icon: FileEdit, onClick: () => bukaDialog("info", p), ...nonaktif(m.editInfo) },
     { key: "koreksi", label: "Koreksi Pembayaran", icon: PenLine, onClick: () => bukaDialog("koreksi", p), ...nonaktif(m.koreksi) },
     { key: "riwayat", label: "Riwayat Perubahan", icon: History, onClick: () => bukaDialog("riwayat", p) },
   ] : [];
   const items = [
-    !p.cancelledAt && !p.terverifikasi && { key: "atur", label: "Atur Rekening & Verifikasi", icon: ShieldCheck, onClick: () => bukaDialog("verifikasi", p) },
+    { key: "periksa", label: "Periksa bukti dan rincian", icon: Eye, onClick: () => periksa(p) },
+    !p.cancelledAt && !p.terverifikasi && { key: "atur", label: "Atur rekening & verifikasi", icon: ShieldCheck, onClick: () => bukaDialog("verifikasi", p) },
     !p.cancelledAt && { key: "alokasi", label: "Bagi ke beberapa order", icon: Split, onClick: () => setAlokasiUntuk(p) },
     ...menuB37,
   ].filter(Boolean);
@@ -51,367 +58,243 @@ function aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog }) {
     // Tanpa rekening tercatat → buka dialog pilih rekening dulu (bukan verifikasi buta); dengan rekening → verifikasi langsung seperti biasa.
     return { primary: { label: "Verifikasi", variant: "secondary", onClick: () => (p.cashAccount ? verifikasi(p) : bukaDialog("verifikasi", p)) }, items };
   }
-  return { primary: null, items };
+  return { primary: { label: "Periksa", variant: "neutral", onClick: () => periksa(p) }, items: items.filter((x) => x.key !== "periksa") };
 }
 
-// PEMBAYARAN PELANGGAN & VERIFIKASI.
-//
-// Halaman ini TIDAK mencatat pembayaran baru — itu tetap dikerjakan sales
-// (saat konfirmasi order) dan driver (di stop pengiriman), di tempat mereka
-// masing-masing. Di sini finance MENCOCOKKAN uang yang tercatat dengan
-// setoran yang benar-benar diterima, dan kalau perlu memecah satu
-// pembayaran ke beberapa order.
-//
-// Verifikasi memakai endpoint LAMA (POST /armada/payments/:id/verify) yang
-// sudah dipakai sejak D-011 — tidak dibuatkan jalur kedua, supaya tidak ada
-// dua cara memverifikasi hal yang sama.
+/** Pemilih antrean: tiga pilihan utama + "Lainnya" (<select> asli: keyboard dan picker HP). Semua pilihan lama tetap tersedia. */
+function PemilihAntrean({ tab, onTab }) {
+  const lainnya = ANTREAN.filter((t) => !t.utama);
+  const lainnyaAktif = lainnya.find((t) => t.id === tab);
+  return (
+    <nav className="fin-pm-nav" aria-label="Antrean verifikasi" data-testid="nav-antrean">
+      <div role="tablist" aria-label="Antrean utama" className="fin-pm-seg">
+        {ANTREAN.filter((t) => t.utama).map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} data-testid={`antrean-${t.id}`} onClick={() => onTab(t.id)} className="fin-pm-seg-item">{t.label}</button>
+        ))}
+        <label className="fin-pm-seg-item fin-pm-lainnya" data-aktif={lainnyaAktif ? "1" : "0"} data-testid="antrean-lainnya">
+          <span>{lainnyaAktif ? lainnyaAktif.label : "Lainnya"}</span>
+          <ChevronDown size={14} aria-hidden="true" />
+          <select aria-label="Antrean lainnya" value={lainnyaAktif ? tab : "__"} onChange={(e) => e.target.value !== "__" && onTab(e.target.value)}>
+            <option value="__" disabled>Lainnya</option>
+            {lainnya.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </label>
+      </div>
+    </nav>
+  );
+}
 
-// "Perlu Verifikasi Finance" = klaim Lunas dari Sales (flag order di CRM, BELUM ada Payment) + pembayaran tercatat yang belum diverifikasi.
-// Dulu "Ditandai Lunas oleh Sales" dan "Menunggu Verifikasi" terpisah dan membaca sumber berbeda, sehingga tab kedua bisa kosong padahal ada yang harus dicek.
-const TAB = [
-  { key: "perlu", label: "Perlu Verifikasi Finance" },
-  { key: "lunas_crm", label: "Klaim Lunas dari Sales" },
-  { key: "terverifikasi", label: "Uang Masuk Terverifikasi" },
-  { key: "dibatalkan", label: "Dibatalkan" },
-  { key: "", label: "Semua" },
-];
+function Pembuka({ buka, onToggle, id, children }) {
+  return (
+    <button type="button" className="fin-pm-pembuka" aria-expanded={buka} aria-controls={id} onClick={onToggle}>
+      {children}{buka ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+    </button>
+  );
+}
 
-const LABEL_CARA_BAYAR = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
-const LABEL_JENIS = { DP: "DP", CICILAN: "Cicilan", PELUNASAN: "Pelunasan" };
-
-// Rentang lebar untuk antrean "Perlu Verifikasi" (tidak terikat periode) — SAMA dengan yang dipakai server untuk export antrean (export/pembayaran.js).
-const SEMUA_PERIODE = { from: "2000-01-01", to: "2100-01-01" };
+/** Bantuan yang bisa dibuka: cara kerja + gerbang verifikasi yang berlaku, penjelasan angka berbeda, dan selisih Sales–Finance. Tidak ada angka baru di sini. */
+function Bantuan({ gate, periode, ke }) {
+  const [buka, setBuka] = useState({ kerja: false, beda: false, selisih: false });
+  const idDasar = useId();
+  const alih = (k) => setBuka((s) => ({ ...s, [k]: !s[k] }));
+  return (
+    <section className="fin-panel fin-vf-bantuan" aria-label="Bantuan dan rekonsiliasi" data-testid="bantuan-verifikasi">
+      <div className="fin-panel-kepala"><h2 className="fin-panel-judul">Bantuan</h2></div>
+      <div className="fin-vf-bantuan-tombol">
+        <Pembuka buka={buka.kerja} id={`${idDasar}-kerja`} onToggle={() => alih("kerja")}>Cara kerja dan gerbang verifikasi</Pembuka>
+        <Pembuka buka={buka.beda} id={`${idDasar}-beda`} onToggle={() => alih("beda")}>Kenapa angkanya berbeda?</Pembuka>
+        <Pembuka buka={buka.selisih} id={`${idDasar}-selisih`} onToggle={() => alih("selisih")}>Selisih angka Sales dan Finance</Pembuka>
+      </div>
+      {buka.kerja && (
+        <div id={`${idDasar}-kerja`} className="fin-pm-lanjut-isi fin-vf-penjelasan" data-testid="cara-kerja">
+          <p><strong>Gerbang verifikasi saat ini.</strong> {teksGerbang(gate)}</p>
+          <p>Halaman ini tidak mencatat pembayaran baru: pembayaran dicatat Sales (saat konfirmasi order) dan driver (di stop pengiriman). Finance memeriksa bukti dan rekening tujuan, lalu memverifikasi.</p>
+          <p>Pemeriksaan di sini berdasarkan bukti yang diunggah. Ini bukan pencocokan otomatis dengan mutasi bank.</p>
+          <p>Pembayaran yang sudah tercatat tidak pernah diedit atau dihapus diam-diam. Koreksi nominal, tanggal, rekening, metode, order, atau pembagian membalik jurnal lama dan membuat versi pengganti dengan jurnal baru — semuanya tercatat siapa, kapan, dan alasannya.</p>
+        </div>
+      )}
+      {buka.beda && (
+        <div id={`${idDasar}-beda`} className="fin-vf-bantuan-isi">
+          <KenapaBeda metrik={["payment_tercatat", "uang_masuk_terverifikasi", "klaim_lunas_menunggu", "kas_masuk_pelanggan"]} from={periode.from} to={periode.to} denganJembatan />
+        </div>
+      )}
+      {buka.selisih && (
+        <div id={`${idDasar}-selisih`} className="fin-vf-bantuan-isi">
+          <KartuSelisihSalesFinance from={periode.from} to={periode.to} onTinjauMenunggu={() => ke("perlu")} onTinjauKlaim={() => ke("lunas_crm")} />
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function FinancePayments() {
-  const [tab, setTab] = useUrlTab(["perlu", "lunas_crm", "terverifikasi", "dibatalkan"], "perlu"); // ?tab= (deep-link hub Penjualan & Piutang)
+  const [tab, setTabUrl] = useUrlTab(TAB_URL, "perlu"); // ?tab= (deep-link hub Penjualan & Piutang)
   const [periode, setPeriode] = useState(periodeDefault);
-  const [data, setData] = useState(null);
-  const [semuaPeriode, setSemuaPeriode] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [hasil, setHasil] = useState(null); // { tabData, semua, _kunci }
+  const [galat, setGalat] = useState(null);
+  const [memuat, setMemuat] = useState(true);
   const [pesan, setPesan] = useState(null);
   const [alokasiUntuk, setAlokasiUntuk] = useState(null);
-  const [dialog, setDialog] = useState(null); // { jenis: "detail" | "info" | "koreksi" | "riwayat", p }
-  const bukaDialog = (jenis, p) => setDialog({ jenis, p });
-  const [fotoBukti, setFotoBukti] = useState(null);
-  const [q, setQ] = useState("");
-  const [fMetode, setFMetode] = useState("");
-  const [fVerif, setFVerif] = useState("");
-  const [fAlokasi, setFAlokasi] = useState("");
-  const [fBukti, setFBukti] = useState("");
-  const [klaimIds, setKlaimIds] = useState(null); // orderId klaim Lunas dari Sales yang TAMPIL (dilaporkan LunasBelumDicatat) — untuk Export Excel
+  const [dialog, setDialog] = useState(null); // { jenis: "verifikasi" | "info" | "koreksi" | "riwayat", p }
+  const bukaDialog = (jenis, p) => { setPanel(null); setDialog({ jenis, p }); };
+  const [panel, setPanel] = useState(null); // model panel pemeriksaan (pembayaran atau klaim)
+  const [filter, setFilter] = useState(SARING_AWAL);
+  const [klaimIds, setKlaimIds] = useState(null); // orderId klaim lama yang TAMPIL (dilaporkan AntreanKlaim) — untuk Export Excel
+  const [akun, setAkun] = useState([]);
+  const [ringkasan, setRingkasan] = useState(null);
+  const [galatRingkasan, setGalatRingkasan] = useState(null);
+  const [berbukti, setBerbukti] = useState(null);
+  const [versiKlaim, setVersiKlaim] = useState(0);
+  const penjagaMuat = useRef(buatPenjaga());
+  const penjagaRingkasan = useRef(buatPenjaga());
+
+  const antrean = antreanDari(tab);
+  const kunci = `${tab}|${periode.from}|${periode.to}`;
+  const ke = useCallback((id) => { setTabUrl(id); window.scrollTo?.({ top: 0 }); }, [setTabUrl]);
+  const ubahFilter = useCallback((k, v) => setFilter((s) => ({ ...s, [k]: v })), []);
 
   const muat = useCallback(async () => {
-    // Tab "Lunas di CRM" memuat datanya sendiri (LunasBelumDicatat).
-    if (tab === "lunas_crm") {
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
+    const saya = penjagaMuat.current.mulai(); // setiap pergantian tab/periode membuat respons lama tidak boleh menimpa pilihan baru
+    // Tab "Ditandai lunas oleh Sales" memuat datanya sendiri (AntreanKlaim).
+    if (tab === "lunas_crm") { setMemuat(false); setGalat(null); return; }
+    setMemuat(true); setGalat(null);
     try {
-      // Kartu angka di atas selalu menghitung SEMUA pembayaran periode ini, apa pun tab yang dibuka.
+      // Angka periode di atas daftar selalu menghitung SEMUA pembayaran periode ini, apa pun tab yang dibuka.
       const [tabData, semua] = await Promise.all([
-        // Tab "Perlu Verifikasi" = antrean pekerjaan: Payment menunggu dari PERIODE MANA PUN (bukan hanya bulan terpilih) — kalau tidak, Payment akhir bulan lalu yang belum
-        // diverifikasi hilang dari antrean begitu bulan berganti (kasus RES-21092026-130, 30 Sep → tak terlihat di Oktober). Kartu angka tetap per periode (query ke-2).
-        api.getFinanceCustomerPayments(tab === "perlu" ? { from: SEMUA_PERIODE.from, to: SEMUA_PERIODE.to, status: "belum_verifikasi" } : { ...periode, status: tab }),
-        tab === "" ? null : api.getFinanceCustomerPayments({ ...periode, status: "" }),
+        // Tab "Perlu verifikasi" = antrean pekerjaan: Payment menunggu dari PERIODE MANA PUN (bukan hanya bulan terpilih) — kalau tidak, Payment akhir bulan lalu yang belum
+        // diverifikasi hilang dari antrean begitu bulan berganti (kasus RES-21092026-130, 30 Sep → tak terlihat di Oktober). Angka periode tetap per periode (query ke-2).
+        api.getFinanceCustomerPayments(tab === "perlu" ? { from: SEMUA_PERIODE.from, to: SEMUA_PERIODE.to, status: "belum_verifikasi" } : { ...periode, status: statusServer(tab) }),
+        tab === "semua" ? null : api.getFinanceCustomerPayments({ ...periode, status: "" }),
       ]);
-      setData(tabData);
-      setSemuaPeriode((semua || tabData).payments || []);
+      if (!penjagaMuat.current.terbaru(saya)) return;
+      setHasil({ tabData, semua: (semua || tabData).payments || [], _kunci: kunci });
     } catch (e) {
-      setError(e.message || "Gagal memuat pembayaran");
+      if (penjagaMuat.current.terbaru(saya)) setGalat(e.message || "Gagal memuat pembayaran");
     } finally {
-      setLoading(false);
+      if (penjagaMuat.current.terbaru(saya)) setMemuat(false);
     }
-  }, [periode, tab]);
-
+  }, [periode, tab, kunci]);
   useEffect(() => { muat(); }, [muat]);
 
-  async function verifikasi(p) {
+  // Ringkasan dua antrean (semua periode, sumber sama dengan kartu "Menunggu verifikasi" di Pemasukan). Dimuat sekali dan setelah tindakan berhasil.
+  const muatRingkasan = useCallback(async () => {
+    const saya = penjagaRingkasan.current.mulai();
     try {
-      await api.verifyPayment(p.id);
-      await muat();
-    } catch (e) {
-      setPesan(e.message);
-    }
+      const r = await api.getFinancePemasukanRingkasan({ from: periode.from, to: periode.to });
+      if (penjagaRingkasan.current.terbaru(saya)) { setRingkasan(r); setGalatRingkasan(null); }
+    } catch (e) { if (penjagaRingkasan.current.terbaru(saya)) setGalatRingkasan(e.message || "Gagal memuat"); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api.getFinanceCashAccounts().then((r) => setAkun(r?.accounts ?? [])).catch(() => setAkun([])); muatRingkasan(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setelahTindakan = useCallback(async () => { await Promise.all([muat(), muatRingkasan()]); setVersiKlaim((n) => n + 1); }, [muat, muatRingkasan]);
+
+  // Verifikasi cepat (rekening sudah tercatat): endpoint lama. Klik ganda dicegah RowActions selama proses; galat tampil di atas daftar.
+  async function verifikasi(p) {
+    try { await api.verifyPayment(p.id); await setelahTindakan(); } catch (e) { setPesan(e.message); }
   }
 
-  const payments = data?.payments || [];
-  const aktif = semuaPeriode.filter((p) => !p.cancelledAt);
-  const jumlahRp = (arr) => arr.reduce((s, p) => s + (p.amount || 0), 0);
-  const sudahList = aktif.filter((p) => p.terverifikasi);
-  const belumList = aktif.filter((p) => !p.terverifikasi);
-  const total = jumlahRp(aktif);
-  const belum = jumlahRp(belumList);
-  const sudah = jumlahRp(sudahList);
+  const dataIni = hasil && hasil._kunci === kunci ? hasil : null;
+  const payments = dataIni?.tabData?.payments ?? [];
+  const semuaPeriode = dataIni?.semua ?? [];
+  const gate = dataIni?.tabData?.gate ?? hasil?.tabData?.gate;
+  const cutoff = dataIni?.tabData?.cutoff ?? hasil?.tabData?.cutoff;
+  const angka = useMemo(() => ringkasPeriode(semuaPeriode), [semuaPeriode]);
 
-  const opsiMetode = useMemo(
-    () => [...new Set(payments.map((p) => p.method).filter(Boolean))].sort().map((m) => [m, LABEL_CARA_BAYAR[m] || m]),
-    [payments]
-  );
-  // Saringan pencarian + chip = fungsi murni SAMA yang dibuktikan identik dengan versi server Export Excel (tes paritas) — bukan logika inline lagi.
-  const tampil = useMemo(() => saringPembayaran(payments, { q, metode: fMetode, verif: fVerif, alokasi: fAlokasi, bukti: fBukti }), [payments, q, fMetode, fVerif, fAlokasi, fBukti]);
-  const disaring = !!q || !!fMetode || !!fVerif || !!fAlokasi || !!fBukti;
+  // Saringan pencarian + chip = fungsi murni SAMA yang dibuktikan identik dengan versi server Export Excel (tes paritas) — bukan logika inline.
+  const tampil = useMemo(() => saringPembayaran(payments, filter), [payments, filter]);
 
-  function aturUlangFilter() {
-    setQ(""); setFMetode(""); setFVerif(""); setFAlokasi(""); setFBukti("");
-  }
-
-  // EXPORT EXCEL — persis yang tampil: periode + tab (status, disaring server), lalu pencarian & chip (disaring di klien) → kirim `ids`
-  // baris yang tampil (urutan layar). Tab Klaim Lunas dari Sales tidak punya daftar pembayaran: hanya sheet klaim (tanpa periode).
-  // Tab "Perlu Verifikasi" menampilkan keduanya (pembayaran + klaim), jadi berkasnya juga memuat keduanya.
+  // EXPORT EXCEL — periode + tab (status) + SELURUH saringan layar dikirim sebagai PARAMETER (server menjalankan query & saringan yang sama tanpa batas 300 baris layar).
+  // Tab "Ditandai lunas oleh Sales" tidak punya daftar pembayaran: hanya sheet klaim (tanpa periode). Tab "Perlu verifikasi" memuat pembayaran + klaim.
   function ambilBodyExport() {
     const hanyaKlaim = tab === "lunas_crm";
     const sertakanKlaim = hanyaKlaim || tab === "perlu";
-    const namaTab = TAB.find((t) => t.key === tab)?.label || "Semua";
+    const opsiMetode = [...new Set(payments.map((p) => p.method).filter(Boolean))];
+    const namaRek = (id) => payments.find((p) => p.cashAccount?.id === id)?.cashAccount?.name || akun.find((a) => a.id === id)?.name;
     return {
-      // Periode + tab (status) + SELURUH saringan layar dikirim sebagai PARAMETER (bukan daftar id yang bisa basi): server menjalankan query & saringan yang sama tanpa batas 300 baris layar.
       ...(hanyaKlaim ? {} : { periode: { from: periode.from, to: periode.to } }),
       filter: {
-        status: hanyaKlaim ? "" : tab === "perlu" ? "belum_verifikasi" : tab,
-        ...(hanyaKlaim ? {} : { q: q.trim(), metode: fMetode, verif: fVerif, alokasi: fAlokasi, bukti: fBukti }),
+        status: hanyaKlaim ? "" : tab === "perlu" ? "belum_verifikasi" : statusServer(tab),
+        ...(hanyaKlaim ? {} : { q: filter.q.trim(), metode: filter.metode, verif: filter.verif, alokasi: filter.alokasi, bukti: filter.bukti, rekening: filter.rekening }),
         ...(sertakanKlaim ? { sertakanKlaim: true, hanyaKlaim, ...(klaimIds ? { klaimIds } : {}) } : {}),
       },
       filterLabel: labelFilterAktif([
-        ["Tab", namaTab],
-        ["Cara bayar", fMetode && (opsiMetode.find(([v]) => v === fMetode)?.[1] || fMetode)],
-        ["Status", { terverifikasi: "Sudah diverifikasi", belum: "Menunggu verifikasi", dibatalkan: "Dibatalkan" }[fVerif]],
-        ["Dibagi ke order lain", { ada: "Ya, dibagi", tanpa: "Tidak dibagi" }[fAlokasi]],
-        ["Foto bukti", { ada: "Ada foto", tanpa: "Tanpa foto" }[fBukti]],
-        ["Pencarian", q.trim()],
+        ["Tab", LABEL_TAB_EXPORT[tab] || "Semua"],
+        ["Cara bayar", filter.metode && (opsiMetode.includes(filter.metode) ? LABEL_CARA_BAYAR[filter.metode] || filter.metode : filter.metode)],
+        ["Rekening", filter.rekening && namaRek(filter.rekening)],
+        ["Status", { terverifikasi: "Sudah diverifikasi", belum: "Menunggu verifikasi", dibatalkan: "Dibatalkan" }[filter.verif]],
+        ["Dibagi ke order lain", { ada: "Ya, dibagi", tanpa: "Tidak dibagi" }[filter.alokasi]],
+        ["Foto bukti", { ada: "Ada foto", tanpa: "Tanpa foto" }[filter.bukti]],
+        ["Pencarian", filter.q.trim()],
       ]),
     };
   }
 
+  // ── Panel pemeriksaan pembayaran ──
+  const aksiPanelPembayaran = (p) => {
+    const m = p.menuKoreksi;
+    const nonaktif = (x) => (x && !x.aktif ? { disabled: true, alasan: [x.alasan, x.arah].filter(Boolean).join(" ") } : {});
+    const bisaVerifikasi = !p.cancelledAt && !p.terverifikasi;
+    const berKoreksi = m && (p.terverifikasi || p.replacesPaymentId || p.replacedBy);
+    return [
+      bisaVerifikasi && { key: "verifikasi", label: "Verifikasi…", utama: true, onClick: () => bukaDialog("verifikasi", p) },
+      !p.cancelledAt && { key: "alokasi", label: "Bagi ke beberapa order", onClick: () => { setPanel(null); setAlokasiUntuk(p); } },
+      berKoreksi && { key: "info", label: "Edit informasi", onClick: () => bukaDialog("info", p), ...nonaktif(m.editInfo) },
+      berKoreksi && { key: "koreksi", label: "Koreksi pembayaran", onClick: () => bukaDialog("koreksi", p), ...nonaktif(m.koreksi) },
+    ].filter(Boolean);
+  };
+  const periksa = (p) => setPanel(modelPembayaran(p, { gate, cutoff, aksi: aksiPanelPembayaran(p), onRiwayatLengkap: () => bukaDialog("riwayat", p) }));
+  const periksaModel = (m) => setPanel(m);
+
+  const tampilKlaim = tab === "perlu" || tab === "lunas_crm";
+  const tampilBayar = tab !== "lunas_crm";
+
   return (
     <HalamanFinance
-      title="Pembayaran & Verifikasi"
-      subtitle="Pastikan uang dari pelanggan benar-benar masuk ke rekening perusahaan, dan lampirkan foto buktinya."
-      loading={loading}
-      error={error}
-      onRetry={muat}
-      actions={(
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
-          <TombolExportExcel modul="pembayaran" disabled={loading} ambilBody={ambilBodyExport} />
-        </div>
-      )}
+      className="fin-halaman" title="Verifikasi pembayaran"
+      subtitle="Periksa bukti dan rekening tujuan sebelum pembayaran masuk pembukuan."
+      actions={<div className="fin-pm-aksi"><TombolExportExcel modul="pembayaran" disabled={memuat} ambilBody={ambilBodyExport} /></div>}
+      loading={false} error={null}
     >
-      {pesan && (
-        <Card className="bg-redbg">
-          <CardContent className="flex items-center justify-between gap-3 py-3">
-            <p className="text-[13px] text-ink">{pesan}</p>
-            <Button size="sm" variant="neutral" onClick={() => setPesan(null)}>Tutup</Button>
-          </CardContent>
-        </Card>
-      )}
+      <div className="fin-ring fin-pm fin-vf" data-testid="halaman-verifikasi" data-tab={tab}>
+        <RingkasanAntrean ringkasan={ringkasan} galat={galatRingkasan} onCoba={muatRingkasan} berbukti={berbukti} ke={ke} />
+        <PemilihAntrean tab={tab} onTab={ke} />
 
-      <KartuSelisihSalesFinance from={periode.from} to={periode.to} onTinjauMenunggu={() => setTab("perlu")} onTinjauKlaim={() => setTab("lunas_crm")} />
-
-      <Penjelasan>
-        <span className="inline-flex items-center gap-1.5 font-medium text-ink">
-          <ShieldCheck size={14} className="text-accent" />
-          Cara kerja saat ini
-        </span>
-        <p className="mt-1">
-          {data?.gate?.enabled
-            ? "Status Lunas di CRM baru berlaku setelah pembayarannya Anda verifikasi di sini (untuk pembayaran baru; " +
-              "yang lama tidak berubah)."
-            : "Kalau sales menandai order Lunas, statusnya langsung berlaku di CRM. Tugas Anda di halaman ini adalah " +
-              "memastikan uangnya benar-benar masuk ke rekening perusahaan. Kalau ingin status Lunas baru berlaku " +
-              "setelah diverifikasi, admin bisa menyalakannya di Pengaturan Finance."}
-        </p>
-      </Penjelasan>
-
-      <div className={tab === "lunas_crm" ? "hidden" : "grid grid-cols-1 gap-4 sm:grid-cols-3"}>
-        <KartuAngka
-          label="Payment Tercatat (periode ini)" metrik="payment_tercatat" value={formatUang(total)}
-          sub={`Sudah diverifikasi ${formatUang(sudah)} · Menunggu ${formatUang(belum)}`}
-          info={`Jumlah semua pembayaran pelanggan di periode yang dipilih (${aktif.length} pembayaran; yang dibatalkan tidak dihitung), dipisah antara yang sudah dan yang masih menunggu verifikasi.`}
-        />
-        <KartuAngka
-          label="Menunggu Verifikasi" value={formatUang(belum)} tone={belum > 0 ? "orange" : "default"}
-          sub={`${belumList.length} pembayaran`}
-          info="Pembayaran yang sudah dicatat sales atau driver, tapi belum ada yang memastikan uangnya benar-benar masuk ke rekening atau kas perusahaan."
-        />
-        <KartuAngka
-          label="Uang Masuk Terverifikasi" metrik="uang_masuk_terverifikasi" value={formatUang(sudah)} tone="green"
-          sub={`${sudahList.length} pembayaran`}
-          info="Sudah dicek dan uangnya memang masuk. Status Lunas order tetap diatur dari CRM."
-        />
-      </div>
-
-      <KenapaBeda metrik={["payment_tercatat", "uang_masuk_terverifikasi", "klaim_lunas_menunggu", "kas_masuk_pelanggan"]} from={periode.from} to={periode.to} denganJembatan />
-
-      <div className="flex flex-wrap gap-2">
-        {TAB.map((t) => (
-          <Button key={t.key || "semua"} size="sm" variant={tab === t.key ? "secondary" : "neutral"} onClick={() => setTab(t.key)}>
-            {t.label}
-          </Button>
-        ))}
-      </div>
-      <p className="text-[13px] leading-relaxed text-ink3">
-        {tab === "perlu"
-          ? "Semua yang perlu dicek Finance: (1) klaim Lunas dari Sales yang belum punya catatan uang masuk, dan (2) pembayaran yang sudah tercatat tapi belum diverifikasi."
-          : tab === "lunas_crm"
-            ? "Order yang ditandai Lunas oleh Sales, tapi belum ada catatan uang masuknya. Verifikasi Pembayaran, Tolak Klaim, atau Minta Bukti."
-            : "Pembayaran yang sudah dicatat sales atau driver — tinggal dicek apakah uangnya benar-benar masuk."}
-      </p>
-
-      {tab === "perlu" && <h3 className="mt-1 text-[14px] font-semibold text-ink">1. Klaim Lunas dari Sales</h3>}
-      {(tab === "lunas_crm" || tab === "perlu") && <LunasBelumDicatat ringkas={tab === "perlu"} onTampil={setKlaimIds} />}
-      {tab === "perlu" && <h3 className="mt-3 text-[14px] font-semibold text-ink">2. Pembayaran tercatat, menunggu verifikasi <span className="text-[12px] font-normal text-ink3">(semua periode)</span></h3>}
-
-      <FilterBar
-        className={tab === "lunas_crm" ? "hidden" : undefined}
-        q={q} onQ={setQ}
-        placeholder="Cari order, pelanggan, nominal…"
-        filters={[
-          { key: "metode", label: "Cara bayar", value: fMetode, onChange: setFMetode, options: opsiMetode },
-          { key: "verif", label: "Status", value: fVerif, onChange: setFVerif, options: [["terverifikasi", "Sudah diverifikasi"], ["belum", "Menunggu verifikasi"], ["dibatalkan", "Dibatalkan"]] },
-          { key: "alokasi", label: "Dibagi ke order lain", value: fAlokasi, onChange: setFAlokasi, options: [["ada", "Ya, dibagi"], ["tanpa", "Tidak dibagi"]] },
-          { key: "bukti", label: "Foto bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada foto"], ["tanpa", "Tanpa foto"]] },
-        ]}
-        ringkasan={disaring ? `${tampil.length} pembayaran dari ${payments.length}` : `${payments.length} pembayaran`}
-        onReset={aturUlangFilter}
-      />
-
-      <Card className={tab === "lunas_crm" ? "hidden" : "overflow-hidden"}>
-        <JudulKartu
-          title="Daftar Uang Masuk"
-          description="Salah catat atau salah verifikasi? Pakai menu ⋯ di tiap baris: Edit Informasi, Koreksi Pembayaran, atau Riwayat Perubahan. Barisnya tidak dihapus supaya jejaknya tetap ada."
-          info="Pembayaran yang sudah tercatat tidak pernah diedit atau dihapus diam-diam. Koreksi angka (nominal, tanggal, rekening, metode, order, pembagian) membalik jurnal lama dan membuat versi pembayaran pengganti dengan jurnal baru — semuanya tercatat siapa, kapan, dan alasannya."
-        />
-        {tampil.length === 0 ? (
-          <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada uang masuk yang cocok dengan pencarian ini.</p></CardContent>
-        ) : (
-          <>
-          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
-            <Table fixed>
-              <THead>
-                <TR>
-                  <TH sticky width={128}>Tanggal</TH><TH width={140}>Order</TH><TH>Pelanggan</TH>
-                  <TH width={110} hideBelow="2xl">Dicatat oleh</TH>
-                  <TH width={92} hideBelow="2xl">Cara Bayar</TH>
-                  <TH width={128} hideBelow="2xl">Masuk ke Rekening</TH>
-                  <TH numeric width={112}>Nominal</TH>
-                  <TH width={150} hideBelow="2xl">Untuk Order</TH>
-                  <TH width={116}>Status</TH>
-                  <TH width={56}>Bukti</TH>
-                  <TH width={AKSI_COL_WIDTH}>Aksi</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {tampil.map((p) => {
-                  const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog });
-                  return (
-                  <TR key={p.id} {...klikBuka(() => bukaDialog("detail", p))}>
-                    <TD sticky className="whitespace-nowrap text-[12px]">{tanggalJam(p.createdAt)}</TD>
-                    <TD className="truncate font-medium" title={p.order?.orderNumber || "—"}>{p.order?.orderNumber || "—"}</TD>
-                    <TD truncate>{p.order?.customer?.name || "—"}</TD>
-                    <TD hideBelow="2xl" truncate>{p.recordedBy?.name || "—"}</TD>
-                    <TD hideBelow="2xl"><Badge variant="neutral">{LABEL_CARA_BAYAR[p.method] || p.method}</Badge></TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px]">
-                      {p.cashAccount?.name || (
-                        <span className="text-ink3" title="Rekening tidak dipilih saat pembayaran dicatat, jadi sistem memakai rekening standar untuk cara bayar ini.">
-                          belum dipilih
-                        </span>
-                      )}
-                    </TD>
-                    <TD numeric><Uang value={p.amount} /></TD>
-                    <TD hideBelow="2xl" className="min-w-0">
-                      {p.finAllocations.length === 0
-                        ? <span className="text-ink3">order ini saja</span>
-                        : p.finAllocations.map((al) => (
-                            <span key={al.id} className="block truncate text-[12px]" title={`${al.order?.orderNumber || "—"}: ${formatUang(al.amount)}`}>
-                              {al.order?.orderNumber || "—"}: {formatUang(al.amount)}
-                            </span>
-                          ))}
-                    </TD>
-                    <TD>
-                      {p.cancelledAt
-                        ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
-                        : p.terverifikasi
-                          ? <Badge variant="green">Sudah diverifikasi</Badge>
-                          : <Badge variant="orange">Menunggu</Badge>}
-                      {p.jenisPembayaran && !p.cancelledAt && <Badge variant={p.jenisPembayaran === "PELUNASAN" ? "green" : "info"} className="ml-1">{LABEL_JENIS[p.jenisPembayaran]}</Badge>}
-                      {p.terverifikasi && (
-                        <span className="mt-0.5 block truncate text-[11px] text-ink3">
-                          oleh {p.verifications[0]?.verifiedBy?.name || "—"}
-                        </span>
-                      )}
-                    </TD>
-                    <TD><BuktiBanyak urls={daftarBukti(p)} onView={setFotoBukti} label="Lihat foto bukti" /></TD>
-                    <TD>
-                      <RowActions primary={a.primary} items={a.items} />
-                    </TD>
-                  </TR>
-                  );
-                })}
-              </TBody>
-            </Table>
-          </TableWrap>
-
-          <CardList className={CARD_VIEW_CLASS}>
-            {tampil.map((p) => {
-              const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog });
-              return (
-                <RowCard
-                  key={p.id}
-                  onClick={() => bukaDialog("detail", p)}
-                  title={tanggalJam(p.createdAt)}
-                  status={
-                    p.cancelledAt ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
-                      : (
-                        <>
-                          {p.terverifikasi ? <Badge variant="green">Sudah diverifikasi</Badge> : <Badge variant="orange">Menunggu</Badge>}
-                          {p.jenisPembayaran && <Badge variant={p.jenisPembayaran === "PELUNASAN" ? "green" : "info"} className="ml-1">{LABEL_JENIS[p.jenisPembayaran]}</Badge>}
-                        </>
-                      )
-                  }
-                  subtitle={`${p.order?.orderNumber || "—"} · ${p.order?.customer?.name || "—"}`}
-                  fields={[
-                    { label: "Nominal", value: formatUang(p.amount) },
-                    { label: "Cara Bayar", value: LABEL_CARA_BAYAR[p.method] || p.method },
-                    { label: "Dicatat oleh", value: p.recordedBy?.name },
-                    { label: "Masuk ke Rekening", value: p.cashAccount?.name || "belum dipilih" },
-                    {
-                      label: "Untuk Order", span: true,
-                      value: p.finAllocations.length === 0 ? "order ini saja" : p.finAllocations.map((al) => `${al.order?.orderNumber || "—"}: ${formatUang(al.amount)}`).join(", "),
-                    },
-                    { label: "Bukti", value: <BuktiBanyak urls={daftarBukti(p)} onView={setFotoBukti} label="Lihat foto bukti" /> },
-                  ]}
-                  actions={<RowActions primary={a.primary} items={a.items} />}
-                />
-              );
-            })}
-          </CardList>
-          </>
+        {pesan && (
+          <p className="fin-pm-pesan fin-pm-pesan-galat" role="alert" data-testid="pesan-galat">{pesan} <button type="button" className="fin-pm-reset" onClick={() => setPesan(null)}>Tutup</button></p>
         )}
-      </Card>
+
+        {tampilKlaim && (
+          <AntreanKlaim
+            ringkas={tab === "perlu"} versiMuat={versiKlaim} onTampil={setKlaimIds} onData={setBerbukti} onPeriksa={periksaModel}
+            onBerubah={() => { muatRingkasan(); if (tab === "perlu") muat(); }}
+          />
+        )}
+        {tampilBayar && (
+          <DaftarPembayaran
+            antrean={antrean} periode={{ ...periode, label: labelPeriode(periode.from, periode.to) }} onPeriode={setPeriode}
+            payments={payments} semuaDimuat={semuaPeriode} tampil={tampil} angka={angka}
+            filter={filter} onFilter={ubahFilter} onReset={() => setFilter(SARING_AWAL)}
+            akun={akun} aksiBaris={(p) => aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog, periksa })} onPeriksa={periksa}
+            memuat={memuat || !dataIni} galat={galat} onCoba={muat}
+          />
+        )}
+
+        <Bantuan gate={gate} periode={periode} ke={ke} />
+      </div>
 
       <ModalAlokasi
         payment={alokasiUntuk}
         onClose={() => setAlokasiUntuk(null)}
-        onSaved={async () => { setAlokasiUntuk(null); await muat(); }}
+        onSaved={async () => { setAlokasiUntuk(null); await setelahTindakan(); }}
         onError={setPesan}
       />
 
-      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} cutoff={data?.cutoff} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
-      {dialog?.jenis === "detail" && <DetailPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
+      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} cutoff={cutoff} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await setelahTindakan(); }} />}
       {dialog?.jenis === "riwayat" && <RiwayatPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
-      {dialog?.jenis === "info" && <EditInfoDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
-      {dialog?.jenis === "koreksi" && <KoreksiPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
+      {dialog?.jenis === "info" && <EditInfoDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await setelahTindakan(); }} />}
+      {dialog?.jenis === "koreksi" && <KoreksiPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await setelahTindakan(); }} />}
 
-      <Modal open={Boolean(fotoBukti)} onOpenChange={(v) => !v && setFotoBukti(null)} title="Bukti Pembayaran" className="w-[560px]">
-        {fotoBukti && (
-          <div className="max-h-[70vh] space-y-3 overflow-y-auto">
-            {fotoBukti.map((u, i) => <Foto key={u} url={u} alt={`Bukti pembayaran ${i + 1}`} className="w-full rounded-lg object-contain" />)}
-          </div>
-        )}
-      </Modal>
+      <PanelPemeriksaan model={panel} onClose={() => setPanel(null)} />
     </HalamanFinance>
   );
 }

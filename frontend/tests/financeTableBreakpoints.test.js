@@ -88,8 +88,11 @@ test("D-193b: halaman kolom-gabungan (Klasifikasi/Pembayaran) pakai useContainer
   }
 });
 
+// Redesain Verifikasi pembayaran (Nov 2026): daftar & tindakan baris pindah ke features/finance/verifikasi/*; halaman + komponennya dibaca BERSAMA.
+const KOMPONEN_HALAMAN = { "FinancePayments.jsx": ["DaftarPembayaran.jsx", "AntreanKlaim.jsx"] };
 function bacaSumber(nama) {
-  return fs.readFileSync(path.join(FINANCE_DIR, nama), "latin1");
+  const dasar = fs.readFileSync(path.join(FINANCE_DIR, nama), "latin1");
+  return [dasar, ...(KOMPONEN_HALAMAN[nama] ?? []).map((f) => fs.readFileSync(path.join(FINANCE_DIR, "..", "..", "features", "finance", "verifikasi", f), "latin1"))].join(String.fromCharCode(10));
 }
 
 test("D-193: halaman yang terbukti overflow di 1366px tidak lagi memakai hideBelow=\"wide\"", () => {
@@ -170,7 +173,8 @@ test("D-193: 'hideBelow' hanya memakai preset yang didukung tableLayout.js (buka
 // breakpoint viewport yang memilih) — `<CardList>`-nya WAJIB eksplisit
 // `className={CARD_VIEW_CLASS}`, kalau tidak dua-duanya akan tampil
 // bersamaan di SEMUA lebar layar (bug berbeda, sama-sama nyata).
-const HARUS_CSS_TOGGLE_CARDLIST = ["FinanceKasbon.jsx", "FinancePayments.jsx", "FinanceReceivables.jsx"];
+// FinancePayments.jsx tidak lagi di daftar ini: setelah redesain, tabel dan kartunya satu panel yang dipilih container query (.fin-pm-tabel-bungkus / .fin-pm-kartu-daftar), bukan TableWrap+CardList.
+const HARUS_CSS_TOGGLE_CARDLIST = ["FinanceKasbon.jsx", "FinanceReceivables.jsx"];
 
 test("D-XXX (regresi 'Daftar Pengeluaran kosong'): <CardList> netral di cards.jsx — TIDAK membawa CARD_VIEW_CLASS/md:hidden bawaan", () => {
   const src = fs.readFileSync(path.join(__dirname, "..", "src", "features", "finance", "cards.jsx"), "latin1");

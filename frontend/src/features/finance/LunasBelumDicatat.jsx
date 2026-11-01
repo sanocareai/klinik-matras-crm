@@ -253,7 +253,7 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false, onTampil
   );
 }
 
-function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSubmit }) {
+export function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSubmit }) {
   const item = modal?.item;
   const [f, setF] = useState({ mode: "REKENING", method: "TRANSFER", cashAccountId: "", date: "", amount: "", proofPhotoUrl: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));

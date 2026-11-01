@@ -94,7 +94,10 @@ test("pemasangan: sidebar Finance dari hub; bilah tab hub membungkus halaman Fin
   const reg = baca("../src/routes/pageRegistry.jsx");
   assert.match(reg, /FinanceHubFrame/);
   for (const r of RUTE_SIDEBAR_LAMA) assert.ok(reg.includes(`path: "${r}"`), `rute ${r} dihapus dari registri`);
-  for (const f of ["FinanceCash", "FinanceSuppliers", "FinancePayments"]) assert.match(baca(`../src/pages/finance/${f}.jsx`), /useUrlTab\(\[/);
+  for (const f of ["FinanceCash", "FinanceSuppliers"]) assert.match(baca(`../src/pages/finance/${f}.jsx`), /useUrlTab\(\[/);
+  // Verifikasi pembayaran: daftar tab URL dipisah ke verifikasiLogic.js (TAB_URL) — tetap terikat ?tab= dan memuat semua tab lama.
+  assert.match(baca("../src/pages/finance/FinancePayments.jsx"), /useUrlTab\(TAB_URL, "perlu"\)/);
+  assert.match(baca("../src/features/finance/verifikasi/verifikasiLogic.js"), /TAB_URL = Object\.freeze\(\["perlu", "lunas_crm", "terverifikasi", "dibatalkan", "semua"\]\)/);
   const frame = baca("../src/features/finance/FinanceHubFrame.jsx");
   assert.match(frame, /role="tablist"/);
   assert.match(frame, /replaceActivePath/);

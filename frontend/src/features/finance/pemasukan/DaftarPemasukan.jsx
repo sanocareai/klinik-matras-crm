@@ -356,7 +356,7 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
 }
 
 /** Pemilih bergaya pil: <select> asli di balik teks (di HP muncul picker bawaan; keyboard dan pembaca layar bekerja apa adanya). */
-function Pilih({ label, value, onChange, options, semuaKetika = "" }) {
+export function Pilih({ label, value, onChange, options, semuaKetika = "" }) {
   const aktif = value !== "" && value !== semuaKetika;
   const terpilih = options.find(([v]) => String(v) === String(value));
   return (

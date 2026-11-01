@@ -42,15 +42,16 @@ test("Menunggu verifikasi memuat DUA sumber: klaim lunas dari Sales dan uang mas
   assert.match(s, /2\. Uang masuk tercatat, menunggu verifikasi/);
 });
 
-test("Pembayaran (Finance): tab Perlu Verifikasi Finance (default), Klaim Lunas dari Sales, Uang Masuk Terverifikasi; klaim & pembayaran menunggu dalam satu tab", () => {
+test("Verifikasi pembayaran: antrean Perlu verifikasi (default), Ditandai lunas oleh Sales, Terverifikasi, Dibatalkan, Semua; klaim & pembayaran menunggu dalam satu antrean", () => {
   const s = baca("pages/finance/FinancePayments.jsx");
-  assert.match(s, /key: "perlu", label: "Perlu Verifikasi Finance"/);
-  assert.match(s, /key: "lunas_crm", label: "Klaim Lunas dari Sales"/);
-  assert.match(s, /key: "terverifikasi", label: "Uang Masuk Terverifikasi"/);
-  assert.match(s, /useUrlTab\(\["perlu", "lunas_crm", "terverifikasi", "dibatalkan"\], "perlu"\)/); // bawaan tetap "perlu"; terikat ?tab= (hub Finance)
-  assert.doesNotMatch(s, /label: "Ditandai Lunas oleh Sales"|label: "Menunggu Verifikasi" \}/);
-  assert.match(s, /\(tab === "lunas_crm" \|\| tab === "perlu"\) && <LunasBelumDicatat ringkas=\{tab === "perlu"\} onTampil=\{setKlaimIds\} \/>/); // onTampil: dipakai Export Excel (B3.9)
-  assert.match(s, /tab === "perlu" \? "belum_verifikasi" : tab/);
+  const l = baca("features/finance/verifikasi/verifikasiLogic.js");
+  assert.match(l, /id: "perlu", label: "Perlu verifikasi"/);
+  assert.match(l, /id: "lunas_crm", label: "Ditandai lunas oleh Sales"/);
+  assert.match(l, /id: "terverifikasi", label: "Terverifikasi"/);
+  assert.match(s, /useUrlTab\(TAB_URL, "perlu"\)/); // bawaan tetap "perlu"; terikat ?tab= (hub Finance)
+  assert.match(s, /const tampilKlaim = tab === "perlu" \|\| tab === "lunas_crm"/);
+  assert.match(s, /ringkas=\{tab === "perlu"\} versiMuat=\{versiKlaim\} onTampil=\{setKlaimIds\}/); // onTampil: dipakai Export Excel (B3.9)
+  assert.match(s, /tab === "perlu" \? "belum_verifikasi" : statusServer\(tab\)/);
 });
 
 test("Klaim Lunas dari Sales: aksi Verifikasi Pembayaran, Tolak Klaim, Minta Bukti + penanda Bukti diminta; API terpasang", () => {
