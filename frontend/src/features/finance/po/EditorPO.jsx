@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
-import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { TERMIN_AWAL, galatTermin } from "@/features/finance/terminLogic.js";
+import { TanggalPO, PemilihSupplier, SelectPO, indukGulir, ruangPopup } from "./KontrolPO.jsx";
+import TerminPO from "./KontrolPO.jsx";
+import { cariFieldBermasalah, fieldDariGalatBaris, barisKosong, langkahFakturSetelahSimpan } from "./poKontrol.js";
 import { petaBarisHarga, teksDampakBaris, ringkasDampak, ringkasHasilSimpan, STATUS_HARGA_PO } from "@/features/finance/hargaDariPOLogic.js";
 import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
-import { formatUang, TombolAksi, Pilihan, InputUang } from "@/features/finance/shared.jsx";
+import { formatUang, TombolAksi, InputUang } from "@/features/finance/shared.jsx";
 import { MODE_PENDAMPING_OPSI, adaPendamping, teksPratinjauPendamping } from "@/features/kedatangan/kedatanganLogic.js";
 import {
   baris0, subtotal, totalIsian, galatBaris, galatFormulir, formDariPO, bodyDariForm, SATUAN_OPSI, labelSatuan, labelJenisSku, teksSetara, infoKonversi,
@@ -18,7 +20,7 @@ import {
 } from "@/features/finance/purchaseOrderLogic.js";
 import { IkBahan, IkHarga } from "@/components/financeIconsPO.jsx";
 import { ModalBarangBaru, PanelMasalahBaris } from "./BarangBaruPO.jsx";
-import { DAMPAK_HARGA_SINGKAT, DAMPAK_HARGA_RINCI } from "./poTampilan.js";
+import { DAMPAK_HARGA_RINCI, KALIMAT_HARGA_SIMPAN, KETERANGAN_HARGA_SINGKAT } from "./poTampilan.js";
 
 // Editor PO lebar (baru / ubah draf). Hanya presentasi: validasi (galatBaris/galatFormulir), subtotal, payload (bodyDariForm), idempotensi, pemeriksaan barang mirip,
 // pratinjau Harga Berlaku, dan endpoint SAMA dengan formulir lama. Gaya: styles/sanss-finance-po.css (.fin-po-modal / .fin-poed).
@@ -27,22 +29,6 @@ const hariIniISO = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().sl
 let hitungKunci = 0;
 const kunciBaris = () => `b${++hitungKunci}`;
 const denganKunci = (l) => (l._k ? l : { ...l, _k: kunciBaris() });
-
-function indukGulir(el) {
-  let induk = el.parentElement;
-  while (induk && induk !== document.body) { const o = getComputedStyle(induk).overflowY; if (o === "auto" || o === "scroll") return induk; induk = induk.parentElement; }
-  return null;
-}
-// Ruang yang tersedia untuk daftar pilihan di dalam area gulir editor (bukan viewport): menentukan arah buka dan tinggi maksimum.
-function ruangPopup(el) {
-  const r = el.getBoundingClientRect();
-  const induk = indukGulir(el);
-  const batas = induk ? induk.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
-  const bawah = Math.min(batas.bottom, window.innerHeight) - r.bottom - 8;
-  const atas = r.top - Math.max(batas.top, 0) - 8;
-  const naik = bawah < 220 && atas > bawah;
-  return { naik, tinggi: Math.max(150, Math.min(300, naik ? atas : bawah)) };
-}
 
 /** Pemilih bahan: kolom cari + daftar pilihan terarah (combobox). Bahan yang sudah dipakai baris lain ditampilkan nonaktif dengan nomor barisnya. */
 export function PemilihBahan({ materials, value, nomor, namaCadangan, dipakai, onPilih, fokusOtomatis = false }) {
@@ -135,11 +121,11 @@ export function PemilihBahan({ materials, value, nomor, namaCadangan, dipakai, o
 }
 
 function BarisItem({ l, i, ctx }) {
-  const { bahan, materials, petaHarga, masalah, masalahHarga, set, hapus, barisRef, bolehBuatSku, jumlahBaris, dipakai, po, setBarangBaru, fokusBaru, buka, toggle } = ctx;
+  const { bahan, materials, petaHarga, masalah, masalahHarga, set, hapus, barisRef, bolehBuatSku, jumlahBaris, dipakai, po, setBarangBaru, fokusBaru, buka, toggle, percobaan } = ctx;
   const no = i + 1;
   const m = bahan.get(l.materialId);
   const unitStok = l.materialBaru ? l.materialBaru.satuanStok : m?.unit ?? null;
-  const g = (l.materialId || l.materialBaru || l.qty || l.unitPrice) ? galatBaris(l, unitStok) : null;
+  const g = (!barisKosong(l) || percobaan) ? galatBaris(l, unitStok) : null; // baris kosong baru tampil merah setelah percobaan simpan
   const setara = teksSetara(l, unitStok);
   const kv = infoKonversi(l, unitStok);
   const satuanBeli = l.materialBaru ? (l.materialBaru.satuanBeli || l.materialBaru.satuanStok) : (l.satuanBeli || unitStok);
@@ -149,6 +135,7 @@ function BarisItem({ l, i, ctx }) {
   const adaMasalah = !!masalah[no];
   const idRinci = `rinci-${l._k}`;
   const terbuka = buka.has(l._k) || adaMasalah || bermasalahHarga;
+  const sudahBahan = !!(l.materialId || l.materialBaru);
   const pratinjauPend = teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "");
   const flag = adaMasalah || bermasalahHarga ? "masalah" : undefined;
   return (
@@ -178,11 +165,19 @@ function BarisItem({ l, i, ctx }) {
             )}
           </>
         )}
+        {sudahBahan && (
+          <div className="fin-poed-ringkas fin-poed-ringkas-identitas">
+            <Pembuka buka={terbuka} onToggle={() => toggle(l._k)} id={idRinci} className="fin-poed-rinci-tombol" data-testid={`rinci-${no}`}>Rincian baris</Pembuka>
+            {setara && <span className="fin-chip fin-chip-biru" data-testid="setara">{setara}</span>}
+            {adaPendamping(l.pendamping) && <span className="fin-chip fin-chip-neutral">Pendamping ada</span>}
+            {st && !masalahHarga[no] && <span className={cn("fin-chip", `fin-chip-${{ accent: "biru", orange: "orange", green: "green", red: "red", neutral: "neutral" }[st.varian] || "neutral"}`)}>Harga: {st.teks}</span>}
+          </div>
+        )}
       </div>
 
       <div className="fin-poed-sel fin-poed-c-jumlah">
         <label className="fin-poed-label-kecil" htmlFor={`qty-${l._k}`}>Jumlah</label>
-        <input id={`qty-${l._k}`} className="fin-poed-input" type="number" inputMode="decimal" min="0" step="any" value={l.qty} aria-label={`Jumlah baris ${no}`} onChange={(e) => set(i, { qty: e.target.value })} />
+        <input id={`qty-${l._k}`} className="fin-poed-input" type="number" inputMode="decimal" min="0" step="any" value={l.qty} aria-label={`Jumlah baris ${no}`} aria-invalid={(percobaan && g && fieldDariGalatBaris(l, g) === "qty") || undefined} onChange={(e) => set(i, { qty: e.target.value })} />
       </div>
       <div className="fin-poed-sel fin-poed-c-satuan">
         <span className="fin-poed-label-kecil">Satuan</span>
@@ -190,7 +185,7 @@ function BarisItem({ l, i, ctx }) {
       </div>
       <div className="fin-poed-sel fin-poed-c-harga">
         <label className="fin-poed-label-kecil" htmlFor={`hrg-${l._k}`}>Harga satuan (Rp)</label>
-        <div className="fin-poed-rp"><span aria-hidden="true">Rp</span><InputUang id={`hrg-${l._k}`} value={l.unitPrice} onChange={(v) => set(i, { unitPrice: v })} aria-label={`Harga satuan baris ${no}`} className="fin-poed-input fin-poed-input-rp" /></div>
+        <div className="fin-poed-rp"><span aria-hidden="true">Rp</span><InputUang id={`hrg-${l._k}`} value={l.unitPrice} onChange={(v) => set(i, { unitPrice: v })} aria-label={`Harga satuan baris ${no}`} aria-invalid={(percobaan && g && fieldDariGalatBaris(l, g) === "harga") || undefined} className="fin-poed-input fin-poed-input-rp" /></div>
       </div>
       <div className="fin-poed-sel fin-poed-c-subtotal">
         <span className="fin-poed-label-kecil">Subtotal</span>
@@ -200,14 +195,12 @@ function BarisItem({ l, i, ctx }) {
         <button type="button" className="fin-poed-hapus" onClick={() => hapus(i)} disabled={jumlahBaris === 1} aria-label={`Hapus baris ${no}`}><Trash2 size={17} aria-hidden="true" /><span className="fin-poed-hapus-teks">Hapus baris</span></button>
       </div>
 
-      <div className="fin-poed-ringkas">
-        <Pembuka buka={terbuka} onToggle={() => toggle(l._k)} id={idRinci} className="fin-poed-rinci-tombol" data-testid={`rinci-${no}`}>Rincian baris</Pembuka>
-        {setara && <span className="fin-chip fin-chip-biru" data-testid="setara">{setara}</span>}
-        {adaPendamping(l.pendamping) && <span className="fin-chip fin-chip-neutral">Pendamping ada</span>}
-        {st && !masalahHarga[no] && <span className={cn("fin-chip", `fin-chip-${{ accent: "biru", orange: "orange", green: "green", red: "red", neutral: "neutral" }[st.varian] || "neutral"}`)}>Harga: {st.teks}</span>}
-        {adaMasalah && <span className="fin-chip fin-chip-red">Perlu diselesaikan</span>}
-        {g && (l.materialId || l.materialBaru) && <span className="fin-poed-galat-baris" role="status">{g}</span>}
-      </div>
+      {(adaMasalah || (g && (sudahBahan || percobaan))) && (
+        <div className="fin-poed-ringkas fin-poed-ringkas-galat">
+          {adaMasalah && <span className="fin-chip fin-chip-red">Perlu diselesaikan</span>}
+          {g && (sudahBahan || percobaan) && <span className="fin-poed-galat-baris" role="status" data-testid="galat-baris">{g}</span>}
+        </div>
+      )}
 
       {terbuka && (
         <div id={idRinci} className="fin-poed-rinci">
@@ -215,9 +208,7 @@ function BarisItem({ l, i, ctx }) {
             <div className="fin-poed-blok">
               <p className="fin-poed-blok-judul">Satuan pembelian</p>
               <div className="fin-poed-konversi">
-                <Pilihan value={l.satuanBeli || m.unit} onChange={(v) => set(i, v === m.unit ? { satuanBeli: "", faktorKonversi: "" } : { satuanBeli: v })} aria-label={`Satuan pembelian baris ${no}`}>
-                  {SATUAN_OPSI.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
-                </Pilihan>
+                <SelectPO value={l.satuanBeli || m.unit} onChange={(v) => set(i, v === m.unit ? { satuanBeli: "", faktorKonversi: "" } : { satuanBeli: v })} ariaLabel={`Satuan pembelian baris ${no}`} opsi={SATUAN_OPSI.map(([k, t]) => ({ nilai: k, label: t }))} />
                 {kv && (
                   <label className="fin-poed-faktor">
                     <span>1 {labelSatuan(kv.satuanBeli)} =</span>
@@ -237,10 +228,7 @@ function BarisItem({ l, i, ctx }) {
                   <Input value={l.pendamping?.satuan ?? ""} onChange={(e) => set(i, { pendamping: { ...l.pendamping, satuan: e.target.value } })} aria-label={`Satuan pendamping baris ${no}`} />
                 </Field>
                 <Field label="Mode">
-                  <Pilihan value={l.pendamping?.mode ?? ""} onChange={(v) => set(i, { pendamping: { ...l.pendamping, mode: v } })} aria-label={`Mode pendamping baris ${no}`}>
-                    <option value="">— pilih mode —</option>
-                    {MODE_PENDAMPING_OPSI.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                  </Pilihan>
+                  <SelectPO value={l.pendamping?.mode ?? ""} onChange={(v) => set(i, { pendamping: { ...l.pendamping, mode: v } })} ariaLabel={`Mode pendamping baris ${no}`} opsi={[{ nilai: "", label: "— pilih mode —" }, ...MODE_PENDAMPING_OPSI.map((o) => ({ nilai: o.key, label: o.label }))]} />
                 </Field>
                 {l.pendamping?.mode === "TETAP" && (
                   <Field label={`Rasio (1 ${satuanBeli ? labelSatuan(satuanBeli) : "satuan"} = …)`}>
@@ -283,8 +271,10 @@ function StripDampakHarga({ dampak, pra, petaHarga }) {
     <div data-testid="dampak-harga-ringkas" role="status" className={cn("fin-poed-harga", dampak.menahan && "masalah")}>
       <div className="fin-poed-harga-baris">
         <IkHarga size={20} className="fin-poed-harga-ikon" />
-        <p className="fin-poed-harga-teks fin-poed-desk"><b>Harga Berlaku otomatis.</b> {pra?.aktif === false ? dampak.teks : (dampak.teks ? `${DAMPAK_HARGA_SINGKAT} ${dampak.teks}` : DAMPAK_HARGA_SINGKAT)}</p>
-        <p className="fin-poed-harga-teks fin-poed-hp"><b>Harga Berlaku otomatis.</b> {dampak.teks || "Simpan (termasuk draf) memperbarui Harga Berlaku bahan yang berubah."} Dipakai untuk HPP, bukan jurnal. Batal PO tidak mengembalikannya.</p>
+        <p className="fin-poed-harga-teks" data-testid="harga-kalimat">
+          <b>{KALIMAT_HARGA_SIMPAN}</b>
+          <span className="fin-poed-harga-sub" data-testid="harga-sub">{dampak.teks && <span data-testid="harga-jumlah">{dampak.teks} </span>}{pra?.aktif !== false && <span className="fin-poed-harga-hpp">{KETERANGAN_HARGA_SINGKAT}</span>}</span>
+        </p>
         <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-poed-harga-tombol" aria-label="Lihat dampak"><span className="fin-poed-desk">Lihat dampak</span><span className="fin-poed-hp">Dampak</span></Pembuka>
       </div>
       {buka && (
@@ -297,6 +287,23 @@ function StripDampakHarga({ dampak, pra, petaHarga }) {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Pilihan bantuan alur: TIDAK menyimpan nomor faktur di PO, tidak membuat faktur/jurnal, dan tidak menyetujui PO. Hanya menjelaskan langkah lanjutan. */
+function FakturDiterima({ nilai, onChange, status, izin }) {
+  const id = useId();
+  const langkah = langkahFakturSetelahSimpan(status, izin);
+  return (
+    <div className="fin-poed-faktur" data-testid="faktur-diterima">
+      <label className="fin-poed-faktur-pilih" htmlFor={id}>
+        <input id={id} type="checkbox" checked={nilai} onChange={(e) => onChange(e.target.checked)} />
+        <span><b>Sudah menerima faktur supplier?</b><span className="fin-poed-faktur-ket">Pencatatan faktur tetap langkah terpisah, sesuai status PO.</span></span>
+      </label>
+      {nilai && (
+        <p className="fin-poed-faktur-isi" role="note" data-testid="faktur-diterima-langkah">{langkah.teks} Nomor faktur tidak diisi di PO atau Catatan: nomor dan nilainya dicatat di formulir Catat faktur supplier.</p>
       )}
     </div>
   );
@@ -320,6 +327,12 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
   const [buka, setBuka] = useState(() => new Set());
   const [fokusBaru, setFokusBaru] = useState(null);
   const [tentang, setTentang] = useState(false);
+  const [percobaan, setPercobaan] = useState(false); // sudah mencoba menyimpan → galat formulir ditampilkan
+  const [disentuh, setDisentuh] = useState({}); // field yang sudah dikunjungi (blur) → galatnya boleh tampil
+  const [fakturDiterima, setFakturDiterima] = useState(false); // bantuan alur saja; TIDAK ikut payload dan tidak membuat faktur
+  const idForm = useId();
+  const idSupplier = `${idForm}-sup`, idTglPO = `${idForm}-tpo`, idTglKirim = `${idForm}-tdt`;
+  const sentuh = (k) => setDisentuh((d) => (d[k] ? d : { ...d, [k]: true }));
   const barisRef = useRef({});
   const idTentang = useId();
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -358,12 +371,34 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
   const unitMap = useMemo(() => new Map(materials.map((m) => [m.id, m.unit])), [materials]);
   const dipakai = useMemo(() => { const p = new Map(); f.lines.forEach((l, i) => { if (l.materialId && !p.has(l.materialId)) p.set(l.materialId, i + 1); }); return p; }, [f.lines]);
   const galatForm = galatFormulir(f, unitMap) || galatTermin(termin, { tanpaTanggal: true });
+  const masalahForm = cariFieldBermasalah(f, unitMap);
+  const galatSupplier = (percobaan || disentuh.supplier) && !f.supplierId ? "Pilih supplier" : "";
+  const galatTglPO = (percobaan || disentuh.orderDate) && !f.orderDate ? "Isi tanggal PO" : "";
+  const galatTglKirim = f.expectedDate && f.orderDate && f.expectedDate < f.orderDate ? "Perkiraan datang tidak boleh sebelum tanggal PO" : "";
   const total = totalIsian(f.lines);
   const namaSupplier = suppliers.find((s) => s.id === f.supplierId)?.name || po?.supplier?.name || "";
   const jumlahBaru = daftarBarangBaru(f.lines).length;
 
+  function fokusKe(m) {
+    if (!m) return;
+    setTimeout(() => {
+      if (m.kunci === "supplier") document.getElementById(idSupplier)?.focus();
+      else if (m.kunci === "orderDate") document.getElementById(idTglPO)?.focus();
+      else if (m.kunci === "expectedDate") document.getElementById(idTglKirim)?.focus();
+      else {
+        const l = f.lines[(m.baris || 1) - 1]; if (!l) return;
+        if (m.field === "rinci") setBuka((x) => new Set(x).add(l._k));
+        setTimeout(() => {
+          const el = barisRef.current[m.baris]; el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+          const t = m.field === "qty" ? el?.querySelector(`#qty-${l._k}`) : m.field === "harga" ? el?.querySelector(`#hrg-${l._k}`) : m.field === "rinci" ? el?.querySelector(".fin-poed-rinci input, .fin-poed-rinci [role=combobox]") : el?.querySelector("[role=combobox], .fin-poed-ganti");
+          t?.focus?.();
+        }, 60);
+      }
+    }, 30);
+  }
   async function simpan() {
     setGalat(""); setMasalah({}); setMasalahHarga({});
+    if (galatForm) { setPercobaan(true); fokusKe(masalahForm); return; }
     try {
       const body = bodyDariForm({ ...f, termin });
       // Periksa SEMUA barang baru sekaligus (urutan sama dengan penyimpanan) supaya masalah tampil di baris terkait dengan aksi penyelesaian — bukan pesan galat di bawah.
@@ -376,7 +411,7 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
         if (nomor.length > 0) { setMasalah(ms); setGalat(`${nomor.length} baris perlu diselesaikan dulu (baris ${nomor.join(", ")}) — lihat tanda dan tombol pada baris tersebut. PO belum disimpan.`); keBaris(nomor[0]); return; }
       }
       const hasil = mengubah ? await api.updatePurchaseOrder(po.id, body) : await api.createPurchaseOrder(body, `po-${kunci}`);
-      await onSaved(hasil.id, ringkasHasilSimpan(hasil.hargaDariPO));
+      await onSaved(hasil.id, ringkasHasilSimpan(hasil.hargaDariPO), { fakturDiterima, status: hasil.status || "DRAFT" });
     } catch (e) {
       if (e?.data?.hargaDariPO && Number.isInteger(e.data.baris)) { setMasalahHarga({ [e.data.baris]: e.message }); setGalat(`Baris ${e.data.baris} perlu diperbaiki dulu — PO belum disimpan dan Harga Berlaku tidak berubah.`); keBaris(e.data.baris); return; }
       const ms = masalahDariGalat(e);
@@ -385,7 +420,7 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
     }
   }
 
-  const ctx = { bahan, materials, petaHarga, masalah, masalahHarga, set: setBaris, hapus: hapusBaris, barisRef, bolehBuatSku, jumlahBaris: f.lines.length, dipakai, po, setBarangBaru, fokusBaru, buka, toggle };
+  const ctx = { bahan, materials, petaHarga, masalah, masalahHarga, set: setBaris, hapus: hapusBaris, barisRef, bolehBuatSku, jumlahBaris: f.lines.length, dipakai, po, setBarangBaru, fokusBaru, buka, toggle, percobaan };
 
   return (
     <Modal
@@ -395,14 +430,14 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
       className="fin-po-modal fin-po-modal-editor w-[1180px] max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
       footer={
         <div className="fin-poed-kaki">
-          {(galat || (galatForm && f.supplierId)) && <p role="alert" data-testid="galat-po" className="fin-poed-galat"><AlertCircle size={18} aria-hidden="true" /><span>{galat || galatForm}</span></p>}
+          {(galat || (percobaan && galatForm)) && <p role="alert" data-testid="galat-po" className="fin-poed-galat"><AlertCircle size={18} aria-hidden="true" /><span>{galat || galatForm}</span></p>}
           {jumlahBaru > 0 && <p data-testid="info-barang-baru" className="fin-poed-info-baru">{jumlahBaru} barang baru akan dibuat di master material saat draf ini disimpan.</p>}
           <StripDampakHarga dampak={dampak} pra={pra} petaHarga={petaHarga} />
           <div className="fin-poed-kaki-aksi">
             <p className="fin-poed-total"><span>Total PO</span><strong aria-label={`Total PO ${formatUang(total)}`}>{formatUang(total)}</strong></p>
             <div className="fin-poed-tombol">
               <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-              <TombolAksi disabled={!!galatForm || dampak.menahan} onClick={simpan}>{mengubah ? "Simpan perubahan" : "Simpan draf"}</TombolAksi>
+              <TombolAksi disabled={dampak.menahan} aria-disabled={!!galatForm || dampak.menahan || undefined} data-terkunci={galatForm ? "1" : undefined} onClick={simpan}>{mengubah ? "Simpan perubahan" : "Simpan draf"}</TombolAksi>
             </div>
           </div>
         </div>
@@ -410,19 +445,21 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
     >
       <div className="fin-poed" aria-busy={memuatMaster ? "true" : "false"}>
         <div className="fin-poed-kepala">
-          <Field label="Supplier" required className="fin-poed-f-supplier">
-            <Pilihan value={f.supplierId} onChange={(v) => set("supplierId", v)} aria-label="Supplier" title={namaSupplier || undefined}>
-              <option value="">{memuatMaster ? "Memuat supplier…" : "— pilih supplier —"}</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              {mengubah && !suppliers.some((s) => s.id === f.supplierId) && <option value={f.supplierId}>{po.supplier.name}</option>}
-            </Pilihan>
+          <Field label="Supplier" required htmlFor={idSupplier} error={galatSupplier} className="fin-poed-f-supplier">
+            <PemilihSupplier
+              id={idSupplier} suppliers={suppliers} value={f.supplierId} namaCadangan={po?.supplier?.name} memuat={memuatMaster} invalid={!!galatSupplier}
+              onPilih={(v) => { if (v !== f.supplierId) setTermin(TERMIN_AWAL); set("supplierId", v); sentuh("supplier"); }} onBlurLuar={() => sentuh("supplier")}
+            />
           </Field>
-          <Field label="Tanggal PO" required><Input type="date" value={f.orderDate} onChange={(e) => set("orderDate", e.target.value)} /></Field>
-          <Field label="Perkiraan datang" hint="Boleh dikosongkan."><Input type="date" min={f.orderDate} value={f.expectedDate} onChange={(e) => set("expectedDate", e.target.value)} /></Field>
+          <Field label="Tanggal PO" required htmlFor={idTglPO} error={galatTglPO} className="fin-poed-f-tgl">
+            <TanggalPO id={idTglPO} value={f.orderDate} onChange={(v) => { set("orderDate", v); sentuh("orderDate"); }} invalid={!!galatTglPO} ariaLabel="Tanggal PO" />
+          </Field>
+          <Field label="Perkiraan datang" htmlFor={idTglKirim} hint={galatTglKirim ? undefined : "Boleh dikosongkan."} error={galatTglKirim} className="fin-poed-f-tgl">
+            <TanggalPO id={idTglKirim} value={f.expectedDate} onChange={(v) => set("expectedDate", v)} bolehKosong min={f.orderDate} invalid={!!galatTglKirim} placeholder="Pilih tanggal" ariaLabel="Perkiraan datang" />
+          </Field>
           <Field label="Catatan" className="fin-poed-f-catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Contoh: kirim ke Gudang Utama sebelum Jumat" /></Field>
-          <div className="fin-poed-f-termin"><TerminFaktur mode="po" supplierId={f.supplierId} tanggalFaktur={f.orderDate} value={termin} onChange={setTermin} /></div>
+          <div className="fin-poed-f-termin"><TerminPO supplierId={f.supplierId} tanggalFaktur={f.orderDate} value={termin} onChange={setTermin} /></div>
         </div>
-
         <section className="fin-poed-item" aria-label="Item bahan">
           <div className="fin-poed-item-kepala">
             <h3>Item bahan</h3>
@@ -436,6 +473,8 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
           {!bolehBuatSku && f.lines.some((l) => !l.materialId && !l.materialBaru) && <p className="fin-poed-petunjuk" data-testid="petunjuk-barang-baru">Barangnya belum ada di master material? Minta Admin Finance membuat barang baru dari PO.</p>}
           {!memuatMaster && materials.length === 0 && <p className="fin-poed-petunjuk">Belum ada bahan aktif di katalog — {bolehBuatSku ? "gunakan “Buat barang baru” pada baris di atas." : "minta Admin Finance membuat barang baru, atau tambahkan lewat Stock & Material di Gudang."}</p>}
         </section>
+
+        <FakturDiterima nilai={fakturDiterima} onChange={setFakturDiterima} status={mengubah ? po.status : "DRAFT"} izin={izin} />
 
         <div className="fin-poed-tentang">
           <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id={idTentang} className="fin-pill fin-pill-info">Tentang persetujuan dan penerimaan</Pembuka>

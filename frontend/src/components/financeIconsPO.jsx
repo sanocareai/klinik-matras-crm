@@ -65,3 +65,20 @@ export const IkKedatangan = (p) => (
     <circle cx="17.4" cy="17.6" r="2" />
   </Ikon>
 );
+
+/** Kalender: lembar berlatar 35% dengan penanda tanggal solid. */
+export const IkKalender = (p) => (
+  <Ikon {...p}>
+    <rect style={S} x="3.4" y="5" width="17.2" height="15.6" rx="3" />
+    <path d="M7.4 2.8a1 1 0 0 1 1 1V6a1 1 0 0 1-2 0V3.8a1 1 0 0 1 1-1zM16.6 2.8a1 1 0 0 1 1 1V6a1 1 0 0 1-2 0V3.8a1 1 0 0 1 1-1z" />
+    <rect x="7.2" y="12" width="3.4" height="3.2" rx="0.9" />
+  </Ikon>
+);
+
+/** Jam termin pembayaran: wajah jam 35% dengan jarum solid. */
+export const IkTermin = (p) => (
+  <Ikon {...p}>
+    <circle style={S} cx="12" cy="12" r="9.2" />
+    <path {...garis} strokeWidth="2.1" d="M12 7v5.2l3.3 2" />
+  </Ikon>
+);

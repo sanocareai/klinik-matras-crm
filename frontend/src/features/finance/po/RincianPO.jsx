@@ -21,6 +21,7 @@ import { ChipStatusPO, BarPenerimaan } from "./DaftarPO.jsx";
 import { BagianFakturSupplier, DialogNomorFaktur, PeringatanDuplikatNomor, useTagihanSupplier } from "./FakturSupplierPO.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiRincian, statusTampil, ringkasPenerimaan, angkaBaris, langkahBerikut, keteranganTermin, nomorSupplierBermakna, TEKS_NOMOR_BELUM_DIISI } from "./poTampilan.js";
+import { langkahFakturSetelahSimpan } from "./poKontrol.js";
 import PanelKedatangan, { LegendaProgres } from "@/features/kedatangan/PanelKedatangan.jsx";
 import {
   LABEL_STATUS_PENERIMAAN, teksJumlah, kalimatEvent, labelSatuan, nilaiBelumDiterima,
@@ -51,7 +52,7 @@ function TombolIzin({ a, children, className, ...rest }) {
   );
 }
 
-export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah }) {
+export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah, petunjukFaktur = false, onTutupPetunjuk }) {
   const [po, setPo] = useState(null);
   const [galat, setGalat] = useState("");
   const [gagalMuat, setGagalMuat] = useState(false);
@@ -136,6 +137,7 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah }) {
             onBayarUangMuka={() => setBayarUm(true)}
             onUbahFaktur={(billId) => setFaktur({ editBillId: billId })}
             onCatatFaktur={() => setFaktur({})}
+            petunjukFaktur={petunjukFaktur} onTutupPetunjuk={onTutupPetunjuk}
             onEditNomor={setNomorUntuk}
             onRiwayatFaktur={setRiwayatUntuk}
             onSetujuiFaktur={setSetujuiFaktur}
@@ -194,6 +196,33 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah }) {
         <ModalRevisi po={po} galat={galat} onClose={() => setDialog(null)} onSubmit={(d) => jalankan(() => api.revisiJumlahPurchaseOrder(po.id, d))} />
       )}
     </>
+  );
+}
+
+/** Uraian panjang / penjelasan berulang: tertutup secara bawaan, dibuka dengan tombol + chevron yang konsisten. */
+function Uraian({ judul, children, testid }) {
+  const id = useId();
+  const [buka, setBuka] = useState(false);
+  return (
+    <div className="fin-pod-uraian" data-testid={testid}>
+      <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-pod-uraian-tombol">{judul}</Pembuka>
+      {buka && <div id={id} className="fin-pod-uraian-isi">{children}</div>}
+    </div>
+  );
+}
+
+/** Langkah lanjutan setelah editor ditandai "Sudah menerima faktur supplier?". Hanya petunjuk: tidak menyetujui PO dan tidak membuat faktur. */
+function PetunjukFaktur({ po, izin, onCatat, onTutup }) {
+  const langkah = langkahFakturSetelahSimpan(po.status, izin);
+  return (
+    <div className="fin-pod-petunjuk-faktur" role="note" data-testid="petunjuk-faktur">
+      <span className="fin-pod-petunjuk-ikon" aria-hidden="true"><FileText size={20} /></span>
+      <div className="fin-pod-petunjuk-isi">
+        <p><b>Supplier sudah memberi faktur?</b> {langkah.teks}</p>
+        {langkah.siap && <button type="button" className="fin-tombol fin-pod-petunjuk-aksi" onClick={onCatat} data-testid="petunjuk-catat-faktur"><FileText size={15} aria-hidden="true" /><span>Catat faktur supplier</span></button>}
+      </div>
+      <button type="button" className="fin-tombol fin-pod-petunjuk-tutup" onClick={onTutup} aria-label="Tutup petunjuk faktur"><span>Tutup</span></button>
+    </div>
   );
 }
 
@@ -297,7 +326,7 @@ function RincianJumlah({ id, l, a, kartu = false }) {
   );
 }
 
-function IsiDetail({ po, segar, izin, onBayarUangMuka, onCatatFaktur, onEditNomor, onRiwayatFaktur, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
+function IsiDetail({ po, segar, izin, petunjukFaktur, onTutupPetunjuk, onBayarUangMuka, onCatatFaktur, onEditNomor, onRiwayatFaktur, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
   const barisLaku = po.status !== "DRAFT";
   const st = statusTampil(po.status);
   const ring = ringkasPenerimaan(po);
@@ -317,17 +346,19 @@ function IsiDetail({ po, segar, izin, onBayarUangMuka, onCatatFaktur, onEditNomo
       </section>
 
       <div className="fin-pod-status">
-        <p className="fin-pod-status-arti"><b>{st.label}.</b> {st.arti} {langkahBerikut(po)}</p>
+        <p className="fin-pod-status-arti"><b>{st.label}.</b> {langkahBerikut(po)}</p>
+        <Uraian judul="Arti status ini" testid="uraian-arti-status"><p className="fin-pod-ket">{st.arti}</p></Uraian>
         <p className="fin-pod-meta">Dibuat oleh {po.createdBy?.name || "—"}{po.approvedBy ? ` · disetujui ${po.approvedBy.name} (${tglJam(po.approvedAt)})` : ""}</p>
         {po.notes && <p className="fin-pod-catatan">Catatan: {po.notes}</p>}
       </div>
       {po.status === "DIBATALKAN" && <p className="fin-pod-batal" role="note">Dibatalkan {tglJam(po.cancelledAt)} — {po.cancelReason}</p>}
       <PeringatanUangMukaPO po={po} />
+      {petunjukFaktur && fakturPO.length === 0 && <PetunjukFaktur po={po} izin={izin} onCatat={onCatatFaktur} onTutup={onTutupPetunjuk} />}
       {po.status === "DRAFT" && <p className="fin-pod-draf" data-testid="draf-belum-bisa-dibayar">PO masih draf — setujui PO dulu. Uang muka baru bisa dibayar setelah PO disetujui; tidak perlu menunggu barang datang, Simpan ke Stok, atau faktur supplier.</p>}
 
       {po.status !== "DRAFT" && (
         <BagianPO judul="Progres barang, faktur, utang, dan pembayaran" Ikon={IkAlur} id="pod-empat">
-          <p className="fin-pod-ket">Status pesanan ada di atas. Barang, faktur, utang, dan pembayaran adalah empat hal berbeda: PO yang selesai masuk stok tidak berarti fakturnya sudah masuk atau sudah dibayar.</p>
+          <p className="fin-pod-ket">Barang, faktur, utang, dan pembayaran adalah empat hal berbeda: PO yang selesai masuk stok tidak berarti fakturnya sudah masuk atau sudah dibayar.</p>
           <StatusEmpatPO po={po} onBayarUangMuka={onBayarUangMuka} />
           <RincianPerhitunganPO po={po} />
         </BagianPO>
@@ -338,8 +369,10 @@ function IsiDetail({ po, segar, izin, onBayarUangMuka, onCatatFaktur, onEditNomo
         <div className="fin-pod-item-kaki" data-testid="ringkas-nilai-lama">
           {po.totalDiretur > 0 && <span data-testid="nilai-diretur">Nilai diretur <strong className="tabular-nums">−{formatUang(po.totalDiretur)}</strong> · diterima bersih dari PO <strong className="tabular-nums">{formatUang(po.totalDiterimaBersih)}</strong></span>}
         </div>
-        {po.progresDefinisi && <div className="fin-pod-legenda"><LegendaProgres definisi={po.progresDefinisi} /></div>}
-        <p className="fin-pod-ket">“Sudah ditagih” dihitung dari penerimaan yang tagihan supplier-nya sudah disetujui. Tagihan menempel ke satu penerimaan, bukan ke baris.</p>
+        <Uraian judul="Cara membaca kolom item" testid="uraian-kolom-item">
+          {po.progresDefinisi && <div className="fin-pod-legenda"><LegendaProgres definisi={po.progresDefinisi} /></div>}
+          <p className="fin-pod-ket">“Sudah ditagih” dihitung dari penerimaan yang tagihan supplier-nya sudah disetujui. Tagihan menempel ke satu penerimaan, bukan ke baris.</p>
+        </Uraian>
       </BagianPO>
 
       {po.kedatangan && po.status !== "DRAFT" && (

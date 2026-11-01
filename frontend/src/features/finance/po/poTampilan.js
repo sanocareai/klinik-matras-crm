@@ -141,12 +141,14 @@ export const CATATAN_TANPA_PO = "Penerimaan tanpa PO tetap bisa dibuat Gudang, t
 
 /** Dampak Harga Berlaku — kalimat tetap (perilaku aktual hargaDariPO.js), dipakai di dekat tombol simpan. */
 export const DAMPAK_HARGA_SINGKAT = "Saat PO disimpan (termasuk sebagai draf), harga bahan yang berubah langsung menjadi Harga Berlaku untuk HPP operasional, bukan jurnal atau nilai persediaan Finance. Membatalkan PO tidak mengembalikan harga.";
+export const KALIMAT_HARGA_SIMPAN = "Menyimpan draf dapat memperbarui Harga Berlaku bahan.";
+export const KETERANGAN_HARGA_SINGKAT = "Untuk HPP operasional. Pembatalan PO tidak otomatis mengembalikan harga.";
 export const DAMPAK_HARGA_RINCI = Object.freeze([
-  "Berlaku sejak saat PO berhasil disimpan, tanpa tanggal mundur. Isian yang belum disimpan tidak mengubah harga; bila penyimpanan gagal, tidak ada harga yang berubah.",
-  "Hanya baris yang harga, satuan, atau faktor konversinya berubah yang menulis harga. Mengubah jumlah saja, atau menyimpan ulang isi yang sama, tidak menulis harga.",
   "Dicatat per satuan stok dengan sumber nomor PO, baris, revisi, dan pelaku. Dipakai sebagai HPP operasional (Biaya Bahan per Unit, pemakaian bahan Gudang/Produksi).",
   "Tidak menambah stok, tidak mengubah nilai persediaan/jurnal Finance, dan tidak menghitung ulang pemakaian lama.",
   "Menyetujui atau membatalkan PO tidak menulis dan tidak mengembalikan harga. Mengubahnya kembali dilakukan manual di Stok → bahan → Ubah harga.",
+  "Berlaku sejak saat PO berhasil disimpan, tanpa tanggal mundur. Isian yang belum disimpan tidak mengubah harga; bila penyimpanan gagal, tidak ada harga yang berubah.",
+  "Hanya baris yang harga, satuan, atau faktor konversinya berubah yang menulis harga. Mengubah jumlah saja, atau menyimpan ulang isi yang sama, tidak menulis harga.",
 ]);
 
 /** Pesan satu kalimat tentang apa yang menunggu di Gudang, tergantung status (untuk Rincian). */
