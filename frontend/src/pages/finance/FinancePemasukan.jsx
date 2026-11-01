@@ -381,7 +381,7 @@ export default function FinancePemasukan() {
   return (
     <HalamanFinance
       className="fin-halaman" title={judul} subtitle={subjudul}
-      actions={<div className="fin-pm-aksi"><PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />{opsi?.aksiCatat?.boleh && <Button size="sm" onClick={() => nav("/finance/other-income")}>Catat pemasukan lain</Button>}</div>}
+      actions={<div className="fin-pm-aksi"><PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />{opsi?.aksiCatat?.boleh && <Button size="sm" onClick={() => nav("/finance/cash?tab=pemasukan")}>Catat pemasukan lain</Button>}</div>}
       loading={false} error={error} onRetry={() => window.location.reload()}
     >
       <div className="fin-ring fin-pm" data-testid="halaman-pemasukan" data-tab={tab}>
@@ -427,7 +427,7 @@ export default function FinancePemasukan() {
               {tautan?.jurnal && <Button size="sm" variant="outline" onClick={() => nav("/finance/journal")}>Jurnal {tautan.jurnal.nomor}</Button>}
               {tautan?.invoice && <Button size="sm" variant="outline" onClick={() => nav("/finance/invoices")}>Invoice {tautan.invoice.nomor}</Button>}
               {tautan?.pembayaran && <Button size="sm" variant="outline" onClick={() => nav("/finance/payments")}>Pembayaran</Button>}
-              {tautan?.dokumen?.modul === "pemasukan" && <Button size="sm" variant="outline" onClick={() => nav("/finance/other-income")}>Pemasukan Lain</Button>}
+              {tautan?.dokumen?.modul === "pemasukan" && <Button size="sm" variant="outline" onClick={() => nav("/finance/cash?tab=pemasukan")}>Pemasukan Lain</Button>}
             </div>
           </div>
         </Modal>
