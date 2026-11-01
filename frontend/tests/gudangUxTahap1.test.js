@@ -189,7 +189,7 @@ test("Pemulihan dokumen: Batalkan catatan tiba / Pulihkan / Buat penerimaan baru
 test("Panel PO ringkas (HP): hanya Gudang; Finance tetap tampilan penuh; pengiriman + aksi utama di atas daftar item; identitas GR + pesan/tiba/sisa terbaca", () => {
   const panel = baca("features/kedatangan/PanelKedatangan.jsx");
   assert.match(panel, /ringkas = false/, "default = perilaku lama (Finance)");
-  assert.doesNotMatch(baca("pages/finance/FinancePurchaseOrders.jsx").match(/<PanelKedatangan[\s\S]*?\/>/)[0], /ringkas/, "Finance tidak memakai mode ringkas");
+  assert.doesNotMatch(baca("features/finance/po/RincianPO.jsx").match(/<PanelKedatangan[\s\S]*?\/>/)[0], /ringkas/, "Finance tidak memakai mode ringkas");
   assert.match(baca("features/kedatangan/DetailPOFokus.jsx"), /<PanelKedatangan po=\{po\} workspace="GUDANG" ringkas/);
   assert.match(panel, /\{!ringkas && tabel\}/); assert.match(panel, /\{ringkas && \([\s\S]{0,200}item-po-ringkas/);
   assert.ok(panel.indexOf("{!ringkas && tabel}") < panel.indexOf("data-testid=\"item-po-ringkas\""), "mode ringkas menaruh item SESUDAH pengiriman");

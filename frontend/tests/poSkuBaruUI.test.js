@@ -9,6 +9,7 @@ import {
   teksSetara, qtyStok, infoKonversi, daftarBarangBaru, kalimatEvent, labelSatuan, PESAN_NON_STOK, JENIS_SKU_OPSI,
 } from "../src/features/finance/purchaseOrderLogic.js";
 import { adalahAdminKeuangan } from "../src/features/finance/matriksAksi.js";
+import { sumberPO } from "./_poSumber.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
@@ -112,8 +113,8 @@ test("riwayat PO menyebut barang baru yang dibuat", () => {
 test("hanya Admin (ADMIN/OWNER) yang melihat tombol Buat Barang Baru; Finance biasa melihat petunjuk", () => {
   assert.equal(adalahAdminKeuangan({ roles: ["ADMIN"] }), true);
   assert.equal(adalahAdminKeuangan({ roles: ["FINANCE"] }), false);
-  const src = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  assert.match(src, /bolehBuatSku \? \([\s\S]{0,400}data-testid="tombol-barang-baru"/);
+  const src = sumberPO();
+  assert.match(src, /bolehBuatSku && \([\s\S]{0,400}data-testid="tombol-barang-baru"/);
   assert.match(src, /Minta Admin Finance membuat barang baru dari PO/);
   assert.match(src, /Barang baru — akan dibuat saat PO disimpan/);
   assert.match(src, /api\.cekDuplikatSku/);

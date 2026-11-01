@@ -9,6 +9,7 @@ import {
   ringkasProgres, nilaiBelumDiterima, aksiPO, kalimatEvent,
   FAKTUR_TERBUKA, formFakturAwal, formFakturDariEvaluasi, galatBarisFaktur, galatFaktur, subtotalFaktur, totalFaktur, petunjukBaris, bodyFaktur, statusFaktur,
 } from "../src/features/finance/purchaseOrderLogic.js";
+import { sumberPO } from "./_poSumber.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
@@ -86,7 +87,7 @@ test("pemasangan: rute, menu Finance, dan fungsi API Purchase Order terdaftar", 
   const reg = baca("../src/routes/pageRegistry.jsx");
   assert.match(reg, /const FinancePurchaseOrders = lazy\(\(\) => import\("\.\.\/pages\/finance\/FinancePurchaseOrders\.jsx"\)\)/);
   assert.match(reg, /path: "\/finance\/purchase-orders", render: \(\) => <FinancePurchaseOrders \/>/);
-  assert.match(baca("../src/lib/financeHubs.js"), /label: "Purchase Order", to: "\/finance\/purchase-orders"/); // menu Finance = hub
+  assert.match(baca("../src/lib/financeHubs.js"), /label: "Pesanan \(PO\)", to: "\/finance\/purchase-orders"/); // menu Finance = hub
   const api = baca("../src/api.js");
   for (const fn of ["getPurchaseOrders", "getPurchaseOrder", "createPurchaseOrder", "updatePurchaseOrder", "approvePurchaseOrder", "cancelPurchaseOrder", "revisiJumlahPurchaseOrder", "getGudangPurchaseOrders"]) {
     assert.match(api, new RegExp(`${fn}:`), fn);
@@ -96,14 +97,15 @@ test("pemasangan: rute, menu Finance, dan fungsi API Purchase Order terdaftar", 
 });
 
 test("halaman Finance: tidak ada tindakan stok/jurnal, dan menjelaskan bahwa PO tidak mengubah stok", () => {
-  const h = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  assert.match(h, /tidak mengubah stok dan tidak membuat jurnal/);
+  const h = sumberPO();
+  assert.match(h, /Menyimpan PO tidak menambah stok dan tidak membuat jurnal/);
+  assert.match(h, /Stok bertambah hanya setelah Gudang menyimpan barang ke stok/);
   assert.match(h, /Tanpa PO/);
   // Peringatan galat berada di footer dialog (selalu terlihat), bukan di badan yang bisa di-scroll.
-  const mulai = h.indexOf("footer={", h.indexOf("function ModalPO("));
+  const mulai = h.indexOf("footer={", h.indexOf("export default function EditorPO("));
   assert.match(h.slice(mulai, mulai + 400), /galat-po/);
   // Dialog formulir di-mount ulang per pembukaan (key) supaya isian lama tidak tertinggal.
-  assert.match(h, /<ModalPO\s+key=\{form\.kunci\}/);
+  assert.match(h, /<EditorPO\s+key=\{form\.kunci\}/);
   // Kunci idempotensi dipegang per sesi dialog.
   assert.match(h, /createPurchaseOrder\(body, `po-\$\{kunci\}`\)/);
 });
@@ -189,7 +191,7 @@ test("pemasangan Fase 2: API faktur, kolom pencocokan per baris, tinjauan harga,
   for (const fn of ["getPenagihanPurchaseOrder", "createFakturPurchaseOrder", "getFakturPurchaseOrder", "updateFakturPurchaseOrder"]) assert.match(api, new RegExp(fn + ":"), fn);
   assert.ok(api.includes("approveFinanceBill: (id, body = {}) =>"), "approve menerima body (catatan tinjauan harga)");
   assert.ok(api.includes('createFakturPurchaseOrder: (id, data, idempotencyKey = mutationKey("fak"))'), "kunci idempotensi faktur");
-  const h = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const h = sumberPO();
   for (const kolom of ["Dipesan", "Diterima baik", "Sudah ditagih", "Diajukan di faktur ini", "Harga PO", "Harga faktur", "Selisih"]) assert.match(h, new RegExp(kolom), kolom);
   assert.match(h, /data-testid="alasan-tertahan"/);
   assert.match(h, /data-testid="perlu-tinjauan"/);
@@ -201,7 +203,7 @@ test("pemasangan Fase 2: API faktur, kolom pencocokan per baris, tinjauan harga,
 });
 
 test("dialog persetujuan faktur beda harga menampilkan NOMINAL selisih total, arahnya, dan nilai faktur vs nilai menurut harga PO", () => {
-  const h = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const h = sumberPO();
   assert.match(h, /data-testid="selisih-total"/);
   assert.ok(h.includes("Selisih harga total:"));
   assert.ok(h.includes("LEBIH MAHAL dari PO") && h.includes("LEBIH MURAH dari PO"));
@@ -213,7 +215,7 @@ test("dialog persetujuan faktur beda harga menampilkan NOMINAL selisih total, ar
 test("detail PO: tombol Pratinjau PDF & Unduh PDF memanggil api.getPurchaseOrderPdf (rute finance, Bearer, nama berkas dari header); tidak memanggil rute Gudang", async () => {
   const fsx = await import("node:fs"); const pathx = await import("node:path"); const { fileURLToPath } = await import("node:url");
   const dirx = pathx.dirname(fileURLToPath(import.meta.url));
-  const halaman = fsx.readFileSync(pathx.join(dirx, "../src/pages/finance/FinancePurchaseOrders.jsx"), "utf8");
+  const halaman = sumberPO();
   const apiSrc = fsx.readFileSync(pathx.join(dirx, "../src/api.js"), "utf8");
   assert.match(halaman, /data-testid="po-pdf-lihat"/);
   assert.match(halaman, /data-testid="po-pdf-unduh"/);

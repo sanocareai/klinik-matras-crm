@@ -8,6 +8,7 @@ import {
   STATUS_AKAN_DATANG, TAB_AKAN_DATANG, jumlahTeks, formKedatanganAwal, galatKedatangan, kekuranganIsian, bodyKedatangan, formKoreksiAwal, bodyKoreksi, galatKoreksi,
   kalimatRiwayat, ringkasKuantitas, pendamping0, adaPendamping, galatPendamping, bodyPendamping, pendampingDariPO, teksPratinjauPendamping, teksPendampingAktual, hariIniISO,
 } from "../src/features/kedatangan/kedatanganLogic.js";
+import { sumberPO } from "./_poSumber.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
@@ -108,7 +109,7 @@ test("pemasangan: halaman Gudang tanpa harga, menu & rute, Finance memakai panel
   assert.match(baca("../src/routes/pageRegistry.jsx"), /"\/warehouse\/barang-akan-datang\/:id\?"/); // detail PO = jendela fokus berbasis rute
   assert.match(baca("../src/components/Layout.jsx"), /Barang Akan Datang/);
   assert.match(baca("../src/components/Topbar.jsx"), /Barang Akan Datang/);
-  const fin = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const fin = sumberPO();
   assert.match(fin, /<PanelKedatangan[\s\S]*workspace="FINANCE"/);
   assert.match(fin, /Jadwal jatuh tempo per penerimaan/); assert.match(fin, /Menunggu tanggal penerimaan/);
   assert.match(fin, /pendamping-po/);
@@ -123,8 +124,9 @@ test("progres: semua angka & definisi dari server — tidak ada label Sisa tanpa
   assert.doesNotMatch(panel, /<TH[^>]*>\s*Sisa\s*</, "tidak ada kolom Sisa polos");
   assert.doesNotMatch(panel, /dt className="text-ink3">Sisa</);
   assert.match(panel, /definisi=\{po\.progresDefinisi\}/); assert.match(panel, /LegendaProgres/); assert.match(panel, /title=\{d\.definisi\}/);
-  const fin = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  assert.match(fin, /l\.progres\.belumDatang/); assert.match(fin, /l\.progres\.masukStok/); assert.match(fin, /l\.progres\.belumMasukStok/);
+  const fin = sumberPO();
+  assert.match(fin, /const p = l\?\.progres \|\| \{\}/, "angka baris dibaca dari progres server");
+  assert.match(fin, /Number\(p\.belumDatang/); assert.match(fin, /Number\(p\.masukStok/); assert.match(fin, /Number\(p\.belumMasukStok/);
   assert.doesNotMatch(fin, /l\.belumDiterima|l\.diterimaBaik/, "Finance tidak lagi memakai kolom lama");
   assert.match(fin, /<LegendaProgres definisi=\{po\.progresDefinisi\}/);
   const logic = baca("../src/features/kedatangan/kedatanganLogic.js") + baca("../src/features/finance/purchaseOrderLogic.js");

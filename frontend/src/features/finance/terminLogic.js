@@ -94,11 +94,16 @@ export function bolehMencatatFinance(user) {
 }
 export const TERMIN_AWAL = { ganti: false, pilihan: "", dueDate: "", alasan: "" };
 
-/** Galat lokal ringan (server tetap penjaga): mengganti termin → alasan wajib; tanggal khusus → tanggal wajib. */
-export function galatTermin(t, { perluTanggal = false } = {}) {
+/**
+ * Galat lokal ringan (server tetap penjaga): mengganti termin → alasan wajib; tanggal khusus → tanggal wajib.
+ * `tanpaTanggal` = formulir PO: PO tidak punya tanggal jatuh tempo (server tentukanTerminPO hanya menerima terminJenis/terminHari/alasanTermin; tanggal diisi saat FAKTUR dicatat),
+ * jadi tanggal TIDAK diwajibkan dan tidak ditawarkan sebagai jalan keluar. Kewajiban alasan dan pemilihan termin tidak berubah. Formulir faktur memakai bawaan (false).
+ */
+export function galatTermin(t, { perluTanggal = false, tanpaTanggal = false } = {}) {
   if (t?.ganti) {
     if (!t.alasan?.trim() && !perluTanggal) return "Alasan mengganti termin wajib diisi.";
     const u = uraiPilihanTermin(t.pilihan);
+    if (tanpaTanggal) return u ? null : "Pilih termin baru.";
     if (!u && !t.dueDate) return "Pilih termin baru atau isi tanggal jatuh tempo.";
     if (u?.jenis === "TANGGAL_KHUSUS" && !t.dueDate) return "Isi tanggal jatuh tempo untuk termin tanggal khusus.";
   }

@@ -26,12 +26,16 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
   const set = (patch) => onChange({ ...value, ...patch });
   const perluTanggal = !!pr && pr.perluTanggal;
   const bolehGanti = admin || (mode === "faktur" && perluTanggal);
-  const lokal = galatTermin(value, { perluTanggal });
+  const lokal = galatTermin(value, { perluTanggal, tanpaTanggal: mode === "po" });
+  // Mode PO: PO tidak punya kolom tanggal jatuh tempo. Tanpa termin hari/tunai, tanggalnya diisi saat FAKTUR dicatat (bukan di 'Perkiraan datang').
+  const bantuanPO = mode === "po" && !!pr && (!pr.ada || pr.jenis === "TANGGAL_KHUSUS");
 
   return (
     <div className="space-y-2 rounded-lg bg-inset px-3 py-2.5" data-testid="termin-faktur">
       <p className="m-0 text-[12.5px] text-ink2" data-testid="termin-ringkas">
-        {galat ? <span className="text-red">{galat}</span> : !pr ? "Memuat termin…" : pr.ada
+        {galat ? <span className="text-red">{galat}</span> : !pr ? "Memuat termin…" : bantuanPO ? (pr.ada
+          ? <>Termin <strong className="text-ink">{pr.label}</strong> ({LABEL_SUMBER_TERMIN[pr.sumber] ?? pr.sumber}): tanggal jatuh tempo diisi saat <strong className="text-ink">faktur dicatat</strong>, bukan di PO. “Perkiraan datang” hanya perkiraan kedatangan barang, bukan jatuh tempo.</>
+          : <>Supplier ini belum punya termin. PO tidak memiliki tanggal jatuh tempo: tanggalnya diisi saat <strong className="text-ink">faktur dicatat</strong> (kolom Tanggal jatuh tempo di formulir faktur). “Perkiraan datang” hanya perkiraan kedatangan barang, bukan jatuh tempo.</>) : pr.ada
           ? pr.dasar === "TANGGAL_TIBA"
             ? <>Termin <strong className="text-ink">{pr.label}</strong> ({LABEL_SUMBER_TERMIN[pr.sumber] ?? pr.sumber}) — <strong className="text-ink">Menunggu tanggal penerimaan</strong>: termin berjalan dari tanggal barang tiba (per penerimaan), bukan dari tanggal PO atau faktur.</>
             : <>Termin <strong className="text-ink">{pr.label}</strong> ({LABEL_SUMBER_TERMIN[pr.sumber] ?? pr.sumber}){pr.dueDate ? <> — jatuh tempo <strong className="text-ink">{tanggalPendek(pr.dueDate)}</strong> (tanggal faktur + {pr.hari ?? 0} hari)</> : <> — isi tanggal jatuh tempo di bawah</>}</>
@@ -43,7 +47,7 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
         <>
           {!perluTanggal && (
             <label className="flex items-center gap-2 text-[12.5px] text-ink">
-              <input type="checkbox" checked={!!value.ganti} onChange={(e) => set({ ganti: e.target.checked })} /> Ganti termin / tanggal jatuh tempo (wajib alasan)
+              <input type="checkbox" checked={!!value.ganti} onChange={(e) => set({ ganti: e.target.checked })} /> {mode === "po" ? "Ganti termin (wajib alasan)" : "Ganti termin / tanggal jatuh tempo (wajib alasan)"}
             </label>
           )}
           {(value.ganti || perluTanggal) && (
@@ -53,6 +57,7 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
                   <Pilihan value={value.pilihan} onChange={(v) => set({ ganti: true, pilihan: v })} aria-label="Termin baru">
                     {PILIHAN_TERMIN.map((p) => <option key={p.nilai} value={p.nilai}>{p.label}</option>)}
                   </Pilihan>
+                  {mode === "po" && value.pilihan === "TANGGAL_KHUSUS" && <p className="m-0 mt-1 text-[11.5px] text-ink3" data-testid="catatan-tanggal-khusus-po">Tanggal khusus: tanggal jatuh tempo diisi saat faktur dicatat, bukan di PO.</p>}
                 </Field>
               ) : null}
               {mode === "faktur" && (

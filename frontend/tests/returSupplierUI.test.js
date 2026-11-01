@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   ALASAN_RETUR, STATUS_RETUR, STATUS_DEBIT_NOTE, TEKS_KEPUTUSAN, formReturAwal, bodyRetur, galatRetur, galatKeluar, kalimatDampakDebitNote, jumlahTeks, rupiahTeks,
 } from "../src/features/returSupplier/returLogic.js";
+import { sumberPO } from "./_poSumber.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
@@ -100,12 +101,11 @@ test("asal stok tidak pasti: peringatan server ditampilkan di formulir retur; pe
 });
 
 test("progres stok bruto · retur · bersih dipisah di Finance (tabel + kartu + total) dan Gudang (jejak penerimaan)", () => {
-  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  assert.match(po, /<TH numeric[^>]*>Diretur<\/TH><TH numeric[^>]*>Diterima bersih dari PO<\/TH>/);
+  const po = sumberPO();
+  assert.match(po, /<dt>Diretur<\/dt>/);
+  assert.match(po, /<dt>Diterima bersih dari PO<\/dt>/);
   assert.match(po, /data-testid="kolom-diretur"/);
   assert.match(po, /data-testid="kolom-diterima-bersih"/);
-  assert.match(po, /<dt className="text-ink3">Diretur<\/dt>/);
-  assert.match(po, /<dt className="text-ink3">Diterima bersih dari PO<\/dt>/);
   assert.match(po, /data-testid="nilai-diretur"/);
   const jejak = baca("../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx");
   assert.match(jejak, /data-testid="diretur-supplier"/);
@@ -123,23 +123,21 @@ test("pembatalan Debit Note: tombol nonaktif + alasan jelas untuk non-Admin Keua
 });
 
 test("label 'Diterima bersih dari PO' di semua layar; tidak ada klaim 'Stok bersih'; tooltip menegaskan bukan stok tersedia", () => {
-  const berkas = ["../src/pages/finance/FinancePurchaseOrders.jsx", "../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx", "../src/features/kedatangan/PanelKedatangan.jsx", "../src/features/returSupplier/ReturSupplierWorkspace.jsx", "../src/features/returSupplier/returLogic.js"];
+  const berkas = ["PO", "../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx", "../src/features/kedatangan/PanelKedatangan.jsx", "../src/features/returSupplier/ReturSupplierWorkspace.jsx", "../src/features/returSupplier/returLogic.js"];
   for (const f of berkas) {
-    const s = baca(f);
+    const s = f === "PO" ? sumberPO() : baca(f);
     assert.equal(/stok bersih|stokBersih|stok-bersih/i.test(s), false, `${f}: istilah 'stok bersih' tidak boleh ada (angka ini bukan stok tersedia)`);
   }
-  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const po = sumberPO();
   assert.match(po, /title="Masuk stok dikurangi diretur\. Bukan stok tersedia/);
   assert.match(baca("../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx"), /Bukan stok tersedia/);
   assert.match(po, /Nilai diretur[\s\S]{0,200}diterima bersih dari PO/);
 });
 
-test("tabel item PO Finance: kolom 'Nilai PO' tidak terpotong — Harga satuan dipindah ke sel Item (angka sama), 10 kolom", () => {
-  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  const kepala = po.match(/<THead><TR><TH>Item<\/TH>[\s\S]*?<\/TR><\/THead>/)[0];
-  assert.equal((kepala.match(/<TH[ >]/g) ?? []).length, 10, "10 kolom (tadinya 11)");
-  assert.match(kepala, /<TH numeric>Nilai PO<\/TH><\/TR>/, "Nilai PO tetap kolom terakhir");
-  assert.equal(/Harga satuan<\/TH>/.test(kepala), false);
+test("tabel item PO Finance: lima angka dibedakan (dipesan, sudah datang, masuk stok, belum masuk stok, nilai) — harga satuan di sel Item, angka Nilai PO tidak diubah", () => {
+  const po = sumberPO();
+  for (const k of ["Dipesan", "Sudah datang", "Masuk stok", "Belum masuk stok", "Nilai PO"]) assert.match(po, new RegExp(`role=\"columnheader\"[^>]*>${k}</span>`), k);
   assert.match(po, /data-testid="harga-satuan-item">Harga satuan <Uang value=\{l\.hargaSatuan\} \/>/);
-  assert.match(po, /<TD numeric><Uang value=\{l\.nilaiDipesan\} \/><\/TD>/, "angka Nilai PO tidak diubah");
+  assert.match(po, /<Uang value=\{l\.nilaiDipesan\} \/>/, "angka Nilai PO tidak diubah");
+  assert.ok(po.indexOf(">Sudah datang</span>") > 0 && po.indexOf(">Sudah datang</span>") < po.indexOf(">Masuk stok</span>"), "Sudah datang (fisik) dipisah dari Masuk stok");
 });

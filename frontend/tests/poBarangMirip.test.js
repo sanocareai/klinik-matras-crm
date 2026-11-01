@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { barisLainDariForm, barisBaruUntukCek, jenisMasalah, masalahDariCek, masalahDariGalat, teksPerbedaan } from "../src/features/finance/purchaseOrderLogic.js";
+import { sumberPO } from "./_poSumber.js";
 
 const src = (...p) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", ...p), "utf8").replace(/\r\n/g, "\n");
 const mb = (nama, o = {}) => ({ nama, kategori: "Busa", jenis: "BAHAN_PRODUKSI", satuanStok: "SHEET", satuanBeli: "SHEET", spesifikasi: "", ...o });
@@ -44,7 +45,7 @@ test("teksPerbedaan: perbedaan disorot 'label: baru ≠ ada'", () => {
 });
 
 test("pengawatan: panel hasil memisahkan Sudah ada / Perlu keputusan / Varian serupa (tanpa paksaan); aksi pada BARIS; kontrak kunci idempotensi po-${kunci} tetap", () => {
-  const p = src("pages", "finance", "FinancePurchaseOrders.jsx");
+  const p = sumberPO();
   for (const k of ['data-testid="duplikat-pasti"', 'data-testid="duplikat-mirip"', 'data-testid="varian-serupa"', 'data-testid="perbedaan"', 'data-testid="pakai-material"', 'data-testid="batalkan-baru"', "api.cekDuplikatSku({ supplierId, materialBaru: bodyMaterialBaru({ ...m, konfirmasiMirip: false }), barisLain })",
     "function PanelMasalahBaris", 'data-testid="masalah-baris"', 'data-testid="masalah-pakai"', 'data-testid="masalah-periksa"', 'data-testid="masalah-hapus"', "<PanelMasalahBaris", "api.cekDuplikatPO(", "masalahDariGalat(e)", "api.createPurchaseOrder(body, `po-${kunci}`)", "autoPeriksa", "barisLainDariForm(f.lines, barangBaru.baris)", "keBaris("]) assert.ok(p.includes(k), k);
   assert.match(p, /if \(!otomatis && \(r\.pasti \|\| \[\]\)\.length === 0 && \(r\.mirip \|\| \[\]\)\.length === 0 && \(r\.berbeda \|\| \[\]\)\.length === 0\) onSimpan\(m\)/, "hanya tanpa kandidat sama sekali yang langsung dipakai; varian berbeda ditampilkan dulu tanpa paksaan");
