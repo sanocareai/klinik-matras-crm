@@ -90,6 +90,8 @@ import "./styles/sanss-crm-pipeline.css";
 import "./styles/sanss-crm-order.css";
 // Ringkasan Keuangan Finance (Fase Ringkasan Finance, 31 Okt 2026) — gaya khusus .fin-halaman/.fin-ring; kerangka memakai .crm-skin yang kini juga dipasang untuk Finance.
 import "./styles/sanss-finance.css";
+// Pengeluaran & Pengajuan Biaya Divisi (1 Nov 2026) — gaya khusus .fin-by / .fin-pbd; memakai kontrol & kartu dari sanss-finance.css.
+import "./styles/sanss-finance-biaya.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

@@ -1,51 +1,36 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Receipt, Pencil, History } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card.jsx";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import {
-  TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, ColGroup,
-} from "@/components/ui/table.jsx";
-import { cn } from "@/lib/utils.js";
-import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
-import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_DIVISI, PemilihBukti, SelBukti,
+  HalamanFinance, formatUang, TombolAksi,
+  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault,
+  LABEL_DIVISI, PemilihBukti,
 } from "@/features/finance/shared.jsx";
-import { KenapaBeda } from "@/features/finance/kontrak.jsx";
+import { useKontrak } from "@/features/finance/kontrakData.jsx";
+import { StripBiaya, KpiStatis, ToolbarBiaya, DaftarBiaya } from "@/features/finance/PengeluaranPanels.jsx";
+import { Cakupan } from "@/features/finance/RingkasanKecil.jsx";
+import { IkKasBank } from "@/components/financeIcons.jsx";
+import { IkJam, IkDokumen } from "@/components/financeIconsBiaya.jsx";
+import { STATUS_TAB, kpiPengeluaran, kalimatBatas, jumlahFilterAktif } from "@/features/finance/pengeluaranTampilan.js";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiDokumenBiaya } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
-import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
-import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
-import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { RowActions } from "@/features/finance/RowActions.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPengeluaran } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
-
-function teksMode(mode) {
-  return mode === "LANGSUNG" ? "Bayar langsung" : mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang";
-}
-
-function teksSumberDana(e) {
-  if (e.cashAccount) return e.cashAccount.name;
-  const belumDibayar = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(e.status) && e.mode !== "LANGSUNG";
-  return belumDibayar ? "belum dibayar" : "—";
-}
 
 // Aksi PALING RELEVAN per status jadi tombol utama; sisanya masuk menu
 // titik-tiga — perilaku & permission SAMA PERSIS dengan sebelumnya (tidak
@@ -100,13 +85,6 @@ function aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk }
 // diketik ulang — menyalinnya ke sini akan menghasilkan dua angka untuk
 // pengeluaran yang sama, dan yang kedua pasti tertinggal.
 
-const STATUS_TAB = [
-  { key: "MENUNGGU_APPROVAL", label: "Menunggu Persetujuan" },
-  { key: "DISETUJUI", label: "Disetujui (belum dibayar)" },
-  { key: "DIBAYAR", label: "Dibayar" },
-  { key: "DITOLAK", label: "Ditolak" },
-  { key: "", label: "Semua" },
-];
 
 export default function FinanceExpenses() {
   const [periode, setPeriode] = useState(periodeDefault);
@@ -136,21 +114,15 @@ export default function FinanceExpenses() {
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
-  // Tier lebar CONTAINER (bukan viewport) untuk kolom Klasifikasi (Kategori+
-  // Divisi) / Pembayaran (Mode+Sumber Dana) — SELALU digabung, tidak pernah
-  // terpisah 4 kolom lagi (polish 22 Sep 2026). ≥1250: semua kolom. 900–1249:
-  // Pembayaran+Bukti pindah ke detail. 768–899: cuma Nomor/Keterangan/
-  // Nominal/Status/Aksi. <768: Card List. Lihat src/hooks/useContainerTier.js.
-  const [tableRef, tier] = useContainerTier();
-  // Baris detail terbuka (768–1279px) — lihat ExpandToggle/DetailRow di table.jsx.
-  const [terbuka, setTerbuka] = useState(() => new Set());
-  const balikTerbuka = (id) => setTerbuka((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Respons permintaan LAMA yang terlambat tidak boleh menimpa periode/filter yang baru dipilih: hanya permintaan terakhir yang mengisi layar.
+  const urutan = useRef(0);
 
   // { diam: true } = muat ulang di latar belakang: layar TIDAK berubah jadi
   // "memuat" dan posisi scroll tetap (dipakai setelah upload foto/aksi baris).
   // Argumen selain { diam: true } (mis. event klik dari onRetry) diabaikan.
   const muat = useCallback(async (opsi) => {
     const diam = opsi?.diam === true;
+    const saya = ++urutan.current;
     if (!diam) setLoading(true);
     setError(null);
     try {
@@ -162,14 +134,16 @@ export default function FinanceExpenses() {
         api.getFinanceExpenseCategories(),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
       ]);
+      if (saya !== urutan.current) return;
       setData(e);
       setKategori(k.categories);
       setRekening((r.accounts || []).filter((a) => a.active));
     } catch (er) {
+      if (saya !== urutan.current) return;
       if (diam) setPesan(er.message || "Gagal menyegarkan daftar");
       else setError(er.message || "Gagal memuat pengeluaran");
     } finally {
-      if (!diam) setLoading(false);
+      if (!diam && saya === urutan.current) setLoading(false);
     }
   }, [periode, status, qTunda, fKategori, fDivisi, fMode, fRekening, fBukti]);
 
@@ -197,11 +171,26 @@ export default function FinanceExpenses() {
   }
 
   const expenses = data?.expenses || [];
+  const peta = useMemo(() => new Map(rekening.map((r) => [r.id, r])), [rekening]);
+  const kpi = kpiPengeluaran({ data, status, expenses });
+  const hasil = kalimatBatas({ termuat: expenses.length, total: data?.ringkasan?.jumlahSemua, terpotong: !!data?.terpotong });
+  const kontrak = useKontrak();
+  const basis = kontrak?.peta.get("pengeluaran_aktif")?.basisLabel;
+  const kosongAwal = !status && jumlahFilterAktif({ fKategori, fDivisi, fMode, fRekening, fBukti, q }) === 0;
+  const filter = {
+    kategori: { nilai: fKategori, ubah: setFKategori }, divisi: { nilai: fDivisi, ubah: setFDivisi }, mode: { nilai: fMode, ubah: setFMode },
+    rekening: { nilai: fRekening, ubah: setFRekening }, bukti: { nilai: fBukti, ubah: setFBukti },
+  };
+  const renderAksi = (e) => {
+    const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk });
+    return <RowActions primary={a.primary} items={a.items} />;
+  };
 
   return (
     <HalamanFinance
-      title="Pengeluaran & Reimbursement"
-      subtitle="Biaya operasional, upah produksi, dan uang yang ditalangi karyawan."
+      className="fin-halaman"
+      title="Pengeluaran"
+      subtitle="Biaya operasional dan penggantian uang karyawan."
       loading={loading}
       error={error}
       onRetry={muat}
@@ -226,234 +215,52 @@ export default function FinanceExpenses() {
               ]),
             })}
           />
-          <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Pengeluaran Baru</Button>
+          <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Pengeluaran baru</Button>
         </>
       }
     >
-      {pesan && (
-        <Card className="bg-redbg">
-          <CardContent className="flex items-center justify-between gap-3 py-3">
-            <p className="text-[13px] text-ink">{pesan}</p>
-            <Button size="sm" variant="neutral" onClick={() => setPesan(null)}>Tutup</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {data?.hanyaMilikSendiri && (
-        <Penjelasan>
-          Anda melihat pengajuan milik sendiri saja. Persetujuan & pembayaran dikerjakan tim Finance.
-        </Penjelasan>
-      )}
-
-      <Penjelasan>
-        Beban diakui di buku besar saat pengeluaran <strong>DISETUJUI</strong>, bukan saat dibuat — pengajuan
-        yang belum tentu disetujui bukan beban. Untuk reimbursement & utang, pengakuan beban dan keluarnya
-        uang adalah dua kejadian terpisah: beban tetap masuk bulan ini walau uangnya baru diganti bulan depan.
-      </Penjelasan>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KartuAngka
-          metrik={status ? undefined : "pengeluaran_aktif"}
-          label={status ? "Total di Filter Ini" : "Total Pengeluaran (di luar dibatalkan/ditolak)"}
-          value={formatUang(status ? (data?.ringkasan?.total ?? data?.total ?? 0) : (data?.ringkasan?.totalAktif ?? data?.total ?? 0))}
-          sub={status
-            ? `${data?.ringkasan?.jumlahSemua ?? expenses.length} pengeluaran`
-            : `${data?.ringkasan?.jumlahAktif ?? expenses.length} pengeluaran${data?.ringkasan?.tidakDihitung?.jumlah ? ` · ${data.ringkasan.tidakDihitung.jumlah} dibatalkan/ditolak (${formatUang(data.ringkasan.tidakDihitung.nominal)}) tidak dihitung` : ""}`}
-          info="Dihitung dari SEMUA pengeluaran sesuai filter periode & lainnya, bukan hanya baris yang tampil di tabel (tabel memuat maksimal 300 baris). Tanpa memilih tahap, pengeluaran yang dibatalkan atau ditolak tidak ikut dijumlahkan; pilih tab Dibatalkan/Ditolak untuk melihat totalnya."
-        />
-        <KartuAngka
-          label="Menunggu Persetujuan"
-          value={data?.ringkasan?.perStatus?.MENUNGGU_APPROVAL?.jumlah ?? expenses.filter((e) => e.status === "MENUNGGU_APPROVAL").length}
-          tone={(data?.ringkasan?.perStatus?.MENUNGGU_APPROVAL?.jumlah ?? expenses.filter((e) => e.status === "MENUNGGU_APPROVAL").length) > 0 ? "orange" : "default"}
-          info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
-        />
-        <KartuAngka
-          label="Disetujui, Belum Dibayar" metrik="komitmen_belum_dibayar"
-          value={data?.ringkasan?.perStatus?.DISETUJUI?.jumlah ?? expenses.filter((e) => e.status === "DISETUJUI").length}
-          sub="Reimbursement & utang"
-          info="Bebannya SUDAH tercatat di laba rugi, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
-        />
-      </div>
-
-      <KenapaBeda metrik={["pengeluaran_aktif","pembelian_aktif","uang_muka_operasional_saldo","komitmen_belum_dibayar","uang_keluar_kas","beban_diakui"]} />
-
-
-      <div className="flex flex-wrap gap-2">
-        {STATUS_TAB.map((t) => (
-          <Button key={t.key || "semua"} size="sm" variant={status === t.key ? "secondary" : "neutral"} onClick={() => setStatus(t.key)}>
-            {t.label}
-          </Button>
-        ))}
-      </div>
-      <p className="text-[13px] leading-relaxed text-ink3">
-        Saring daftar di bawah berdasarkan tahap prosesnya — dari pengajuan sampai uangnya benar-benar keluar.
-      </p>
-
-      <FilterBar
-        q={q} onQ={setQ}
-        placeholder="Cari nomor, keterangan, penerima, nominal…"
-        filters={[
-          { key: "kat", label: "Kategori", value: fKategori, onChange: setFKategori, options: kategori.map((k) => [k.id, k.name]) },
-          { key: "div", label: "Divisi", value: fDivisi, onChange: setFDivisi, options: Object.entries(LABEL_DIVISI) },
-          { key: "mode", label: "Cara bayar", value: fMode, onChange: setFMode, options: [["LANGSUNG", "Bayar langsung"], ["REIMBURSEMENT", "Reimbursement"], ["UTANG", "Utang"]] },
-          { key: "rekening", label: "Rekening / bank", value: fRekening, onChange: setFRekening, options: rekening.map((r) => [r.id, r.name]) },
-          { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada nota"], ["tanpa", "Tanpa nota"], ["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"]] },
-        ]}
-        ringkasan={`${expenses.length} pengeluaran${data?.terpotong ? ` dari ${data?.ringkasan?.jumlahSemua} · tabel baru memuat 300 teratas (total di kartu tetap dihitung dari semuanya) — persempit pencarian atau periode` : ""}`}
-        onReset={aturUlangFilter}
-      />
-
-      <Card className="overflow-hidden">
-        <JudulKartu
-          title="Daftar Pengeluaran"
-          description="Nomor EXP dibuat otomatis per bulan."
-          info="Nomor dokumen (EXP-tanggal-urutan) dibuat sistem sendiri, tidak bisa diketik manual — supaya tidak ada dua pengeluaran berbeda yang kebetulan pakai nomor yang sama."
-        />
-        {expenses.length === 0 ? (
-          <CardContent>
-            <EmptyState
-              icon={Receipt}
-              title="Tidak ada pengeluaran"
-              description="Belum ada pengeluaran yang cocok dengan filter ini."
-              action={<Button size="sm" onClick={() => setModalBaru(true)}>Catat Pengeluaran</Button>}
-            />
-          </CardContent>
-        ) : (
-          <div ref={tableRef} data-tier={tier}>
-            {tier === "card" ? (
-              <CardList>
-                {expenses.map((e) => {
-                  const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk });
-                  return (
-                    <RowCard
-                      key={e.id}
-                      onClick={() => setPanelRincian(specPengeluaran(e, { badge: <StatusBadge status={e.status} /> }))}
-                      title={e.expenseNumber}
-                      status={<StatusBadge status={e.status} />}
-                      subtitle={e.description}
-                      fields={[
-                        { label: "Tanggal", value: tanggalPendek(e.date) },
-                        { label: "Nominal", value: nominalTeks(e) },
-                        { label: "Kategori", value: e.category?.name },
-                        { label: "Divisi", value: LABEL_DIVISI[e.division] || e.division },
-                        { label: "Mode", value: teksMode(e.mode) },
-                        { label: "Sumber Dana", value: teksSumberDana(e) },
-                        { label: "Bukti", span: true, value: <SelBukti doc={e} jenis="expenses" aksi={aksi} /> },
-                      ]}
-                      actions={<RowActions primary={a.primary} items={a.items} />}
-                    />
-                  );
-                })}
-              </CardList>
-            ) : (
-              <TableWrap className="dh-table">
-                <Table fixed>
-                  {/* Susunan desktop PERMANEN (polish 22 Sep 2026): Klasifikasi
-                      (Kategori+Divisi) & Pembayaran (Mode+Sumber Dana) SELALU
-                      digabung — tidak ada lagi mode "4 kolom terpisah" di lebar
-                      manapun. colgroup eksplisit per tier, bukan cuma width per TH. */}
-                  {tier === "full" && <ColGroup widths={[140, 104, null, 180, 160, 112, 110, 72, AKSI_COL_WIDTH]} />}
-                  {tier === "reduced" && <ColGroup widths={[140, 104, null, 140, 112, 110, 36, AKSI_COL_WIDTH]} />}
-                  {tier === "minimal" && <ColGroup widths={[140, null, 104, 100, 36, AKSI_COL_WIDTH]} />}
-                  <THead>
-                    <TR>
-                      <TH sticky width={140}>Nomor</TH>
-                      {tier !== "minimal" && <TH width={104} className="whitespace-nowrap">Tanggal</TH>}
-                      <TH className="pl-4">Keterangan</TH>
-                      {tier === "full" && <TH width={180}>Klasifikasi</TH>}
-                      {tier === "reduced" && <TH width={140}>Klasifikasi</TH>}
-                      {tier === "full" && <TH width={160}>Pembayaran</TH>}
-                      <TH numeric width={tier === "minimal" ? 104 : 112}>Nominal</TH>
-                      <TH width={tier === "minimal" ? 100 : 110}>Status</TH>
-                      {tier === "full" && <TH width={72}>Bukti</TH>}
-                      {tier !== "full" && <TH width={36} />}
-                      <TH width={AKSI_COL_WIDTH}>Aksi</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {expenses.map((e) => {
-                      const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk });
-                      const klasifikasi = (
-                        <>
-                          <span className="block truncate text-[12px]" title={e.category?.name}>{e.category?.name}</span>
-                          <span className="block truncate text-[11px] text-ink3">{LABEL_DIVISI[e.division] || e.division}</span>
-                        </>
-                      );
-                      const pembayaran = (
-                        <>
-                          <span className="block truncate text-[12px] text-ink2">{teksMode(e.mode)}</span>
-                          <span className="block truncate text-[11px] text-ink3" title={teksSumberDana(e)}>{teksSumberDana(e)}</span>
-                        </>
-                      );
-                      const bukti = (
-                        <>
-                          <SelBukti doc={e} jenis="expenses" aksi={aksi} compact />
-                          {e.notaWajib && !e.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) && (
-                            <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib</span>
-                          )}
-                        </>
-                      );
-                      return (
-                        <React.Fragment key={e.id}>
-                          <TR {...klikBuka(() => setPanelRincian(specPengeluaran(e, { badge: <StatusBadge status={e.status} /> })))}>
-                            <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
-                            {tier !== "minimal" && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(e.date)}</TD>}
-                            <TD className="max-w-0 w-full pl-4">
-                              {/* line-clamp-2 di SPAN dalam, bukan di <td> — lihat catatan clamp2 di table.jsx. */}
-                              <span className="line-clamp-2 break-words" title={e.description}>{e.description}</span>
-                              {e.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${e.reimburseTo.name}`}>ditalangi {e.reimburseTo.name}</span>}
-                              {e.supplier && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.supplier.name}`}>ke {e.supplier.name}</span>}
-                              {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.payeeName}`}>ke {e.payeeName}</span>}
-                            </TD>
-                            {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
-                            {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
-                            <TD numeric><NominalDenganBiaya d={e} /></TD>
-                            <TD><StatusBadge status={e.status} /></TD>
-                            {tier === "full" && <TD>{bukti}</TD>}
-                            {tier !== "full" && (
-                              <TD>
-                                <ExpandToggle open={terbuka.has(e.id)} onClick={() => balikTerbuka(e.id)} label="Rincian" />
-                              </TD>
-                            )}
-                            <TD>
-                              <RowActions primary={a.primary} items={a.items} />
-                            </TD>
-                          </TR>
-                          {tier === "reduced" && (
-                            <DetailRow
-                              open={terbuka.has(e.id)}
-                              colSpan={8}
-                              fields={[
-                                { label: "Mode", value: teksMode(e.mode) },
-                                { label: "Sumber Dana", value: teksSumberDana(e) },
-                                { label: "Bukti", value: bukti },
-                              ]}
-                            />
-                          )}
-                          {tier === "minimal" && (
-                            <DetailRow
-                              open={terbuka.has(e.id)}
-                              colSpan={6}
-                              fields={[
-                                { label: "Tanggal", value: tanggalPendek(e.date) },
-                                { label: "Kategori", value: e.category?.name },
-                                { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge> },
-                                { label: "Mode", value: teksMode(e.mode) },
-                                { label: "Sumber Dana", value: teksSumberDana(e) },
-                                { label: "Bukti", value: bukti },
-                              ]}
-                            />
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </TBody>
-                </Table>
-              </TableWrap>
-            )}
+      <div className="fin-ring fin-by">
+        {pesan && (
+          <div className="fin-by-pesan" role="alert">
+            <p>{pesan}</p>
+            <button type="button" className="fin-tombol" onClick={() => setPesan(null)}><span>Tutup</span></button>
           </div>
         )}
-      </Card>
+
+        <StripBiaya milikSendiri={data?.hanyaMilikSendiri} periode={periode} />
+
+        <section aria-label="Angka utama" className="fin-kpi-grid fin-kpi-grid-3">
+          <KpiStatis
+            nada="biru" Ikon={IkKasBank} label={kpi.labelTotal} metrik={kpi.adaKontrakTotal ? "pengeluaran_aktif" : undefined}
+            nilai={formatUang(kpi.nilai)}
+            ket={`${kpi.jumlah.toLocaleString("id-ID")} pengeluaran${kpi.tidakDihitung ? ` · ${kpi.tidakDihitung.jumlah.toLocaleString("id-ID")} dibatalkan/ditolak tidak dihitung` : ""}`}
+            info={`Dihitung dari SEMUA pengeluaran sesuai filter periode & lainnya, bukan hanya baris yang tampil di daftar (daftar memuat maksimal 300 baris). Tanpa memilih tahap, pengeluaran yang dibatalkan atau ditolak tidak ikut dijumlahkan${kpi.tidakDihitung ? ` (${formatUang(kpi.tidakDihitung.nominal)} tidak dihitung)` : ""}; pilih tahap Ditolak untuk melihat totalnya. Ini nilai biaya yang diajukan/disetujui — belum tentu sudah dibayar.`}
+          />
+          <KpiStatis
+            nada="lavender" Ikon={IkJam} label="Menunggu persetujuan" nilai={kpi.menunggu.toLocaleString("id-ID")}
+            ket="Pengajuan yang perlu diputuskan"
+            info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
+          />
+          <KpiStatis
+            nada="muda" Ikon={IkDokumen} label="Disetujui, belum dibayar" metrik="komitmen_belum_dibayar" nilai={kpi.disetujui.toLocaleString("id-ID")}
+            ket="Reimbursement dan utang"
+            info="Bebannya SUDAH tercatat di laba rugi, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
+          />
+        </section>
+        {basis && <p className="fin-by-basis"><Cakupan nada="biru">Periode terpilih</Cakupan> Mengikuti {basis.charAt(0).toLowerCase() + basis.slice(1)}</p>}
+
+        <section className="fin-panel fin-by-panel" aria-label="Daftar pengeluaran" data-testid="panel-daftar-pengeluaran">
+          <ToolbarBiaya
+            status={status} setStatus={setStatus} q={q} setQ={setQ} f={filter} kategori={kategori} rekening={rekening}
+            onReset={aturUlangFilter} hasil={hasil} perStatus={status ? undefined : data?.ringkasan?.perStatus}
+          />
+          <DaftarBiaya
+            expenses={expenses} peta={peta} aksi={aksi} renderAksi={renderAksi} kosongAwal={kosongAwal}
+            onBuka={(e) => setPanelRincian(specPengeluaran(e, { badge: <StatusBadge status={e.status} /> }))}
+            onBaru={() => setModalBaru(true)} onReset={() => { aturUlangFilter(); setStatus(""); }}
+          />
+        </section>
+      </div>
 
       <ModalPengeluaran
         open={modalBaru} onClose={() => setModalBaru(false)}

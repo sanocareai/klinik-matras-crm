@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Camera, Loader2, Plus, Copy, Bookmark, Trash2, AlertTriangle, Info } from "lucide-react";
+import { KpiStatis } from "@/features/finance/PengeluaranPanels.jsx";
+import { KepalaDivisi, ToolbarPengajuan, DaftarPengajuan, KosongPengajuan } from "@/features/pengajuanBiaya/PengajuanTampil.jsx";
+import { IkDokumen, IkJam, IkRevisi, IkKoin } from "@/components/financeIconsBiaya.jsx";
 import { api } from "@/api.js";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -63,7 +66,9 @@ function BuktiUploader({ id, proofs, onSaved, bisa }) {
 
 // `view` (P12B.2, hub Biaya Produksi): "pengajuan" = panduan + tombol Ajukan biaya + template; "status" = ringkasan angka + daftar status pengajuan;
 // "semua" (default) = perilaku lama persis (halaman Gudang/Marketing/Management/HR-GA tidak berubah). State & endpoint sama untuk semua view.
-export default function PengajuanBiayaWorkspace({ workspace, embedded = false, view = "semua" }) {
+// `gaya="finance"` (opt-in, dipasang HANYA oleh hub Finance): tampilan padat bergaya Ringkasan (KPI, toolbar, daftar). Tanpa itu halaman Gudang/Marketing/Management/HR-GA/Produksi TIDAK berubah.
+export default function PengajuanBiayaWorkspace({ workspace, embedded = false, view = "semua", gaya = "" }) {
+  const finance = gaya === "finance";
   const ui = WORKSPACES_UI[workspace];
   const [cfg, setCfg] = useState(null);
   const [opsi, setOpsi] = useState({ mesin: [], gudang: [], material: [], unit: [], order: [], pengguna: [] });
@@ -196,10 +201,12 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false, v
 
   return (
     <Bingkai
-      embedded={embedded} title={ui.judul} subtitle={cfg?.ringkas || ui.ringkas} loading={loading} error={error} onRetry={muat}
+      embedded={embedded} finance={finance} title={ui.judul} subtitle={cfg?.ringkas || ui.ringkas} loading={loading} error={error} onRetry={muat}
       actions={<TombolAksi onClick={() => buka()}><Plus size={14} /> Ajukan biaya</TombolAksi>}
     >
-      {view !== "status" && (
+      {finance && <KepalaDivisi ui={ui} ringkas={cfg?.ringkas || ui.ringkas} workspace={workspace} arahan={cfg?.arahanModulLain} aksi={<TombolAksi onClick={() => buka()}><Plus size={14} /> Ajukan biaya</TombolAksi>} />}
+
+      {!finance && view !== "status" && (
       <div className="flex items-start gap-2 rounded-xl bg-accentbg px-3.5 py-2.5 text-[12.5px] text-ink2" data-testid="bukan-stok">
         <Info size={15} className="mt-0.5 shrink-0 text-accent" />
         <div>
@@ -213,7 +220,16 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false, v
       </div>
       )}
 
-      {view !== "pengajuan" && (
+      {finance && (
+        <section aria-label="Ringkasan pengajuan" className="fin-kpi-grid fin-kpi-grid-4">
+          <KpiStatis nada="biru" Ikon={IkDokumen} label="Pengajuan" nilai={String((tampil || []).length)} ket="Sesuai filter" />
+          <KpiStatis nada="lavender" Ikon={IkJam} label="Menunggu persetujuan" nilai={String(menunggu)} ket="Menunggu keputusan Finance" />
+          <KpiStatis nada="muda" Ikon={IkRevisi} label="Perlu revisi" nilai={String(perluRevisi)} ket="Perbaiki lalu ajukan ulang" />
+          <KpiStatis nada="lime" Ikon={IkKoin} label="Total nominal" nilai={formatUang((tampil || []).reduce((n, r) => n + r.amount, 0))} ket="Sesuai daftar yang tampil" />
+        </section>
+      )}
+
+      {!finance && view !== "pengajuan" && (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KartuAngka label="Pengajuan" value={(tampil || []).length} sub="sesuai filter" />
         <KartuAngka label="Menunggu persetujuan" value={menunggu} tone={menunggu ? "orange" : "default"} />
@@ -237,7 +253,20 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false, v
         </div>
       )}
 
-      {view !== "pengajuan" && (
+      {finance && (
+        <section className="fin-panel fin-by-panel" aria-label="Daftar pengajuan" data-testid="panel-daftar-pengajuan">
+          <ToolbarPengajuan q={q} setQ={setQ} status={status} setStatus={setStatus} jumlah={(tampil || []).length} kosongFilter={!status && !q.trim()} onReset={() => { setQ(""); setStatus(""); }} />
+          {tampil === null ? (
+            <p className="fin-kosong">Memuat…</p>
+          ) : tampil.length === 0 ? (
+            <KosongPengajuan awal={!status && !q.trim()} aksi={<TombolAksi onClick={() => buka()}><Plus size={14} /> Ajukan biaya</TombolAksi>} onReset={() => { setQ(""); setStatus(""); }} />
+          ) : (
+            <DaftarPengajuan rows={tampil} cfg={cfg} jenisLabel={jenisLabel} onBuka={bukaDetail} />
+          )}
+        </section>
+      )}
+
+      {!finance && view !== "pengajuan" && (
       <Card className="overflow-hidden">
         <JudulKartu title="Daftar pengajuan" description="Draf → Ajukan → Perlu Revisi / Disetujui / Ditolak → Dibayar. Persetujuan & pembayaran oleh Finance." />
         <CardContent className="space-y-3">
@@ -458,7 +487,12 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false, v
 }
 
 /** Bingkai halaman: penuh (HalamanFinance) atau tertanam di hub Finance (tanpa judul halaman ganda). */
-function Bingkai({ embedded, title, subtitle, actions, loading, error, onRetry, children }) {
+function Bingkai({ embedded, finance = false, title, subtitle, actions, loading, error, onRetry, children }) {
+  if (finance && embedded) {
+    if (error) return <div role="alert" className="rounded-xl bg-redbg px-4 py-3 text-[13px] text-red">{error} <button type="button" className="fin-tombol" onClick={onRetry}><span>Coba lagi</span></button></div>;
+    if (loading) return <div className="flex items-center justify-center gap-2 py-10 text-ink2"><Loader2 size={16} className="animate-spin" /> Memuat…</div>;
+    return <div className="fin-pbd">{children}</div>;
+  }
   if (!embedded) return <HalamanFinance title={title} subtitle={subtitle} actions={actions} loading={loading} error={error} onRetry={onRetry}>{children}</HalamanFinance>;
   if (error) return <div role="alert" className="rounded-xl bg-redbg px-4 py-3 text-[13px] text-red">{error} <button type="button" className="underline" onClick={onRetry}>Coba lagi</button></div>;
   if (loading) return <div className="flex items-center justify-center gap-2 py-10 text-ink2"><Loader2 size={16} className="animate-spin" /> Memuat…</div>;

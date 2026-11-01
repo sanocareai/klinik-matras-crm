@@ -1,0 +1,196 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS FINANCE — PENGELUARAN & PENGAJUAN BIAYA DIVISI (redesain 1 Nov 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Visual saja. Data, filter, endpoint, aksi baris, persetujuan/pembayaran, dan hak akses tidak berubah.
+   Memakai bahasa visual Ringkasan (kartu KPI, panel, chip, kontrol rounded dari sanss-finance.css) — berkas ini HANYA menambah aturan khusus halaman ini,
+   semuanya dikunci ke `.fin-by` (Pengeluaran) dan `.fin-pbd` (Pengajuan Biaya Divisi, hanya bila gaya="finance"). Tidak menyentuh halaman lain.
+   Tipografi: isi 400 · nama/label/nominal/tombol 500 · judul ≤ 600. Tanpa font-family/@import. Tata letak mengikuti LEBAR KONTEN (container query). */
+
+/* ── bersama ─────────────────────────────────────────────────────────────── */
+:root .app-shell.crm-skin .fin-chip-biru { background: var(--crm-soft-2); color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin .fin-kpi-statis { cursor: default; }
+:root .app-shell.crm-skin .fin-kpi-statis:hover { box-shadow: var(--crm-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+:root[data-theme="dark"] .app-shell.crm-skin .fin-kpi-statis:hover { box-shadow: var(--crm-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+:root .app-shell.crm-skin .fin-kpi-grid-3 { grid-template-columns: minmax(0, 1fr); }
+@container finring (min-width: 520px) { :root .app-shell.crm-skin .fin-kpi-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container finring (min-width: 720px) { :root .app-shell.crm-skin .fin-kpi-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container finring (min-width: 1100px) { :root .app-shell.crm-skin .fin-kpi-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+:root .app-shell.crm-skin .fin-kpi-grid-4 { grid-template-columns: minmax(0, 1fr); }
+@container finring (min-width: 520px) { :root .app-shell.crm-skin .fin-kpi-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container finring (min-width: 980px) { :root .app-shell.crm-skin .fin-kpi-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+:root .app-shell.crm-skin .fin-by-basis { margin: -4px 4px 0; text-align: right; font-size: 12.5px; font-weight: 400; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-by-basis .fin-cakupan { margin-right: 6px; }
+:root .app-shell.crm-skin .fin-by-sekunder { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; line-height: 1.4; color: var(--text-secondary); overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-by-catatan { margin-top: 8px; font-size: 12.5px; font-weight: 400; line-height: 1.5; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-by-pesan { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 14px; background: var(--ord-cancelled-bg); color: var(--ord-cancelled-fg); font-size: 13px; }
+
+/* ── strip penjelasan + "Tentang angka" ──────────────────────────────────── */
+:root .app-shell.crm-skin .fin-by-strip { padding: 10px 14px; border-radius: 16px; background: var(--crm-soft); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .fin-by-strip-baris { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+:root .app-shell.crm-skin .fin-by-strip-ikon { flex: 0 0 auto; color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin .fin-by-strip-teks { flex: 1 1 260px; min-width: 0; font-size: 13.5px; font-weight: 400; line-height: 1.45; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-by-strip-isi { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.12)); font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-by-strip-isi > * + * { margin-top: 8px; }
+:root[data-theme="dark"] .app-shell.crm-skin .fin-by-strip { background: var(--bg-inset); }
+
+/* ── panel daftar & toolbar ──────────────────────────────────────────────── */
+:root .app-shell.crm-skin .fin-by-panel { padding: 16px 18px 12px; }
+:root .app-shell.crm-skin .fin-by-toolbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px; }
+:root .app-shell.crm-skin .fin-seg { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--crm-soft); overflow-x: auto; scrollbar-width: none; max-width: 100%; align-self: flex-start; }
+:root .app-shell.crm-skin .fin-seg::-webkit-scrollbar { display: none; }
+:root .app-shell.crm-skin .fin-seg-item { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 180ms ease, color 180ms ease; }
+:root .app-shell.crm-skin .fin-seg-item:hover { color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin .fin-seg-item[aria-pressed="true"] { background: #3965FA; color: #FFFFFF; }
+:root .app-shell.crm-skin .fin-seg-item:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 2px; }
+:root .app-shell.crm-skin .fin-seg-n { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--crm-soft-2); color: var(--crm-primary-ink); font-size: 11.5px; font-weight: 500; }
+:root .app-shell.crm-skin .fin-by-cari-baris { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root .app-shell.crm-skin .fin-by-cari { display: flex; align-items: center; gap: 8px; flex: 1 1 280px; min-width: 0; height: 40px; padding: 0 12px; border-radius: 12px; background: var(--bg-inset); color: var(--text-tertiary); }
+:root .app-shell.crm-skin .fin-by-cari:focus-within { box-shadow: 0 0 0 2px var(--crm-primary); }
+:root .app-shell.crm-skin .fin-by-cari input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 400; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-by-cari input::placeholder { color: var(--text-tertiary); }
+:root .app-shell.crm-skin .fin-by-pilih { flex: 0 1 148px; width: auto; min-width: 118px; height: 40px; border-radius: 12px; border: 0; background-color: var(--bg-inset); font-size: 13.5px; font-weight: 500; }
+:root .app-shell.crm-skin .fin-by-lain { min-height: 40px; }
+:root .app-shell.crm-skin .fin-by-lain-isi { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding: 12px; border-radius: 14px; background: var(--bg-inset); }
+:root .app-shell.crm-skin .fin-by-isian { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-by-isian select { background-color: var(--crm-panel); height: 40px; border-radius: 12px; font-size: 13.5px; font-weight: 400; }
+:root .app-shell.crm-skin .fin-by-hasil { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; min-height: 34px; }
+:root .app-shell.crm-skin .fin-by-hasil-teks { font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-by-hasil-batas { font-weight: 500; color: var(--ord-pending-fg); }
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-seg { margin-right: -2px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); } :root .app-shell.crm-skin .fin-seg-item { min-height: 44px; } :root .app-shell.crm-skin .fin-by-pilih, :root .app-shell.crm-skin .fin-by-cari { height: 44px; } :root .app-shell.crm-skin .fin-by-pilih { flex: 1 1 130px; } :root .app-shell.crm-skin .fin-by-lain { min-height: 44px; } }
+
+/* ── daftar pengeluaran (tabel padat → daftar ringkas menurut lebar PANEL) ─────────────────────────── */
+:root .app-shell.crm-skin .fin-by-daftar { margin: 0 -6px; }
+:root .app-shell.crm-skin .fin-by-kepala { display: none; }
+:root .app-shell.crm-skin .fin-by-baris-daftar { display: flex; flex-direction: column; }
+:root .app-shell.crm-skin .fin-by-baris {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ket nominal" "klas status" "bayar aksi"; align-items: start; gap: 8px 12px;
+  padding: 12px 8px; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.09)); border-radius: 12px; cursor: pointer; transition: background-color 180ms ease;
+}
+:root .app-shell.crm-skin .fin-by-baris:hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .fin-by-baris:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: -2px; }
+:root .app-shell.crm-skin .fin-by-baris-daftar > .fin-by-baris:first-child { border-top-color: transparent; }
+:root .app-shell.crm-skin .fin-by-ket { grid-area: ket; display: flex; flex-direction: column; min-width: 0; }
+:root .app-shell.crm-skin .fin-by-tgl { display: none; }
+:root .app-shell.crm-skin .fin-by-klas { grid-area: klas; display: flex; flex-direction: column; min-width: 0; }
+:root .app-shell.crm-skin .fin-by-bayar { grid-area: bayar; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+:root .app-shell.crm-skin .fin-by-nominal { grid-area: nominal; text-align: right; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+:root .app-shell.crm-skin .fin-by-nominal .fin-by-label-kecil { display: none; }
+:root .app-shell.crm-skin .fin-by-status { grid-area: status; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+:root .app-shell.crm-skin .fin-by-aksi { grid-area: aksi; justify-self: end; }
+:root .app-shell.crm-skin .fin-by-nama { font-size: 14px; font-weight: 500; line-height: 1.35; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-by-nomor { margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; user-select: all; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-by-isi { font-size: 13px; font-weight: 400; color: var(--text-primary); overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-by-label-kecil { display: block; margin-bottom: 1px; font-size: 11.5px; font-weight: 500; color: var(--text-tertiary); }
+:root .app-shell.crm-skin .fin-by-mode { font-weight: 500; }
+:root .app-shell.crm-skin .fin-by-sumber { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+:root .app-shell.crm-skin .fin-by-sumber-teks { display: flex; flex-direction: column; min-width: 0; }
+:root .app-shell.crm-skin .fin-by-sumber-nama { font-size: 13px; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-by .fin-logo { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 8px; }
+:root .app-shell.crm-skin .fin-by .fin-logo svg { width: 16px; height: 16px; }
+:root .app-shell.crm-skin .fin-by-bukti { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+:root .app-shell.crm-skin .fin-by-bukti-teks { font-size: 12px; font-weight: 400; line-height: 1.35; color: var(--text-secondary); text-align: right; }
+:root .app-shell.crm-skin .fin-by-bukti-red .fin-by-bukti-teks { color: var(--ord-cancelled-fg); font-weight: 500; }
+:root .app-shell.crm-skin .fin-by-bukti-green .fin-by-bukti-teks { color: var(--ord-delivered-fg); }
+:root .app-shell.crm-skin .fin-by-bukti-redup .fin-by-bukti-teks { color: var(--text-tertiary); }
+:root .app-shell.crm-skin .fin-by-kosong { padding: 12px 0 8px; }
+@container finpanel (min-width: 560px) {
+  :root .app-shell.crm-skin .fin-by-baris { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ket nominal" "klas status" "bayar aksi"; }
+  :root .app-shell.crm-skin .fin-by-klas { flex-direction: row; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
+  :root .app-shell.crm-skin .fin-by-klas .fin-by-label-kecil { flex: 1 0 100%; }
+}
+@container finpanel (min-width: 980px) {
+  :root .app-shell.crm-skin .fin-by-kepala, :root .app-shell.crm-skin .fin-by-baris { display: grid; grid-template-columns: minmax(200px, 2.4fr) 92px minmax(120px, 1.2fr) minmax(176px, 1.7fr) 116px minmax(150px, 1.5fr) 156px; grid-template-areas: none; align-items: center; gap: 10px 12px; }
+  :root .app-shell.crm-skin .fin-by-kepala { padding: 8px 8px; border-radius: 12px; background: var(--bg-inset); font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+  :root .app-shell.crm-skin .fin-by-kepala .fin-kanan { text-align: right; }
+  :root .app-shell.crm-skin .fin-by-ket, :root .app-shell.crm-skin .fin-by-tgl, :root .app-shell.crm-skin .fin-by-klas, :root .app-shell.crm-skin .fin-by-bayar, :root .app-shell.crm-skin .fin-by-nominal, :root .app-shell.crm-skin .fin-by-status, :root .app-shell.crm-skin .fin-by-aksi { grid-area: auto; }
+  :root .app-shell.crm-skin .fin-by-tgl { display: block; font-size: 13px; font-weight: 400; color: var(--text-primary); white-space: nowrap; }
+  :root .app-shell.crm-skin .fin-by-label-kecil { display: none; }
+  :root .app-shell.crm-skin .fin-by-klas { flex-direction: column; }
+  :root .app-shell.crm-skin .fin-by-bayar { flex-direction: column; align-items: flex-start; gap: 4px; }
+  :root .app-shell.crm-skin .fin-by-status { align-items: flex-start; }
+  :root .app-shell.crm-skin .fin-by-bukti-teks { text-align: left; }
+  :root .app-shell.crm-skin .fin-by-aksi { justify-self: end; }
+  :root .app-shell.crm-skin .fin-by-nominal { align-self: center; }
+}
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-by-baris { padding: 14px 6px; } :root .app-shell.crm-skin .fin-by-daftar { margin: 0 -4px; } }
+@media (prefers-reduced-motion: reduce) { :root .app-shell.crm-skin .fin-seg-item, :root .app-shell.crm-skin .fin-by-baris { transition: none; } }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PENGAJUAN BIAYA DIVISI (hanya di Finance: gaya="finance" memasang .fin-pbd)
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root .app-shell.crm-skin .fin-pbd-divisi { display: flex; gap: 4px; padding: 4px; border-radius: 16px; background: var(--crm-soft); overflow-x: auto; scrollbar-width: none; }
+:root .app-shell.crm-skin .fin-pbd-divisi::-webkit-scrollbar { display: none; }
+:root .app-shell.crm-skin .fin-pbd-divisi-item { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1 0 auto; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13.5px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 180ms ease, color 180ms ease; }
+:root .app-shell.crm-skin .fin-pbd-divisi-item:hover { color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin .fin-pbd-divisi-item[aria-selected="true"] { background: #3965FA; color: #FFFFFF; }
+:root .app-shell.crm-skin .fin-pbd-divisi-item:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 2px; }
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-pbd-divisi { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); } }
+:root .app-shell.crm-skin .fin-pbd-kepala { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+:root .app-shell.crm-skin .fin-pbd-judul { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-pbd-judul small { font-size: 13.5px; font-weight: 400; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-pbd-panduan { padding: 12px 14px; border-radius: 14px; background: var(--bg-inset); font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-pbd-panduan > * + * { margin-top: 8px; }
+:root .app-shell.crm-skin .fin-pbd-panduan a { color: var(--crm-primary-ink); font-weight: 500; text-decoration: none; }
+:root .app-shell.crm-skin .fin-pbd-panduan a:hover { text-decoration: underline; }
+:root .app-shell.crm-skin .fin-pbd-tautan-baris { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+:root .app-shell.crm-skin .fin-pbd-daftar { margin: 0 -6px; }
+:root .app-shell.crm-skin .fin-pbd-kepala-tabel { display: none; }
+:root .app-shell.crm-skin .fin-pbd-baris { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ket nominal" "pengaju status" "rincian rincian"; align-items: start; gap: 8px 12px; width: 100%; padding: 12px 8px; border: 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.09)); border-radius: 12px; background: transparent; font: inherit; text-align: left; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-pbd-baris:hover { background: var(--crm-soft); }
+:root .app-shell.crm-skin .fin-pbd-daftar > li:first-child .fin-pbd-baris { border-top-color: transparent; }
+:root .app-shell.crm-skin .fin-pbd-ket { grid-area: ket; display: flex; flex-direction: column; min-width: 0; }
+:root .app-shell.crm-skin .fin-pbd-nama { font-size: 14px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+:root .app-shell.crm-skin .fin-pbd-nomor { margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; user-select: all; }
+:root .app-shell.crm-skin .fin-pbd-pengaju { grid-area: pengaju; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 400; }
+:root .app-shell.crm-skin .fin-pbd-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 999px; background: var(--crm-soft-2); color: var(--crm-primary-ink); font-size: 11.5px; font-weight: 500; }
+:root .app-shell.crm-skin .fin-pbd-nominal { grid-area: nominal; text-align: right; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+:root .app-shell.crm-skin .fin-pbd-status { grid-area: status; justify-self: end; }
+:root .app-shell.crm-skin .fin-pbd-rincian { grid-area: rincian; justify-self: start; display: inline-flex; align-items: center; gap: 2px; min-height: 34px; padding: 0 10px 0 12px; border-radius: 10px; background: var(--crm-soft); color: var(--crm-primary-ink); font-size: 13px; font-weight: 500; }
+@container finpanel (min-width: 760px) {
+  :root .app-shell.crm-skin .fin-pbd-kepala-tabel, :root .app-shell.crm-skin .fin-pbd-baris { display: grid; grid-template-columns: minmax(220px, 2.6fr) minmax(130px, 1.2fr) 124px minmax(150px, 1fr) 104px; grid-template-areas: none; align-items: center; gap: 10px 14px; }
+  :root .app-shell.crm-skin .fin-pbd-kepala-tabel { padding: 8px; border-radius: 12px; background: var(--bg-inset); font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+  :root .app-shell.crm-skin .fin-pbd-kepala-tabel .fin-kanan { text-align: right; }
+  :root .app-shell.crm-skin .fin-pbd-ket, :root .app-shell.crm-skin .fin-pbd-pengaju, :root .app-shell.crm-skin .fin-pbd-nominal, :root .app-shell.crm-skin .fin-pbd-status, :root .app-shell.crm-skin .fin-pbd-rincian { grid-area: auto; }
+  :root .app-shell.crm-skin .fin-pbd-status { justify-self: start; }
+  :root .app-shell.crm-skin .fin-pbd-rincian { justify-self: end; }
+}
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-pbd-rincian { min-height: 44px; } :root .app-shell.crm-skin .fin-pbd-baris { padding: 14px 6px; } }
+:root .app-shell.crm-skin .fin-pbd-kosong { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 12px 24px; text-align: center; }
+:root .app-shell.crm-skin .fin-pbd-kosong-ikon { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 18px; background: var(--crm-soft); color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin .fin-pbd-kosong h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-pbd-kosong p { max-width: 380px; font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-nav-teks { display: inline-flex; align-items: center; min-height: 32px; margin-left: 0; padding: 0 4px 0 6px; text-decoration: none; }
+:root .app-shell.crm-skin .fin-pbd-tindakan { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+:root .app-shell.crm-skin .fin-pbd-bagian > * + * { margin-top: 6px; }
+:root .app-shell.crm-skin .fin-pbd-alur { margin-top: 0; }
+:root .app-shell.crm-skin .fin-pbd { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+:root .app-shell.crm-skin .fin-pbd-pengaju-nama { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* — penyempurnaan: kontrol pilihan seragam, baris lebih ringkas — */
+:root .app-shell.crm-skin select.fin-by-pilih, :root .app-shell.crm-skin .fin-by-isian select { appearance: none; -webkit-appearance: none; padding: 0 34px 0 14px; border: 0; background-color: var(--bg-inset) !important; border-color: transparent !important; backdrop-filter: none; background-repeat: no-repeat !important; background-position: right 12px center !important; background-size: 14px !important; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235E6079' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-by-isian select { background-color: var(--crm-panel); }
+:root .app-shell.crm-skin select.fin-by-pilih:focus-visible, :root .app-shell.crm-skin .fin-by-isian select:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 2px; }
+:root .app-shell.crm-skin .fin-by-sumber-nama { display: block; line-height: 1.3; }
+:root .app-shell.crm-skin .fin-by-bukti-teks { white-space: nowrap; }
+:root .app-shell.crm-skin .fin-by-bayar { gap: 5px; }
+@container finpanel (min-width: 980px) {
+  :root .app-shell.crm-skin .fin-by-kepala, :root .app-shell.crm-skin .fin-by-baris { grid-template-columns: minmax(170px, 2.4fr) 84px minmax(100px, 1fr) minmax(150px, 1.5fr) 104px minmax(150px, 1.3fr) 112px; }
+  :root .app-shell.crm-skin .fin-by-baris { padding-block: 9px; }
+}
+
+:root[data-theme="dark"] .app-shell.crm-skin select.fin-by-pilih, :root[data-theme="dark"] .app-shell.crm-skin .fin-by-isian select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B8BDD9' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important; }
+:root .app-shell.crm-skin .fin-by-hasil { min-height: 28px; }
+:root .app-shell.crm-skin .fin-by-hasil + .fin-by-catatan { margin-top: 0; }
+/* Lebar menengah (panel 640–979px): dua baris rapat, bukan tumpukan satu kolom. Status/nominal/tindakan tetap terlihat. */
+@container finpanel (min-width: 640px) and (max-width: 979.98px) {
+  :root .app-shell.crm-skin .fin-by-baris { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(104px, auto) 44px; grid-template-areas: "ket klas nominal aksi" "ket bayar status aksi"; align-items: center; gap: 6px 14px; }
+  :root .app-shell.crm-skin .fin-by-klas { flex-direction: column; gap: 0; align-items: flex-start; }
+  :root .app-shell.crm-skin .fin-by-status { align-items: flex-end; }
+  :root .app-shell.crm-skin .fin-by-aksi { align-self: center; }
+}
+@container finpanel (min-width: 640px) and (max-width: 979.98px) {
+  :root .app-shell.crm-skin .fin-by-klas .fin-by-label-kecil, :root .app-shell.crm-skin .fin-by-bayar .fin-by-label-kecil { display: none; }
+  :root .app-shell.crm-skin .fin-by-bayar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+}
+:root .app-shell.crm-skin .fin-by .text-\[10\.5px\] { font-size: 12px; line-height: 1.35; }
+:root .app-shell.crm-skin .fin-by-label-kecil, :root .app-shell.crm-skin .fin-seg-n { font-size: 12px; }
