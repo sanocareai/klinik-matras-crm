@@ -15,11 +15,17 @@ const allow = script.split("\n").find((l) => l.startsWith("ALLOWED_RE="));
 test("skrip: sintaks bash valid; FRONTEND-SAJA (allowlist tanpa backend/, prisma, package, Docker, .env, dist)", { skip: !punyaBash }, () => {
   const r = spawnSync("bash", ["-n", path.join(repo, "scripts/release-finance-verifikasi.sh")], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr);
   assert.ok(allow, "ALLOWED_RE ada");
-  for (const terlarang of ["backend/", "prisma", "package", "Dockerfile", "docker-compose", "frontend/dist", ".env"]) assert.ok(!allow.includes(terlarang), `allowlist tidak boleh memuat ${terlarang}`);
+  for (const terlarang of ["prisma", "package", "Dockerfile", "docker-compose", "frontend/dist", ".env"]) assert.ok(!allow.includes(terlarang), `allowlist tidak boleh memuat ${terlarang}`);
   for (const f of ["FinancePayments\\.jsx", "DaftarPembayaran\\.jsx", "AntreanKlaim\\.jsx", "PanelPemeriksaan\\.jsx", "verifikasiLogic\\.js", "sanss-finance-verifikasi\\.css"]) assert.ok(allow.includes(f), `allowlist memuat ${f}`);
   for (const f of ["FinanceDashboard", "features/finance/Ringkasan", "sanss-finance\\.css", "FinanceExpenses", "PengeluaranPanels", "sanss-finance-biaya", "pengajuanBiaya", "FinancePemasukan", "sanss-finance-pemasukan", "FinancePurchaseOrders", "FinanceInvoices", "InvoicePanels", "sanss-finance-invoice", "main\\.jsx"]) assert.ok(!allow.includes(f), `rilis Verifikasi tidak boleh memuat ${f}`);
   for (const f of ["finance/kontrak\\.jsx", "features/laporan", "sanss-crm-laporan", "pages/Laporan", "Orders\\.jsx", "order-palette", "sanss-crm-order", "utils/format\\.js", "ui/badge\\.jsx", "styles/sanss-crm\\.css"]) assert.ok(!allow.includes(f), `rilis Finance tidak boleh menyentuh ${f}`);
   for (const f of ["vite\\.config", "index\\.html", "manifest", "sw\\.", "public/", "package"]) assert.ok(!allow.includes(f), `PWA/konfigurasi tidak boleh di allowlist: ${f}`);
+  // backend/: HANYA dua berkas tes pemeriksa kontrak metrik (kategori tes, eksplisit); tidak ada jalur backend lain.
+  const jalurBackend = [...allow.matchAll(/backend\/[A-Za-z0-9_.\\/-]+/g)].map((m) => m[0].replace(/\\/g, ""));
+  assert.deepEqual(jalurBackend.sort(), ["backend/tests/financeKontrakMetrik.test.js", "backend/tests/helpers/pemeriksaMetrikUi.js"]);
+  assert.ok(script.includes("--exclude=financeKontrakMetrik.test.js --exclude=pemeriksaMetrikUi.js"), "gerbang identik-backend mengecualikan hanya dua berkas tes");
+  assert.ok(script.includes("grep -vE '^backend/tests/(financeKontrakMetrik"), "gerbang daftar-berkas-berubah mengecualikan hanya dua berkas tes");
+  assert.ok(script.includes('grep -vxE "tests/(financeKontrakMetrik') && script.includes('container-sha-tanpa-tes.txt'), "perbandingan hash container mengecualikan hanya dua berkas tes");
   assert.ok(script.includes('FRONTEND_SRC_EXPECT="'), "daftar frontend/src diaudit");
   assert.ok(!/@@[A-Z_]+@@/.test(script), "tanpa placeholder");
   assert.ok(script.includes("backend/ di release baru BERBEDA dari release aktif"), "backend/ harus identik dengan release aktif");
@@ -29,7 +35,7 @@ test("skrip: sintaks bash valid; FRONTEND-SAJA (allowlist tanpa backend/, prisma
 test("sumber dari git (git archive SHA kandidat), tanpa overlay / salinan berkas dari release aktif", () => {
   assert.ok(script.includes('sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR"'), "git archive");
   assert.ok(!/overlay|\.prev-release|rsync/i.test(script.replace(/Dibangun dari SUMBER GIT[^\n]*/, "")), "tanpa model overlay");
-  assert.ok(script.includes('CAND_BRANCH="${CAND_BRANCH:-feat/finance-verifikasi-on-dca5ab7d}"'), "cabang kandidat");
+  assert.ok(script.includes('CAND_BRANCH="${CAND_BRANCH:-feat/finance-verifikasi-on-3569185c}"'), "cabang kandidat");
 });
 
 test("GERBANG KODE LIVE (isi, bukan marker): fase 3, pra-switch, tepat sebelum switch; deploy lain diperiksa ulang", () => {
@@ -85,7 +91,7 @@ test("rilis redesain: koordinasi deploy lain, aset lama dilindungi, rollback ke 
   for (const k of ["tidak_ada_deploy_lain_lagi", 'PHASE="4c-aset-lama"', "aset lama dibawa; index.html baru hanya merujuk aset baru", "--rollback", "sfv1"]) assert.ok(script.includes(k), k);
   const tanpaKepala = script.replace(/\n# \(dibangkitkan[^\n]*\n/, "\n").split("scripts/release-gudang-pintu-masuk.sh").join("");
   for (const sisa of ["drw.sh", "release-drawer-bahan", "gpm.sh", "release-gudang-pintu-masuk.lock", "pjl.sh", "release-penjadwalan-langsung.lock"]) assert.ok(!tanpaKepala.includes(sisa), `sisa nama rilis lain: ${sisa}`);
-  assert.ok(allow.includes("sanss-finance") && !allow.includes("backend/"), "frontend-saja");
+  assert.ok(allow.includes("sanss-finance"), "frontend");
   assert.ok(baca("scripts/gen-release-finance-verifikasi.cjs").includes("rilis ini FRONTEND-SAJA"), "generator memaksa frontend-saja");
   assert.ok(allow.includes("lib/TabsContext") && allow.includes("lib/financeHubs") && allow.includes("pemasukan/DaftarPemasukan"), "berkas bersama yang disentuh terdaftar eksplisit");
 });

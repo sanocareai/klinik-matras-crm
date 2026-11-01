@@ -19,7 +19,11 @@ const TPL_P = "scripts/templates/release-penjadwalan-langsung";
 const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`, `${TPL}/verifikasi-hotfix.txt`,
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const FILE_TETAP = [OUT, GENERATOR, ...TPL_FILES];
-const CAND_BRANCH = "feat/finance-verifikasi-on-dca5ab7d";
+const CAND_BRANCH = "feat/finance-verifikasi-on-3569185c";
+// KATEGORI TES BACKEND (pengecualian EKSPLISIT, bukan pelonggaran umum): pemeriksa kontrak metrik. Hanya dua jalur ini yang boleh berubah di backend/ pada rilis frontend-saja;
+// perubahan backend lain (src/prisma/scripts/package/…) tetap ditolak, dan gerbang identik-backend hanya mengecualikan dua berkas ini.
+const TES_BACKEND = ["backend/tests/financeKontrakMetrik.test.js", "backend/tests/helpers/pemeriksaMetrikUi.js"];
+const TES_BACKEND_RE = "backend/tests/(financeKontrakMetrik\\.test\\.js|helpers/pemeriksaMetrikUi\\.js)";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
@@ -34,7 +38,7 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   const potong = (awal, akhir, ganti) => { const i = s.indexOf(awal); const j = s.indexOf(akhir, i + awal.length); must(i >= 0 && j >= 0, `penanda: ${awal.slice(0, 60)} .. ${akhir.slice(0, 60)}`); s = s.slice(0, i) + ganti + s.slice(j); };
   const berkas = [...new Set([...berkasList, ...FILE_TETAP])].filter((f) => !f.startsWith("frontend/dist/")).sort();
   const fe = berkas.filter((f) => f.startsWith("frontend/src/")).join(" ");
-  must(!berkas.some((f) => /^backend\//.test(f)), "rilis ini FRONTEND-SAJA: ada perubahan di backend/");
+  must(!berkas.some((f) => /^backend\//.test(f) && !TES_BACKEND.includes(f)), "rilis ini FRONTEND-SAJA: ada perubahan di backend/ selain dua berkas tes pemeriksa kontrak metrik");
   must(!berkas.some((f) => /features\/laporan|sanss-crm-laporan|pages\/finance\/FinanceDashboard|features\/finance\/Ringkasan|sanss-finance\.css|pages\/finance\/FinanceExpenses|features\/finance\/Pengeluaran|sanss-finance-biaya|features\/pengajuanBiaya|pages\/pengajuanBiaya|pages\/finance\/FinancePemasukan|sanss-finance-pemasukan|features\/finance\/pemasukan\/(?!DaftarPemasukan\.jsx$)|pages\/finance\/FinancePurchaseOrders|features\/finance\/po\/|pages\/finance\/FinanceInvoices|InvoicePanels|invoiceTampilan|financeIconsInvoice|sanss-finance-invoice|features\/finance\/kontrak\.jsx|pages\/Laporan|sanss-crm-order|order-palette|stage-palette|Orders\.jsx|main\.jsx/.test(f)), "rilis Verifikasi tidak boleh menyentuh Pengeluaran, Pemasukan (kecuali kata export di DaftarPemasukan.jsx), PO, Invoice, Ringkasan Finance, Laporan, finance/kontrak.jsx, Order, main.jsx, atau palet bersama");
   must(!berkas.some((f) => /package(-lock)?\.json$|(^|\/)docker-compose|(^|\/)Dockerfile$|(^|\/)\.env/.test(f)), "dependensi/compose/.env berubah");
   must(["frontend/src/pages/finance/FinancePayments.jsx", "frontend/src/features/finance/verifikasi/DaftarPembayaran.jsx", "frontend/src/features/finance/verifikasi/AntreanKlaim.jsx", "frontend/src/features/finance/verifikasi/PanelPemeriksaan.jsx", "frontend/src/features/finance/verifikasi/verifikasiLogic.js", "frontend/src/styles/sanss-finance-verifikasi.css"].every((f) => berkas.includes(f)), "berkas inti Verifikasi pembayaran harus ada di diff");
@@ -44,6 +48,8 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   r('CAND_REF="refs/remotes/origin/cand-gpm"', 'CAND_REF="refs/remotes/origin/cand-sfv1"');
   const L = s.split("\n"); const ia = L.findIndex((l) => l.startsWith("ALLOWED_RE=")); must(ia > 0 && L[ia + 1].startsWith("FRONTEND_SRC_EXPECT="), "ALLOWED_RE");
   L[ia] = `ALLOWED_RE='^(${berkas.map(esc).join("|")})$'`; L[ia + 1] = `FRONTEND_SRC_EXPECT="${fe}"`; s = L.join("\n");
+  r("! printf '%s\\n' \"$CHANGED\" | grep -qE '^(backend/|", "! printf '%s\\n' \"$CHANGED\" | grep -vE '^" + TES_BACKEND_RE + "$' | grep -qE '^(backend/|");
+  r('diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit "$PREV_DIR/backend"', 'diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit --exclude=financeKontrakMetrik.test.js --exclude=pemeriksaMetrikUi.js "$PREV_DIR/backend"');
   r('--preflight-only) MODE=preflight;; --rollback) MODE=rollback;;', '--preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;;');
   r('BK_DIR="$HOME/release-backups/gpm-${DEPLOY_SHORT}-${TS}"', 'BK_DIR="$HOME/release-backups/finance-verifikasi-${DEPLOY_SHORT}-${TS}"');
   r("/tmp/release-gudang-pintu-masuk.lock", "/tmp/release-finance-verifikasi.lock");
