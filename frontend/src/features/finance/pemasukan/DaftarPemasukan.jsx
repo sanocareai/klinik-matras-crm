@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search, SlidersHorizontal, X } from "lucide-react";
 import { api } from "@/api.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
@@ -7,7 +7,7 @@ import { useTertunda } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { LogoBank } from "@/features/finance/RingkasanPanels.jsx";
 import { keteranganRekening } from "@/features/finance/ringkasanTampilan.js";
-import { akunDariNama, jumlahFilterLanjutan, kelasNada, nomorHalaman, rentangBaris, teksRp } from "./pemasukanLogic.js";
+import { PENJELASAN_TIDAK_DIHITUNG, adaKontrakHitung, akunDariNama, cakupanTotal, jumlahFilterLanjutan, kelasNada, keadaanHasil, nomorHalaman, rentangBaris, susunAlasan, teksRp, teksTidakDihitung, tidakDihitung } from "./pemasukanLogic.js";
 
 // DAFTAR PEMASUKAN TERKLASIFIKASI (satu panel: toolbar + hasil + tabel/kartu + halaman). Sumber SATU: GET /api/finance/pemasukan (server memfilter, mengurutkan, dan
 // memotong halaman); Export Excel mengirim filter yang SAMA. Halaman ini hanya menata. Tidak ada tindakan baru (tanpa verifikasi/persetujuan/posting).
@@ -42,21 +42,63 @@ const JUDUL_KOLOM = {
   tanggal: "Tanggal", pihak: null, keterangan: "Keterangan", statusBayar: "Status pembayaran", rekening: "Rekening", nilai: "Nilai", status: "Status", rincian: "Rincian",
 };
 
-function Status({ b }) {
+/** Penanda netral "Tidak dihitung": tombol pembuka alasan (klik/tap/Enter/Spasi). Bukan galat — barisnya sah dan tetap bisa ditelusuri. */
+function PenandaTidakDihitung({ b, terbuka, onToggle, idAlasan }) {
+  if (!tidakDihitung(b)) return null;
   return (
-    <div className="fin-pm-status">
-      <Chip nada={b.nada}>{b.statusLabel}</Chip>
-      {b.perluTinjau && <Chip nada="warning">Perlu ditinjau</Chip>}
+    <button type="button" className="fin-pm-tdh" aria-expanded={terbuka} aria-controls={idAlasan} onClick={onToggle} data-testid="penanda-tidak-dihitung">
+      Tidak dihitung<span className="fin-sr-saja">, lihat alasan</span>
+      {terbuka ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+    </button>
+  );
+}
+
+/** Isi alasan pengecualian. Teks utama = persis alasan server (sama dengan kolom Excel "Alasan Tidak Dihitung"); pengganti & alasan batal bila tersedia. */
+function PanelAlasan({ b, id }) {
+  const a = susunAlasan(b);
+  if (!a) return null;
+  return (
+    <div id={id} className="fin-pm-alasan" role="note" aria-label={`Alasan tidak dihitung, ${b.nomor}`} data-testid="alasan-tidak-dihitung">
+      <p className="fin-pm-alasan-judul">Alasan tidak dihitung</p>
+      <p className="fin-pm-alasan-teks">{a.teks}</p>
+      {a.alasanBatal && <p className="fin-pm-alasan-teks">Alasan pembatalan: {a.alasanBatal}</p>}
+      {a.pengganti && (
+        <div className="fin-pm-pengganti">
+          <p className="fin-pm-alasan-sub">Pembayaran pengganti{a.pengganti.kecocokan ? ` · ${a.pengganti.kecocokan}` : ""}</p>
+          <ul>
+            {a.pengganti.daftar.map((g) => (
+              <li key={g.kunci}>
+                <span className="fin-pm-nomor">{g.id}</span>
+                {g.tanggal && <span>{tanggalPendek(g.tanggal)}</span>}
+                {g.nominal !== null && <span className="fin-pm-rp">{teksRp(g.nominal)}</span>}
+                <Chip nada={g.terverifikasi ? "success" : "warning"}>{g.status}</Chip>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="fin-pm-alasan-angka">Nominal tercatat <strong>{teksRp(a.nilaiAsli)}</strong> · masuk total <strong>{teksRp(a.nilaiDihitung)}</strong></p>
     </div>
   );
 }
-function StatusBayar({ b }) {
+
+function Status({ b, alasan }) {
+  return (
+    <div className="fin-pm-status">
+      <Chip nada={b.nada}>{b.statusLabel}</Chip>
+      {b.perluTinjau && b.statusLabel !== "Perlu ditinjau" && <Chip nada="warning">Perlu ditinjau</Chip>}
+      {alasan}
+    </div>
+  );
+}
+function StatusBayar({ b, alasan }) {
   return (
     <div className="fin-pm-status">
       {b.statusBayar ? <Chip nada={b.statusBayar.nada}>{b.statusBayar.label}</Chip> : <span className="fin-redup">—</span>}
       {b.statusBayar?.rekeningBelumDiketahui && <Chip nada="warning">Rekening belum diketahui</Chip>}
       {b.status === "REVERSED" && <Chip nada="warning">{b.statusLabel}</Chip>}
       {b.perluTinjau && <Chip nada="warning">Perlu ditinjau</Chip>}
+      {alasan}
     </div>
   );
 }
@@ -92,9 +134,13 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
   const qT = useTertunda(q);
   const pihakT = useTertunda(pihak);
   const urutan = useRef(0);
+  const idDasar = useId();
+  const [bukaAlasan, setBukaAlasan] = useState(() => new Set());
+  const idAlasan = (b) => `${idDasar}-alasan-${b.key}`;
+  const alihAlasan = (b) => setBukaAlasan((s) => { const n = new Set(s); n.has(b.key) ? n.delete(b.key) : n.add(b.key); return n; });
   const kunciPeriode = `${periode.from}|${periode.to}|${kategori}`;
 
-  useEffect(() => { setPage(1); }, [periode.from, periode.to, kategori, qT, pihakT, rekening, status, statusBayar]);
+  useEffect(() => { setPage(1); setBukaAlasan(new Set()); }, [periode.from, periode.to, kategori, qT, pihakT, rekening, status, statusBayar]);
 
   // Hanya respons permintaan TERAKHIR yang boleh mengisi layar (respons periode/filter lama yang terlambat tidak menimpa yang baru).
   const muat = useCallback(async () => {
@@ -124,6 +170,10 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
   const total = tampil?.total ?? 0;
   const { dari, sampai } = rentangBaris(total, LIMIT, tampil?.page ?? 1);
   const items = tampil?.items ?? [];
+  const keadaan = keadaanHasil(tampil);
+  const labelTotal = adaKontrakHitung(tampil) ? "Total dihitung" : "Total nilai";
+  const cakupan = cakupanTotal(kategori, status);
+  const teksTdh = tampil ? teksTidakDihitung(tampil.totalTidakDihitung) : null;
 
   const bukaBaris = (e, b) => {
     if (e.target.closest("button, a, input, select, label")) return;
@@ -131,15 +181,16 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
     onBuka(b);
   };
 
+  const penanda = (b) => <PenandaTidakDihitung b={b} terbuka={bukaAlasan.has(b.key)} onToggle={() => alihAlasan(b)} idAlasan={idAlasan(b)} />;
   const sel = (k, b) => {
     switch (k) {
       case "tanggal": return <span className="fin-pm-tgl">{tanggalPendek(b.tanggal)}</span>;
       case "pihak": return <Pihak b={b} />;
       case "keterangan": return <Keterangan b={b} />;
-      case "statusBayar": return <StatusBayar b={b} />;
+      case "statusBayar": return <StatusBayar b={b} alasan={penanda(b)} />;
       case "rekening": return <Rekening nama={b.rekening} akun={akunDariNama(indeksRek, b.rekening)} />;
-      case "nilai": return <Rp v={b.nilai} />;
-      case "status": return <Status b={b} />;
+      case "nilai": return <span className="fin-pm-nilai-sel"><Rp v={b.nilai} />{tidakDihitung(b) && <span className="fin-pm-rp-sub" data-testid="nilai-dihitung">Dihitung {teksRp(b.nilaiDihitung ?? "0.00")}</span>}</span>;
+      case "status": return <Status b={b} alasan={penanda(b)} />;
       default: return <button type="button" className="fin-pm-rincian" aria-label={`Rincian ${b.nomor}`} onClick={() => onBuka(b)}>Rincian <ChevronRight size={14} aria-hidden="true" /></button>;
     }
   };
@@ -164,8 +215,10 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
             <dd>{ringkasanUang.keadaan === "ada" ? <><strong>{teksRp(ringkasanUang.nilai)}</strong> <span className="fin-redup">{ringkasanUang.jumlah} pembayaran</span></> : <span className="fin-redup">{ringkasanUang.keadaan === "memuat" ? "Memuat…" : "Tidak tersedia"}</span>}</dd>
           </div>
           <div>
-            <dt>Hasil daftar <InfoTooltip text="Semua catatan pembayaran yang cocok dengan pencarian dan filter di bawah. Nilainya menjumlahkan semua status yang tampil — pembayaran yang masih menunggu verifikasi ikut terhitung; yang ditolak atau dibatalkan tidak. Karena itu bisa berbeda dari ‘Uang masuk terverifikasi’." lebar={304} /></dt>
-            <dd>{tampil ? <><strong>{total.toLocaleString("id-ID")} catatan</strong> <span className="fin-redup">{teksRp(tampil.totalNilai)} · semua status</span></> : <span className="fin-redup">Memuat…</span>}</dd>
+            <dt>Hasil daftar <InfoTooltip text={adaKontrakHitung(tampil) ? `Semua catatan pembayaran yang cocok dengan pencarian dan filter di bawah. ‘Total dihitung’ menjumlahkan semuanya kecuali yang ditolak atau dibatalkan, sehingga pembayaran yang masih menunggu verifikasi ikut terhitung dan bisa berbeda dari ‘Uang masuk terverifikasi’. ${PENJELASAN_TIDAK_DIHITUNG}` : "Semua catatan pembayaran yang cocok dengan pencarian dan filter di bawah."} lebar={304} /></dt>
+            <dd>{tampil
+              ? <><strong>{total.toLocaleString("id-ID")} catatan</strong> {keadaan !== "kosong" && <span className="fin-redup">{labelTotal} {teksRp(tampil.totalNilai)}{cakupan && adaKontrakHitung(tampil) ? ` · ${cakupan}` : ""}</span>}</>
+              : <span className="fin-redup">Memuat…</span>}</dd>
           </div>
         </dl>
       )}
@@ -215,8 +268,19 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
 
       <div className="fin-pm-hasil">
         <span data-testid="hasil-ringkas">
-          {tampil ? <><strong>{total.toLocaleString("id-ID")}</strong> hasil · total nilai <strong>{teksRp(tampil.totalNilai)}</strong>
-            <InfoTooltip text="Menjumlahkan semua hasil (semua halaman) menurut pencarian dan filter. Tidak termasuk yang ditolak, dibatalkan, atau dikecualikan. Pada daftar uang masuk, pembayaran yang menunggu verifikasi ikut terhitung." lebar={304} /></> : "Memuat…"}
+          {!tampil ? "Memuat…" : (
+            <>
+              <strong>{total.toLocaleString("id-ID")}</strong> hasil
+              {keadaan !== "kosong" && <> · <span data-testid="total-dihitung">{labelTotal} <strong>{teksRp(tampil.totalNilai)}</strong></span></>}
+              {teksTdh && <> · <span className="fin-pm-tdh-ringkas" data-testid="total-tidak-dihitung">{teksTdh}</span></>}
+              {keadaan === "semua" && <> · <span className="fin-pm-tdh-ringkas" data-testid="semua-tidak-dihitung">semua hasil tidak masuk total</span></>}
+              {keadaan !== "kosong" && <InfoTooltip lebar={304} text={
+                adaKontrakHitung(tampil)
+                  ? `Dihitung server atas semua hasil (semua halaman) menurut pencarian dan filter, bukan hanya halaman yang tampil.${cakupan ? ` Cakupan: ${cakupan}.` : ""} ${PENJELASAN_TIDAK_DIHITUNG}`
+                  : "Menjumlahkan semua hasil (semua halaman) menurut pencarian dan filter."
+              } />}
+            </>
+          )}
         </span>
         {adaFilter && <button type="button" className="fin-pm-reset" onClick={reset}>Atur ulang filter</button>}
       </div>
@@ -240,9 +304,14 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
             {!tampil && !error && <tr><td colSpan={kolom.length} className="fin-pm-kosong">Memuat…</td></tr>}
             {tampil && items.length === 0 && <tr><td colSpan={kolom.length} className="fin-pm-kosong">{judulKosong ?? "Tidak ada data pada periode ini."}</td></tr>}
             {items.map((b) => (
-              <tr key={b.key} className="fin-pm-baris" onClick={(e) => bukaBaris(e, b)} data-testid="baris-pemasukan">
-                {kolom.map((k) => <td key={k} className={k === "nilai" ? "fin-pm-kanan" : k === "rincian" ? "fin-pm-aksi" : undefined}>{sel(k, b)}</td>)}
-              </tr>
+              <React.Fragment key={b.key}>
+                <tr className="fin-pm-baris" onClick={(e) => bukaBaris(e, b)} data-testid="baris-pemasukan" data-hitung={tidakDihitung(b) ? "tidak" : "ya"}>
+                  {kolom.map((k) => <td key={k} className={k === "nilai" ? "fin-pm-kanan" : k === "rincian" ? "fin-pm-aksi" : undefined}>{sel(k, b)}</td>)}
+                </tr>
+                {tidakDihitung(b) && bukaAlasan.has(b.key) && (
+                  <tr className="fin-pm-baris-alasan"><td colSpan={kolom.length}><PanelAlasan b={b} id={idAlasan(b)} /></td></tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -253,7 +322,7 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
         {!tampil && !error && <li className="fin-pm-kosong">Memuat…</li>}
         {tampil && items.length === 0 && <li className="fin-pm-kosong">{judulKosong ?? "Tidak ada data pada periode ini."}</li>}
         {items.map((b) => (
-          <li key={b.key} className="fin-pm-kartu" data-testid="kartu-pemasukan">
+          <li key={b.key} className="fin-pm-kartu" data-testid="kartu-pemasukan" data-hitung={tidakDihitung(b) ? "tidak" : "ya"}>
             <div className="fin-pm-kartu-atas">
               <span className="fin-pm-tgl">{tanggalPendek(b.tanggal)}</span>
               {sel("nilai", b)}
@@ -264,6 +333,7 @@ export default function DaftarPemasukan({ periode, tab, opsi, indeksRek, onBuka,
                 <div key={k}><dt>{labelKartu[k]}</dt><dd>{sel(k, b)}</dd></div>
               ))}
             </dl>
+            {tidakDihitung(b) && bukaAlasan.has(b.key) && <PanelAlasan b={b} id={idAlasan(b)} />}
             {sel("rincian", b)}
           </li>
         ))}

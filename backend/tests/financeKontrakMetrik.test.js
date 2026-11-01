@@ -99,9 +99,13 @@ test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kon
     "FinanceReturSupplier.jsx"]);
   // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
   const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
+  // Halaman yang sebagian kartunya pindah ke komponen fitur anak (redesain Pemasukan, Nov 2026): halaman + komponen itu dibaca BERSAMA.
+  const GABUNG_FITUR = { "FinancePemasukan.jsx": ["../features/finance/pemasukan/RingkasanPemasukan.jsx", "../features/finance/pemasukan/DaftarPemasukan.jsx"] };
   const kunci = new Set(METRIK.map((m) => m.kunci));
   for (const f of fs.readdirSync(akar).filter((x) => x.endsWith(".jsx"))) {
-    const src = fs.readFileSync(path.join(akar, DELEGASI_FITUR[f] ? path.join("..", DELEGASI_FITUR[f]) : f), "utf8");
+    const src = DELEGASI_FITUR[f]
+      ? fs.readFileSync(path.join(akar, path.join("..", DELEGASI_FITUR[f])), "utf8")
+      : [f, ...(GABUNG_FITUR[f] ?? []).map((p) => path.join("..", p))].map((p) => fs.readFileSync(path.join(akar, p), "utf8")).join("\n");
     const dipakai = [...src.matchAll(/metrik[=:]\s*\{?\s*"([a-z_]+)"/g)].map((m) => m[1]);
     for (const d of dipakai) assert.ok(kunci.has(d), `${f}: metrik="${d}" tidak ada di kontrak`);
     for (const m of src.matchAll(/metrik=\{\[([^\]]+)\]\}/g)) for (const d of m[1].match(/"([a-z_]+)"/g) ?? []) assert.ok(kunci.has(d.replace(/"/g, "")), `${f}: ${d} tidak ada di kontrak`);

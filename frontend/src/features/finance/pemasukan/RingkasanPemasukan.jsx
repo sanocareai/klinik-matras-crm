@@ -3,11 +3,12 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Info
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { tanggalPendek } from "@/features/finance/shared.jsx";
 import { KpiKartu } from "@/features/finance/RingkasanPanels.jsx";
+import { useKontrak, IsiDefinisi } from "@/features/finance/kontrakData.jsx";
 import TombolExportExcel from "@/features/finance/ExportExcel.jsx";
 import { IkGrafik, IkStruk } from "@/components/sanssIcons.jsx";
 import { IkKasBank } from "@/components/financeIcons.jsx";
 import { IkJam, IkKoin, IkDanaMasuk, IkDikecualikan } from "./IkonPemasukan.jsx";
-import { PENJELASAN_BEDA, susunTindakLanjut, teksRp } from "./pemasukanLogic.js";
+import { PENJELASAN_BEDA, PENJELASAN_TIDAK_DIHITUNG, susunTindakLanjut, teksRp } from "./pemasukanLogic.js";
 
 // RINGKASAN PEMASUKAN — gaya Ringkasan Finance (styles/sanss-finance.css + sanss-finance-pemasukan.css). Semua angka/teks dari GET /pemasukan/ringkasan;
 // halaman ini hanya menata. Cakupan tanggal tiap angka ditulis di keterangannya (sumbernya berbeda-beda).
@@ -51,16 +52,27 @@ export function Panel({ judul, sub, aksi, children, testid, className = "" }) {
   );
 }
 
-/** Baris yang membuka kategori lain (satu tombol, chevron kanan). */
-function BarisKategori({ ikon: Ikon, judul, ket, nilai, onKlik, testid, anak }) {
+/** Tooltip definisi metrik dari kontrak server (definisi, cara hitung, basis tanggal). Berdiri sendiri di LUAR tombol baris (tombol tidak boleh memuat tombol lain). null selama kontrak belum ada. */
+function InfoMetrik({ metrik }) {
+  const kontrak = useKontrak();
+  const m = metrik ? kontrak?.peta.get(metrik) : null;
+  if (!m) return null;
+  return <InfoTooltip lebar={304} text={<IsiDefinisi m={m} />} />;
+}
+
+/** Baris yang membuka kategori lain (satu tombol, chevron kanan). `metrik` memasang tooltip definisi kontrak di sebelah tombol. */
+function BarisKategori({ ikon: Ikon, judul, ket, nilai, onKlik, testid, anak, metrik }) {
   return (
     <li className="fin-pm-kat" data-testid={testid}>
-      <button type="button" className="fin-pm-kat-tombol" onClick={onKlik}>
-        <span className="fin-pm-ikon" aria-hidden="true"><Ikon size={20} /></span>
-        <span className="fin-pm-kat-teks"><span className="fin-pm-kat-judul">{judul}</span><span className="fin-pm-kat-ket">{ket}</span></span>
-        <span className="fin-pm-kat-nilai">{nilai}</span>
-        <ChevronRight size={16} aria-hidden="true" className="fin-pm-kat-panah" />
-      </button>
+      <div className="fin-pm-kat-baris">
+        <button type="button" className="fin-pm-kat-tombol" onClick={onKlik}>
+          <span className="fin-pm-ikon" aria-hidden="true"><Ikon size={20} /></span>
+          <span className="fin-pm-kat-teks"><span className="fin-pm-kat-judul">{judul}</span><span className="fin-pm-kat-ket">{ket}</span></span>
+          <span className="fin-pm-kat-nilai">{nilai}</span>
+          <ChevronRight size={16} aria-hidden="true" className="fin-pm-kat-panah" />
+        </button>
+        <span className="fin-pm-kat-info"><InfoMetrik metrik={metrik} /></span>
+      </div>
       {anak}
     </li>
   );
@@ -136,7 +148,7 @@ export default function RingkasanPemasukan({ r, periode, ke, navigate }) {
           onClick={() => navigate("/finance/receivables")}
         />
         <KpiKartu
-          nada="lime" Ikon={IkJam} label="Menunggu verifikasi"
+          nada="lime" Ikon={IkJam} label="Menunggu verifikasi" metrik="perlu_verifikasi_finance"
           nilai={String(v.totalJumlah)} ket={`${v.klaimSales.jumlah.toLocaleString("id-ID")} klaim lunas Sales · ${v.pembayaranMenunggu.jumlah.toLocaleString("id-ID")} pembayaran · semua periode`}
           info={v.penjelasan}
           catatanTanggal="Semua periode; tidak mengikuti pilihan tanggal di atas."
@@ -179,7 +191,7 @@ export default function RingkasanPemasukan({ r, periode, ke, navigate }) {
 
       <Panel judul="Kategori pemasukan lainnya" sub="Dicatat dan dikelompokkan terpisah dari pendapatan." testid="kategori-pendukung">
         <ul className="fin-pm-kat-daftar">
-          <BarisKategori ikon={IkKoin} judul="Pemasukan lain" ket={`${r.pemasukanLain.jumlah.toLocaleString("id-ID")} catatan`} nilai={teksRp(r.pemasukanLain.nilai)} onKlik={() => ke("lain")} testid="kat-lain" />
+          <BarisKategori metrik="pemasukan_lain" ikon={IkKoin} judul="Pemasukan lain" ket={`${r.pemasukanLain.jumlah.toLocaleString("id-ID")} catatan`} nilai={teksRp(r.pemasukanLain.nilai)} onKlik={() => ke("lain")} testid="kat-lain" />
           <BarisKategori
             ikon={IkDanaMasuk} judul="Dana masuk bukan pendapatan" ket={`${r.danaMasukBukanPendapatan.jumlah.toLocaleString("id-ID")} catatan`} nilai={teksRp(r.danaMasukBukanPendapatan.nilai)} onKlik={() => ke("dana")} testid="kat-dana"
             anak={r.danaMasukBukanPendapatan.rincian.length > 0 && (
@@ -196,6 +208,7 @@ export default function RingkasanPemasukan({ r, periode, ke, navigate }) {
             </div>
             {dikecualikan && (
               <ul id={idEx} className="fin-pm-subrincian">
+                <li className="fin-pm-subcatatan">Tidak dihitung sebagai pendapatan maupun uang masuk. Di Excel Ringkasan, baris ini tetap ada dengan ‘Dihitung ke Total?’ = Tidak beserta alasannya.</li>
                 <li><span>Transfer antar-rekening ({dk.transfer.jumlah})</span><span>{teksRp(dk.transfer.nilai)}</span></li>
                 <li><span>Saldo awal / koreksi saldo ({dk.saldoAwal.jumlah})</span><span>{teksRp(dk.saldoAwal.nilai)}</span></li>
                 <li><span>Pembalikan pengeluaran ({dk.pembalikanBiaya.jumlah})</span><span>{teksRp(dk.pembalikanBiaya.nilai)}</span></li>
@@ -211,6 +224,7 @@ export default function RingkasanPemasukan({ r, periode, ke, navigate }) {
           <div id={idTentang} className="fin-catatan-kaki">
             <p>{r.labelHistoris}</p>
             {r.penjelasan?.map((t) => <p key={t}>{t}</p>)}
+            <p>{PENJELASAN_TIDAK_DIHITUNG}</p>
             {r.terpotong && <p>Data sangat besar; sebagian dipotong server. Persempit periode.</p>}
           </div>
         )}

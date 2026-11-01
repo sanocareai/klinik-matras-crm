@@ -11,7 +11,7 @@ import { HalamanFinance, PeriodePicker, periodeDefault, tanggalPendek } from "@/
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import DaftarPemasukan from "@/features/finance/pemasukan/DaftarPemasukan.jsx";
 import RingkasanPemasukan, { Panel, StripSementara } from "@/features/finance/pemasukan/RingkasanPemasukan.jsx";
-import { TAB, indeksRekening, kelasNada, tabDari, teksRp } from "@/features/finance/pemasukan/pemasukanLogic.js";
+import { TAB, indeksRekening, kelasNada, susunAlasan, tabDari, teksRp, tidakDihitung } from "@/features/finance/pemasukan/pemasukanLogic.js";
 import "@/styles/sanss-finance-pemasukan.css";
 
 // PEMASUKAN TERPADU — agregator (READ-MODEL). Semua angka & klasifikasi dihitung SERVER; halaman ini hanya menata. Tidak ada tombol "buat pemasukan umum":
@@ -292,6 +292,35 @@ function PerluVerifikasi({ periode, opsi, indeksRek, onBuka }) {
   );
 }
 
+/** Catatan di modal rincian bagi baris yang tidak masuk total: alasan server (sama dengan Excel), alasan batal, pembayaran pengganti. */
+function AlasanTidakDihitung({ b }) {
+  const a = susunAlasan(b);
+  if (!a) return null;
+  return (
+    <div className="space-y-1.5 rounded-lg bg-inset p-3" role="note" aria-label="Alasan tidak dihitung" data-testid="detail-alasan-tidak-dihitung">
+      <p className="font-medium text-ink2">Tidak dihitung ke total</p>
+      <p className="break-words">{a.teks}</p>
+      {a.alasanBatal && <p className="break-words">Alasan pembatalan: {a.alasanBatal}</p>}
+      {a.pengganti && (
+        <div>
+          <p className="font-medium text-ink2">Pembayaran pengganti{a.pengganti.kecocokan ? ` · ${a.pengganti.kecocokan}` : ""}</p>
+          <ul className="mt-1 space-y-1">
+            {a.pengganti.daftar.map((g) => (
+              <li key={g.kunci} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 tabular-nums">
+                <span className="text-ink3">{g.id}</span>
+                {g.tanggal && <span>{tanggalPendek(g.tanggal)}</span>}
+                {g.nominal !== null && <span>{teksRp(g.nominal)}</span>}
+                <span className={g.terverifikasi ? "text-green" : "text-orange"}>{g.status}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="text-ink2">Nominal tercatat <span className="font-medium text-ink">{teksRp(a.nilaiAsli)}</span> · masuk total <span className="font-medium text-ink">{teksRp(a.nilaiDihitung)}</span></p>
+    </div>
+  );
+}
+
 // ── HALAMAN ──────────────────────────────────────────────────────────────────────────────────────────────────
 export default function FinancePemasukan() {
   const nav = useNavigate();
@@ -387,6 +416,7 @@ export default function FinancePemasukan() {
               <div><span className="text-ink3">Rekening</span><div>{detail.baris.rekening ?? "—"}</div></div>
               <div className="col-span-2"><span className="text-ink3">Keterangan</span><div>{detail.baris.keterangan}</div></div>
             </div>
+            {tidakDihitung(detail.baris) && <AlasanTidakDihitung b={detail.baris} />}
             <div>
               <p className="font-semibold">Klasifikasi akuntansi (dihitung server)</p>
               {(detail.klasifikasi ?? [{ kategoriLabel: detail.baris.kategoriLabel, subLabel: detail.baris.subLabel, nilai: detail.baris.nilai, catatan: detail.baris.catatan }]).map((k, i) => (

@@ -120,8 +120,10 @@ test("AUDIT SELISIH OKT 2026: jembatan kohort tampil di panel, detail kohort ber
   assert.ok(!rekon.includes("data.kohort.residual"), "frontend tidak menghitung ulang residual");
   assert.match(tab, /BASIS: tanggal order DIBUAT/);
   assert.match(tab, /BASIS: tanggal order MENJADI LUNAS/);
-  const pemasukan = baca("src/pages/finance/FinancePemasukan.jsx");
+  // Redesain Pemasukan memecah halaman ke features/finance/pemasukan/*: halaman + komponennya dibaca bersama.
+  const pemasukan = ["src/pages/finance/FinancePemasukan.jsx", "src/features/finance/pemasukan/DaftarPemasukan.jsx", "src/features/finance/pemasukan/RingkasanPemasukan.jsx", "src/features/finance/pemasukan/pemasukanLogic.js"].map(baca).join(" ");
   assert.match(pemasukan, /totalTidakDihitung/);
   assert.match(pemasukan, /Tidak dihitung/);
   assert.match(pemasukan, /metrik="pemasukan_lain"/);
+  assert.match(pemasukan, /metrik="perlu_verifikasi_finance"/);
 });

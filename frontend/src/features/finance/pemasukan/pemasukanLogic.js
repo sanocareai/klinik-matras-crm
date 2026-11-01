@@ -101,5 +101,87 @@ export function teksRp(s, { sen = true } = {}) {
   return neg ? `(${teks})` : teks;
 }
 
+// ── KONTRAK "DIHITUNG KE TOTAL" (audit selisih laporan Okt 2026, docs/AUDIT-SELISIH-LAPORAN-OKT-2026.md bagian G) ─────────────────────────────
+// Server SATU-SATUNYA yang menentukan baris mana yang dihitung (statusHitungTotal). Klien TIDAK menjumlah kolom tabel dan TIDAK menghitung ulang:
+//   totalNilai = total baris yang dihitung · totalTidakDihitung = { jumlah, nilai } · total = jumlah SEMUA baris hasil filter (dihitung + tidak) — ketiganya atas
+//   seluruh hasil filter, bukan halaman yang sedang tampil. Semua baris tetap dikirim (jejak audit); yang dihitung=false ditandai, nominal aslinya tidak diubah.
+
+export const PENJELASAN_TIDAK_DIHITUNG = "Baris yang ditolak, dibatalkan, dikecualikan (transfer, saldo awal, pembalikan pengeluaran), atau arsip lama yang belum dihitung tetap tampil supaya bisa ditelusuri dan ditandai ‘Tidak dihitung’. Nominal aslinya tidak diubah, tetapi tidak masuk ‘Total dihitung’. Excel memuat kolom yang sama: Dihitung ke Total?, Nilai yang Dihitung, dan Alasan Tidak Dihitung.";
+
+/** Respons daftar sudah membawa kontrak audit? (server lama tidak punya totalTidakDihitung → jangan mengklaim "dihitung"). */
+export const adaKontrakHitung = (h) => !!h && typeof h.totalTidakDihitung === "object" && h.totalTidakDihitung !== null;
+
+/** Baris ini dikecualikan dari total? Hanya dihitung=false yang tegas; data lama tanpa field itu dianggap dihitung. */
+export const tidakDihitung = (b) => b?.dihitung === false;
+
+/** Ringkasan pengecualian: { jumlah, nilai } → "2 baris tidak dihitung · Rp3.505.501"; tidak ada pengecualian → null. */
+export function teksTidakDihitung(td) {
+  const n = Number(td?.jumlah) || 0;
+  if (n <= 0) return null;
+  return `${n.toLocaleString("id-ID")} baris tidak dihitung · ${teksRp(td.nilai)}`;
+}
+
+/**
+ * Keadaan ringkasan hasil daftar, murni dari angka server:
+ *  "kosong" (0 hasil) · "semua" (semua hasil tidak dihitung) · "sebagian" (ada yang tidak dihitung) · "penuh" (semua dihitung) · "lama" (server tanpa kontrak).
+ */
+export function keadaanHasil(h) {
+  if (!h) return null;
+  if (!(Number(h.total) > 0)) return "kosong";
+  if (!adaKontrakHitung(h)) return "lama";
+  const tidak = Number(h.totalTidakDihitung.jumlah) || 0;
+  if (tidak <= 0) return "penuh";
+  return tidak >= Number(h.total) ? "semua" : "sebagian";
+}
+
+/**
+ * Apa yang sebenarnya dihitung oleh "Total dihitung" pada daftar ini — supaya label sesuai jenis data dan status, BUKAN "Terverifikasi" untuk semua.
+ * Aturan server (statusHitungTotal): yang keluar hanya Ditolak/Dibatalkan, Dikecualikan, dan arsip historis yang belum dihitung. Jadi pada Uang masuk,
+ * pembayaran yang MENUNGGU verifikasi ikut terhitung (kecuali status difilter) — itu harus tertulis.
+ */
+export function cakupanTotal(kategori, status) {
+  if (kategori === "PEMBAYARAN") {
+    if (status === "TERVERIFIKASI") return "hanya pembayaran terverifikasi";
+    if (status === "MENUNGGU") return "pembayaran yang menunggu verifikasi";
+    if (status === "DITOLAK" || status === "DIBATALKAN") return "pembayaran ditolak/dibatalkan tidak dihitung";
+    return "termasuk pembayaran yang menunggu verifikasi";
+  }
+  if (kategori === "PENDAPATAN") return "pendapatan diakui menurut buku besar";
+  if (kategori === "HISTORIS") return "hanya arsip yang sudah dihitung";
+  if (kategori === "LAIN") return "pemasukan lain yang dicatat";
+  if (kategori === "DANA") return "dana masuk bukan pendapatan";
+  return null;
+}
+
+export const LABEL_KECOCOKAN = Object.freeze({ NOMINAL_SAMA: "Nominal sama", ORDER_SAMA: "Order sama, nominal berbeda" });
+
+/** Satu pembayaran pengganti → { kunci, ringkas, status } untuk ditampilkan; id dipendekkan 8 karakter seperti di teks alasan server. */
+export function ringkasPengganti(g) {
+  if (!g) return null;
+  return {
+    kunci: String(g.id),
+    id: String(g.id).slice(0, 8),
+    tanggal: g.tanggal ?? null,
+    nominal: g.nominal ?? null,
+    status: g.terverifikasi ? "Terverifikasi" : "Menunggu verifikasi",
+    terverifikasi: !!g.terverifikasi,
+  };
+}
+
+/** Isi panel alasan: teks server (sama dengan kolom Excel) + alasan pembatalan bila belum tercakup + pengganti terstruktur. Tanpa mengarang bila server tidak memberi. */
+export function susunAlasan(b) {
+  if (!tidakDihitung(b)) return null;
+  const teks = String(b.alasanTidakDihitung ?? "").trim();
+  const batal = String(b.alasanBatal ?? "").trim();
+  const pg = b.pengganti ?? null;
+  return {
+    teks: teks || "Alasan belum dikirim server.",
+    alasanBatal: batal && !teks.includes(batal) ? batal : null,
+    pengganti: pg ? { kecocokan: LABEL_KECOCOKAN[pg.kecocokan] ?? null, daftar: (Array.isArray(pg.semua) && pg.semua.length ? pg.semua : [pg]).map(ringkasPengganti) } : null,
+    nilaiAsli: b.nilai,
+    nilaiDihitung: b.nilaiDihitung ?? "0.00",
+  };
+}
+
 /** Penjelasan lengkap perbedaan pendapatan dan uang masuk (teks lama halaman ini, dipindah ke tombol info di bawah KPI). */
 export const PENJELASAN_BEDA = "Pendapatan adalah omzet yang diakui, bukan bukti uang masuk. Order diakui saat diserahkan dan belum tentu sudah dibayar. Uang masuk = pembayaran yang benar-benar diterima; rekening muncul di uang masuk, bukan selalu di pendapatan. Keduanya dua metrik berbeda dan tidak dijumlahkan (akan menghitung penjualan yang sama dua kali).";
