@@ -110,7 +110,7 @@ export default function FinanceInvoices() {
     <HalamanFinance
       className="fin-halaman"
       title="Invoice pelanggan"
-      subtitle="Tagihan ke pelanggan, sisa yang belum dibayar, dan jatuh tempo — posisi terkini."
+      subtitle="Pantau invoice, sisa tagihan, dan jatuh tempo."
       loading={loading}
       error={error}
       onRetry={muat}

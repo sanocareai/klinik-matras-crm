@@ -32,7 +32,7 @@ export function StripInvoice() {
     <section className="fin-inv-strip" aria-label="Catatan angka invoice">
       <div className="fin-inv-strip-baris">
         <Info size={18} aria-hidden="true" className="fin-inv-strip-ikon" />
-        <p className="fin-inv-strip-teks">Pantau invoice, sisa tagihan, dan jatuh tempo.</p>
+        <p className="fin-inv-strip-teks">Posisi terkini semua invoice, tanpa pilihan periode.</p>
         <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-pill fin-pill-info" ikonKiri={<Info size={16} aria-hidden="true" />}>Tentang angka</Pembuka>
       </div>
       {buka && (
