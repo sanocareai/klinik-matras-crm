@@ -29,7 +29,7 @@ function BadgeStatus({ label, nada }) {
 
 // ── PEMILIH KATEGORI ─────────────────────────────────────────────────────────────────────────────────────────
 // Tiga pilihan utama + "Kategori lainnya" (<select> asli: keyboard & picker HP; menampilkan nama kategori aktif). Setiap kategori lama tetap dapat dibuka.
-function PemilihKategori({ tab, onTab, jumlahVerifikasi }) {
+function PemilihKategori({ tab, onTab }) {
   const lainnya = TAB.filter((t) => !t.utama);
   const lainnyaAktif = lainnya.find((t) => t.id === tab);
   return (
@@ -44,7 +44,7 @@ function PemilihKategori({ tab, onTab, jumlahVerifikasi }) {
           <select aria-label="Kategori lainnya" value={lainnyaAktif ? tab : ""} onChange={(e) => e.target.value && onTab(e.target.value)}>
             <option value="" disabled>Kategori lainnya</option>
             {lainnya.map((t) => (
-              <option key={t.id} value={t.id}>{t.id === "verifikasi" && jumlahVerifikasi != null ? `${t.label} (${jumlahVerifikasi.toLocaleString("id-ID")})` : t.label}</option>
+              <option key={t.id} value={t.id}>{t.label}</option>
             ))}
           </select>
         </label>
@@ -370,13 +370,12 @@ export default function FinancePemasukan() {
   const ringkasanUang = rkIni.data
     ? { keadaan: "ada", nilai: rkIni.data.pembayaranMasuk.terverifikasi.nilai, jumlah: rkIni.data.pembayaranMasuk.terverifikasi.jumlah }
     : { keadaan: rkIni.galat ? "tidak" : "memuat" };
-  const jumlahVerifikasi = rkIni.data?.perluVerifikasiFinance?.totalJumlah ?? null;
 
   const judul = tab === "ringkasan"
     ? "Pemasukan"
     : <><span className="fin-pm-induk">Pemasukan</span><ChevronRight size={22} className="fin-pm-induk-panah" aria-hidden="true" /><span className="fin-sr-saja">: </span>{aktif.judul}</>;
   const subjudul = tab === "ringkasan"
-    ? "Pendapatan, pembayaran, dan tagihan dalam satu tampilan. Hanya membaca; tidak membuat transaksi atau jurnal baru."
+    ? "Pendapatan, pembayaran, dan tagihan dalam satu tampilan."
     : aktif.ringkas;
 
   return (
@@ -387,7 +386,7 @@ export default function FinancePemasukan() {
     >
       <div className="fin-ring fin-pm" data-testid="halaman-pemasukan" data-tab={tab}>
         <StripSementara teks={PERINGATAN_PENDAPATAN_2026} />
-        <PemilihKategori tab={tab} onTab={ke} jumlahVerifikasi={jumlahVerifikasi} />
+        <PemilihKategori tab={tab} onTab={ke} />
 
         {tab === "ringkasan" && (
           rkIni.galat

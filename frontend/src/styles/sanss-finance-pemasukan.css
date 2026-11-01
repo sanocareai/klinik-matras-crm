@@ -237,3 +237,10 @@
 
 :root .app-shell.crm-skin .fin-pm .fin-pm-nilai-sel { display: inline-flex; flex-direction: column; align-items: flex-end; min-width: 0; max-width: 100%; }
 :root .app-shell.crm-skin .fin-pm .fin-pm-kartu-atas .fin-pm-nilai-sel { margin-left: auto; }
+
+/* KPI dua nilai berlabel (Menunggu verifikasi): dua sumber berbeda, tidak dijumlahkan menjadi satu angka utama. */
+:root .app-shell.crm-skin .fin-pm .fin-pm-kpi-dua-isi { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 4px 14px; margin-top: 2px; }
+:root .app-shell.crm-skin .fin-pm .fin-pm-kpi-dua-sel { min-width: 0; }
+:root .app-shell.crm-skin .fin-pm .fin-pm-kpi-dua-sel + .fin-pm-kpi-dua-sel { padding-left: 14px; border-left: 1px solid currentColor; border-left-color: color-mix(in srgb, currentColor 22%, transparent); }
+:root .app-shell.crm-skin .fin-pm .fin-pm-kpi-dua-angka { font-size: clamp(26px, 10cqi, 32px); font-weight: 500; line-height: 1.15; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+:root .app-shell.crm-skin .fin-pm .fin-pm-kpi-dua-label { margin-top: 2px; font-size: 13px; font-weight: 400; line-height: 1.35; overflow-wrap: break-word; }

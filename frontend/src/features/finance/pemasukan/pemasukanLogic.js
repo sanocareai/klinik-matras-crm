@@ -108,6 +108,9 @@ export function teksRp(s, { sen = true } = {}) {
 
 export const PENJELASAN_TIDAK_DIHITUNG = "Baris yang ditolak, dibatalkan, dikecualikan (transfer, saldo awal, pembalikan pengeluaran), atau arsip lama yang belum dihitung tetap tampil supaya bisa ditelusuri dan ditandai ‘Tidak dihitung’. Nominal aslinya tidak diubah, tetapi tidak masuk ‘Total dihitung’. Excel memuat kolom yang sama: Dihitung ke Total?, Nilai yang Dihitung, dan Alasan Tidak Dihitung.";
 
+/** Bantuan (bukan subjudul halaman): membuka daftar/rincian tidak mencatat apa pun; pencatatan baru hanya lewat tombol Catat pemasukan lain, yang menjelaskan dampaknya di formulirnya. */
+export const PENJELASAN_BACA_SAJA = "Membuka ringkasan, daftar, atau rincian di halaman ini tidak membuat transaksi atau jurnal. Pencatatan baru hanya lewat ‘Catat pemasukan lain’; formulirnya menjelaskan dampaknya sebelum disimpan.";
+
 /** Respons daftar sudah membawa kontrak audit? (server lama tidak punya totalTidakDihitung → jangan mengklaim "dihitung"). */
 export const adaKontrakHitung = (h) => !!h && typeof h.totalTidakDihitung === "object" && h.totalTidakDihitung !== null;
 

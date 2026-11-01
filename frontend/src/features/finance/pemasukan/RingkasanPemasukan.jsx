@@ -8,7 +8,7 @@ import TombolExportExcel from "@/features/finance/ExportExcel.jsx";
 import { IkGrafik, IkStruk } from "@/components/sanssIcons.jsx";
 import { IkKasBank } from "@/components/financeIcons.jsx";
 import { IkJam, IkKoin, IkDanaMasuk, IkDikecualikan } from "./IkonPemasukan.jsx";
-import { PENJELASAN_BEDA, PENJELASAN_TIDAK_DIHITUNG, susunTindakLanjut, teksRp } from "./pemasukanLogic.js";
+import { PENJELASAN_BACA_SAJA, PENJELASAN_BEDA, PENJELASAN_TIDAK_DIHITUNG, susunTindakLanjut, teksRp } from "./pemasukanLogic.js";
 
 // RINGKASAN PEMASUKAN — gaya Ringkasan Finance (styles/sanss-finance.css + sanss-finance-pemasukan.css). Semua angka/teks dari GET /pemasukan/ringkasan;
 // halaman ini hanya menata. Cakupan tanggal tiap angka ditulis di keterangannya (sumbernya berbeda-beda).
@@ -49,6 +49,46 @@ export function Panel({ judul, sub, aksi, children, testid, className = "" }) {
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * KPI dengan DUA nilai berlabel di satu kartu. Dipakai bila dua sumber berbeda tidak boleh dijumlahkan menjadi satu angka utama
+ * (mis. "Menunggu verifikasi": order yang ditandai lunas oleh Sales ≠ pembayaran yang menunggu verifikasi). Tampilan/tautan/tooltip sama dengan KpiKartu.
+ */
+function KpiDua({ nada, Ikon, label, metrik, info, catatanTanggal, onClick, nilai, ket }) {
+  const kontrak = useKontrak();
+  const m = metrik ? kontrak?.peta.get(metrik) : null;
+  const teksNilai = nilai.map((n) => `${n.angka} ${n.label}`).join("; ");
+  return (
+    <div
+      role="button" tabIndex={0} className={`fin-kpi fin-kpi-${nada} fin-pm-kpi-dua`} aria-label={`${label}: ${teksNilai}. ${ket}. Buka rincian`}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(e); } }}
+    >
+      <div className="fin-kpi-atas">
+        {Ikon && <span className="fin-kpi-ubin" aria-hidden="true"><Ikon size={22} /></span>}
+        <div className="fin-kpi-label">
+          <span>{label}</span>
+          {(m || info) && (
+            <InfoTooltip lebar={304} text={<>
+              {m && <IsiDefinisi m={m} />}
+              {info && <span className="block" style={m ? { marginTop: 8 } : undefined}>{info}</span>}
+              {catatanTanggal && <span className="block" style={{ marginTop: 8 }}><b className="font-semibold text-ink">Tanggal: </b>{catatanTanggal}</span>}
+            </>} />
+          )}
+        </div>
+      </div>
+      <div className="fin-pm-kpi-dua-isi">
+        {nilai.map((n) => (
+          <div key={n.label} className="fin-pm-kpi-dua-sel" data-testid={n.testid}>
+            <p className="fin-pm-kpi-dua-angka">{n.angka}</p>
+            <p className="fin-pm-kpi-dua-label">{n.label}</p>
+          </div>
+        ))}
+      </div>
+      <p className="fin-kpi-ket">{ket}</p>
+    </div>
   );
 }
 
@@ -147,9 +187,13 @@ export default function RingkasanPemasukan({ r, periode, ke, navigate }) {
           info="Sisa tagihan yang belum tertagih menurut buku besar (posisi akhir periode, bukan arus). Bukan sama dengan uang masuk maupun pendapatan."
           onClick={() => navigate("/finance/receivables")}
         />
-        <KpiKartu
+        <KpiDua
           nada="lime" Ikon={IkJam} label="Menunggu verifikasi" metrik="perlu_verifikasi_finance"
-          nilai={String(v.totalJumlah)} ket={`${v.klaimSales.jumlah.toLocaleString("id-ID")} klaim lunas Sales · ${v.pembayaranMenunggu.jumlah.toLocaleString("id-ID")} pembayaran · semua periode`}
+          nilai={[
+            { angka: v.klaimSales.jumlah.toLocaleString("id-ID"), label: "order ditandai lunas oleh Sales", testid: "kpi-klaim-sales" },
+            { angka: v.pembayaranMenunggu.jumlah.toLocaleString("id-ID"), label: "pembayaran menunggu verifikasi", testid: "kpi-pembayaran-menunggu" },
+          ]}
+          ket="Semua periode · tidak dijumlahkan"
           info={v.penjelasan}
           catatanTanggal="Semua periode; tidak mengikuti pilihan tanggal di atas."
           onClick={() => ke("verifikasi")}
@@ -225,6 +269,7 @@ export default function RingkasanPemasukan({ r, periode, ke, navigate }) {
             <p>{r.labelHistoris}</p>
             {r.penjelasan?.map((t) => <p key={t}>{t}</p>)}
             <p>{PENJELASAN_TIDAK_DIHITUNG}</p>
+            <p>{PENJELASAN_BACA_SAJA}</p>
             {r.terpotong && <p>Data sangat besar; sebagian dipotong server. Persempit periode.</p>}
           </div>
         )}
