@@ -12,7 +12,7 @@ import { IkKlaimSales } from "./IkonVerifikasi.jsx";
 
 const angka = (n) => Number(n ?? 0).toLocaleString("id-ID");
 
-export default function RingkasanAntrean({ ringkasan, galat, onCoba, berbukti, ke }) {
+export default function RingkasanAntrean({ kartu, ringkasan, galat, onCoba, berbukti, ke }) {
   const v = ringkasan?.perluVerifikasiFinance;
   const memuat = !v && !galat;
   const nilaiKlaim = v ? `${angka(v.klaimSales.jumlah)} order` : memuat ? "Memuat…" : "Tidak tersedia";
@@ -23,14 +23,14 @@ export default function RingkasanAntrean({ ringkasan, galat, onCoba, berbukti, k
     <section aria-label="Ringkasan antrean" className="fin-vf-ringkasan" data-testid="ringkasan-antrean">
       <div className="fin-kpi-grid fin-vf-kpi-dua">
         <KpiKartu
-          nada="lavender" Ikon={IkKlaimSales} label="Ditandai lunas oleh Sales" metrik="klaim_lunas_menunggu"
+          nada="lavender" Ikon={IkKlaimSales} label="Ditandai lunas oleh Sales" metrik={kartu[0].metrik}
           nilai={nilaiKlaim}
           ket={v ? `${teksRp(v.klaimSales.nilai)} · semua periode · belum ada catatan pembayaran` : "Semua periode"}
           info="Status Lunas di CRM yang belum punya catatan uang masuk. Belum bisa diverifikasi sebagai pembayaran; Finance memeriksa uangnya lebih dulu."
           onClick={() => ke("klaim")}
         />
         <KpiKartu
-          nada="lime" Ikon={IkJam} label="Menunggu verifikasi" metrik="perlu_verifikasi_finance"
+          nada="lime" Ikon={IkJam} label="Menunggu verifikasi" metrik={kartu[1].metrik}
           nilai={nilaiBayar}
           ket={v ? `${teksRp(v.pembayaranMenunggu.nilai)} · semua periode · sudah tercatat, belum diperiksa` : "Semua periode"}
           info="Pembayaran yang sudah dicatat Sales atau driver, tetapi belum ada yang memastikan uangnya benar-benar masuk ke rekening atau kas perusahaan."

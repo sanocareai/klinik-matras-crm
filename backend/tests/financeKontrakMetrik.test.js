@@ -99,12 +99,8 @@ test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kon
     "FinanceReturSupplier.jsx"]);
   // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
   const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
-  // Halaman yang sebagian kartunya pindah ke komponen fitur anak (redesain Pemasukan & Verifikasi, Nov 2026): halaman + komponen itu dibaca BERSAMA.
-  const GABUNG_FITUR = {
-    "FinancePemasukan.jsx": ["../features/finance/pemasukan/RingkasanPemasukan.jsx", "../features/finance/pemasukan/DaftarPemasukan.jsx"],
-    // Redesain Verifikasi pembayaran (Nov 2026): kartu antrean pindah ke komponen fitur.
-    "FinancePayments.jsx": ["../features/finance/verifikasi/RingkasanAntrean.jsx", "../features/finance/verifikasi/DaftarPembayaran.jsx"],
-  };
+  // Halaman yang sebagian kartunya pindah ke komponen fitur anak (redesain Pemasukan, Nov 2026): halaman + komponen itu dibaca BERSAMA.
+  const GABUNG_FITUR = { "FinancePemasukan.jsx": ["../features/finance/pemasukan/RingkasanPemasukan.jsx", "../features/finance/pemasukan/DaftarPemasukan.jsx"] };
   const kunci = new Set(METRIK.map((m) => m.kunci));
   for (const f of fs.readdirSync(akar).filter((x) => x.endsWith(".jsx"))) {
     const src = DELEGASI_FITUR[f]

@@ -35,6 +35,8 @@ import "@/styles/sanss-finance-verifikasi.css";
 // Dua antrean yang BERBEDA (tidak dijumlahkan): order ditandai lunas oleh Sales (belum ada catatan pembayaran) dan pembayaran menunggu verifikasi.
 // Komponen presentasi ada di features/finance/verifikasi/*.
 
+// Metrik kontrak server yang dipakai dua kartu antrean (definisi tampil di tooltip kartu; dibaca juga oleh tes cakupan kontrak).
+const KARTU_ANTREAN = Object.freeze([{ metrik: "klaim_lunas_menunggu" }, { metrik: "perlu_verifikasi_finance" }]);
 const SARING_AWAL = Object.freeze({ q: "", metode: "", verif: "", alokasi: "", bukti: "", rekening: "" });
 
 // Aksi PALING RELEVAN jadi tombol utama; sisanya masuk menu titik-tiga. Foto bukti dilihat lewat panel pemeriksaan (klik baris atau "Periksa").
@@ -259,7 +261,7 @@ export default function FinancePayments() {
       loading={false} error={null}
     >
       <div className="fin-ring fin-pm fin-vf" data-testid="halaman-verifikasi" data-tab={antreanId} data-konteks={rekon ? "rekonsiliasi" : "verifikasi"}>
-        <RingkasanAntrean ringkasan={ringkasan} galat={galatRingkasan} onCoba={muatRingkasan} berbukti={berbukti} ke={ke} />
+        <RingkasanAntrean kartu={KARTU_ANTREAN} ringkasan={ringkasan} galat={galatRingkasan} onCoba={muatRingkasan} berbukti={berbukti} ke={ke} />
         <PemilihAntrean tab={antreanId} onTab={ke} />
 
         {pesan && (
