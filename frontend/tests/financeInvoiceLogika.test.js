@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   STATUS_INVOICE, TAB_TEMPO, labelStatus, nadaStatus, statusBayar, keteranganBayar, statusDokumen, sumberAngka, keadaanTempo,
-  filterInvoice, adaFilterLokal, jumlahFilterAktif, kpiInvoice, kalimatHasil,
+  filterInvoice, adaFilterLokal, jumlahFilterAktif, kpiInvoice, kalimatHasil, tanggalWibDalamHari, cakupanKpi,
 } from "../src/features/finance/invoiceTampilan.js";
 
 const inv = (o = {}) => ({ id: "i1", status: "SENT", lifecycleStatus: "SENT", totalTagihan: 1000000, dibayar: 0, sisa: 1000000, lunas: false, sumber: "ledger", dibayarTidakRinci: false, dueDate: null, hariLewat: null, dibatalkan: false, ...o });
@@ -81,4 +81,28 @@ test("KPI: nilai & populasi mengikuti ringkasan server; batas data hanya diaku b
   assert.equal(penuh.teks, "500 invoice"); assert.ok(penuh.catatan && penuh.terpotong);
   const saring = kalimatHasil({ tampil: 3, termuat: 40, terpotong: false });
   assert.equal(saring.teks, "3 dari 40 invoice"); assert.equal(saring.catatan, undefined);
+});
+
+test("pintasan tanggal memakai kalender WIB (bukan potongan UTC): batas hari, bulan, tahun, kabisat", () => {
+  const w = (iso, n) => tanggalWibDalamHari(n, new Date(iso));
+  // 01 Nov 17.30 UTC = 02 Nov 00.30 WIB: UTC masih 1 Nov (versi lama mundur sehari)
+  assert.equal(w("2026-11-01T17:30:00Z", 0), "2026-11-02");
+  assert.equal(w("2026-11-01T17:30:00Z", 7), "2026-11-09");
+  // 23.59.59 WIB masih hari yang sama; detik berikutnya sudah besok
+  assert.equal(w("2026-11-01T16:59:59Z", 0), "2026-11-01");
+  assert.equal(w("2026-11-01T17:00:00Z", 0), "2026-11-02");
+  // pergantian bulan & tahun
+  assert.equal(w("2026-11-28T03:00:00Z", 7), "2026-12-05");
+  assert.equal(w("2026-12-23T03:00:00Z", 14), "2027-01-06");
+  assert.equal(w("2026-12-31T17:00:00Z", 0), "2027-01-01"); // 00.00 WIB 1 Jan
+  assert.equal(w("2026-12-31T16:00:00Z", 30), "2027-01-30");
+  assert.equal(w("2027-02-25T03:00:00Z", 7), "2027-03-04"); // Feb 2027 = 28 hari
+  assert.equal(w("2028-02-25T03:00:00Z", 7), "2028-03-03"); // 2028 kabisat
+});
+
+test("cakupan KPI jujur: 'seluruh' tidak dipakai saat terpotong 500 atau sedang mencari", () => {
+  assert.match(cakupanKpi({ terpotong: true, mencari: false }).ket, /500 invoice terbaru, bukan seluruh data/);
+  assert.match(cakupanKpi({ terpotong: true, mencari: true }).ket, /500 invoice terbaru/);
+  assert.match(cakupanKpi({ terpotong: false, mencari: true }).ket, /pencarian/);
+  for (const t of [true, false]) for (const m of [true, false]) assert.doesNotMatch(cakupanKpi({ terpotong: t, mencari: m }).ket, /^Seluruh/);
 });

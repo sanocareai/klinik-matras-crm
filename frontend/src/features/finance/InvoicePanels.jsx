@@ -11,7 +11,7 @@ import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { IkAturTempo } from "@/components/financeIconsInvoice.jsx";
 import {
-  STATUS_INVOICE, TAB_TEMPO, labelStatus, nadaStatus, statusBayar, keteranganBayar, statusDokumen, sumberAngka, keadaanTempo,
+  STATUS_INVOICE, TAB_TEMPO, labelStatus, nadaStatus, statusBayar, keteranganBayar, statusDokumen, sumberAngka, keadaanTempo, tanggalWibDalamHari,
 } from "@/features/finance/invoiceTampilan.js";
 
 // Panel-panel halaman Invoice Pelanggan (gaya: styles/sanss-finance-invoice.css, dikunci ke .fin-inv).
@@ -32,11 +32,12 @@ export function StripInvoice() {
     <section className="fin-inv-strip" aria-label="Catatan angka invoice">
       <div className="fin-inv-strip-baris">
         <Info size={18} aria-hidden="true" className="fin-inv-strip-ikon" />
-        <p className="fin-inv-strip-teks">Invoice dibuat otomatis saat order dibuat. Halaman ini tidak membuat, mengirim, atau membatalkan invoice, dan tidak mencatat pembayaran.</p>
+        <p className="fin-inv-strip-teks">Pantau invoice, sisa tagihan, dan jatuh tempo.</p>
         <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-pill fin-pill-info" ikonKiri={<Info size={16} aria-hidden="true" />}>Tentang angka</Pembuka>
       </div>
       {buka && (
         <div id={id} className="fin-inv-strip-isi">
+          <p>Invoice dibuat otomatis saat order dibuat. Halaman ini tidak membuat, mengirim, atau membatalkan invoice, dan tidak mencatat pembayaran masuk.</p>
           <p>Isi invoice (item, harga, alamat) dan pengiriman ke pelanggan lewat WhatsApp atau PDF dikelola dari Rincian Pesanan di CRM. Nominalnya diturunkan dari sumber yang sama dengan invoice yang dikirim ke pelanggan, jadi angkanya tidak berbeda dari dokumen yang sudah mereka terima.</p>
           <p><b>Nilai invoice</b> adalah total tagihan dokumen. <b>Dibayar</b> adalah pembayaran yang tercatat untuk invoice itu. <b>Sisa tagihan</b> adalah selisihnya. Membuat invoice tidak berarti uangnya sudah diterima.</p>
           <p>Daftar menampilkan posisi terkini semua invoice, tanpa pilihan periode. Umur tagihan dihitung dari tanggal jatuh tempo; selama belum diatur, dihitung dari tanggal order dibuat.</p>
@@ -49,14 +50,22 @@ export function StripInvoice() {
 
 /** Peringatan jujur: berapa invoice yang angka "dibayar"-nya dari status manual, bukan ledger pembayaran. */
 export function PeringatanManual({ jumlah }) {
+  const [buka, setBuka] = useState(false);
+  const id = useId();
   if (!(jumlah > 0)) return null;
   return (
     <section className="fin-inv-peringatan" role="note" aria-label="Invoice dengan status bayar manual">
-      <AlertTriangle size={20} aria-hidden="true" className="fin-inv-peringatan-ikon" />
-      <div>
-        <p className="fin-inv-peringatan-judul">{jumlah.toLocaleString("id-ID")} invoice angkanya dari status bayar manual, bukan dari ledger pembayaran</p>
-        <p className="fin-inv-peringatan-isi">Order-order itu tidak punya satu pun entri pembayaran tercatat — statusnya diklik manual di dropdown CRM. Angka “sudah dibayar”-nya mengikuti status itu apa adanya dan tidak punya rincian siapa menerima, kapan, lewat apa. Baris yang bersangkutan ditandai “Status manual”.</p>
+      <div className="fin-inv-peringatan-baris">
+        <AlertTriangle size={20} aria-hidden="true" className="fin-inv-peringatan-ikon" />
+        <div className="fin-inv-peringatan-teks">
+          <p className="fin-inv-peringatan-judul">{jumlah.toLocaleString("id-ID")} invoice memakai status pembayaran manual.</p>
+          <p className="fin-inv-peringatan-isi">Nominal pembayaran mungkin belum tercatat.</p>
+        </div>
+        <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-pill fin-inv-peringatan-btn">Lihat rincian</Pembuka>
       </div>
+      {buka && (
+        <p id={id} className="fin-inv-peringatan-lengkap">Order-order itu tidak punya satu pun entri pembayaran tercatat — statusnya diklik manual di dropdown CRM. Angka “sudah dibayar”-nya mengikuti status itu apa adanya dan tidak punya rincian siapa menerima, kapan, lewat apa. Baris yang bersangkutan ditandai “Status manual”.</p>
+      )}
     </section>
   );
 }
@@ -302,9 +311,7 @@ export function FormJatuhTempo({ invoice, onClose, onSubmit }) {
   // Pintasan yang mewakili cara tim menyepakati tempo di lapangan
   // ("14 hari dari sekarang"), bukan memaksa menghitung tanggal di kepala.
   function dalamHari(n) {
-    const d = new Date();
-    d.setDate(d.getDate() + n);
-    setTanggal(d.toISOString().slice(0, 10));
+    setTanggal(tanggalWibDalamHari(n));
   }
 
   const tempo = keadaanTempo(invoice);

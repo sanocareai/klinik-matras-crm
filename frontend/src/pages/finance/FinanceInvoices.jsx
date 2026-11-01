@@ -8,7 +8,7 @@ import {
 } from "@/features/finance/InvoicePanels.jsx";
 import { IkDokumen, IkKoin } from "@/components/financeIconsBiaya.jsx";
 import { IkTempoLewat, IkTempoBelum } from "@/components/financeIconsInvoice.jsx";
-import { filterInvoice, adaFilterLokal, jumlahFilterAktif, kpiInvoice, kalimatHasil } from "@/features/finance/invoiceTampilan.js";
+import { filterInvoice, adaFilterLokal, jumlahFilterAktif, kpiInvoice, kalimatHasil, cakupanKpi } from "@/features/finance/invoiceTampilan.js";
 
 // INVOICE PELANGGAN — sisi FINANCE dari invoice yang sudah ada.
 //
@@ -93,6 +93,7 @@ export default function FinanceInvoices() {
   const invoices = useMemo(() => filterInvoice(semuaInvoice, filterLokal), [semuaInvoice, fStatus, fSumber, fSales, fTempo]); // eslint-disable-line react-hooks/exhaustive-deps
   const disaringLokal = adaFilterLokal(filterLokal);
   const hasil = kalimatHasil({ tampil: invoices.length, termuat: semuaInvoice.length, terpotong: kpi.terpotong });
+  const cakupan = cakupanKpi({ terpotong: kpi.terpotong, mencari: !!searchTunda.trim() });
   const aktif = jumlahFilterAktif({ q: search, fStatus, fSumber, fSales, fTempo, jatuhTempo });
 
   function aturUlangFilter() {
@@ -132,19 +133,19 @@ export default function FinanceInvoices() {
           />
           <KpiStatis
             nada="muda" Ikon={IkKoin} label="Sisa tagihan belum lunas" nilai={formatUang(kpi.sisaBelumLunas)}
-            ket={kpi.terpotong ? "Dari 500 invoice terbaru yang termuat" : "Seluruh invoice belum lunas"}
-            info="Total SISA tagihan dari invoice yang belum lunas dan tidak dibatalkan. Bukan total nilai invoice, dan bagian yang sudah dibayar tidak ikut dijumlahkan. Tidak terpengaruh filter tampilan, tetapi mengikuti kolom pencarian. Hanya memuat 500 invoice terbaru."
+            ket={cakupan.ket}
+            info={`Total SISA tagihan dari invoice yang belum lunas dan tidak dibatalkan. Bukan total nilai invoice, dan bagian yang sudah dibayar tidak ikut dijumlahkan. Tidak terpengaruh filter status, sales, sumber, dan tempo di panel bawah. ${cakupan.info}`}
           />
           <KpiStatis
             nada="lavender" Ikon={IkTempoLewat} label="Lewat jatuh tempo" nilai={kpi.lewat.toLocaleString("id-ID")}
             penanda={kpi.lewat > 0 ? "Perlu ditindaklanjuti" : undefined}
-            ket="Tanggal tempo lewat, masih ada sisa"
-            info="Invoice yang tanggal jatuh temponya sudah lewat tetapi masih ada sisa tagihan. Dasarnya hanya tanggal jatuh tempo invoice, bukan tanggal order. Pilih tab “Lewat jatuh tempo” untuk menyaring daftar."
+            ket={kpi.terpotong ? "Dari 500 invoice terbaru" : "Tanggal tempo lewat, masih ada sisa"}
+            info={`Invoice yang tanggal jatuh temponya sudah lewat tetapi masih ada sisa tagihan. Dasarnya hanya tanggal jatuh tempo invoice, bukan tanggal order. Pilih tab “Lewat jatuh tempo” untuk menyaring daftar. ${cakupan.info}`}
           />
           <KpiStatis
             nada="lime" Ikon={IkTempoBelum} label="Belum ada jatuh tempo" nilai={kpi.tanpaTempo.toLocaleString("id-ID")}
-            ket="Umur dihitung dari tanggal order"
-            info="Invoice belum lunas yang belum pernah diatur tanggal jatuh temponya. Selama belum diatur, umur tagihan dihitung dari tanggal order dibuat — atur tanggal jatuh tempo yang sebenarnya lewat ikon kalender di barisnya."
+            ket={kpi.terpotong ? "Dari 500 invoice terbaru" : "Umur dihitung dari tanggal order"}
+            info={`Invoice belum lunas yang belum pernah diatur tanggal jatuh temponya. Selama belum diatur, umur tagihan dihitung dari tanggal order dibuat — atur tanggal jatuh tempo yang sebenarnya lewat ikon kalender di barisnya. ${cakupan.info}`}
           />
         </section>
 

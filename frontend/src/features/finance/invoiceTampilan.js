@@ -105,3 +105,22 @@ export function kalimatHasil({ tampil, termuat, terpotong }) {
     terpotong: !!terpotong,
   };
 }
+
+/**
+ * Tanggal kalender WIB (Asia/Jakarta, UTC+7, tanpa DST) `n` hari dari sekarang, "YYYY-MM-DD" — dasar tanggal Finance (sama dengan tanggalPendek/hariLewatTempo).
+ * Sebelumnya pintasan memakai toISOString() (UTC): antara 00.00–07.00 WIB hasilnya mundur satu hari. Hanya dipakai pintasan Invoice; date picker bersama tidak berubah.
+ */
+export function tanggalWibDalamHari(n, sekarang = new Date()) {
+  const wib = new Date(new Date(sekarang).getTime() + 7 * 3600 * 1000);
+  return new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate() + Number(n))).toISOString().slice(0, 10);
+}
+
+/**
+ * Cakupan KPI yang jujur. Server menghitung ringkasan dari invoice yang TERMUAT (maks. 500 terbaru) dan mengikuti kolom pencarian,
+ * bukan dari seluruh invoice — jadi kata "seluruh" hanya dipakai bila tidak terpotong dan tidak sedang mencari.
+ */
+export function cakupanKpi({ terpotong, mencari }) {
+  if (terpotong) return { ket: "Dari 500 invoice terbaru, bukan seluruh data", info: "Server hanya memuat 500 invoice terbaru dan menghitung angka ini dari yang termuat itu. Invoice yang lebih lama tidak ikut terhitung; persempit dengan pencarian untuk melihatnya." };
+  if (mencari) return { ket: "Dari invoice yang cocok dengan pencarian", info: "Angka ini mengikuti kolom pencarian, bukan seluruh invoice." };
+  return { ket: "Dari semua invoice yang termuat", info: "Dihitung dari semua invoice yang dimuat server (maksimal 500 terbaru; saat ini belum terpotong)." };
+}

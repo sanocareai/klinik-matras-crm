@@ -36,10 +36,16 @@
 :root[data-theme="dark"] .app-shell.crm-skin .fin-inv-strip { background: var(--bg-inset); }
 
 /* ── peringatan status manual ────────────────────────────────────────────── */
-:root .app-shell.crm-skin .fin-inv-peringatan { display: flex; gap: 12px; padding: 14px 16px; border-radius: 16px; background: var(--ord-pending-bg); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .fin-inv-peringatan { padding: 12px 16px; border-radius: 16px; background: var(--ord-pending-bg); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin .fin-inv-peringatan-baris { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+:root .app-shell.crm-skin .fin-inv-peringatan-teks { flex: 1 1 220px; min-width: 0; }
+:root .app-shell.crm-skin .fin-inv-peringatan-btn { flex: 0 0 auto; background: rgba(255, 255, 255, 0.55); color: var(--text-primary); }
+:root[data-theme="dark"] .app-shell.crm-skin .fin-inv-peringatan-btn { background: rgba(255, 255, 255, 0.1); }
+:root .app-shell.crm-skin .fin-inv-peringatan-lengkap { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(27, 27, 57, 0.12); font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--text-secondary); }
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-inv-peringatan-btn { min-height: 44px; } }
 :root .app-shell.crm-skin .fin-inv-peringatan-ikon { flex: 0 0 auto; margin-top: 1px; color: var(--ord-pending-fg); }
 :root .app-shell.crm-skin .fin-inv-peringatan-judul { font-size: 13.5px; font-weight: 500; line-height: 1.4; color: var(--text-primary); }
-:root .app-shell.crm-skin .fin-inv-peringatan-isi { margin-top: 4px; font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-inv-peringatan-isi { margin-top: 2px; font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--text-secondary); }
 
 /* ── panel daftar & toolbar ──────────────────────────────────────────────── */
 :root .app-shell.crm-skin .fin-inv-panel { padding: 16px 18px 12px; }
