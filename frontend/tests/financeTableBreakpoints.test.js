@@ -39,10 +39,24 @@ const FINANCE_DIR = path.join(__dirname, "..", "src", "pages", "finance");
 // (terpisah + gabungan + tombol expand), kolom "Keterangan" yang fleksibel
 // kehabisan ruang sampai ~24px (bukan cuma overflow, tapi KOLAPS). Lihat
 // test terpisah di bawah yang mengunci pola JS ini.
+// Invoice Pelanggan (FinanceInvoices.jsx) KELUAR dari daftar ini sejak redesain: satu daftar <li> + CSS container query di panel (tes di bawah), tanpa kolom hideBelow.
 const HARUS_2XL = [
-  "FinanceInvoices.jsx",
   "FinancePemasukan.jsx",
 ];
+
+test("Invoice Pelanggan: daftar satu-DOM dengan container query; tanpa class tampil/sembunyi viewport, tanpa hideBelow/mid, tanpa CardList/TableWrap ganda", () => {
+  const rd = (p) => fs.readFileSync(path.join(__dirname, "..", p), "utf8").split("\r\n").join("\n");
+  const halaman = bacaSumber("FinanceInvoices.jsx");
+  const panel = rd("src/features/finance/InvoicePanels.jsx");
+  const css = rd("src/styles/sanss-finance-invoice.css");
+  for (const [nama, src] of [["FinanceInvoices.jsx", halaman], ["InvoicePanels.jsx", panel]]) {
+    assert.ok(!/<CardList|<TableWrap|CARD_VIEW_CLASS/.test(src), nama + ": tidak boleh merender CardList/TableWrap ganda");
+    assert.ok(!src.includes('hideBelow="') && !/<T[HD]\s[^>]*\bmid\b/.test(src), nama + ": tanpa hideBelow/mid");
+    assert.ok(!/\b(md|lg|xl|2xl|max-md|max-lg):(hidden|block|flex|grid)\b/.test(src), nama + ": tanpa class tampil/sembunyi viewport");
+  }
+  assert.ok(panel.includes("fin-inv-baris"), "daftar Invoice memakai satu kelas baris");
+  assert.ok(/@container finpanel \(min-width: 1000px\)/.test(css), "tabel desktop dipilih lewat container query lebar panel, bukan viewport");
+});
 
 // ⚠️ DIPERBARUI 22 Sep 2026, putaran ketiga (polish tabel produksi) —
 // `useBreakpointTier` (window.matchMedia/viewport) DIGANTI `useContainerTier`
