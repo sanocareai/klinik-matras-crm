@@ -1,5 +1,5 @@
 # Teks yang HANYA ada di Verifikasi pembayaran baru (tidak ada di dist aktif dca5ab7d); teks fitur live (Finance sfr1, Laporan fase 2, Order, dst) yang HARUS ada di KEDUANYA.
-for s0 in "Periksa bukti dan rekening tujuan sebelum pembayaran masuk pembukuan" "Klaim pembayaran dari Sales" "Dua antrean ini tidak dijumlahkan" "Berkas yang diunggah, bukan jaminan uangnya sudah masuk" "Tiga hal yang berbeda" "Pembayaran menunggu verifikasi" "Cocokkan klaim dan status lunas dari Sales dengan pembayaran yang tercatat"; do
+for s0 in "Periksa bukti dan rekening tujuan sebelum pembayaran masuk pembukuan" "Klaim pembayaran dari Sales" "Dua antrean ini tidak dijumlahkan" "Berkas yang diunggah, bukan jaminan uangnya sudah masuk" "Tiga hal yang berbeda" "Cocokkan klaim dan status lunas dari Sales dengan pembayaran yang tercatat"; do
   [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks Finance baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat Finance baru: ${s0}"
 done
