@@ -19,5 +19,7 @@ test("Pemasukan Lain: dua tombol menuju Kas & Bank tab Pemasukan lain (tab yang 
   const s = baca("src/pages/finance/FinancePemasukan.jsx");
   assert.equal((s.match(/nav\("\/finance\/cash\?tab=pemasukan"\)/g) || []).length, 2);
   assert.ok(!s.includes("/finance/other-income"));
-  assert.match(baca("src/pages/finance/FinanceCash.jsx"), /useUrlTab\(\["rekening", "mutasi", "transfer", "pemasukan"\]/);
+  // Setelah redesain Kas & Bank, tab valid datang dari TAB_KAS (kasBankTampilan.js) yang dipakai FinanceCash lewat useUrlTab([...TAB_KAS], ...).
+  assert.match(baca("src/pages/finance/FinanceCash.jsx"), /useUrlTab\(\[\.\.\.TAB_KAS\]/);
+  assert.match(baca("src/features/finance/kasbank/kasBankTampilan.js"), /TAB_KAS = Object\.freeze\(\[[^\]]*"pemasukan"/);
 });
