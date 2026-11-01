@@ -6,7 +6,7 @@
 export const ANTREAN = Object.freeze([
   { id: "perlu", label: "Perlu verifikasi", judul: "Perlu verifikasi", utama: true, semuaPeriode: true,
     ringkas: "Dua antrean berbeda: order yang ditandai lunas oleh Sales, dan pembayaran yang sudah tercatat tetapi menunggu verifikasi." },
-  { id: "lunas_crm", label: "Ditandai lunas oleh Sales", judul: "Ditandai lunas oleh Sales", utama: true, semuaPeriode: true, hanyaKlaim: true,
+  { id: "klaim", label: "Ditandai lunas oleh Sales", judul: "Ditandai lunas oleh Sales", utama: true, semuaPeriode: true, hanyaKlaim: true,
     ringkas: "Order yang ditandai lunas oleh Sales. Belum ada uang masuk yang terbukti sampai Finance memverifikasi." },
   { id: "terverifikasi", label: "Terverifikasi", judul: "Pembayaran terverifikasi", utama: true,
     ringkas: "Pembayaran yang sudah diperiksa Finance dan masuk pembukuan." },
@@ -16,7 +16,13 @@ export const ANTREAN = Object.freeze([
     ringkas: "Semua pembayaran pada periode terpilih, apa pun statusnya." },
 ]);
 // "semua" = tanpa filter status (dulu kunci kosong "", yang selalu ditolak useUrlTab dan memantul kembali ke "perlu").
-export const TAB_URL = Object.freeze(["perlu", "lunas_crm", "terverifikasi", "dibatalkan", "semua"]);
+// "lunas_crm" = tautan LAMA yang dipakai item hub "Rekonsiliasi Sales–Finance" (/finance/payments?tab=lunas_crm); tetap diterima, tampil sebagai antrean "klaim" dalam konteks Rekonsiliasi.
+// Antrean klaim di dalam Verifikasi memakai kunci "klaim" supaya judul, breadcrumb, tab, dan navigasi aktif tetap Verifikasi (lib/financeHubs.js memetakan ?tab=klaim ke item Verifikasi).
+export const TAB_URL = Object.freeze(["perlu", "klaim", "terverifikasi", "dibatalkan", "semua", "lunas_crm"]);
+/** Kunci antrean dari nilai ?tab= ("lunas_crm" lama → "klaim"). */
+export const kunciAntrean = (tab) => (tab === "lunas_crm" ? "klaim" : tab);
+/** Halaman dibuka dari item hub Rekonsiliasi Sales–Finance (isi sama, identitas halaman mengikuti rute itu). */
+export const konteksRekon = (tab) => tab === "lunas_crm";
 /** Nilai `status` untuk server dari id antrean ("semua" → kosong). */
 export const statusServer = (id) => (id === "semua" ? "" : id);
 export const antreanDari = (id) => ANTREAN.find((a) => a.id === id) ?? ANTREAN[0];
@@ -126,4 +132,4 @@ export function labelPeriode(from, to) {
 }
 
 /** Label tab untuk Export Excel: SENGAJA tetap memakai nama lama supaya berkas Excel tidak berubah walau nama tab di layar disederhanakan. */
-export const LABEL_TAB_EXPORT = Object.freeze({ perlu: "Perlu Verifikasi Finance", lunas_crm: "Klaim Lunas dari Sales", terverifikasi: "Uang Masuk Terverifikasi", dibatalkan: "Dibatalkan", semua: "Semua" });
+export const LABEL_TAB_EXPORT = Object.freeze({ perlu: "Perlu Verifikasi Finance", klaim: "Klaim Lunas dari Sales", lunas_crm: "Klaim Lunas dari Sales", terverifikasi: "Uang Masuk Terverifikasi", dibatalkan: "Dibatalkan", semua: "Semua" });

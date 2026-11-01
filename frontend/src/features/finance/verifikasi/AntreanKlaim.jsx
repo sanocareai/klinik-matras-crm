@@ -14,7 +14,7 @@ import { LABEL_CARA_BAYAR, buatPenjaga } from "./verifikasiLogic.js";
 import { modelKlaim, modelKlaimLama } from "./modelPemeriksaan.jsx";
 
 // ANTREAN "DITANDAI LUNAS OLEH SALES" — tiga sumber server yang BERBEDA, ditata sama tetapi tidak digabung:
-//   • Klaim berbukti   : pengajuan Sales dengan tanggal, nominal, metode, catatan, bukti (GET /finance/penerimaan/klaim-lunas).
+//   • Klaim pembayaran : pengajuan Sales dengan tanggal, nominal, metode, catatan, dan bukti (bukti bisa belum ada) (GET /finance/penerimaan/klaim-lunas).
 //   • Resi             : satu klaim per Resi (hanya bila fitur pembayaran Resi aktif; komponen lama dipakai apa adanya).
 //   • Order ditandai lunas tanpa catatan pembayaran ("klaim lama"; GET /finance/penerimaan/lunas-belum-dicatat).
 // Tindakan, validasi, kunci idempoten, dan pesan galat = komponen/API LAMA (ModalVerifikasi*, ModalAlasan, api.*). Di sini hanya penataan.
@@ -178,22 +178,22 @@ export default function AntreanKlaim({ ringkas = false, onTampil, onBerubah, onD
         <p className="fin-pm-pesan fin-pm-pesan-galat" role="alert">{pesan} <button type="button" className="fin-pm-reset" onClick={() => setPesan(null)}>Tutup</button></p>
       )}
 
-      {/* ── Klaim lunas berbukti ── */}
-      <section className="fin-panel fin-pm-daftar" aria-label="Klaim lunas berbukti dari Sales" data-testid="klaim-lunas-berbukti" aria-busy={!berbukti && !galatBerbukti}>
+      {/* ── Klaim pembayaran dari Sales ── */}
+      <section className="fin-panel fin-pm-daftar" aria-label="Klaim pembayaran dari Sales" data-testid="klaim-lunas-berbukti" aria-busy={!berbukti && !galatBerbukti}>
         <div className="fin-panel-kepala">
-          <h2 className="fin-panel-judul">Klaim lunas berbukti dari Sales</h2>
+          <h2 className="fin-panel-judul">Klaim pembayaran dari Sales</h2>
           <p className="fin-panel-sub">
             {berbukti && itemsBerbukti.length
               ? `${berbukti.menunggu.jumlah} menunggu verifikasi · ${formatUang(berbukti.menunggu.total)}${berbukti.dimintaBukti.jumlah ? ` · ${berbukti.dimintaBukti.jumlah} menunggu bukti tambahan dari Sales` : ""}`
-              : "Pengajuan Sales dengan tanggal, nominal, metode, catatan, dan bukti. Mengajukan klaim belum mengubah status order atau saldo."}
+              : "Pengajuan Sales dengan tanggal, nominal, metode, dan catatan; bukti bisa sudah atau belum dilampirkan. Mengajukan klaim belum mengubah status order atau saldo."}
           </p>
         </div>
         {galatBerbukti && <p className="fin-galat fin-pm-galat" role="alert">Gagal memuat: {galatBerbukti} <button type="button" className="fin-pm-reset" onClick={muat}>Coba lagi</button></p>}
         {!berbukti && !galatBerbukti && <p className="fin-pm-kosong">Memuat klaim…</p>}
-        {berbukti && itemsBerbukti.length === 0 && <PanelKosong judul="Tidak ada klaim baru" pesan="Semua klaim berbukti dari Sales sudah diproses." />}
+        {berbukti && itemsBerbukti.length === 0 && <PanelKosong judul="Tidak ada klaim baru" pesan="Semua klaim pembayaran dari Sales sudah diproses." />}
         {itemsBerbukti.length > 0 && (
           <>
-            <div className="fin-pm-tabel-bungkus fin-pm-gulir" tabIndex={0} role="region" aria-label="Tabel klaim berbukti; gulir mendatar bila perlu">
+            <div className="fin-pm-tabel-bungkus fin-pm-gulir" tabIndex={0} role="region" aria-label="Tabel klaim pembayaran dari Sales; gulir mendatar bila perlu">
               <table className="fin-pm-tabel fin-vf-tabel" data-jenis="klaim-berbukti">
                 <thead><tr>
                   <th scope="col">Pelanggan / Order</th><th scope="col">Tanggal bayar</th><th scope="col" className="fin-pm-kanan">Nominal klaim</th>
@@ -229,7 +229,7 @@ export default function AntreanKlaim({ ringkas = false, onTampil, onBerubah, onD
                 </tbody>
               </table>
             </div>
-            <ul className="fin-pm-kartu-daftar" aria-label="Klaim berbukti (tampilan kartu)">
+            <ul className="fin-pm-kartu-daftar" aria-label="Klaim pembayaran dari Sales (tampilan kartu)">
               {itemsBerbukti.map((k) => {
                 const a = aksiKlaim(k);
                 return (

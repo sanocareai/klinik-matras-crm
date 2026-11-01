@@ -8,7 +8,7 @@ import { IkKlaimSales } from "./IkonVerifikasi.jsx";
 //   1. Order yang ditandai lunas oleh Sales  : status di CRM, belum ada catatan pembayaran (belum ada uang masuk yang bisa diverifikasi).
 //   2. Pembayaran menunggu verifikasi        : catatan pembayaran sudah ada, belum diperiksa Finance.
 // Angka dari GET /finance/pemasukan/ringkasan (perluVerifikasiFinance) — sumber yang SAMA dengan kartu "Menunggu verifikasi" di Pemasukan, semua periode.
-// Klaim lunas BERBUKTI (pengajuan Sales dengan bukti) dihitung server terpisah; dicatat di baris keterangan, tidak ditambahkan ke angka di atas.
+// Klaim pembayaran dari Sales (pengajuan Sales; bukti bisa belum ada) dihitung server terpisah; dicatat di baris keterangan, tidak ditambahkan ke angka di atas.
 
 const angka = (n) => Number(n ?? 0).toLocaleString("id-ID");
 
@@ -27,7 +27,7 @@ export default function RingkasanAntrean({ ringkasan, galat, onCoba, berbukti, k
           nilai={nilaiKlaim}
           ket={v ? `${teksRp(v.klaimSales.nilai)} · semua periode · belum ada catatan pembayaran` : "Semua periode"}
           info="Status Lunas di CRM yang belum punya catatan uang masuk. Belum bisa diverifikasi sebagai pembayaran; Finance memeriksa uangnya lebih dulu."
-          onClick={() => ke("lunas_crm")}
+          onClick={() => ke("klaim")}
         />
         <KpiKartu
           nada="lime" Ikon={IkJam} label="Menunggu verifikasi" metrik="perlu_verifikasi_finance"
@@ -39,7 +39,7 @@ export default function RingkasanAntrean({ ringkasan, galat, onCoba, berbukti, k
       </div>
       <p className="fin-vf-ringkas-kaki" data-testid="ringkasan-terpisah">
         Dua antrean ini tidak dijumlahkan: yang pertama belum punya catatan pembayaran, yang kedua sudah.
-        {adaBerbukti && <> Klaim lunas berbukti dari Sales dihitung terpisah: {angka(berbukti.menunggu)} menunggu verifikasi{berbukti.diminta > 0 ? `, ${angka(berbukti.diminta)} menunggu bukti tambahan` : ""}.</>}
+        {adaBerbukti && <> Klaim pembayaran dari Sales (pengajuan dengan tanggal, nominal, dan bukti bila ada) dihitung terpisah: {angka(berbukti.menunggu)} menunggu verifikasi{berbukti.diminta > 0 ? `, ${angka(berbukti.diminta)} menunggu bukti tambahan` : ""}.</>}
       </p>
       {galat && (
         <p className="fin-galat" role="alert">Ringkasan antrean gagal dimuat: {galat} <button type="button" className="fin-pm-reset" onClick={onCoba}>Coba lagi</button></p>

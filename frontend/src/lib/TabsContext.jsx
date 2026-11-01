@@ -193,7 +193,9 @@ export function TabsProvider({ pages, ctx, children }) {
   // muat ulang / pindah tab dalam-app. replace, bukan push: berpindah subtab tidak menambah riwayat Back.
   function replaceActivePath(path) {
     const resolved = resolveEntryPath(path);
-    setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, path: resolved } : t)));
+    // Halaman Finance: judul tab mengikuti item hub untuk path+?tab= BARU (satu path dipakai beberapa item hub, mis. Verifikasi vs Rekonsiliasi Sales–Finance); halaman lain tidak berubah.
+    const judulFinance = resolved.startsWith("/finance/") ? titleFromPath(resolved) : null;
+    setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, path: resolved, ...(judulFinance ? { title: judulFinance } : {}) } : t)));
     navigate(resolved, { replace: true }); // pathname sama (hanya query) → efek sinkron tidak jalan, jadi TANPA skipNextSync
   }
 

@@ -46,12 +46,12 @@ test("Verifikasi pembayaran: antrean Perlu verifikasi (default), Ditandai lunas 
   const s = baca("pages/finance/FinancePayments.jsx");
   const l = baca("features/finance/verifikasi/verifikasiLogic.js");
   assert.match(l, /id: "perlu", label: "Perlu verifikasi"/);
-  assert.match(l, /id: "lunas_crm", label: "Ditandai lunas oleh Sales"/);
+  assert.match(l, /id: "klaim", label: "Ditandai lunas oleh Sales"/);
   assert.match(l, /id: "terverifikasi", label: "Terverifikasi"/);
   assert.match(s, /useUrlTab\(TAB_URL, "perlu"\)/); // bawaan tetap "perlu"; terikat ?tab= (hub Finance)
-  assert.match(s, /const tampilKlaim = tab === "perlu" \|\| tab === "lunas_crm"/);
-  assert.match(s, /ringkas=\{tab === "perlu"\} versiMuat=\{versiKlaim\} onTampil=\{setKlaimIds\}/); // onTampil: dipakai Export Excel (B3.9)
-  assert.match(s, /tab === "perlu" \? "belum_verifikasi" : statusServer\(tab\)/);
+  assert.match(s, /const tampilKlaim = antreanId === "perlu" \|\| antreanId === "klaim"/);
+  assert.match(s, /ringkas=\{antreanId === "perlu"\} versiMuat=\{versiKlaim\} onTampil=\{setKlaimIds\}/); // onTampil: dipakai Export Excel (B3.9)
+  assert.match(s, /antreanId === "perlu" \? "belum_verifikasi" : statusServer\(antreanId\)/);
 });
 
 test("Klaim Lunas dari Sales: aksi Verifikasi Pembayaran, Tolak Klaim, Minta Bukti + penanda Bukti diminta; API terpasang", () => {

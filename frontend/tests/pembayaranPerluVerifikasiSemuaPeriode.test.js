@@ -11,7 +11,7 @@ const src = baca("src/pages/finance/FinancePayments.jsx");
 
 test("Tab perlu memanggil API dengan rentang lebar; tab lain memakai periode terpilih; angka periode tetap periode", () => {
   assert.match(baca("src/features/finance/verifikasi/verifikasiLogic.js"), /SEMUA_PERIODE = Object\.freeze\(\{ from: "2000-01-01", to: "2100-01-01" \}\)/);
-  assert.match(src, /getFinanceCustomerPayments\(tab === "perlu" \? \{ from: SEMUA_PERIODE\.from, to: SEMUA_PERIODE\.to, status: "belum_verifikasi" \} : \{ \.\.\.periode, status: statusServer\(tab\) \}\)/);
+  assert.match(src, /getFinanceCustomerPayments\(antreanId === "perlu" \? \{ from: SEMUA_PERIODE\.from, to: SEMUA_PERIODE\.to, status: "belum_verifikasi" \} : \{ \.\.\.periode, status: statusServer\(antreanId\) \}\)/);
   assert.match(src, /api\.getFinanceCustomerPayments\(\{ \.\.\.periode, status: "" \}\)/, "angka periode (query ke-2) tetap per periode");
   assert.match(baca("src/features/finance/verifikasi/DaftarPembayaran.jsx"), /Semua periode/, "daftar menyatakan cakupan semua periode");
 });

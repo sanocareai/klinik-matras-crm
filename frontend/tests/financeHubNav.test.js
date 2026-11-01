@@ -97,7 +97,10 @@ test("pemasangan: sidebar Finance dari hub; bilah tab hub membungkus halaman Fin
   for (const f of ["FinanceCash", "FinanceSuppliers"]) assert.match(baca(`../src/pages/finance/${f}.jsx`), /useUrlTab\(\[/);
   // Verifikasi pembayaran: daftar tab URL dipisah ke verifikasiLogic.js (TAB_URL) — tetap terikat ?tab= dan memuat semua tab lama.
   assert.match(baca("../src/pages/finance/FinancePayments.jsx"), /useUrlTab\(TAB_URL, "perlu"\)/);
-  assert.match(baca("../src/features/finance/verifikasi/verifikasiLogic.js"), /TAB_URL = Object\.freeze\(\["perlu", "lunas_crm", "terverifikasi", "dibatalkan", "semua"\]\)/);
+  // Identitas halaman: antrean klaim di dalam Verifikasi (?tab=klaim) = item Verifikasi; tautan lama ?tab=lunas_crm tetap milik Rekonsiliasi Sales–Finance.
+  for (const t of ["", "perlu", "klaim", "terverifikasi", "dibatalkan", "semua"]) assert.equal(cariItemHub("/finance/payments", t ? `?tab=${t}` : "").item.key, "verifikasi", `?tab=${t} harus Verifikasi`);
+  assert.equal(cariItemHub("/finance/payments", "?tab=lunas_crm").item.key, "rekon-sales");
+  assert.match(baca("../src/features/finance/verifikasi/verifikasiLogic.js"), /TAB_URL = Object\.freeze\(\["perlu", "klaim", "terverifikasi", "dibatalkan", "semua", "lunas_crm"\]\)/);
   const frame = baca("../src/features/finance/FinanceHubFrame.jsx");
   assert.match(frame, /role="tablist"/);
   assert.match(frame, /replaceActivePath/);
@@ -110,6 +113,11 @@ test("judul tab & breadcrumb Finance berbahasa Indonesia dari definisi hub (buka
   assert.equal(titleFromPath("/finance/receivables"), "Piutang & Refund");
   assert.equal(titleFromPath("/finance/receivables?tab=diagnosis"), "Piutang & Refund");
   assert.equal(titleFromPath("/finance/payments"), "Verifikasi");
+  assert.equal(titleFromPath("/finance/payments?tab=klaim"), "Verifikasi");
+  assert.equal(titleFromPath("/finance/payments?tab=semua"), "Verifikasi");
+  assert.equal(titleFromPath("/finance/payments?tab=lunas_crm"), "Rekonsiliasi Sales–Finance");
+  // Pindah ?tab= di halaman Finance memperbarui judul tab aktif (satu path, beberapa item hub).
+  assert.match(baca("../src/lib/TabsContext.jsx"), /const judulFinance = resolved\.startsWith\("\/finance\/"\) \? titleFromPath\(resolved\) : null;/);
   assert.equal(titleFromPath("/finance/cash?tab=mutasi"), "Mutasi Buku");
   assert.equal(titleFromPath("/finance/suppliers?tab=aging"), "Jadwal & Aging");
   const ENGLISH = ["Receivables", "Payments", "Invoices", "Cash", "Expenses", "Purchases", "Suppliers", "Journal", "Ledger", "Reconciliation", "Reports", "Accounts", "Settings", "Dashboard"];

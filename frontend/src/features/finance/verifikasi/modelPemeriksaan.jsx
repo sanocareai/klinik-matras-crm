@@ -104,11 +104,11 @@ export function modelPembayaran(p, ctx) {
 
 const tglWIB = (t) => new Date(new Date(t).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
-/** Klaim lunas berbukti dari Sales (OrderPaymentClaim). `ctx`: { aksi } */
+/** Klaim pembayaran dari Sales (OrderPaymentClaim). `ctx`: { aksi } */
 export function modelKlaim(k, ctx) {
   const label = STATUS_KLAIM_LABEL[k.status] || k.status;
   return {
-    jenisLabel: "Klaim lunas berbukti dari Sales",
+    jenisLabel: "Klaim pembayaran dari Sales",
     judul: k.order?.orderNumber || "Klaim", subjudul: k.order?.customerName || null,
     status: { label, nada: k.status === "SUBMITTED" ? "orange" : "neutral" }, tidakDihitung: false,
     ringkas: [
