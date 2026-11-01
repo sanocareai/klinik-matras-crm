@@ -58,8 +58,10 @@ export function kalimatCakupan({ tab = "", q = "", jumlah = 0 }) {
   const t = TAB_PO_TAMPIL.find((x) => x.key === tab);
   if (tab && t) sebut.push(`tahap ${t.label}`);
   if (String(q || "").trim()) sebut.push(`pencarian “${String(q).trim()}”`);
-  const batas = jumlah >= BATAS_DAFTAR ? ` · hanya ${BATAS_DAFTAR} PO terbaru yang dimuat` : "";
-  return sebut.length ? `Angka mengikuti daftar di bawah (${sebut.join(", ")})${batas}.` : `Angka dihitung dari semua PO yang dimuat${batas}.`;
+  const penuh = jumlah >= BATAS_DAFTAR ? ` Batas sudah tercapai: PO yang lebih lama tidak ikut dimuat dan tidak ikut dihitung.` : "";
+  const dasar = `Daftar memuat maksimal ${BATAS_DAFTAR} PO terbaru, jadi ini bukan total seluruh PO.`;
+  const ikut = sebut.length ? `Angka KPI mengikuti daftar yang dimuat (${sebut.join(", ")}).` : "Angka KPI mengikuti PO yang dimuat dan saringan yang sedang aktif.";
+  return `${dasar} ${ikut}${penuh}`;
 }
 
 export function kalimatHasil({ jumlah = 0, tab = "", q = "" }) {
@@ -138,7 +140,7 @@ export const ALUR_PEMBELIAN = Object.freeze([
 export const CATATAN_TANPA_PO = "Penerimaan tanpa PO tetap bisa dibuat Gudang, tetapi ditandai Tanpa PO dan tidak ada pencocokan jumlah maupun harga.";
 
 /** Dampak Harga Berlaku — kalimat tetap (perilaku aktual hargaDariPO.js), dipakai di dekat tombol simpan. */
-export const DAMPAK_HARGA_SINGKAT = "Saat PO disimpan (termasuk sebagai draf), harga bahan yang berubah langsung menjadi Harga Berlaku operasional.";
+export const DAMPAK_HARGA_SINGKAT = "Saat PO disimpan (termasuk sebagai draf), harga bahan yang berubah langsung menjadi Harga Berlaku untuk HPP operasional, bukan jurnal atau nilai persediaan Finance. Membatalkan PO tidak mengembalikan harga.";
 export const DAMPAK_HARGA_RINCI = Object.freeze([
   "Berlaku sejak saat PO berhasil disimpan, tanpa tanggal mundur. Isian yang belum disimpan tidak mengubah harga; bila penyimpanan gagal, tidak ada harga yang berubah.",
   "Hanya baris yang harga, satuan, atau faktor konversinya berubah yang menulis harga. Mengubah jumlah saja, atau menyimpan ulang isi yang sama, tidak menulis harga.",

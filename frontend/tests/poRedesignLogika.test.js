@@ -29,10 +29,11 @@ test("KPI: rumus & populasi lama — berjalan = Disetujui + Diterima Sebagian; n
 });
 
 test("cakupan angka jujur: menyebut saringan aktif dan batas 300 PO terbaru", () => {
-  assert.match(kalimatCakupan({ tab: "", q: "", jumlah: 5 }), /semua PO yang dimuat/);
+  assert.match(kalimatCakupan({ tab: "", q: "", jumlah: 5 }), /maksimal 300 PO terbaru, jadi ini bukan total seluruh PO/);
+  assert.doesNotMatch(kalimatCakupan({ tab: "", q: "", jumlah: 5 }), /Batas sudah tercapai/);
   assert.match(kalimatCakupan({ tab: "DRAFT", q: "", jumlah: 5 }), /tahap Draf/);
   assert.match(kalimatCakupan({ tab: "", q: " sinar ", jumlah: 5 }), /pencarian “sinar”/);
-  assert.match(kalimatCakupan({ tab: "", q: "", jumlah: 300 }), /300 PO terbaru/);
+  assert.match(kalimatCakupan({ tab: "", q: "", jumlah: 300 }), /Batas sudah tercapai/);
   assert.match(kalimatHasil({ jumlah: 0, tab: "", q: "" }), /Belum ada PO/);
   assert.match(kalimatHasil({ jumlah: 0, tab: "SELESAI", q: "" }), /Tidak ada PO yang cocok/);
   assert.match(kalimatHasil({ jumlah: 12, tab: "", q: "" }), /^Menampilkan 12 PO$/);
@@ -120,6 +121,8 @@ test("status 'Selesai' tidak menyiratkan lunas; status berikutnya dijelaskan", (
 
 test("Harga Berlaku: kalimat dampak sesuai perilaku aktual — termasuk saat DRAF; bukan 'hanya draf'", () => {
   assert.match(DAMPAK_HARGA_SINGKAT, /termasuk sebagai draf/);
+  assert.match(DAMPAK_HARGA_SINGKAT, /HPP operasional, bukan jurnal atau nilai persediaan Finance/);
+  assert.match(DAMPAK_HARGA_SINGKAT, /Membatalkan PO tidak mengembalikan harga/);
   const rinci = DAMPAK_HARGA_RINCI.join(" ");
   assert.match(rinci, /tanpa tanggal mundur/); assert.match(rinci, /tidak menulis harga/); assert.match(rinci, /tidak menambah stok/i);
   assert.match(rinci, /tidak mengembalikan harga/);

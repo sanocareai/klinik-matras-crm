@@ -284,7 +284,7 @@ function StripDampakHarga({ dampak, pra, petaHarga }) {
       <div className="fin-poed-harga-baris">
         <IkHarga size={20} className="fin-poed-harga-ikon" />
         <p className="fin-poed-harga-teks fin-poed-desk"><b>Harga Berlaku otomatis.</b> {pra?.aktif === false ? dampak.teks : (dampak.teks ? `${DAMPAK_HARGA_SINGKAT} ${dampak.teks}` : DAMPAK_HARGA_SINGKAT)}</p>
-        <p className="fin-poed-harga-teks fin-poed-hp"><b>Harga Berlaku otomatis.</b> {dampak.teks || "Saat disimpan, harga bahan yang berubah ikut diperbarui."}</p>
+        <p className="fin-poed-harga-teks fin-poed-hp"><b>Harga Berlaku otomatis.</b> {dampak.teks || "Simpan (termasuk draf) memperbarui Harga Berlaku bahan yang berubah."} Dipakai untuk HPP, bukan jurnal. Batal PO tidak mengembalikannya.</p>
         <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-poed-harga-tombol" aria-label="Lihat dampak"><span className="fin-poed-desk">Lihat dampak</span><span className="fin-poed-hp">Dampak</span></Pembuka>
       </div>
       {buka && (
