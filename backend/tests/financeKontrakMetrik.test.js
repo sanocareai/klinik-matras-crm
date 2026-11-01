@@ -3,6 +3,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { METRIK, BASIS, KELOMPOK, GLOSARIUM, metrik, metrikUntukHalaman, metrikUntukModulExport, kontrakUntukKlien } from "../src/services/finance/kontrakMetrik.js";
 import { MODUL_EXPORT } from "../src/services/finance/export/registry.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { ekstrakDeklarasiMetrik, periksaHalamanMetrik, periksaSemuaHalaman } from "./helpers/pemeriksaMetrikUi.js";
 
 test("Setiap metrik punya definisi, rumus, sumber, status, basis valid, kelompok valid, dan halaman", () => {
   for (const x of METRIK) {
@@ -83,34 +87,83 @@ test("Setiap modul export terdaftar punya ≥1 definisi angka; sheet 'Definisi A
   assert.match(basisTanggalModul("pembayaran"), /Tanggal pembayaran diterima/);
 });
 
-test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kontrak atau dinyatakan tanpa angka uang; kartu UI hanya memakai kunci metrik yang ada", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const { fileURLToPath } = await import("node:url");
-  const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/src/pages/finance");
-  // Halaman tanpa kartu angka uang (daftar/pengaturan/buku) — dinyatakan eksplisit supaya halaman baru tidak lolos tanpa klasifikasi.
-  const TANPA_ANGKA = new Set(["FinanceAccounts.jsx", "FinanceInvoices.jsx", "FinanceJournal.jsx", "FinanceLedger.jsx", "FinancePersediaanAwal.jsx", "FinanceSettings.jsx", "FinancePengecualianLunas.jsx", "FinancePenjualanKaryawan.jsx",
-    // Purchase Order: nilai PO/ditunggu adalah KOMITMEN dokumen (harga × jumlah), bukan angka buku besar — PO tidak menjurnal apa pun, jadi tidak ada metrik kontrak untuknya.
-    "FinancePurchaseOrders.jsx",
-    // Biaya Bahan per Unit: kartu angkanya hidup di komponen JejakBiayaBahan (read-model nilai beku); definisinya tetap di kontrak (biaya_bahan_*) dan dipakai panel KenapaBeda halaman ini.
-    "FinanceBiayaBahan.jsx",
-    // Retur Supplier & Debit Note: pembungkus tipis ke features/returSupplier (daftar dokumen retur / debit note / saldo kredit). Nilai di layar adalah nilai DOKUMEN; belum ada metrik kontrak untuk
-    // retur/debit note. Klasifikasi SEMENTARA saat rilis 11 Okt 2026 agar halaman baru tidak lolos tanpa klasifikasi — pemilik kontrak Finance menentukan bila ingin metrik retur_supplier_*.
-    "FinanceReturSupplier.jsx"]);
-  // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
-  const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
-  // Halaman yang sebagian kartunya pindah ke komponen fitur anak (redesain Pemasukan, Nov 2026): halaman + komponen itu dibaca BERSAMA.
-  const GABUNG_FITUR = { "FinancePemasukan.jsx": ["../features/finance/pemasukan/RingkasanPemasukan.jsx", "../features/finance/pemasukan/DaftarPemasukan.jsx"] };
-  const kunci = new Set(METRIK.map((m) => m.kunci));
-  for (const f of fs.readdirSync(akar).filter((x) => x.endsWith(".jsx"))) {
-    const src = DELEGASI_FITUR[f]
-      ? fs.readFileSync(path.join(akar, path.join("..", DELEGASI_FITUR[f])), "utf8")
-      : [f, ...(GABUNG_FITUR[f] ?? []).map((p) => path.join("..", p))].map((p) => fs.readFileSync(path.join(akar, p), "utf8")).join("\n");
-    const dipakai = [...src.matchAll(/metrik[=:]\s*\{?\s*"([a-z_]+)"/g)].map((m) => m[1]);
-    for (const d of dipakai) assert.ok(kunci.has(d), `${f}: metrik="${d}" tidak ada di kontrak`);
-    for (const m of src.matchAll(/metrik=\{\[([^\]]+)\]\}/g)) for (const d of m[1].match(/"([a-z_]+)"/g) ?? []) assert.ok(kunci.has(d.replace(/"/g, "")), `${f}: ${d} tidak ada di kontrak`);
-    assert.ok(dipakai.length > 0 || TANPA_ANGKA.has(f), `${f}: halaman Finance tidak punya metrik kontrak dan belum dinyatakan tanpa angka uang`);
-  }
+// ── COVERAGE TAB (dipecah PER HALAMAN) ──
+// Setiap halaman Finance diklasifikasi: punya deklarasi metrik yang valid di kontrak, atau dinyatakan tanpa angka uang. Satu tes per halaman, jadi kegagalan satu halaman
+// TIDAK menghentikan pemeriksaan halaman lain. Aturan baca-teks ada di tests/helpers/pemeriksaMetrikUi.js (dibuktikan oleh tes di bawah).
+const AKAR_HALAMAN_FINANCE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/src/pages/finance");
+// Halaman tanpa kartu angka uang (daftar/pengaturan/buku) — dinyatakan eksplisit supaya halaman baru tidak lolos tanpa klasifikasi.
+const TANPA_ANGKA = new Set(["FinanceAccounts.jsx", "FinanceInvoices.jsx", "FinanceJournal.jsx", "FinanceLedger.jsx", "FinancePersediaanAwal.jsx", "FinanceSettings.jsx", "FinancePengecualianLunas.jsx", "FinancePenjualanKaryawan.jsx",
+  // Purchase Order: nilai PO/ditunggu adalah KOMITMEN dokumen (harga × jumlah), bukan angka buku besar — PO tidak menjurnal apa pun, jadi tidak ada metrik kontrak untuknya.
+  "FinancePurchaseOrders.jsx",
+  // Biaya Bahan per Unit: kartu angkanya hidup di komponen JejakBiayaBahan (read-model nilai beku); definisinya tetap di kontrak (biaya_bahan_*) dan dipakai panel KenapaBeda halaman ini.
+  "FinanceBiayaBahan.jsx",
+  // Retur Supplier & Debit Note: pembungkus tipis ke features/returSupplier (daftar dokumen retur / debit note / saldo kredit). Nilai di layar adalah nilai DOKUMEN; belum ada metrik kontrak untuk
+  // retur/debit note. Klasifikasi SEMENTARA saat rilis 11 Okt 2026 agar halaman baru tidak lolos tanpa klasifikasi — pemilik kontrak Finance menentukan bila ingin metrik retur_supplier_*.
+  "FinanceReturSupplier.jsx"]);
+// Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
+const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
+// Halaman yang sebagian kartunya pindah ke komponen fitur anak (redesain Pemasukan, Nov 2026): halaman + komponen itu dibaca BERSAMA.
+const GABUNG_FITUR = { "FinancePemasukan.jsx": ["../features/finance/pemasukan/RingkasanPemasukan.jsx", "../features/finance/pemasukan/DaftarPemasukan.jsx"] };
+
+const sumberHalaman = (f) => (DELEGASI_FITUR[f]
+  ? fs.readFileSync(path.join(AKAR_HALAMAN_FINANCE, path.join("..", DELEGASI_FITUR[f])), "utf8")
+  : [f, ...(GABUNG_FITUR[f] ?? []).map((p) => path.join("..", p))].map((p) => fs.readFileSync(path.join(AKAR_HALAMAN_FINANCE, p), "utf8")).join("\n"));
+const KUNCI_KONTRAK = new Set(METRIK.map((m) => m.kunci));
+
+for (const f of fs.readdirSync(AKAR_HALAMAN_FINANCE).filter((x) => x.endsWith(".jsx")).sort()) {
+  test(`COVERAGE TAB ${f}: punya metrik kontrak yang valid atau dinyatakan tanpa angka uang`, () => {
+    const masalah = periksaHalamanMetrik({ nama: f, sumber: sumberHalaman(f), kunciKontrak: KUNCI_KONTRAK, tanpaAngka: TANPA_ANGKA.has(f) });
+    assert.deepEqual(masalah, [], masalah.join("\n"));
+  });
+}
+
+test("PEMERIKSA 1: kunci bermasalah (kapital, angka di depan, tanda hubung, spasi) DILAPORKAN — tidak dilewati diam-diam", () => {
+  const kontrak = new Set(["piutang_usaha", "metrik_2"]);
+  const lap = (sumber) => periksaHalamanMetrik({ nama: "X.jsx", sumber, kunciKontrak: kontrak });
+  assert.match(lap('<Kartu metrik="Piutang_Usaha" />').join("\n"), /kunci metrik "Piutang_Usaha" tidak valid/, "kapital");
+  assert.match(lap('<Kartu metrik="2piutang" />').join("\n"), /tidak valid/, "diawali angka");
+  assert.match(lap('<Kartu metrik="piutang-usaha" />').join("\n"), /tidak valid/, "tanda hubung");
+  assert.match(lap('<Kartu metrik={{ a: 1 }} metrik: "salah kunci" />').join("\n"), /tidak valid/, "spasi");
+  assert.match(lap('const K = { metrik: "klaim_lunas_SALAH" };').join("\n"), /tidak valid/, "kapital pada bentuk objek");
+  // kunci berbentuk benar tetapi tidak ada di kontrak → pesan berbeda; kunci valid (termasuk yang memuat angka) → lolos
+  assert.match(lap('<Kartu metrik="tidak_ada" />').join("\n"), /metrik="tidak_ada" tidak ada di kontrak/);
+  assert.deepEqual(lap('<Kartu metrik="piutang_usaha" />'), []);
+  assert.deepEqual(lap('<Kartu metrik="metrik_2" />'), [], "angka di tengah/akhir kunci sah");
+});
+
+test("PEMERIKSA 2: deklarasi berbentuk LARIK dihitung sebagai deklarasi dan setiap anggotanya divalidasi (kasus FinanceReceivables.jsx)", () => {
+  const kontrak = new Set(["piutang_usaha", "refund_diberikan"]);
+  const lap = (sumber, tanpaAngka = false) => periksaHalamanMetrik({ nama: "X.jsx", sumber, kunciKontrak: kontrak, tanpaAngka });
+  // hanya larik → tidak lagi dianggap "tanpa metrik"
+  assert.deepEqual(lap('<KenapaBeda metrik={["piutang_usaha", "refund_diberikan"]} />'), []);
+  // anggota salah dilaporkan satu per satu, termasuk kapital
+  const m = lap('<KenapaBeda metrik={["piutang_usaha", "tidak_ada", "Refund_Diberikan"]} />').join("\n");
+  assert.match(m, /metrik="tidak_ada" tidak ada di kontrak/); assert.match(m, /kunci metrik "Refund_Diberikan" tidak valid/);
+  // bentuk objek dengan larik juga dikenali
+  assert.deepEqual(lap("const A = { metrik: ['piutang_usaha'] };"), []);
+  // halaman tanpa deklarasi apa pun tetap wajib dinyatakan tanpa angka uang
+  assert.match(lap("<div>tanpa kartu</div>").join("\n"), /belum dinyatakan tanpa angka uang/);
+  assert.deepEqual(lap("<div>tanpa kartu</div>", true), []);
+  // ekstraksi: urutan kemunculan + bentuk
+  assert.deepEqual(ekstrakDeklarasiMetrik('<A metrik="piutang_usaha" /><B metrik={["x_1", "y_2"]} />'), [{ kunci: "piutang_usaha", bentuk: "tunggal" }, { kunci: "x_1", bentuk: "larik" }, { kunci: "y_2", bentuk: "larik" }]);
+  // dan sumber nyata: FinanceReceivables.jsx memang hanya memakai larik, dan kini lolos
+  const nyata = fs.readFileSync(path.join(AKAR_HALAMAN_FINANCE, "FinanceReceivables.jsx"), "utf8");
+  assert.ok(ekstrakDeklarasiMetrik(nyata).length > 0 && ekstrakDeklarasiMetrik(nyata).every((d) => d.bentuk === "larik"), "FinanceReceivables.jsx hanya memakai deklarasi larik");
+  assert.deepEqual(periksaHalamanMetrik({ nama: "FinanceReceivables.jsx", sumber: nyata, kunciKontrak: KUNCI_KONTRAK }), []);
+});
+
+test("PEMERIKSA 3: kegagalan dilaporkan PER HALAMAN — halaman bermasalah di awal tidak menghentikan pemeriksaan halaman sesudahnya", () => {
+  const kontrak = new Set(["ada"]);
+  const hasil = periksaSemuaHalaman([
+    { nama: "A.jsx", sumber: '<K metrik="bukan_kontrak" />' },   // gagal (di awal)
+    { nama: "B.jsx", sumber: '<K metrik="ada" />' },             // lolos
+    { nama: "C.jsx", sumber: "<div/>" },                         // gagal (tanpa metrik, tidak dinyatakan)
+    { nama: "D.jsx", sumber: "<div/>" },                         // lolos (dinyatakan tanpa angka)
+    { nama: "E.jsx", sumber: '<K metrik="Ada" />' },             // gagal (di akhir, setelah halaman gagal lain)
+  ], kontrak, new Set(["D.jsx"]));
+  assert.deepEqual(Object.keys(hasil), ["A.jsx", "B.jsx", "C.jsx", "D.jsx", "E.jsx"], "semua halaman diperiksa");
+  assert.equal(hasil["A.jsx"].length, 1); assert.deepEqual(hasil["B.jsx"], []); assert.equal(hasil["C.jsx"].length, 1); assert.deepEqual(hasil["D.jsx"], []);
+  assert.match(hasil["E.jsx"].join("\n"), /tidak valid/, "halaman terakhir tetap diperiksa setelah beberapa kegagalan");
 });
 
 test("COVERAGE METRIK: seluruh metrik kontrak dipakai di UI (kartu/panel Kenapa angkanya berbeda) — tidak ada metrik yatim", async () => {
