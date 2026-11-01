@@ -1,23 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
-import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { CalendarClock, FileText, AlertTriangle } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
-import { Modal } from "@/components/ui/modal.jsx";
-import { Field } from "@/components/ui/field.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
-import DatePicker from "@/components/ui/date-picker.jsx";
+import { HalamanFinance, formatUang } from "@/features/finance/shared.jsx";
+import { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { KpiStatis } from "@/features/finance/PengeluaranPanels.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  Pilihan, tanggalPendek,
-} from "@/features/finance/shared.jsx";
-import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+  StripInvoice, PeringatanManual, ToolbarInvoice, DaftarInvoice, RincianInvoice, FormJatuhTempo,
+} from "@/features/finance/InvoicePanels.jsx";
+import { IkDokumen, IkKoin } from "@/components/financeIconsBiaya.jsx";
+import { IkTempoLewat, IkTempoBelum } from "@/components/financeIconsInvoice.jsx";
+import { filterInvoice, adaFilterLokal, jumlahFilterAktif, kpiInvoice, kalimatHasil } from "@/features/finance/invoiceTampilan.js";
 
-// INVOICE & JATUH TEMPO — sisi FINANCE dari invoice yang sudah ada.
+// INVOICE PELANGGAN — sisi FINANCE dari invoice yang sudah ada.
 //
 // ⚠️ HALAMAN INI TIDAK MEMBUAT INVOICE. Invoice lahir OTOMATIS sebagai
 // draft begitu order dibuat (sales tidak perlu langkah tambahan), dan
@@ -28,25 +21,12 @@ import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 //
 // Nominalnya DITURUNKAN dari sumber yang sama dengan invoice yang dikirim
 // ke customer (services/invoice.js#hitungNominal) — bukan dihitung ulang.
-
-const STATUS_INVOICE = {
-  DRAFT: { label: "Draft", variant: "neutral" },
-  SENT: { label: "Terkirim", variant: "accent" },
-  VIEWED: { label: "Dilihat", variant: "accent" },
-  PARTIALLY_PAID: { label: "Dibayar Sebagian", variant: "orange" },
-  PAID: { label: "Lunas", variant: "green" },
-  OVERDUE: { label: "Lewat Tempo", variant: "red" },
-  CANCELLED: { label: "Dibatalkan", variant: "neutral" },
-};
-
-const FILTER = [
-  { key: "", label: "Semua" },
-  { key: "lewat", label: "Lewat Jatuh Tempo" },
-  { key: "belum_diatur", label: "Belum Ada Jatuh Tempo" },
-];
+//
+// Tampilan (daftar, KPI, rincian, form jatuh tempo): features/finance/InvoicePanels.jsx + invoiceTampilan.js. File ini hanya memuat data
+// dan menyambungkan tindakan; endpoint, filter server/lokal, dan penulisan jatuh tempo SAMA dengan sebelumnya.
 
 export default function FinanceInvoices() {
-  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
+  const [panelRincian, setPanelRincian] = useState(null); // invoice yang rinciannya terbuka (panel samping, klik baris)
   const [jatuhTempo, setJatuhTempo] = useState("");
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState("");
@@ -55,6 +35,8 @@ export default function FinanceInvoices() {
   const [fTempo, setFTempo] = useState("");
   const searchTunda = useTertunda(search);
   const pernahMuat = useRef(false);
+  // Respons permintaan LAMA yang terlambat tidak boleh menimpa pencarian/tab yang baru dipilih: hanya permintaan terakhir yang mengisi layar.
+  const urutan = useRef(0);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -65,15 +47,19 @@ export default function FinanceInvoices() {
   // hilang dan kursor tidak lepas. Argumen lain (mis. event onRetry) diabaikan.
   const muat = useCallback(async (opsi) => {
     const diam = opsi?.diam === true;
+    const saya = ++urutan.current;
     if (!diam) setLoading(true);
     setError(null);
     try {
-      setData(await api.getFinanceInvoices({ jatuhTempo, search: searchTunda.trim() }));
+      const hasil = await api.getFinanceInvoices({ jatuhTempo, search: searchTunda.trim() });
+      if (saya !== urutan.current) return;
+      setData(hasil);
     } catch (e) {
+      if (saya !== urutan.current) return;
       if (diam) setPesan(e.message || "Gagal menyegarkan daftar");
       else setError(e.message || "Gagal memuat invoice");
     } finally {
-      if (!diam) setLoading(false);
+      if (!diam && saya === urutan.current) setLoading(false);
     }
   }, [jatuhTempo, searchTunda]);
 
@@ -95,263 +81,89 @@ export default function FinanceInvoices() {
   }
 
   const semuaInvoice = data?.invoices || [];
-  const r = data?.ringkasan;
+  const kpi = kpiInvoice(data);
 
-  // Pencarian (nomor/pelanggan) dikerjakan server; filter chip di bawah hanya
+  // Pencarian (nomor/pelanggan) dikerjakan server; filter di panel hanya
   // menyaring baris yang sudah termuat.
   const opsiSales = useMemo(
-    () => [...new Set(semuaInvoice.map((i) => i.salesName).filter(Boolean))].sort().map((s) => [s, s]),
+    () => [...new Set(semuaInvoice.map((i) => i.salesName).filter(Boolean))].sort(),
     [semuaInvoice]
   );
-  const invoices = useMemo(() => semuaInvoice.filter((i) => {
-    if (fStatus && i.status !== fStatus) return false;
-    if (fSumber && i.sumber !== fSumber) return false;
-    if (fSales && i.salesName !== fSales) return false;
-    if (fTempo === "ada" && !i.dueDate) return false;
-    if (fTempo === "belum" && i.dueDate) return false;
-    return true;
-  }), [semuaInvoice, fStatus, fSumber, fSales, fTempo]);
-  const disaringLokal = !!(fStatus || fSumber || fSales || fTempo);
+  const filterLokal = { fStatus, fSumber, fSales, fTempo };
+  const invoices = useMemo(() => filterInvoice(semuaInvoice, filterLokal), [semuaInvoice, fStatus, fSumber, fSales, fTempo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const disaringLokal = adaFilterLokal(filterLokal);
+  const hasil = kalimatHasil({ tampil: invoices.length, termuat: semuaInvoice.length, terpotong: kpi.terpotong });
+  const aktif = jumlahFilterAktif({ q: search, fStatus, fSumber, fSales, fTempo, jatuhTempo });
 
   function aturUlangFilter() {
-    setSearch(""); setFStatus(""); setFSumber(""); setFSales(""); setFTempo("");
+    setSearch(""); setFStatus(""); setFSumber(""); setFSales(""); setFTempo(""); setJatuhTempo("");
   }
+
+  const filter = {
+    status: { nilai: fStatus, ubah: setFStatus }, sales: { nilai: fSales, ubah: setFSales },
+    sumber: { nilai: fSumber, ubah: setFSumber }, tempo: { nilai: fTempo, ubah: setFTempo },
+  };
+  const bukaAturTempo = (inv) => { setPanelRincian(null); setAturTempo(inv); };
 
   return (
     <HalamanFinance
-      title="Invoice & Jatuh Tempo"
-      subtitle="Tagihan ke pelanggan, umur tagihannya, dan yang belum punya tanggal jatuh tempo."
+      className="fin-halaman"
+      title="Invoice pelanggan"
+      subtitle="Tagihan ke pelanggan, sisa yang belum dibayar, dan jatuh tempo — posisi terkini."
       loading={loading}
       error={error}
       onRetry={muat}
     >
-      {pesan && (
-        <Card className="bg-redbg">
-          <CardContent className="flex items-center justify-between gap-3 py-3">
-            <p className="text-[13px] text-ink">{pesan}</p>
-            <Button size="sm" variant="neutral" onClick={() => setPesan(null)}>Tutup</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <Penjelasan>
-        Invoice <strong>dibuat otomatis</strong> saat order lahir dan isinya dikelola dari Rincian Pesanan di
-        CRM — halaman ini tidak membuat atau mengirim invoice. Nominalnya diturunkan dari sumber yang sama
-        dengan invoice yang dikirim ke customer, jadi angkanya mustahil berbeda dari dokumen yang sudah
-        mereka terima.
-      </Penjelasan>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KartuAngka
-          label="Invoice Ditampilkan" value={r?.total ?? 0} sub="Sesuai filter"
-          info="Jumlah baris yang tampil di tabel bawah sesuai filter yang aktif — invoice gabungan dihitung satu, bukan per order anggotanya."
-        />
-        <KartuAngka
-          label="Nilai Belum Lunas" value={formatUang(r?.nilaiBelumLunas ?? 0)}
-          sub="Seluruh invoice, bukan cuma yang tampil"
-          info="Total sisa tagihan dari SEMUA invoice yang belum lunas, termasuk yang sedang tersembunyi karena filter — supaya angkanya tetap bisa dipercaya walau sedang menyaring tampilan."
-        />
-        <KartuAngka
-          label="Lewat Jatuh Tempo" value={r?.lewatTempo ?? 0}
-          tone={(r?.lewatTempo ?? 0) > 0 ? "red" : "default"}
-          onClick={() => setJatuhTempo(jatuhTempo === "lewat" ? "" : "lewat")}
-          info="Invoice yang tanggal jatuh temponya sudah lewat tapi masih ada sisa tagihan. Klik kartu ini untuk langsung menyaring daftar di bawah."
-        />
-        <KartuAngka
-          label="Belum Ada Jatuh Tempo" value={r?.tanpaJatuhTempo ?? 0}
-          tone={(r?.tanpaJatuhTempo ?? 0) > 0 ? "orange" : "default"}
-          sub="Umur tagihannya dihitung dari tanggal order"
-          onClick={() => setJatuhTempo(jatuhTempo === "belum_diatur" ? "" : "belum_diatur")}
-          info="Invoice yang belum pernah diatur tanggal jatuh temponya. Selama belum diatur, 'umur' tagihan dihitung dari tanggal order dibuat — atur tanggal jatuh tempo yang sebenarnya lewat ikon kalender di baris tabel."
-        />
-      </div>
-
-      {r?.dariStatusManual > 0 && (
-        <Card className="bg-orangebg">
-          <CardContent className="flex gap-3 py-4">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-orange" />
-            <div>
-              <p className="text-[13px] font-bold text-ink">
-                {r.dariStatusManual} invoice angkanya dari status bayar manual, bukan dari ledger pembayaran
-              </p>
-              <p className="mt-1 text-[13px] leading-relaxed text-ink2">
-                Order-order itu tidak punya satu pun entri pembayaran tercatat — statusnya diklik manual di
-                dropdown CRM. Angka “sudah dibayar”-nya mengikuti status itu apa adanya dan TIDAK punya
-                rincian siapa menerima, kapan, lewat apa. Kolom “Sumber” di tabel menandainya per baris.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {FILTER.map((f) => (
-          <Button
-            key={f.key || "semua"} size="sm"
-            variant={jatuhTempo === f.key ? "secondary" : "neutral"}
-            onClick={() => setJatuhTempo(f.key)}
-          >
-            {f.label}
-          </Button>
-        ))}
-      </div>
-      <p className="text-[13px] leading-relaxed text-ink3">
-        Fokus ke tagihan yang paling butuh tindakan — yang sudah lewat tempo atau belum punya tanggal tempo sama sekali.
-      </p>
-
-      <FilterBar
-        q={search} onQ={setSearch}
-        placeholder="Cari invoice, order, pelanggan…"
-        filters={[
-          { key: "status", label: "Status", value: fStatus, onChange: setFStatus, options: Object.entries(STATUS_INVOICE).map(([k, v]) => [k, v.label]) },
-          { key: "sumber", label: "Sumber", value: fSumber, onChange: setFSumber, options: [["ledger", "Ledger"], ["manual", "Status manual"]] },
-          { key: "sales", label: "Sales", value: fSales, onChange: setFSales, options: opsiSales },
-          { key: "tempo", label: "Jatuh tempo", value: fTempo, onChange: setFTempo, options: [["ada", "Sudah diatur"], ["belum", "Belum diatur"]] },
-        ]}
-        ringkasan={disaringLokal ? `${invoices.length} invoice dari ${semuaInvoice.length}` : `${invoices.length} invoice`}
-        onReset={aturUlangFilter}
-      />
-
-      <Card className="overflow-hidden">
-        <JudulKartu
-          title={`${invoices.length} invoice`}
-          description="Invoice gabungan tampil sebagai SATU baris (dokumen yang benar-benar dikirim ke customer adalah
-            invoice utamanya) — anggotanya tidak dihitung dua kali."
-          info="Kolom Sumber membedakan invoice yang nilai 'sudah dibayar'-nya berasal dari ledger pembayaran sungguhan (hijau, bisa dipercaya rinciannya) dari yang cuma mengikuti status manual lama di CRM (oranye, tidak ada rincian siapa/kapan/berapa)."
-        />
-        {invoices.length === 0 ? (
-          <CardContent>
-            <EmptyState icon={FileText} title="Tidak ada invoice" description="Belum ada invoice yang cocok dengan filter ini." />
-          </CardContent>
-        ) : (
-          <TableWrap className="dh-table">
-            <Table fixed>
-              <THead>
-                <TR>
-                  <TH sticky width={132}>Invoice</TH>
-                  <TH width={128} hideBelow="2xl">Order</TH>
-                  <TH>Pelanggan</TH>
-                  <TH width={110} hideBelow="2xl">Sales</TH>
-                  <TH numeric width={112} hideBelow="2xl">Tagihan</TH>
-                  <TH numeric width={112} hideBelow="2xl">Dibayar</TH>
-                  <TH numeric width={112}>Sisa</TH>
-                  <TH width={100} hideBelow="2xl">Sumber</TH>
-                  <TH width={110}>Jatuh Tempo</TH><TH width={100}>Status</TH><TH width={56} />
-                </TR>
-              </THead>
-              <TBody>
-                {invoices.map((inv) => {
-                  const st = STATUS_INVOICE[inv.status] || { label: inv.status, variant: "neutral" };
-                  return (
-                    <TR key={inv.id} {...klikBuka(() => setPanelRincian(specOtomatis(inv)))}>
-                      <TD sticky className="font-mono text-[12px]">
-                        {inv.invoiceNumber}
-                        {inv.jumlahOrder > 1 && (
-                          <Badge variant="accent" className="ml-1.5">{inv.jumlahOrder} order</Badge>
-                        )}
-                      </TD>
-                      <TD hideBelow="2xl" truncate className="font-medium">{inv.orderNumber || "—"}</TD>
-                      <TD truncate>{inv.customerName || "—"}</TD>
-                      <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">{inv.salesName || "—"}</TD>
-                      <TD hideBelow="2xl" numeric><Uang value={inv.totalTagihan} /></TD>
-                      <TD hideBelow="2xl" numeric>
-                        <Uang value={inv.dibayar} nolSebagaiStrip />
-                        {inv.dibayarTidakRinci && (
-                          <span className="block text-[11px] text-orange">nominal tidak tercatat</span>
-                        )}
-                      </TD>
-                      <TD numeric><Uang value={inv.sisa} className="font-bold" nolSebagaiStrip /></TD>
-                      <TD hideBelow="2xl">
-                        <Badge variant={inv.sumber === "ledger" ? "green" : "orange"}>
-                          {inv.sumber === "ledger" ? "Ledger" : "Status manual"}
-                        </Badge>
-                      </TD>
-                      <TD>
-                        {inv.dueDate ? (
-                          <>
-                            <span className="block whitespace-nowrap">{tanggalPendek(inv.dueDate)}</span>
-                            {inv.hariLewat > 0 && !inv.lunas && (
-                              <span className="text-[11px] text-red">lewat {inv.hariLewat} hari</span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-ink3">belum diatur</span>
-                        )}
-                      </TD>
-                      <TD><Badge variant={st.variant}>{st.label}</Badge></TD>
-                      <TD>
-                        <Button
-                          size="sm" variant="tertiary"
-                          onClick={() => setAturTempo(inv)}
-                          title="Atur jatuh tempo"
-                        >
-                          <CalendarClock size={14} />
-                        </Button>
-                      </TD>
-                    </TR>
-                  );
-                })}
-              </TBody>
-            </Table>
-          </TableWrap>
+      <div className="fin-ring fin-inv">
+        {pesan && (
+          <div className="fin-inv-pesan" role="alert">
+            <p>{pesan}</p>
+            <button type="button" className="fin-tombol" onClick={() => setPesan(null)}><span>Tutup</span></button>
+          </div>
         )}
-      </Card>
 
-      <ModalJatuhTempo
-        invoice={aturTempo}
-        onClose={() => setAturTempo(null)}
-        onSubmit={simpanTempo}
-      />
-      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
-    </HalamanFinance>
-  );
-}
+        <StripInvoice />
 
-function ModalJatuhTempo({ invoice, onClose, onSubmit }) {
-  const [tanggal, setTanggal] = useState("");
+        <section aria-label="Angka utama" className="fin-kpi-grid fin-inv-kpi-grid">
+          <KpiStatis
+            nada="biru" Ikon={IkDokumen} label="Invoice di daftar" nilai={kpi.jumlah.toLocaleString("id-ID")}
+            ket="Sesuai pencarian dan tab jatuh tempo"
+            info="Jumlah invoice yang ikut dalam hasil pencarian dan tab jatuh tempo yang aktif. Invoice gabungan dihitung satu, bukan per order anggotanya. Filter status, sales, sumber, dan tempo di panel bawah hanya menyaring tampilan dan tidak mengubah angka ini."
+          />
+          <KpiStatis
+            nada="muda" Ikon={IkKoin} label="Sisa tagihan belum lunas" nilai={formatUang(kpi.sisaBelumLunas)}
+            ket={kpi.terpotong ? "Dari 500 invoice terbaru yang termuat" : "Seluruh invoice belum lunas"}
+            info="Total SISA tagihan dari invoice yang belum lunas dan tidak dibatalkan. Bukan total nilai invoice, dan bagian yang sudah dibayar tidak ikut dijumlahkan. Tidak terpengaruh filter tampilan, tetapi mengikuti kolom pencarian. Hanya memuat 500 invoice terbaru."
+          />
+          <KpiStatis
+            nada="lavender" Ikon={IkTempoLewat} label="Lewat jatuh tempo" nilai={kpi.lewat.toLocaleString("id-ID")}
+            penanda={kpi.lewat > 0 ? "Perlu ditindaklanjuti" : undefined}
+            ket="Tanggal tempo lewat, masih ada sisa"
+            info="Invoice yang tanggal jatuh temponya sudah lewat tetapi masih ada sisa tagihan. Dasarnya hanya tanggal jatuh tempo invoice, bukan tanggal order. Pilih tab “Lewat jatuh tempo” untuk menyaring daftar."
+          />
+          <KpiStatis
+            nada="lime" Ikon={IkTempoBelum} label="Belum ada jatuh tempo" nilai={kpi.tanpaTempo.toLocaleString("id-ID")}
+            ket="Umur dihitung dari tanggal order"
+            info="Invoice belum lunas yang belum pernah diatur tanggal jatuh temponya. Selama belum diatur, umur tagihan dihitung dari tanggal order dibuat — atur tanggal jatuh tempo yang sebenarnya lewat ikon kalender di barisnya."
+          />
+        </section>
 
-  useEffect(() => {
-    setTanggal(invoice?.dueDate ? String(invoice.dueDate).slice(0, 10) : "");
-  }, [invoice]);
+        <PeringatanManual jumlah={kpi.manual} />
 
-  if (!invoice) return null;
-
-  // Pintasan yang mewakili cara tim menyepakati tempo di lapangan
-  // ("14 hari dari sekarang"), bukan memaksa menghitung tanggal di kepala.
-  function dalamHari(n) {
-    const d = new Date();
-    d.setDate(d.getDate() + n);
-    setTanggal(d.toISOString().slice(0, 10));
-  }
-
-  return (
-    <Modal
-      open onOpenChange={(v) => !v && onClose()}
-      title={`Jatuh Tempo ${invoice.invoiceNumber}`}
-      description={`${invoice.customerName || "—"} · sisa ${formatUang(invoice.sisa)}`}
-      footer={
-        <>
-          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(invoice.orderId, tanggal)}>Simpan</TombolAksi>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <Field
-          label="Tanggal jatuh tempo"
-          hint="Kosongkan untuk melepas tempo — umur tagihan lalu dihitung dari tanggal order, dan laporan menyebutkan acuannya apa adanya."
-        >
-          <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={tanggal} onChange={setTanggal} />
-        </Field>
-        <div className="flex flex-wrap gap-2">
-          {[7, 14, 30].map((n) => (
-            <Button key={n} size="sm" variant="neutral" onClick={() => dalamHari(n)}>
-              {n} hari dari sekarang
-            </Button>
-          ))}
-          <Button size="sm" variant="neutral" onClick={() => setTanggal("")}>Kosongkan</Button>
-        </div>
+        <section className="fin-panel fin-inv-panel" aria-label="Daftar invoice" data-testid="panel-daftar-invoice">
+          <ToolbarInvoice
+            tempo={jatuhTempo} setTempo={setJatuhTempo} kpi={kpi} q={search} setQ={setSearch} f={filter}
+            opsiSales={opsiSales} hasil={hasil} aktif={aktif} onReset={aturUlangFilter}
+          />
+          <DaftarInvoice
+            invoices={invoices} onBuka={setPanelRincian} onAturTempo={setAturTempo}
+            kosongAwal={!disaringLokal && !jatuhTempo && !search.trim()} onReset={aturUlangFilter}
+          />
+        </section>
       </div>
-    </Modal>
+
+      <FormJatuhTempo invoice={aturTempo} onClose={() => setAturTempo(null)} onSubmit={simpanTempo} />
+      <RincianInvoice invoice={panelRincian} onClose={() => setPanelRincian(null)} onAturTempo={bukaAturTempo} />
+    </HalamanFinance>
   );
 }
