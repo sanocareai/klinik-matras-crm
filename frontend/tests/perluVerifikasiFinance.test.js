@@ -8,34 +8,37 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baca = (rel) => fs.readFileSync(path.join(__dirname, "..", "src", rel), "utf8");
 
-test("Pemasukan: tab Pendapatan Diakui, Uang Masuk, Perlu Verifikasi Finance (label lama tidak tersisa)", () => {
-  const s = baca("pages/finance/FinancePemasukan.jsx");
-  assert.match(s, /id: "pendapatan", label: "Pendapatan Diakui"/);
-  assert.match(s, /id: "pembayaran", label: "Uang Masuk"/);
-  assert.match(s, /id: "verifikasi", label: "Perlu Verifikasi Finance"/);
-  assert.doesNotMatch(s, /label: "Pendapatan Penjualan"|label: "Pembayaran Masuk"/);
+// Redesain Pemasukan (Nov 2026): halaman dipecah ke features/finance/pemasukan/*. Pemeriksaan membaca halaman + komponennya bersama.
+const bacaPemasukan = () => ["pages/finance/FinancePemasukan.jsx", "features/finance/pemasukan/pemasukanLogic.js", "features/finance/pemasukan/DaftarPemasukan.jsx", "features/finance/pemasukan/RingkasanPemasukan.jsx"].map(baca).join(" ");
+
+test("Pemasukan: kategori Pendapatan, Uang masuk, Menunggu verifikasi (label lama tidak tersisa)", () => {
+  const s = bacaPemasukan();
+  assert.match(s, /id: "pendapatan", label: "Pendapatan"/);
+  assert.match(s, /id: "pembayaran", label: "Uang masuk"/);
+  assert.match(s, /id: "verifikasi", label: "Menunggu verifikasi"/);
+  assert.doesNotMatch(s, /label: "Pendapatan Penjualan"|label: "Pembayaran Masuk"|label: "Perlu Verifikasi Finance"|label: "Pendapatan Diakui"/);
   assert.match(s, /tab === "verifikasi" && <PerluVerifikasi/);
 });
 
-test("Pendapatan Diakui: kolom Status pembayaran (bukan Rekening), filter status bayar, badge Rekening belum diketahui", () => {
-  const s = baca("pages/finance/FinancePemasukan.jsx");
+test("Pendapatan: kolom Status pembayaran (bukan Rekening), filter status bayar, badge Rekening belum diketahui", () => {
+  const s = bacaPemasukan();
   assert.match(s, /Status pembayaran/);
   assert.match(s, /statusBayar/);
   assert.match(s, /Rekening belum diketahui/);
-  assert.match(s, /pendapatan \? <TH width=\{168\}>Status pembayaran<\/TH>/);
+  assert.match(s, /if \(pendapatan\) return \["tanggal", "pihak", "keterangan", "statusBayar", "nilai", "rincian"\]/); // Pendapatan tidak punya kolom Rekening
 });
 
 test("Penjelasan UI: pendapatan bukan bukti uang masuk; rekening muncul di uang masuk", () => {
-  const s = baca("pages/finance/FinancePemasukan.jsx");
+  const s = bacaPemasukan();
   assert.match(s, /Pendapatan adalah omzet yang diakui, bukan bukti uang masuk\./);
   assert.match(s, /rekening muncul di uang masuk, bukan selalu di pendapatan/);
 });
 
-test("Perlu Verifikasi Finance memuat DUA sumber: klaim Lunas dari Sales dan uang masuk menunggu verifikasi", () => {
-  const s = baca("pages/finance/FinancePemasukan.jsx");
+test("Menunggu verifikasi memuat DUA sumber: klaim lunas dari Sales dan uang masuk menunggu verifikasi", () => {
+  const s = bacaPemasukan();
   assert.match(s, /<LunasBelumDicatat ringkas \/>/);
-  assert.match(s, /kategori="PEMBAYARAN"[^>]*statusAwal="MENUNGGU"/);
-  assert.match(s, /1\. Klaim Lunas dari Sales/);
+  assert.match(s, /statusAwal="MENUNGGU"[\s\S]{0,300}tabDari\("pembayaran"\)/); // daftar kedua = uang masuk kategori PEMBAYARAN berstatus awal MENUNGGU
+  assert.match(s, /1\. Klaim lunas dari Sales/);
   assert.match(s, /2\. Uang masuk tercatat, menunggu verifikasi/);
 });
 

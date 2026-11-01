@@ -22,7 +22,7 @@ export const FINANCE_HUBS = Object.freeze([
   {
     key: "penjualan", label: "Penjualan & Piutang", ikon: "pemasukan",
     items: [
-      { key: "uang-masuk", label: "Uang Masuk", to: "/finance/pemasukan" },
+      { key: "uang-masuk", label: "Pemasukan", to: "/finance/pemasukan" },
       { key: "verifikasi", label: "Verifikasi", to: "/finance/payments", tabs: ["perlu", "terverifikasi", "dibatalkan", ""], badge: "pembayaranBelumVerifikasi" },
       { key: "invoice", label: "Invoice Pelanggan", to: "/finance/invoices" },
       { key: "piutang", label: "Piutang & Refund", to: "/finance/receivables", badge: "refundMenunggu" },

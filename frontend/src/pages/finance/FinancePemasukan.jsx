@@ -1,228 +1,60 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ChevronLeft, ChevronRight, Upload } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card.jsx";
+import { ChevronDown, ChevronRight, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
-const PERINGATAN_PENDAPATAN_2026 = "Pendapatan 2026 masih dalam proses rekonsiliasi data sebelum sistem dan backfill order. Angka belum final.";
-import { HalamanFinance, KartuAngka, JudulKartu, Penjelasan, PeriodePicker, periodeDefault, tanggalPendek } from "@/features/finance/shared.jsx";
-import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { HalamanFinance, PeriodePicker, periodeDefault, tanggalPendek } from "@/features/finance/shared.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
-import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
+import DaftarPemasukan from "@/features/finance/pemasukan/DaftarPemasukan.jsx";
+import RingkasanPemasukan, { Panel, StripSementara } from "@/features/finance/pemasukan/RingkasanPemasukan.jsx";
+import { TAB, indeksRekening, kelasNada, tabDari, teksRp } from "@/features/finance/pemasukan/pemasukanLogic.js";
+import "@/styles/sanss-finance-pemasukan.css";
 
 // PEMASUKAN TERPADU — agregator (READ-MODEL). Semua angka & klasifikasi dihitung SERVER; halaman ini hanya menata. Tidak ada tombol "buat pemasukan umum":
 // pencatatan baru hanya lewat Pemasukan Lain (validasi akun di server). Uang dari server berupa STRING desimal → diformat tanpa float.
+// Redesain tampilan 1 Nov 2026 (gaya Ringkasan Finance; styles/sanss-finance-pemasukan.css): satu header + pemilih kategori, Ringkasan beraksen, daftar satu panel.
+// Komponen presentasi ada di features/finance/pemasukan/*. Endpoint, rumus, jurnal, penyaringan server, dan hak akses TIDAK berubah.
+export { teksRp };
 
-/** "-1234567.50" → "(Rp1.234.567,50)" tanpa mengubah ke Number (aman untuk nominal besar). */
-export function teksRp(s, { sen = true } = {}) {
-  if (s === null || s === undefined || s === "") return "—";
-  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(s));
-  if (!m) return String(s);
-  const [, neg, bulat, des = "00"] = m;
-  const grup = bulat.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const teks = `Rp${grup}${sen && /[1-9]/.test(des) ? `,${des.padEnd(2, "0").slice(0, 2)}` : ""}`;
-  return neg ? `(${teks})` : teks;
-}
+const PERINGATAN_PENDAPATAN_2026 = "Pendapatan 2026 masih dalam proses rekonsiliasi data sebelum sistem dan backfill order. Angka belum final.";
 const Rp = ({ v }) => <span className={`tabular-nums ${String(v).startsWith("-") ? "text-red" : ""}`}>{teksRp(v)}</span>;
 
-const TAB = [
-  { id: "ringkasan", label: "Ringkasan" },
-  { id: "pendapatan", label: "Pendapatan Diakui", kategori: "PENDAPATAN" },
-  { id: "pembayaran", label: "Uang Masuk", kategori: "PEMBAYARAN" },
-  { id: "verifikasi", label: "Perlu Verifikasi Finance" },
-  { id: "lain", label: "Pemasukan Lain", kategori: "LAIN" },
-  { id: "dana", label: "Dana Masuk Bukan Pendapatan", kategori: "DANA" },
-  { id: "historis", label: "Data Sebelum Sistem", kategori: "HISTORIS" },
-];
-const NADA = { success: "green", warning: "orange", danger: "red", neutral: "neutral", info: "neutral" };
-
 function BadgeStatus({ label, nada }) {
-  return <Badge variant={NADA[nada] ?? "neutral"}>{label}</Badge>;
+  return <span className={`fin-chip fin-chip-${kelasNada(nada)}`}>{label}</span>;
 }
 
-// ── DAFTAR TERKLASIFIKASI ──────────────────────────────────────────────────────────────────────────────────────
-function Daftar({ periode, kategori, opsi, onBuka, judulKosong, statusAwal = "" }) {
-  const [q, setQ] = useState("");
-  const [pihak, setPihak] = useState("");
-  const [rekening, setRekening] = useState("");
-  const [status, setStatus] = useState(statusAwal);
-  const [statusBayar, setStatusBayar] = useState("");
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const qT = useTertunda(q);
-  const pihakT = useTertunda(pihak);
-
-  useEffect(() => { setPage(1); }, [periode.from, periode.to, kategori, qT, pihakT, rekening, status, statusBayar]);
-  const muat = useCallback(async () => {
-    setLoading(true); setError(null);
-    try { setData(await api.getFinancePemasukan({ from: periode.from, to: periode.to, kategori, q: qT, pihak: pihakT, rekening, status, statusBayar, page, limit: 25 })); }
-    catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [periode.from, periode.to, kategori, qT, pihakT, rekening, status, statusBayar, page]);
-  useEffect(() => { muat(); }, [muat]);
-
-  const statusOpsi = (opsi?.status ?? []).map((s) => [s.id, s.label]);
-  const rekOpsi = (opsi?.rekening ?? []).map((r) => [r.id, r.name]);
-  const pendapatan = kategori === "PENDAPATAN";
-  const statusBayarOpsi = (opsi?.statusBayar ?? []).map((s) => [s.id, s.label]);
+// ── PEMILIH KATEGORI ─────────────────────────────────────────────────────────────────────────────────────────
+// Tiga pilihan utama + "Kategori lainnya" (<select> asli: keyboard & picker HP; menampilkan nama kategori aktif). Setiap kategori lama tetap dapat dibuka.
+function PemilihKategori({ tab, onTab, jumlahVerifikasi }) {
+  const lainnya = TAB.filter((t) => !t.utama);
+  const lainnyaAktif = lainnya.find((t) => t.id === tab);
   return (
-    <div className="space-y-3">
-      <FilterBar
-        q={q} onQ={setQ} placeholder="Cari nomor, keterangan, nominal…"
-        filters={[
-          // Pendapatan Diakui berasal dari jurnal pengakuan (tanpa rekening): filternya status pembayaran, bukan rekening.
-          pendapatan
-            ? { key: "sb", label: "Status pembayaran", value: statusBayar, onChange: setStatusBayar, options: statusBayarOpsi }
-            : { key: "rek", label: "Rekening", value: rekening, onChange: setRekening, options: rekOpsi },
-          { key: "st", label: "Status", value: status, onChange: setStatus, options: statusOpsi },
-        ]}
-        ringkasan={data ? `${data.total} baris · total ${teksRp(data.totalNilai)}` : ""}
-        onReset={() => { setQ(""); setPihak(""); setRekening(""); setStatus(statusAwal); setStatusBayar(""); }}
-      />
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <Input value={pihak} onChange={(e) => setPihak(e.target.value)} placeholder="Cari pelanggan / pembayar…" className="max-w-xs" aria-label="Cari pelanggan atau pembayar" />
-        {/* Export mengirim filter yang SAMA dengan yang sedang dikirim layar ke endpoint daftar (server yang memfilter). */}
-        <TombolExportExcel
-          modul="pemasukan"
-          ambilBody={() => ({
-            periode: { from: periode.from, to: periode.to },
-            filter: { kategori, q: qT, pihak: pihakT, rekening, status, statusBayar },
-            filterLabel: labelFilterAktif([
-              ["Kategori", opsi?.kategori?.find((k) => k.id === kategori)?.label],
-              ["Status", statusOpsi.find(([id]) => id === status)?.[1]],
-              ["Status pembayaran", statusBayarOpsi.find(([id]) => id === statusBayar)?.[1]],
-              ["Rekening", rekOpsi.find(([id]) => id === rekening)?.[1]],
-              ["Pelanggan/pembayar", pihakT],
-              ["Pencarian", qT],
-            ]),
-          })}
-        />
+    <nav className="fin-pm-nav" aria-label="Kategori pemasukan" data-testid="nav-kategori">
+      <div role="tablist" aria-label="Kategori utama" className="fin-pm-seg">
+        {TAB.filter((t) => t.utama).map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} data-testid={`tab-${t.id}`} onClick={() => onTab(t.id)} className="fin-pm-seg-item">{t.label}</button>
+        ))}
+        <label className="fin-pm-seg-item fin-pm-lainnya" data-aktif={lainnyaAktif ? "1" : "0"} data-testid="kategori-lainnya">
+          <span>{lainnyaAktif ? lainnyaAktif.label : "Kategori lainnya"}</span>
+          <ChevronDown size={14} aria-hidden="true" />
+          <select aria-label="Kategori lainnya" value={lainnyaAktif ? tab : ""} onChange={(e) => e.target.value && onTab(e.target.value)}>
+            <option value="" disabled>Kategori lainnya</option>
+            {lainnya.map((t) => (
+              <option key={t.id} value={t.id}>{t.id === "verifikasi" && jumlahVerifikasi != null ? `${t.label} (${jumlahVerifikasi.toLocaleString("id-ID")})` : t.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
-      {data?.terpotong && <Penjelasan>Data sangat besar; daftar dipotong server. Persempit periode.</Penjelasan>}
-      {error && <Card><CardContent className="py-6 text-red">Gagal memuat: {error} <Button size="sm" onClick={muat}>Coba lagi</Button></CardContent></Card>}
-      <Card>
-        <TableWrap className="dh-table">
-          <Table fixed>
-            <THead>
-              <TR>
-                <TH sticky width={92} className="whitespace-nowrap">Tanggal</TH>
-                <TH width={132}>Nomor</TH>
-                <TH width={120} hideBelow="2xl">Sumber</TH>
-                <TH width={160}>Pelanggan/Pembayar</TH>
-                <TH>Keterangan</TH>
-                {pendapatan ? <TH width={168}>Status pembayaran</TH> : <TH width={130} hideBelow="2xl">Rekening</TH>}
-                <TH numeric width={128}>Nilai</TH>
-                <TH width={130}>Status</TH>
-                <TH width={170} hideBelow="2xl">Klasifikasi</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {loading && !data ? <TR><TD colSpan={9} className="py-8 text-center text-ink3">Memuat…</TD></TR> : null}
-              {data && data.items.length === 0 ? <TR><TD colSpan={9} className="py-8 text-center text-ink3">{judulKosong ?? "Tidak ada data pada periode ini."}</TD></TR> : null}
-              {(data?.items ?? []).map((b) => (
-                <TR key={b.key} className="cursor-pointer hover:bg-inset" onClick={() => onBuka(b)}>
-                  <TD sticky className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
-                  <TD truncate className="font-medium">{b.nomor}</TD>
-                  <TD hideBelow="2xl" truncate>{b.sumberLabel}</TD>
-                  <TD truncate>{b.pihak ?? "—"}</TD>
-                  <TD truncate title={b.keterangan}>{b.keterangan}</TD>
-                  {pendapatan ? (
-                    <TD>
-                      {b.statusBayar ? <BadgeStatus label={b.statusBayar.label} nada={b.statusBayar.nada} /> : <span className="text-ink3">—</span>}
-                      {b.statusBayar?.rekeningBelumDiketahui && <div className="mt-0.5"><Badge variant="orange">Rekening belum diketahui</Badge></div>}
-                    </TD>
-                  ) : <TD hideBelow="2xl" truncate>{b.rekening ?? "—"}</TD>}
-                  <TD numeric><Rp v={b.nilai} /></TD>
-                  <TD><BadgeStatus label={b.statusLabel} nada={b.nada} /></TD>
-                  <TD hideBelow="2xl" className="min-w-0">
-                    <div className="truncate text-[12px]" title={b.kategoriLabel}>{b.kategoriLabel}</div>
-                    <div className="truncate text-[11px] text-ink3" title={b.subLabel}>{b.subLabel}</div>
-                    {b.perluTinjau && <Badge variant="orange">Perlu ditinjau</Badge>}
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        </TableWrap>
-      </Card>
-      {data && (data.page > 1 || data.adaLagi) && (
-        <div className="flex items-center justify-end gap-2">
-          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft size={14} /></Button>
-          <span className="text-[12px] text-ink2">Halaman {data.page}</span>
-          <Button size="sm" variant="outline" disabled={!data.adaLagi} onClick={() => setPage((p) => p + 1)}><ChevronRight size={14} /></Button>
-        </div>
-      )}
-    </div>
+    </nav>
   );
 }
 
-// ── RINGKASAN ──────────────────────────────────────────────────────────────────────────────────────────────────
-function Ringkasan({ periode, ke }) {
-  const [r, setR] = useState(null);
-  const [error, setError] = useState(null);
-  const muat = useCallback(async () => {
-    setError(null);
-    try { setR(await api.getFinancePemasukanRingkasan({ from: periode.from, to: periode.to })); } catch (e) { setError(e.message); }
-  }, [periode.from, periode.to]);
-  useEffect(() => { muat(); }, [muat]);
-  if (error) return <Card><CardContent className="py-6 text-red">Gagal memuat ringkasan: {error} <Button size="sm" onClick={muat}>Coba lagi</Button></CardContent></Card>;
-  if (!r) return <Card><CardContent className="py-8 text-center text-ink3">Memuat ringkasan…</CardContent></Card>;
-  const celah = r.cutoff?.celahPengakuan;
-  return (
-    <div className="space-y-4">
-      <Penjelasan>
-        <strong>Pendapatan adalah omzet yang diakui, bukan bukti uang masuk.</strong> Order diakui saat diserahkan dan belum tentu sudah dibayar. <strong>Uang masuk</strong> = pembayaran yang benar-benar diterima; rekening muncul di uang masuk, bukan selalu di pendapatan.
-        Keduanya dua metrik berbeda dan <strong>tidak dijumlahkan</strong> (akan menghitung penjualan yang sama dua kali).
-      </Penjelasan>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KartuAngka label="Pendapatan dari sistem" metrik="pendapatan_diakui" value={teksRp(r.pendapatanSistem.nilai)} sub={`${r.pendapatanSistem.jumlah} pengakuan · retur ${teksRp(r.pendapatanSistem.retur)}`} onClick={() => ke("pendapatan")} info="Penjualan yang sudah diakui di buku besar pada periode ini, dikurangi retur/potongan." />
-        <KartuAngka label="Pendapatan historis (sebelum sistem)" value={teksRp(r.pendapatanHistoris.nilai)} sub={`${r.pendapatanHistoris.jumlah} baris · ${r.pendapatanHistoris.perluDitinjau.jumlah} perlu ditinjau`} onClick={() => ke("historis")} info={r.labelHistoris} />
-        <KartuAngka label="Total pendapatan gabungan" value={teksRp(r.pendapatanGabungan.nilai)} sub="sistem + historis (setelah deduplikasi)" info={r.pendapatanGabungan.catatan} />
-        <KartuAngka label="Piutang masih tersisa" metrik="piutang_usaha" value={teksRp(r.piutangTersisa.nilai)} sub={`${r.piutangTersisa.jumlahOrder} order · per ${tanggalPendek(r.piutangTersisa.perTanggal)}`} info="Sisa tagihan yang belum tertagih menurut buku besar (posisi akhir periode, bukan arus)." />
-        <KartuAngka label="Uang masuk terverifikasi" metrik="uang_masuk_terverifikasi" value={teksRp(r.pembayaranMasuk.terverifikasi.nilai)} sub={`${r.pembayaranMasuk.terverifikasi.jumlah} pembayaran`} tone="green" onClick={() => ke("pembayaran")} info="Uang pelanggan yang sudah diverifikasi Finance. Rekening muncul di sini, bukan selalu di pendapatan." />
-        <KartuAngka label="Perlu verifikasi Finance" value={String(r.perluVerifikasiFinance.totalJumlah)} sub={`${r.perluVerifikasiFinance.klaimSales.jumlah} klaim lunas Sales · ${r.perluVerifikasiFinance.pembayaranMenunggu.jumlah} pembayaran menunggu`} tone={r.perluVerifikasiFinance.totalJumlah > 0 ? "orange" : "default"} onClick={() => ke("verifikasi")} info={r.perluVerifikasiFinance.penjelasan} />
-        <KartuAngka label="Pemasukan lain" value={teksRp(r.pemasukanLain.nilai)} sub={`${r.pemasukanLain.jumlah} catatan`} onClick={() => ke("lain")} />
-        <KartuAngka label="Dana masuk bukan pendapatan" value={teksRp(r.danaMasukBukanPendapatan.nilai)} sub={`${r.danaMasukBukanPendapatan.jumlah} catatan`} onClick={() => ke("dana")} info="Setoran modal dan pinjaman/pendanaan pihak ketiga. Bukan pendapatan." />
-      </div>
-      {r.danaMasukBukanPendapatan.rincian.length > 0 && (
-        <Card><JudulKartu title="Rincian dana masuk bukan pendapatan" /><CardContent className="space-y-1 text-[13px]">
-          {r.danaMasukBukanPendapatan.rincian.map((x) => <div key={x.sub} className="flex justify-between"><span>{x.label} ({x.jumlah})</span><Rp v={x.nilai} /></div>)}
-        </CardContent></Card>
-      )}
-      {(r.pembayaranMasuk.belumDibukukan.jumlah > 0 || r.perluDitinjau.jumlah > 0) && (
-        <Card className="border-orange"><CardContent className="flex gap-3 py-4 text-[13px]">
-          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-orange" />
-          <div>
-            <p className="font-semibold">Perlu ditinjau: {r.perluDitinjau.jumlah} baris ({teksRp(r.perluDitinjau.nilai)})</p>
-            <p className="text-ink2">Tidak dihitung ke kategori mana pun sampai ditinjau. {r.pembayaranMasuk.belumDibukukan.jumlah > 0 && `${r.pembayaranMasuk.belumDibukukan.jumlah} pembayaran terverifikasi (${teksRp(r.pembayaranMasuk.belumDibukukan.nilai)}) belum masuk buku besar karena rekening belum dipetakan — selesaikan lewat Data belum lengkap.`}</p>
-          </div>
-        </CardContent></Card>
-      )}
-      <Card><JudulKartu title="Dikecualikan dari pemasukan" description="Tampil untuk transparansi; bukan pendapatan maupun dana masuk eksternal." /><CardContent className="space-y-1 text-[13px]">
-        <div className="flex justify-between"><span>Transfer antar-rekening ({r.dikecualikan.transfer.jumlah})</span><Rp v={r.dikecualikan.transfer.nilai} /></div>
-        <div className="flex justify-between"><span>Saldo awal / koreksi saldo ({r.dikecualikan.saldoAwal.jumlah})</span><Rp v={r.dikecualikan.saldoAwal.nilai} /></div>
-        <div className="flex justify-between"><span>Pembalikan pengeluaran ({r.dikecualikan.pembalikanBiaya.jumlah})</span><Rp v={r.dikecualikan.pembalikanBiaya.nilai} /></div>
-      </CardContent></Card>
-      {celah && (
-        <Card><JudulKartu title="Celah pengakuan pendapatan (informasi)" /><CardContent className="text-[13px] text-ink2">
-          <p>Cutoff sistem: <strong>{tanggalPendek(r.cutoff.tanggal)}</strong>. {r.cutoff.dasar}</p>
-          <p className="mt-2">Order sistem {tanggalPendek(celah.dari)} – {tanggalPendek(celah.sampai)}: <strong>{celah.jumlahOrder} order senilai {teksRp(celah.nilaiOrder)}</strong> belum memiliki pengakuan pendapatan di buku besar. {celah.catatan}</p>
-        </CardContent></Card>
-      )}
-      <Penjelasan>{r.labelHistoris}</Penjelasan>
-      {r.terpotong && <Penjelasan>Data sangat besar; sebagian dipotong server. Persempit periode.</Penjelasan>}
-    </div>
-  );
-}
-
-// ── DATA SEBELUM SISTEM ────────────────────────────────────────────────────────────────────────────────────────
-function DataSebelumSistem({ periode, opsi, onBuka }) {
+// ── DATA SEBELUM PENGGUNAAN SISTEM ───────────────────────────────────────────────────────────────────────────
+function DataSebelumSistem({ periode, opsi, indeksRek, onBuka }) {
   const [cutoff, setCutoff] = useState(null);
   const [batches, setBatches] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -273,138 +105,145 @@ function DataSebelumSistem({ periode, opsi, onBuka }) {
   }
 
   return (
-    <div className="space-y-4">
-      <Penjelasan>{opsi?.labelHistoris ?? "Data sebelum sistem berasal dari arsip lama dan belum memengaruhi buku besar sampai proses rekonsiliasi dan posting disetujui."}</Penjelasan>
+    <div className="fin-pm-historis">
+      <p className="fin-catatan-kaki">{opsi?.labelHistoris ?? "Data sebelum penggunaan sistem berasal dari arsip lama dan belum memengaruhi buku besar sampai proses rekonsiliasi dan posting disetujui."}</p>
       {cutoff && (
-        <Card><CardContent className="py-4 text-[13px]">
-          <p><strong>Cutoff sistem:</strong> {cutoff.tanggal ? tanggalPendek(cutoff.tanggal) : "belum ada order di sistem"}. {cutoff.dasar}</p>
-          <p className="mt-1 text-ink2">Baris arsip bertanggal pada/setelah cutoff tidak dihitung dari arsip (periode itu harus berasal dari order/invoice sistem).</p>
-        </CardContent></Card>
+        <section className="fin-panel" data-testid="tanggal-acuan-sistem">
+          <p><strong>Tanggal acuan sistem:</strong> {cutoff.tanggal ? tanggalPendek(cutoff.tanggal) : "belum ada order di sistem"}. {cutoff.dasar}</p>
+          <p className="fin-pm-kaki">Baris arsip bertanggal pada/setelah tanggal acuan tidak dihitung dari arsip (periode itu harus berasal dari order/invoice sistem).</p>
+        </section>
       )}
-      {pesan && <div role="status" className={`rounded-lg border px-3 py-2 text-[13px] ${pesan.galat ? "border-red text-red" : "border-green text-green"}`}>{pesan.teks}</div>}
+      {pesan && <div role="status" className={`fin-pm-pesan ${pesan.galat ? "fin-pm-pesan-galat" : "fin-pm-pesan-ok"}`}>{pesan.teks}</div>}
 
-      <Card><JudulKartu title="Impor arsip (CSV / XLSX)" description="Bukan input bebas: unggah ekspor Notion → pratinjau & validasi → impor. Tidak membuat jurnal, invoice, piutang, atau mengubah saldo Kas & Bank." />
-        <CardContent className="space-y-3">
+      <Panel judul="Impor arsip (CSV / XLSX)" sub="Bukan input bebas: unggah ekspor Notion → pratinjau & validasi → impor. Tidak membuat jurnal, invoice, piutang, atau mengubah saldo Kas & Bank.">
+        <div className="fin-pm-isi-panel">
           {boleh ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <input ref={berkas} type="file" accept=".csv,.xlsx" aria-label="Berkas CSV atau XLSX" className="text-[13px]" />
+            <div className="fin-pm-impor">
+              <input ref={berkas} type="file" accept=".csv,.xlsx" aria-label="Berkas CSV atau XLSX" />
               <Input value={sumber} onChange={(e) => setSumber(e.target.value)} placeholder="Sumber data" className="w-40" aria-label="Sumber data" />
               <Button onClick={unggah} disabled={sibuk}><Upload size={14} className="mr-1" /> Unggah & pratinjau</Button>
             </div>
-          ) : <p className="text-[13px] text-ink2">Akun Anda hanya dapat melihat. Impor arsip butuh izin mencatat.</p>}
-          <p className="text-[12px] text-ink3">Kolom dikenali dari judul: tanggal transaksi, nomor/resi, pelanggan, keterangan, nominal, status pembayaran, tanggal pembayaran, metode pembayaran, sumber data. Nomor boleh kosong (sistem membuat ID legacy yang stabil).</p>
-        </CardContent>
-      </Card>
+          ) : <p className="fin-panel-sub">Akun Anda hanya dapat melihat. Impor arsip butuh izin mencatat.</p>}
+          <p className="fin-pm-kaki">Kolom dikenali dari judul: tanggal transaksi, nomor/resi, pelanggan, keterangan, nominal, status pembayaran, tanggal pembayaran, metode pembayaran, sumber data. Nomor boleh kosong (sistem membuat ID legacy yang stabil).</p>
+        </div>
+      </Panel>
 
-      <Card><JudulKartu title="Batch impor" /><TableWrap className="dh-table"><Table fixed>
-        <THead>
-          <TR>
-            <TH>Berkas</TH>
-            <TH width={100} hideBelow="2xl" className="whitespace-nowrap">Waktu</TH>
-            <TH width={112}>Status</TH>
-            <TH numeric width={68} hideBelow="2xl">Baris</TH>
-            <TH numeric width={60} hideBelow="2xl">Siap</TH>
-            <TH numeric width={70} hideBelow="2xl">Tinjau</TH>
-            <TH numeric width={80} hideBelow="2xl">Duplikat</TH>
-            <TH numeric width={70} hideBelow="2xl">Di luar</TH>
-            <TH numeric width={90} hideBelow="2xl">Tidak valid</TH>
-            <TH numeric width={130}>Nilai siap</TH>
-            <TH width={240} />
-          </TR>
-        </THead>
-        <TBody>
-          {(batches ?? []).length === 0 && <TR><TD colSpan={11} className="py-6 text-center text-ink3">Belum ada impor.</TD></TR>}
-          {(batches ?? []).map((b) => (
-            <TR key={b.id}>
-              <TD truncate className="font-medium">{b.fileName}<div className="truncate text-[11px] text-ink3">{b.sumberData}</div></TD>
-              <TD hideBelow="2xl" className="whitespace-nowrap">{tanggalPendek(b.dibuatPada)}</TD>
-              <TD><Badge variant={b.status === "IMPORTED" ? "green" : b.status === "CANCELLED" ? "gray" : "orange"}>{{ PREVIEW: "Pratinjau", IMPORTED: "Diimpor", CANCELLED: "Dibatalkan", POSTED: "Diposting" }[b.status]}</Badge></TD>
-              <TD hideBelow="2xl" numeric>{b.totalRows}</TD>
-              <TD hideBelow="2xl" numeric>{b.perStatus.SIAP ?? 0}</TD>
-              <TD hideBelow="2xl" numeric>{b.perStatus.PERLU_DITINJAU ?? 0}</TD>
-              <TD hideBelow="2xl" numeric>{b.perStatus.DUPLIKAT ?? 0}</TD>
-              <TD hideBelow="2xl" numeric>{b.perStatus.DI_LUAR_PERIODE ?? 0}</TD>
-              <TD hideBelow="2xl" numeric>{b.perStatus.TIDAK_VALID ?? 0}</TD>
-              <TD numeric><Rp v={b.nilaiSiap} /></TD>
-              <TD className="whitespace-nowrap">
-                <Button size="sm" variant="outline" onClick={() => bukaBatch(b.id)}>Lihat</Button>{" "}
-                {boleh && b.status === "PREVIEW" && <Button size="sm" disabled={sibuk} onClick={() => jalan(() => api.imporLegacyBatch(b.id), "Batch diimpor ke register (non-posting).")}>Impor</Button>}{" "}
-                {boleh && (b.status === "PREVIEW" || b.status === "IMPORTED") && <Button size="sm" variant="outline" disabled={sibuk} onClick={() => batal(b)}>Batalkan</Button>}
-              </TD>
-            </TR>
-          ))}
-        </TBody></Table></TableWrap></Card>
+      <Panel judul="Batch impor">
+        <div className="fin-pm-gulir" tabIndex={0} role="region" aria-label="Tabel batch impor; gulir mendatar bila perlu">
+          <TableWrap className="dh-table"><Table fixed>
+            <THead>
+              <TR>
+                <TH>Berkas</TH>
+                <TH width={100} hideBelow="2xl" className="whitespace-nowrap">Waktu</TH>
+                <TH width={112}>Status</TH>
+                <TH numeric width={68} hideBelow="2xl">Baris</TH>
+                <TH numeric width={60} hideBelow="2xl">Siap</TH>
+                <TH numeric width={70} hideBelow="2xl">Tinjau</TH>
+                <TH numeric width={80} hideBelow="2xl">Duplikat</TH>
+                <TH numeric width={70} hideBelow="2xl">Di luar</TH>
+                <TH numeric width={90} hideBelow="2xl">Tidak valid</TH>
+                <TH numeric width={130}>Nilai siap</TH>
+                <TH width={240} />
+              </TR>
+            </THead>
+            <TBody>
+              {(batches ?? []).length === 0 && <TR><TD colSpan={11} className="py-6 text-center text-ink3">Belum ada impor.</TD></TR>}
+              {(batches ?? []).map((b) => (
+                <TR key={b.id}>
+                  <TD truncate className="font-medium">{b.fileName}<div className="truncate text-[11px] text-ink3">{b.sumberData}</div></TD>
+                  <TD hideBelow="2xl" className="whitespace-nowrap">{tanggalPendek(b.dibuatPada)}</TD>
+                  <TD><Badge variant={b.status === "IMPORTED" ? "green" : b.status === "CANCELLED" ? "gray" : "orange"}>{{ PREVIEW: "Pratinjau", IMPORTED: "Diimpor", CANCELLED: "Dibatalkan", POSTED: "Diposting" }[b.status]}</Badge></TD>
+                  <TD hideBelow="2xl" numeric>{b.totalRows}</TD>
+                  <TD hideBelow="2xl" numeric>{b.perStatus.SIAP ?? 0}</TD>
+                  <TD hideBelow="2xl" numeric>{b.perStatus.PERLU_DITINJAU ?? 0}</TD>
+                  <TD hideBelow="2xl" numeric>{b.perStatus.DUPLIKAT ?? 0}</TD>
+                  <TD hideBelow="2xl" numeric>{b.perStatus.DI_LUAR_PERIODE ?? 0}</TD>
+                  <TD hideBelow="2xl" numeric>{b.perStatus.TIDAK_VALID ?? 0}</TD>
+                  <TD numeric><Rp v={b.nilaiSiap} /></TD>
+                  <TD className="whitespace-nowrap">
+                    <Button size="sm" variant="outline" onClick={() => bukaBatch(b.id)}>Lihat</Button>{" "}
+                    {boleh && b.status === "PREVIEW" && <Button size="sm" disabled={sibuk} onClick={() => jalan(() => api.imporLegacyBatch(b.id), "Batch diimpor ke register (non-posting).")}>Impor</Button>}{" "}
+                    {boleh && (b.status === "PREVIEW" || b.status === "IMPORTED") && <Button size="sm" variant="outline" disabled={sibuk} onClick={() => batal(b)}>Batalkan</Button>}
+                  </TD>
+                </TR>
+              ))}
+            </TBody></Table></TableWrap>
+        </div>
+      </Panel>
 
-      <Card><JudulKartu title="Rekonsiliasi & simulasi" description="Total per bulan Januari sampai cutoff, dibandingkan dengan jurnal saat ini. Hanya laporan — tidak ada yang diposting." />
-        <CardContent className="space-y-3">
+      <Panel judul="Rekonsiliasi & simulasi" sub="Total per bulan Januari sampai tanggal acuan, dibandingkan dengan jurnal saat ini. Hanya laporan — tidak ada yang diposting.">
+        <div className="fin-pm-isi-panel">
           <Button size="sm" variant="outline" onClick={bukaRekon}>Tampilkan rekonsiliasi</Button>
           {rekon && (
             <>
-              <TableWrap className="dh-table"><Table fixed>
-                <THead>
-                  <TR>
-                    <TH width={100}>Bulan</TH>
-                    <TH numeric width={120}>Pendapatan</TH>
-                    <TH numeric width={110} hideBelow="2xl">Lunas</TH>
-                    <TH numeric width={120} hideBelow="2xl">Belum dibayar</TH>
-                    <TH numeric width={120} hideBelow="2xl">Tidak diketahui</TH>
-                    <TH width={70} hideBelow="2xl">Tinjau</TH>
-                    <TH width={150} hideBelow="2xl">Duplikat</TH>
-                    <TH numeric width={120}>Jurnal saat ini</TH>
-                    <TH numeric width={110}>Selisih</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {rekon.perBulan.map((b) => (
-                    <TR key={b.bulan}>
-                      <TD className="whitespace-nowrap">{b.bulan}</TD>
-                      <TD numeric><Rp v={b.pendapatan} /></TD>
-                      <TD hideBelow="2xl" numeric><Rp v={b.lunas} /></TD>
-                      <TD hideBelow="2xl" numeric><Rp v={b.belumBayar} /></TD>
-                      <TD hideBelow="2xl" numeric><Rp v={b.tidakDiketahui} /></TD>
-                      <TD hideBelow="2xl">{b.perluDitinjau.jumlah}</TD>
-                      <TD hideBelow="2xl" truncate>{b.duplikat.jumlah}{b.duplikat.kemungkinanCocokOrderSistem ? ` (${b.duplikat.kemungkinanCocokOrderSistem} mirip order)` : ""}</TD>
-                      <TD numeric><Rp v={b.jurnalSaatIni} /></TD>
-                      <TD numeric><Rp v={b.selisihTerhadapJurnal} /></TD>
+              <div className="fin-pm-gulir" tabIndex={0} role="region" aria-label="Tabel rekonsiliasi per bulan; gulir mendatar bila perlu">
+                <TableWrap className="dh-table"><Table fixed>
+                  <THead>
+                    <TR>
+                      <TH width={100}>Bulan</TH>
+                      <TH numeric width={120}>Pendapatan</TH>
+                      <TH numeric width={110} hideBelow="2xl">Lunas</TH>
+                      <TH numeric width={120} hideBelow="2xl">Belum dibayar</TH>
+                      <TH numeric width={120} hideBelow="2xl">Tidak diketahui</TH>
+                      <TH width={70} hideBelow="2xl">Tinjau</TH>
+                      <TH width={150} hideBelow="2xl">Duplikat</TH>
+                      <TH numeric width={120}>Jurnal saat ini</TH>
+                      <TH numeric width={110}>Selisih</TH>
                     </TR>
-                  ))}
-                  <TR className="font-semibold">
-                    <TD>Total</TD>
-                    <TD numeric><Rp v={rekon.total.pendapatan} /></TD>
-                    <TD hideBelow="2xl" numeric><Rp v={rekon.total.lunas} /></TD>
-                    <TD hideBelow="2xl" numeric><Rp v={rekon.total.belumBayar} /></TD>
-                    <TD hideBelow="2xl" numeric><Rp v={rekon.total.tidakDiketahui} /></TD>
-                    <TD hideBelow="2xl" /><TD hideBelow="2xl" />
-                    <TD numeric><Rp v={rekon.total.jurnalSaatIni} /></TD>
-                    <TD numeric><Rp v={rekon.total.selisihTerhadapJurnal} /></TD>
-                  </TR>
-                </TBody></Table></TableWrap>
-              <Penjelasan>{rekon.simulasi.catatan} Dampak simulasi: laba/pendapatan +{teksRp(rekon.simulasi.labaRugi.pendapatanBertambah)}, piutang +{teksRp(rekon.simulasi.piutang.bertambah)}, kas {teksRp(rekon.simulasi.kas.berubah)} (tidak berubah), total ekuitas +{teksRp(rekon.simulasi.ekuitas.berubah)} (laba +{teksRp(rekon.simulasi.ekuitas.labaBertambah)}, Koreksi Saldo Awal −{teksRp(rekon.simulasi.ekuitas.koreksiSaldoAwalBerkurang)}).</Penjelasan>
+                  </THead>
+                  <TBody>
+                    {rekon.perBulan.map((b) => (
+                      <TR key={b.bulan}>
+                        <TD className="whitespace-nowrap">{b.bulan}</TD>
+                        <TD numeric><Rp v={b.pendapatan} /></TD>
+                        <TD hideBelow="2xl" numeric><Rp v={b.lunas} /></TD>
+                        <TD hideBelow="2xl" numeric><Rp v={b.belumBayar} /></TD>
+                        <TD hideBelow="2xl" numeric><Rp v={b.tidakDiketahui} /></TD>
+                        <TD hideBelow="2xl">{b.perluDitinjau.jumlah}</TD>
+                        <TD hideBelow="2xl" truncate>{b.duplikat.jumlah}{b.duplikat.kemungkinanCocokOrderSistem ? ` (${b.duplikat.kemungkinanCocokOrderSistem} mirip order)` : ""}</TD>
+                        <TD numeric><Rp v={b.jurnalSaatIni} /></TD>
+                        <TD numeric><Rp v={b.selisihTerhadapJurnal} /></TD>
+                      </TR>
+                    ))}
+                    <TR className="font-semibold">
+                      <TD>Total</TD>
+                      <TD numeric><Rp v={rekon.total.pendapatan} /></TD>
+                      <TD hideBelow="2xl" numeric><Rp v={rekon.total.lunas} /></TD>
+                      <TD hideBelow="2xl" numeric><Rp v={rekon.total.belumBayar} /></TD>
+                      <TD hideBelow="2xl" numeric><Rp v={rekon.total.tidakDiketahui} /></TD>
+                      <TD hideBelow="2xl" /><TD hideBelow="2xl" />
+                      <TD numeric><Rp v={rekon.total.jurnalSaatIni} /></TD>
+                      <TD numeric><Rp v={rekon.total.selisihTerhadapJurnal} /></TD>
+                    </TR>
+                  </TBody></Table></TableWrap>
+              </div>
+              <p className="fin-catatan-kaki">{rekon.simulasi.catatan} Dampak simulasi: laba/pendapatan +{teksRp(rekon.simulasi.labaRugi.pendapatanBertambah)}, piutang +{teksRp(rekon.simulasi.piutang.bertambah)}, kas {teksRp(rekon.simulasi.kas.berubah)} (tidak berubah), total ekuitas +{teksRp(rekon.simulasi.ekuitas.berubah)} (laba +{teksRp(rekon.simulasi.ekuitas.labaBertambah)}, Koreksi Saldo Awal −{teksRp(rekon.simulasi.ekuitas.koreksiSaldoAwalBerkurang)}).</p>
               {proposal && (
-                <details className="text-[13px]"><summary className="cursor-pointer font-semibold">{proposal.status} — proposal jurnal migrasi</summary>
+                <details className="fin-pm-proposal"><summary>{proposal.status} — proposal jurnal migrasi</summary>
                   <p className="mt-2 text-ink2">{proposal.persetujuan}</p>
                   <ul className="mt-1 list-disc pl-5 text-ink2">{proposal.prinsip.map((p) => <li key={p}>{p}</li>)}</ul>
                   {proposal.jurnal.map((j) => (
                     <div key={j.bulan} className="mt-2"><p className="font-medium">{j.bulan}</p>
-                      {j.lines.map((l, i) => <div key={i} className="flex justify-between"><span>{l.akun} {l.nama}{l.catatan ? ` — ${l.catatan}` : ""}</span><span className="tabular-nums">D {teksRp(l.debit)} / K {teksRp(l.kredit)}</span></div>)}
+                      {j.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span>{l.akun} {l.nama}{l.catatan ? ` — ${l.catatan}` : ""}</span><span className="tabular-nums">D {teksRp(l.debit)} / K {teksRp(l.kredit)}</span></div>)}
                     </div>
                   ))}
                 </details>
               )}
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
-      <div>
-        <h3 className="mb-2 text-[14px] font-semibold">Baris arsip yang dihitung / perlu ditinjau pada periode terpilih</h3>
-        <Daftar periode={periode} kategori="HISTORIS" opsi={{ ...opsi, status: [{ id: "SIAP", label: "Siap" }, { id: "PERLU_DITINJAU", label: "Perlu ditinjau" }, { id: "DUPLIKAT", label: "Duplikat" }] }} onBuka={onBuka} judulKosong="Belum ada data arsip pada periode ini (unggah & impor dulu)." />
-      </div>
+      <DaftarPemasukan
+        periode={periode} tab={{ ...tabDari("historis"), judul: "Baris arsip yang dihitung / perlu ditinjau pada periode terpilih", ringkas: "Hanya baris arsip yang siap, perlu ditinjau, atau duplikat pada periode ini." }}
+        opsi={{ ...opsi, status: [{ id: "SIAP", label: "Siap" }, { id: "PERLU_DITINJAU", label: "Perlu ditinjau" }, { id: "DUPLIKAT", label: "Duplikat" }] }} indeksRek={indeksRek} onBuka={onBuka}
+        judulKosong="Belum ada data arsip pada periode ini (unggah & impor dulu)."
+      />
 
       {detail && (
         <Modal open onOpenChange={(v) => { if (!v) setDetail(null); }} title={`Batch: ${detail.batch.fileName}`} className="max-w-5xl">
           <div className="space-y-3 text-[13px]">
-            <p>Status <strong>{detail.batch.status}</strong> · cutoff {tanggalPendek(detail.batch.cutoff)} · {detail.ringkasan.jumlah} baris · siap {detail.ringkasan.perStatus.SIAP} ({teksRp(detail.ringkasan.nilaiSiap)}) · tinjau {detail.ringkasan.perStatus.PERLU_DITINJAU} · duplikat {detail.ringkasan.perStatus.DUPLIKAT} · di luar periode {detail.ringkasan.perStatus.DI_LUAR_PERIODE} · tidak valid {detail.ringkasan.perStatus.TIDAK_VALID}</p>
+            <p>Status <strong>{detail.batch.status}</strong> · tanggal acuan {tanggalPendek(detail.batch.cutoff)} · {detail.ringkasan.jumlah} baris · siap {detail.ringkasan.perStatus.SIAP} ({teksRp(detail.ringkasan.nilaiSiap)}) · tinjau {detail.ringkasan.perStatus.PERLU_DITINJAU} · duplikat {detail.ringkasan.perStatus.DUPLIKAT} · di luar periode {detail.ringkasan.perStatus.DI_LUAR_PERIODE} · tidak valid {detail.ringkasan.perStatus.TIDAK_VALID}</p>
             <select value={statusBaris} onChange={(e) => { setStatusBaris(e.target.value); bukaBatch(detail.batch.id, e.target.value); }} className="rounded-lg border px-2 py-1" aria-label="Filter status baris">
               <option value="">Semua status</option><option value="SIAP">Siap</option><option value="PERLU_DITINJAU">Perlu ditinjau</option><option value="DUPLIKAT">Duplikat</option><option value="DI_LUAR_PERIODE">Di luar periode</option><option value="TIDAK_VALID">Tidak valid</option>
             </select>
@@ -430,29 +269,30 @@ function DataSebelumSistem({ periode, opsi, onBuka }) {
   );
 }
 
-// ── PERLU VERIFIKASI FINANCE ─────────────────────────────────────────────────────────────────
+// ── MENUNGGU VERIFIKASI ──────────────────────────────────────────────────────────────────────────────────────
 // Satu antrean untuk semua yang secara bisnis perlu dicek Finance. DUA sumber berbeda: (1) Klaim Lunas dari Sales = flag status order di CRM, belum ada
-// catatan uang masuk; (2) pembayaran yang sudah tercatat tetapi belum diverifikasi.
-function PerluVerifikasi({ periode, opsi, onBuka }) {
+// catatan uang masuk; (2) pembayaran yang sudah tercatat tetapi belum diverifikasi. Jumlah keduanya TIDAK digabung di sini.
+function PerluVerifikasi({ periode, opsi, indeksRek, onBuka }) {
   return (
-    <div className="space-y-5" data-testid="tab-perlu-verifikasi">
-      <Penjelasan>
-        <strong>Perlu Verifikasi Finance</strong> menggabungkan dua hal: <strong>klaim Lunas dari Sales</strong> (status order di CRM, belum ada catatan uang masuk)
+    <div className="fin-pm-verif" data-testid="tab-perlu-verifikasi">
+      <p className="fin-catatan-kaki">
+        <strong>Menunggu verifikasi</strong> memuat dua hal berbeda: <strong>klaim lunas dari Sales</strong> (status order di CRM, belum ada catatan uang masuk)
         dan <strong>uang masuk yang sudah tercatat tapi belum diverifikasi</strong>. Keduanya dulu terpisah, sehingga klaim Sales tidak terlihat di daftar pembayaran.
-      </Penjelasan>
-      <section aria-label="Klaim Lunas dari Sales" className="space-y-3">
-        <h3 className="text-[14px] font-semibold text-ink">1. Klaim Lunas dari Sales</h3>
+      </p>
+      <section aria-label="Klaim lunas dari Sales" className="fin-panel">
+        <div className="fin-panel-kepala"><h2 className="fin-panel-judul">1. Klaim lunas dari Sales</h2><p className="fin-panel-sub">Status lunas di CRM yang belum punya catatan uang masuk. Semua periode.</p></div>
         <LunasBelumDicatat ringkas />
       </section>
-      <section aria-label="Uang masuk menunggu verifikasi" className="space-y-3">
-        <h3 className="text-[14px] font-semibold text-ink">2. Uang masuk tercatat, menunggu verifikasi</h3>
-        <Daftar key="perlu-uang" periode={periode} kategori="PEMBAYARAN" opsi={opsi} onBuka={onBuka} statusAwal="MENUNGGU" judulKosong="Tidak ada pembayaran tercatat yang menunggu verifikasi pada periode ini." />
-      </section>
+      <DaftarPemasukan
+        key="perlu-uang" periode={periode} indeksRek={indeksRek} opsi={opsi} onBuka={onBuka} statusAwal="MENUNGGU"
+        tab={{ ...tabDari("pembayaran"), judul: "2. Uang masuk tercatat, menunggu verifikasi", ringkas: "Catatan pembayaran pada periode terpilih yang belum diverifikasi Finance." }}
+        judulKosong="Tidak ada pembayaran tercatat yang menunggu verifikasi pada periode ini."
+      />
     </div>
   );
 }
 
-// ── HALAMAN ──────────────────────────────────────────────────────────────────────�
+// ── HALAMAN ──────────────────────────────────────────────────────────────────────────────────────────────────
 export default function FinancePemasukan() {
   const nav = useNavigate();
   const [periode, setPeriode] = useState(periodeDefault());
@@ -461,9 +301,35 @@ export default function FinancePemasukan() {
   const [error, setError] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailGalat, setDetailGalat] = useState(null);
+  const [akun, setAkun] = useState(undefined);
+  const [rk, setRk] = useState({ kunci: null, data: null, galat: null });
+  const urutRk = useRef(0);
+  const kunciP = `${periode.from}|${periode.to}`;
 
   useEffect(() => { api.getFinancePemasukanOpsi().then(setOpsi).catch((e) => setError(e.message)); }, []);
-  const aktif = TAB.find((t) => t.id === tab);
+
+  // Ringkasan dimuat untuk tab Ringkasan dan Uang masuk (ringkasan nilai terverifikasi). Hanya respons permintaan TERAKHIR yang dipakai (periode lama tidak menimpa yang baru).
+  const muatRk = useCallback(async () => {
+    const saya = ++urutRk.current;
+    try {
+      const d = await api.getFinancePemasukanRingkasan({ from: periode.from, to: periode.to });
+      if (saya === urutRk.current) setRk({ kunci: kunciP, data: d, galat: null });
+    } catch (e) { if (saya === urutRk.current) setRk({ kunci: kunciP, data: null, galat: e.message || "Gagal memuat ringkasan" }); }
+  }, [periode.from, periode.to, kunciP]);
+  const butuhRk = tab === "ringkasan" || tab === "pembayaran";
+  useEffect(() => { if (butuhRk && rk.kunci !== kunciP) muatRk(); }, [butuhRk, kunciP]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rkIni = rk.kunci === kunciP ? rk : { data: null, galat: null };
+
+  // Rekening (kas/bank/e-wallet) untuk logo bank di daftar. Sumber lama (daftar rekening); bila gagal dimuat → logo netral, daftar tetap berfungsi.
+  const butuhAkun = !["ringkasan", "pendapatan"].includes(tab);
+  useEffect(() => {
+    if (!butuhAkun || akun !== undefined) return;
+    api.getFinanceCashAccounts().then((r) => setAkun(r?.accounts ?? [])).catch(() => setAkun([]));
+  }, [butuhAkun, akun]);
+  const indeksRek = useMemo(() => indeksRekening(akun), [akun]);
+
+  const aktif = tabDari(tab);
+  const ke = useCallback((id) => { setTab(id); window.scrollTo?.({ top: 0 }); }, []);
 
   async function buka(b) {
     setDetail({ memuat: true, baris: b }); setDetailGalat(null);
@@ -472,33 +338,41 @@ export default function FinancePemasukan() {
   }
   const tautan = detail?.baris?.tautan;
 
+  const ringkasanUang = rkIni.data
+    ? { keadaan: "ada", nilai: rkIni.data.pembayaranMasuk.terverifikasi.nilai, jumlah: rkIni.data.pembayaranMasuk.terverifikasi.jumlah }
+    : { keadaan: rkIni.galat ? "tidak" : "memuat" };
+  const jumlahVerifikasi = rkIni.data?.perluVerifikasiFinance?.totalJumlah ?? null;
+
+  const judul = tab === "ringkasan"
+    ? "Pemasukan"
+    : <><span className="fin-pm-induk">Pemasukan</span><ChevronRight size={22} className="fin-pm-induk-panah" aria-hidden="true" /><span className="fin-sr-saja">: </span>{aktif.judul}</>;
+  const subjudul = tab === "ringkasan"
+    ? "Pendapatan, pembayaran, dan tagihan dalam satu tampilan. Hanya membaca; tidak membuat transaksi atau jurnal baru."
+    : aktif.ringkas;
+
   return (
     <HalamanFinance
-      title="Pemasukan" subtitle="Satu tempat untuk melihat seluruh arus pemasukan — tanpa menciptakan transaksi atau jurnal baru."
-      actions={<div className="flex items-center gap-2"><PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />{opsi?.aksiCatat?.boleh && <Button size="sm" variant="outline" onClick={() => nav("/finance/other-income")}>Catat Pemasukan Lain</Button>}</div>}
+      className="fin-halaman" title={judul} subtitle={subjudul}
+      actions={<div className="fin-pm-aksi"><PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />{opsi?.aksiCatat?.boleh && <Button size="sm" onClick={() => nav("/finance/other-income")}>Catat pemasukan lain</Button>}</div>}
       loading={false} error={error} onRetry={() => window.location.reload()}
     >
-      <div role="status" className="mb-3 rounded-lg border border-orange/40 bg-orangebg px-3 py-2 text-[13px] text-ink"><strong>Angka belum final.</strong> {PERINGATAN_PENDAPATAN_2026}</div>
-      <div role="tablist" aria-label="Kategori pemasukan" className="mb-4 flex flex-wrap gap-2">
-        {TAB.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`rounded-full border px-3 py-1.5 text-[13px] ${tab === t.id ? "border-accent bg-accent text-white" : "text-ink2 hover:bg-inset"}`}>{t.label}</button>
-        ))}
+      <div className="fin-ring fin-pm" data-testid="halaman-pemasukan" data-tab={tab}>
+        <StripSementara teks={PERINGATAN_PENDAPATAN_2026} />
+        <PemilihKategori tab={tab} onTab={ke} jumlahVerifikasi={jumlahVerifikasi} />
+
+        {tab === "ringkasan" && (
+          rkIni.galat
+            ? <section className="fin-panel"><p className="fin-galat" role="alert">Gagal memuat ringkasan: {rkIni.galat} <button type="button" className="fin-pm-reset" onClick={muatRk}>Coba lagi</button></p></section>
+            : !rkIni.data
+              ? <section className="fin-panel" aria-busy="true"><p className="fin-kosong">Memuat ringkasan…</p></section>
+              : <RingkasanPemasukan r={rkIni.data} periode={periode} ke={ke} navigate={nav} />
+        )}
+        {tab === "verifikasi" && <PerluVerifikasi periode={periode} opsi={opsi} indeksRek={indeksRek} onBuka={buka} />}
+        {["pendapatan", "pembayaran", "lain", "dana"].includes(tab) && (
+          <DaftarPemasukan key={tab} periode={periode} tab={aktif} opsi={opsi} indeksRek={indeksRek} onBuka={buka} ringkasanUang={tab === "pembayaran" ? ringkasanUang : null} />
+        )}
+        {tab === "historis" && <DataSebelumSistem periode={periode} opsi={opsi} indeksRek={indeksRek} onBuka={buka} />}
       </div>
-      {tab !== "ringkasan" && aktif?.kategori && opsi && (
-        <Penjelasan className="mb-3">{opsi.kategori.find((k) => k.id === aktif.kategori)?.penjelasan}</Penjelasan>
-      )}
-      {tab === "ringkasan" && (
-        <>
-          {/* Tab Ringkasan tidak punya daftar sendiri: export memuat seluruh pemasukan periode ini (semua kategori) + sheet Rekap Klasifikasi. */}
-          <div className="flex justify-end">
-            <TombolExportExcel modul="pemasukan" ambilBody={() => ({ periode: { from: periode.from, to: periode.to }, filter: {}, filterLabel: "Ringkasan — semua kategori pemasukan" })} />
-          </div>
-          <Ringkasan periode={periode} ke={setTab} />
-        </>
-      )}
-      {tab === "verifikasi" && <PerluVerifikasi periode={periode} opsi={opsi} onBuka={buka} />}
-      {["pendapatan", "pembayaran", "lain", "dana"].includes(tab) && <Daftar key={tab} periode={periode} kategori={aktif.kategori} opsi={opsi} onBuka={buka} />}
-      {tab === "historis" && <DataSebelumSistem periode={periode} opsi={opsi} onBuka={buka} />}
 
       {detail && (
         <Modal open onOpenChange={(v) => { if (!v) setDetail(null); }} title={`${detail.baris.nomor} — ${detail.baris.kategoriLabel}`}>
@@ -507,6 +381,8 @@ export default function FinancePemasukan() {
             <div className="grid grid-cols-2 gap-2">
               <div><span className="text-ink3">Tanggal</span><div>{tanggalPendek(detail.baris.tanggal)}</div></div>
               <div><span className="text-ink3">Nilai</span><div><Rp v={detail.baris.nilai} /></div></div>
+              <div><span className="text-ink3">Pelanggan / pembayar</span><div>{detail.baris.pihak ?? "—"}</div></div>
+              <div><span className="text-ink3">Status</span><div>{detail.baris.statusBayar ? <>{detail.baris.statusBayar.label}{detail.baris.statusBayar.rekeningBelumDiketahui ? " · rekening belum diketahui" : ""}</> : detail.baris.statusLabel}</div></div>
               <div><span className="text-ink3">Sumber</span><div>{detail.baris.sumberLabel}</div></div>
               <div><span className="text-ink3">Rekening</span><div>{detail.baris.rekening ?? "—"}</div></div>
               <div className="col-span-2"><span className="text-ink3">Keterangan</span><div>{detail.baris.keterangan}</div></div>

@@ -27,6 +27,8 @@ const DIEKSPOR = {
   "FinancePenjualanKaryawan.jsx": ["penjualan-karyawan"],
   "FinanceReports.jsx": ["laporan-keuangan"], // tab Laba Rugi (Neraca/Arus Kas/Neraca Saldo tidak diekspor)
 };
+// Halaman yang tombol exportnya dipindah ke komponen fitur anaknya (redesain Pemasukan): halaman + komponen dibaca bersama.
+const BERKAS_FITUR_HALAMAN = { "FinancePemasukan.jsx": ["frontend/src/features/finance/pemasukan/DaftarPemasukan.jsx"] };
 // Tombol export yang hidup di komponen fitur (bukan langsung di halaman): kartu Selisih Sales–Finance di Pembayaran & Verifikasi.
 const DIEKSPOR_DI_FITUR = { "src/features/finance/JadwalAgingUtang.jsx": ["aging-utang"], "src/features/finance/KartuSelisihSalesFinance.jsx": ["rekon-sales-finance"], "src/features/finance/MutasiRekening.jsx": ["mutasi-rekening"], "src/features/finance/MutasiBank.jsx": ["mutasi-bank"], "src/features/finance/PencocokanBank.jsx": ["pencocokan-bank"], "src/features/finance/PanelRekon.jsx": ["rekonsiliasi-rekening"] };
 // Export lewat ENDPOINT SENDIRI (izin per divisi, bukan registri modul Finance): Laporan Divisi (Fase 2) — POST /api/laporan-divisi/export.
@@ -50,7 +52,7 @@ test("setiap halaman Finance: punya tombol export modul yang benar atau tercantu
     assert.ok(f in DIEKSPOR || f in TIDAK_DIEKSPOR || f in DIEKSPOR_ENDPOINT_SENDIRI, `halaman ${f} belum diklasifikasikan (export atau tidak) di financeExportCoverage.test.js + docs/FINANCE-EXPORT-COVERAGE.md`);
   }
   for (const [f, moduls] of Object.entries(DIEKSPOR)) {
-    const s = baca(path.join(halaman, f));
+    const s = [baca(path.join(halaman, f)), ...(BERKAS_FITUR_HALAMAN[f] || []).map((p) => baca(path.join(akar, p)))].join("\n");
     for (const m of moduls) {
       assert.match(s, new RegExp(`<TombolExportExcel[^>]*modul="${m}"`, "s"), `${f}: tombol export modul "${m}" tidak ada`);
     }
