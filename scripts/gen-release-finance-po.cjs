@@ -16,7 +16,7 @@ const OUT = "scripts/release-finance-po.sh";
 const GENERATOR = "scripts/gen-release-finance-po.cjs";
 const TPL = "scripts/templates/release-finance-po";
 const TPL_P = "scripts/templates/release-penjadwalan-langsung";
-const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`, `${TPL}/verifikasi-hotfix.txt`,
+const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`, `${TPL}/bandingkan-kode.txt`, `${TPL}/verifikasi-hotfix.txt`,
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const FILE_TETAP = [OUT, GENERATOR, ...TPL_FILES];
 const CAND_BRANCH = "feat/finance-po-on-691d8a01";
@@ -52,7 +52,11 @@ function bangkitkan({ baseScript, blok, berkasList }) {
 
   // blok gerbang (dari templat rilis penjadwalan; nama kunci/skrip disesuaikan)
   const adapt = (t) => t.split("pjl\\|release-penjadwalan-langsung").join("spo1\\|release-finance-po").split("/tmp/release-penjadwalan-langsung.lock").join("/tmp/release-finance-po.lock");
-  const gerbang = adapt(blokTeks(blok, "gerbang-kode-live"));
+  const CMP_LAMA = 'cmp -s "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt" || {';
+  const gerbangDasar = adapt(blokTeks(blok, "gerbang-kode-live"));
+  must(gerbangDasar.split(CMP_LAMA).length === 2, "perbandingan container-vs-folder pada gerbang kode live");
+  // Perbandingan container-vs-folder memakai bandingkan_kode (mengecualikan HANYA dua berkas tes pemeriksa kontrak metrik, jalur persis).
+  const gerbang = blokTeks(blok, "bandingkan-kode") + "\n" + gerbangDasar.replace(CMP_LAMA, 'bandingkan_kode "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt" || {');
   const PH0 = 'PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"';
   r(PH0, gerbang + "\n\n" + PH0);
   const OK1 = 'ok "release aktif ${PREV_DIR} (commit ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12}); .env sha ${ENV_SHA}"';
