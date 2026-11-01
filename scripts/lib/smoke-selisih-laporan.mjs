@@ -19,7 +19,7 @@ const rolesDari = async (u) => new Set([u.role, ...(await prisma.userRole.findMa
 const bisa = (rs, izin) => [...rs].some((r) => (ROLE_PERMISSIONS[r] ?? []).includes(izin));
 const tokenUntuk = async (u) => jwt.sign({ id: u.id, name: u.name, role: u.role, roles: [...(await rolesDari(u))] }, process.env.JWT_SECRET, { expiresIn: "10m" });
 const hitung = async (q, ...a) => Number((await prisma.$queryRawUnsafe(q, ...a))[0].n);
-const B = (k) => Number(process.env[k]);
+const B = (k) => { const mentah = process.env[k]; const v = Number(mentah); if (mentah === undefined || mentah === "" || !Number.isFinite(v) || v < 0) throw new Error(`garis dasar ${k} hilang atau bukan angka ('${mentah}') — gerbang tidak dapat diverifikasi, bukan lulus`); return v; };
 const users = await prisma.user.findMany({ where: { active: true }, orderBy: { id: "asc" } }); const info = []; for (const u of users) info.push({ u, rs: await rolesDari(u) });
 const pembaca = info.find((x) => bisa(x.rs, P.FINANCE_READ) && x.rs.has("ADMIN"))?.u ?? info.find((x) => bisa(x.rs, P.FINANCE_READ))?.u;
 const tanpaIzin = info.find((x) => !bisa(x.rs, P.FINANCE_READ) && !x.rs.has("ADMIN") && !x.rs.has("SALES"))?.u;

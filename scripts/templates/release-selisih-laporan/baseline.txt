@@ -1,0 +1,12 @@
+# BASELINE harus LENGKAP dan ANGKA. Cacat 1 Nov 2026: PAY_N tidak pernah dicatat ke garis-dasar.env -> NaN -> gerbang smoke "jumlah Order & Payment tidak berkurang" gagal SETELAH switch (salah-gagal; data tidak berubah). Nilai hilang / bukan angka / ganda = berhenti SEBELUM produksi berganti.
+BASELINE_KUNCI="BASE_TIDAK_SEIMBANG BASE_GANDA ORDER_N JOB_N PKR_N EVT_N PAY_N"
+cek_garis_dasar() {
+  local f="$1" k v n
+  [ -s "$f" ] || { echo "garis-dasar.env kosong atau tidak ada: $f" >&2; return 1; }
+  for k in $BASELINE_KUNCI; do
+    n="$(grep -c "^${k}=" "$f" || true)"
+    [ "$n" = "1" ] || { echo "garis dasar '${k}' tercatat ${n}x (harus tepat 1x) di $f" >&2; return 1; }
+    v="$(sed -n "s/^${k}=//p" "$f")"
+    [[ "$v" =~ ^[0-9]+$ ]] || { echo "garis dasar '${k}' bukan angka: '${v}'" >&2; return 1; }
+  done
+}

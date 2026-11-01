@@ -51,3 +51,49 @@ test("COUNT_SQL: dievaluasi bash menghasilkan SQL utuh (tanda kutip nama tabel \
   assert.match(r.stdout, /from "Order" union all/, "nama tabel Order berkutip utuh di SQL hasil evaluasi");
   assert.ok(r.stdout.startsWith("select 'payments'") && r.stdout.endsWith("from fin_penjualan_karyawan"), "SQL tidak terpotong");
 });
+
+// ── Garis dasar (cacat 1 Nov 2026): PAY_N tidak pernah dicatat → smoke membandingkan dengan NaN → gagal SETELAH switch.
+test("garis dasar: PAY_N dicatat bersama baseline lain, divalidasi SEBELUM switch (fase 2 dan tepat sebelum fase 7), dan diteruskan ke smoke", () => {
+  assert.match(sh, /PAY_N="\$\(psql_live -At -c "select count\(\*\) from payments"\)"/);
+  assert.match(sh, /for v in "\$ORDER_N" "\$JOB_N" "\$PKR_N" "\$EVT_N" "\$PAY_N"; do/);
+  assert.match(sh, /EVT_N=%q\\nPAY_N=%q\\n' .* "\$PAY_N" > "\$BK_DIR\/garis-dasar\.env"/);
+  assert.match(sh, /BASELINE_KUNCI="BASE_TIDAK_SEIMBANG BASE_GANDA ORDER_N JOB_N PKR_N EVT_N PAY_N"/);
+  const iFase7 = sh.indexOf('PHASE="7-switch"'); const iSwitch = sh.indexOf('dcp "$NEW_DIR" up -d --no-deps backend');
+  const cek = [...sh.matchAll(/cek_garis_dasar "\$BK_DIR\/garis-dasar\.env" \|\| die/g)].map((m) => m.index);
+  assert.equal(cek.length, 2, "dipanggil dua kali: sesudah ditulis (fase 2) dan tepat sebelum switch");
+  assert.ok(cek[0] < iFase7 && cek[1] > iFase7 && cek[1] < iSwitch, "pemeriksaan kedua berada di fase 7 SEBELUM compose up (produksi belum berganti)");
+  assert.match(sh, /-e ORDER_N="\$ORDER_N" -e JOB_N="\$JOB_N" -e PAY_N="\$PAY_N" backend node/, "PAY_N diteruskan ke container smoke");
+});
+
+test("garis dasar: cek_garis_dasar menerima baseline lengkap dan MENOLAK nilai hilang, bukan angka (NaN), kosong, atau ganda", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs"); const os = await import("node:os");
+  const awal = sh.indexOf("BASELINE_KUNCI="); const akhir = sh.indexOf("\n}\n", sh.indexOf("cek_garis_dasar() {")) + 3;
+  assert.ok(awal > 0 && akhir > awal, "fungsi cek_garis_dasar ada di skrip");
+  const fungsi = sh.slice(awal, akhir);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "gd-"));
+  const LENGKAP = { BASE_TIDAK_SEIMBANG: "0", BASE_GANDA: "0", ORDER_N: "844", JOB_N: "1384", PKR_N: "28", EVT_N: "1673", PAY_N: "441" };
+  const tulis = (nama, o, tambah = "") => { const f = path.join(dir, nama); writeFileSync(f, Object.entries(o).map(([k, v]) => `${k}=${v}`).join("\n") + "\n" + tambah); return f; };
+  const jalankan = (f) => spawnSync("bash", ["-c", `${fungsi}\ncek_garis_dasar "$1"`, "x", f], { encoding: "utf8" });
+  try {
+    const coba = jalankan(tulis("ok.env", LENGKAP)); if (coba.error) return; // tanpa bash di lingkungan ini: dilewati (VPS selalu punya bash)
+    assert.equal(coba.status, 0, "baseline lengkap lulus: " + coba.stderr);
+    const { PAY_N, ...tanpaPay } = LENGKAP;
+    const hilang = jalankan(tulis("tanpa-pay.env", tanpaPay)); assert.notEqual(hilang.status, 0, "PAY_N hilang HARUS ditolak"); assert.match(hilang.stderr, /PAY_N.*0x/);
+    const nan = jalankan(tulis("nan.env", { ...LENGKAP, PAY_N: "NaN" })); assert.notEqual(nan.status, 0, "NaN HARUS ditolak"); assert.match(nan.stderr, /PAY_N.*bukan angka/);
+    assert.notEqual(jalankan(tulis("kosong.env", { ...LENGKAP, ORDER_N: "" })).status, 0, "nilai kosong HARUS ditolak");
+    assert.notEqual(jalankan(tulis("negatif.env", { ...LENGKAP, JOB_N: "-1" })).status, 0, "negatif HARUS ditolak");
+    assert.notEqual(jalankan(tulis("ganda.env", LENGKAP, "PAY_N=1\n")).status, 0, "kunci ganda HARUS ditolak");
+    assert.notEqual(jalankan(path.join(dir, "tidak-ada.env")).status, 0, "berkas tidak ada HARUS ditolak");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("garis dasar: smoke menolak baseline hilang/NaN (melempar galat), bukan membandingkan dengan NaN lalu gagal diam-diam", () => {
+  const sm = baca("scripts/lib/smoke-selisih-laporan.mjs");
+  const def = sm.split("\n").find((l) => l.startsWith("const B = ")); assert.ok(def, "definisi B() ada");
+  assert.doesNotMatch(def, /^const B = \(k\) => Number\(process\.env\[k\]\);$/, "bukan pembungkus Number() polos");
+  const B = new Function("process", `${def}\nreturn B;`)({ env: { ORDER_N: "844", PAY_N: "441", RUSAK: "NaN", KOSONG: "" } });
+  assert.equal(B("PAY_N"), 441); assert.equal(B("ORDER_N"), 844);
+  for (const k of ["HILANG", "RUSAK", "KOSONG"]) assert.throws(() => B(k), /hilang atau bukan angka/, k);
+  assert.match(sm, /B\("PAY_N"\)/, "pemeriksaan jumlah Payment masih memakai PAY_N");
+});

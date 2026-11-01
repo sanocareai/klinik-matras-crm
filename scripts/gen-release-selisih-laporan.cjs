@@ -17,7 +17,7 @@ const OUT = "scripts/release-selisih-laporan.sh";
 const TPL_DIR = "scripts/templates/release-selisih-laporan";
 const LIB_REH = "scripts/lib/rehearsal-selisih-laporan.mjs", LIB_SMOKE = "scripts/lib/smoke-selisih-laporan.mjs";
 const GENERATOR = "scripts/gen-release-selisih-laporan.cjs";
-const TPL_FILES = ["header", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
+const TPL_FILES = ["header", "rollback", "baseline"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
 const CAND_BRANCH = "fix/audit-selisih-laporan-okt-on-a0dbe2fb";
 // Teks ASCII di bundel web (esbuild menulis karakter non-ASCII sebagai \uXXXX, jadi hanya awalan ASCII yang dicari).
@@ -75,6 +75,18 @@ function bangkitkan({ baseScript, blok, berkasList, rehNode, smokeNode }) {
   { const a = s.indexOf("<<'NODE' | tee"); const aLine = s.indexOf("\n", a) + 1; const b = s.indexOf("\nNODE\n", aLine); must(a > 0 && b > 0, "NODE smoke"); s = s.slice(0, aLine) + lf(smokeNode).trimEnd() + s.slice(b); }
   gantiBaris('PHASE="8b-smoke"; say "', 'PHASE="8b-smoke"; say "8b. Smoke test baca-saja: Pemasukan (total layar = SQL = Excel), kolom Dihitung ke Total?, Rekonsiliasi Sales-Finance (jembatan tahap 1/2/kohort menutup persis), izin (401/403), validasi 400, tanpa data percobaan; payments/order/jurnal/refund/nota kredit identik"');
   gantiBaris('  ok "smoke test lulus (', '  ok "smoke test lulus (Pemasukan layar = SQL = Excel, kolom Dihitung ke Total?, jembatan tahap 1/2/kohort residual Rp0, izin, validasi, tanpa jejak tulis, invarian)"');
+  // BASELINE LENGKAP + ANGKA (cacat 1 Nov 2026: PAY_N tidak pernah dicatat/diteruskan -> NaN -> smoke salah-gagal SETELAH switch).
+  // PAY_N dicatat bersama baseline lain; SEMUA kunci divalidasi angka tepat 1x di fase 2 DAN sekali lagi tepat sebelum switch; lalu diteruskan ke smoke.
+  { const baris = s.split("\n"); const i = baris.findIndex((l) => l.startsWith('EVT_N="$(psql_live')); must(i >= 0, "baris EVT_N");
+    baris.splice(i + 1, 0, 'PAY_N="$(psql_live -At -c "select count(*) from payments")"'); s = baris.join("\n"); }
+  r('"$PKR_N" "$EVT_N"; do', '"$PKR_N" "$EVT_N" "$PAY_N"; do');
+  gantiBaris("printf 'BASE_TIDAK_SEIMBANG=%q", [
+    lf(blok.baseline).trimEnd(),
+    "printf 'BASE_TIDAK_SEIMBANG=%q\\nBASE_GANDA=%q\\nORDER_N=%q\\nJOB_N=%q\\nPKR_N=%q\\nEVT_N=%q\\nPAY_N=%q\\n' \"$BASE_TIDAK_SEIMBANG\" \"$BASE_GANDA\" \"$ORDER_N\" \"$JOB_N\" \"$PKR_N\" \"$EVT_N\" \"$PAY_N\" > \"$BK_DIR/garis-dasar.env\"",
+    'cek_garis_dasar "$BK_DIR/garis-dasar.env" || die "garis dasar tidak lengkap atau bukan angka — berhenti sebelum produksi berganti"'].join("\n"));
+  { const baris = s.split("\n"); const i = baris.findIndex((l) => l.startsWith('PHASE="7-switch"; say "')); must(i >= 0, "baris fase 7");
+    baris.splice(i + 1, 0, 'cek_garis_dasar "$BK_DIR/garis-dasar.env" || die "garis dasar tidak lengkap atau bukan angka tepat sebelum switch — berhenti (produksi BELUM berganti)"'); s = baris.join("\n"); }
+  r('-e JOB_N="$JOB_N" backend node', '-e JOB_N="$JOB_N" -e PAY_N="$PAY_N" backend node');
   // hitung baris pra/pasca switch
   gantiBaris('COUNT_SQL="', `COUNT_SQL="${COUNT_SQL}"`);
   r("hitung baris jadwal/Run/stok/pemakaian/harga/jurnal", "hitung baris payments/verifikasi/order/jurnal/refund/nota kredit/pengecualian lunas/PKR");
