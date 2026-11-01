@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
-import { StatusEmpatPO, RiwayatPembayaranPO, PanelKelompokPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
+import { StatusEmpatPO, RincianPerhitunganPO, RiwayatPembayaranPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
 import { Uang, formatUang, TombolAksi, Pilihan, InputUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
@@ -18,7 +18,7 @@ import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { IkAlur, IkBahan, IkHarga, IkKedatangan } from "@/components/financeIconsPO.jsx";
 import { IkJam } from "@/components/financeIconsBiaya.jsx";
 import { ChipStatusPO, BarPenerimaan } from "./DaftarPO.jsx";
-import { aksiRincian, statusTampil, ringkasPenerimaan, angkaBaris, langkahBerikut } from "./poTampilan.js";
+import { aksiRincian, statusTampil, ringkasPenerimaan, angkaBaris, langkahBerikut, keteranganTermin } from "./poTampilan.js";
 import PanelKedatangan, { LegendaProgres } from "@/features/kedatangan/PanelKedatangan.jsx";
 import {
   LABEL_STATUS_PENERIMAAN, teksJumlah, kalimatEvent, labelSatuan, nilaiBelumDiterima,
@@ -302,7 +302,7 @@ function IsiDetail({ po, segar, izin, onBayarUangMuka, onUbahFaktur, onSetujuiFa
         </KartuRingkas>
         {berjalan && <KartuRingkas label="Estimasi belum masuk stok" nilai={formatUang(nilaiBelumDiterima(po))} ket="Sisa jumlah × harga PO — bukan utang" testid="ringkas-estimasi" />}
         {po.status === "SELESAI" && <KartuRingkas label="Nilai masuk stok" nilai={formatUang(po.totalDiterima)} ket="Barang baik yang sudah disimpan, menurut harga PO" testid="ringkas-masuk" />}
-        <KartuRingkas label="Termin pembayaran" nilai={po.termin ? teksTermin({ label: po.termin.label, sumber: po.termin.sumber }) : "Belum ditetapkan"} ket={po.termin?.alasan ? `Diganti: ${po.termin.alasan}` : "Jatuh tempo dihitung per penerimaan"} testid="termin-po" />
+        <KartuRingkas label="Termin pembayaran" nilai={po.termin ? teksTermin({ label: po.termin.label, sumber: po.termin.sumber }) : "Belum ditetapkan"} ket={keteranganTermin(po.termin)} testid="termin-po" />
       </section>
 
       <div className="fin-pod-status">
@@ -318,7 +318,7 @@ function IsiDetail({ po, segar, izin, onBayarUangMuka, onUbahFaktur, onSetujuiFa
         <BagianPO judul="Progres barang, faktur, utang, dan pembayaran" Ikon={IkAlur} id="pod-empat">
           <p className="fin-pod-ket">Status pesanan ada di atas. Barang, faktur, utang, dan pembayaran adalah empat hal berbeda: PO yang selesai masuk stok tidak berarti fakturnya sudah masuk atau sudah dibayar.</p>
           <StatusEmpatPO po={po} onBayarUangMuka={onBayarUangMuka} />
-          <PanelKelompokPO po={po} />
+          <RincianPerhitunganPO po={po} />
         </BagianPO>
       )}
 

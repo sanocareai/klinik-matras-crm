@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Info, Wallet, AlertTriangle, Undo2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -13,6 +13,7 @@ import { Uang, formatUang, TombolAksi, Pilihan, InputUang, PemilihBukti, tanggal
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { Link } from "react-router-dom";
+import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { URUTAN_STATUS_EMPAT, varianStatusEmpat, tautanKeuangan, LABEL_JENIS_PEMBAYARAN, KALIMAT_SIMPAN_KE_STOK, KALIMAT_UANG_MUKA, statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka } from "@/features/finance/uangMukaLogic.js";
 
 // UANG MUKA SUPPLIER sebelum barang datang (Okt 2026). Semua angka datang dari server (po.keuangan, po.total*); layar ini hanya menampilkan, memberi tooltip definisi, dan mengirim aksi.
@@ -49,17 +50,18 @@ export function StatusEmpatPO({ po, onBayarUangMuka = null }) {
   const k = po.keuangan;
   if (!k?.statusEmpat) return null;
   const tautanFaktur = (po.faktur || []).filter((f) => !["DITOLAK", "DIBATALKAN"].includes(f.status));
-  const total = [
-    { kunci: "total-po", label: "Total PO", nilai: k.nilaiPO, definisi: defServer(k.definisi, "nilaiPO") },
-    { kunci: "total-faktur", label: "Faktur disetujui", nilai: k.totalFakturDisetujui, definisi: defServer(k.definisi, "totalFakturDisetujui") },
-    { kunci: "total-dibayar", label: "Total kas keluar", nilai: k.sudahDibayar, definisi: defServer(k.definisi, "sudahDibayar") },
-    { kunci: "total-sisa-utang", label: "Sisa utang", nilai: k.sisaUtang, definisi: defServer(k.definisi, "sisaUtang"), tebal: true },
-  ];
+  // Satu angka utama per kartu (tidak diulang di blok lain): faktur disetujui · sisa utang · kas keluar (+ nilai PO yang belum tertutup pembayaran). Perhitungan pendukung ada di "Rincian perhitungan".
+  const angkaKartu = {
+    faktur: { testid: "total-faktur", label: "Faktur disetujui", nilai: k.totalFakturDisetujui, definisi: defServer(k.definisi, "totalFakturDisetujui") },
+    utang: { testid: "total-sisa-utang", label: "Sisa utang", nilai: k.sisaUtang, definisi: defServer(k.definisi, "sisaUtang"), tebal: true },
+    pembayaran: { testid: "total-dibayar", label: "Total kas keluar", nilai: k.sudahDibayar, definisi: defServer(k.definisi, "sudahDibayar") },
+  };
   return (
     <section className="space-y-3" data-testid="status-empat-po" aria-label="Empat status PO">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {URUTAN_STATUS_EMPAT.map((u) => {
           const st = k.statusEmpat[u.kunci];
+          const a = angkaKartu[u.kunci];
           return (
             <div key={u.kunci} className="min-w-0 rounded-lg border border-line p-3" data-testid={`status-${u.kunci}`} data-kode={st.kode}>
               <div className="text-[11px] font-bold uppercase tracking-wide text-ink3">{u.judul}</div>
@@ -68,7 +70,13 @@ export function StatusEmpatPO({ po, onBayarUangMuka = null }) {
                 {u.kunci === "faktur" && st.jumlah?.semua > 0 && <span className="text-[11.5px] text-ink3">{st.jumlah.disetujui} disetujui{st.jumlah.menunggu > 0 ? ` · ${st.jumlah.menunggu} menunggu` : ""}</span>}
               </div>
               <p className="m-0 mt-1 text-[11.5px] text-ink3">{u.sub}</p>
-              {st.rincian?.length > 0 && <ul className="m-0 mt-2 list-none space-y-1 p-0">{st.rincian.map((t, i) => <li key={i} className="text-[11.5px] leading-snug text-ink2">{t}</li>)}</ul>}
+              {a && <dl className="m-0 mt-2"><Angka testid={a.testid} label={a.label} nilai={a.nilai} definisi={a.definisi} tebal={a.tebal} /></dl>}
+              {u.kunci === "pembayaran" && (
+                <dl className="m-0 mt-2">
+                  <Angka testid="r-sisa-belum-dibayar" label="Nilai PO belum tertutup pembayaran" nilai={k.sisaKomitmen} definisi={DEF_BELUM_TERTUTUP} tone={k.sisaKomitmen > 0 ? "orange" : null} />
+                  <p className="m-0 mt-0.5 text-[11.5px] text-ink3" data-testid="bukan-saldo-utang">Bukan saldo utang supplier</p>
+                </dl>
+              )}
               {u.kunci === "faktur" && tautanFaktur.length > 0 && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="tautan-faktur">
                   <a href="#seksi-faktur" className="text-[12px] font-semibold text-accent max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">Lihat faktur di PO ini</a>
@@ -85,24 +93,52 @@ export function StatusEmpatPO({ po, onBayarUangMuka = null }) {
           );
         })}
       </div>
-      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-inset px-3 py-2.5 lg:grid-cols-4" data-testid="total-ringkas-po">
-        {total.map((t) => <Angka key={t.kunci} testid={t.kunci} label={t.label} nilai={t.nilai} definisi={t.definisi} tebal={t.tebal} />)}
-      </dl>
-      <div className="rounded-lg border border-line p-3" data-testid="rincian-pembayaran-po">
-        <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Rincian pembayaran &amp; utang (dipisah)</h4>
-        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-3 xl:grid-cols-5">
-          <Angka testid="r-uang-muka-dibayar" label="Uang muka dibayar" nilai={k.uangMukaDibayar} definisi={defServer(k.definisi, "uangMukaDibayar")} />
-          <Angka testid="r-uang-muka-dialokasikan" label="Uang muka dialokasikan ke faktur" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
-          <Angka testid="r-pembayaran-faktur" label="Pembayaran faktur (kas)" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
-          <Angka testid="r-sisa-utang" label="Sisa utang" nilai={k.sisaUtang} definisi={defServer(k.definisi, "sisaUtang")} tebal />
-          <Angka testid="r-sisa-belum-dibayar" label="Sisa belum dibayar" nilai={k.sisaKomitmen} definisi={defServer(k.definisi, "sisaKomitmen")} tebal tone={k.sisaKomitmen > 0 ? "orange" : null} />
-        </dl>
-        {k.uangMukaBelumDiterapkan > 0 && <p className="m-0 mt-2 text-[12px] text-orange" data-testid="r-uang-muka-menggantung">Uang muka belum dialokasikan: {formatUang(k.uangMukaBelumDiterapkan)}.</p>}
-        <p className="m-0 mt-2 text-[11.5px] text-ink3">Total kas keluar = uang muka dibayar + pembayaran faktur. Mengalokasikan uang muka ke faktur mengurangi sisa utang, bukan kas keluar kedua.</p>
-      </div>
-      <p className="m-0 flex items-start gap-1.5 rounded-lg border border-line px-3 py-2 text-[12px] text-ink2" data-testid="petunjuk-simpan-ke-stok" role="note">
-        <Info size={13} className="mt-0.5 shrink-0 text-ink3" aria-hidden="true" /><span>{k.petunjukSimpanKeStok || KALIMAT_SIMPAN_KE_STOK}</span>
-      </p>
+      {k.uangMukaBelumDiterapkan > 0 && <p className="m-0 text-[12px] text-orange" data-testid="r-uang-muka-menggantung">Uang muka belum dialokasikan: {formatUang(k.uangMukaBelumDiterapkan)}.</p>}
+      {k.kelebihanPembayaran > 0 && <p className="m-0 rounded-md bg-orangebg px-2.5 py-1.5 text-[12px] text-orange" role="status">Kelebihan pembayaran {formatUang(k.kelebihanPembayaran)} di atas nilai PO — menjadi Kredit Supplier (tanpa refund kas otomatis).</p>}
+    </section>
+  );
+}
+
+/** Definisi lokal untuk angka yang dulu berlabel "Sisa belum dibayar": dihitung server sebagai max(0, nilai PO − uang muka dibayar − pembayaran atas faktur). Bukan utang. */
+const DEF_BELUM_TERTUTUP = "Nilai PO dikurangi uang muka yang sudah dibayar dan pembayaran atas faktur (tidak pernah di bawah nol; kelebihan dilaporkan terpisah). Ini sisa komitmen PO, bukan saldo utang supplier: utang baru ada setelah faktur disetujui.";
+
+/**
+ * Accordion "Rincian perhitungan": uraian status, perhitungan pendukung (pemenuhan barang & keuangan), rumus, dan petunjuk Simpan ke Stok.
+ * Angka utama (nilai PO, faktur disetujui, kas keluar, sisa utang) sudah tampil di kartu di atasnya; di sini hanya angka pendukung yang unik. Semua angka dari server.
+ */
+export function RincianPerhitunganPO({ po }) {
+  const [buka, setBuka] = useState(false);
+  const id = useId();
+  const k = po.keuangan;
+  return (
+    <section className="space-y-3" data-testid="rincian-perhitungan-po">
+      <Pembuka buka={buka} onToggle={() => setBuka((v) => !v)} id={id} className="fin-pill fin-pill-info">Rincian perhitungan</Pembuka>
+      {buka && (
+        <div id={id} className="space-y-3">
+          {k?.statusEmpat && (
+            <section className="rounded-lg border border-line p-3" data-testid="uraian-status" aria-label="Uraian status">
+              <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Uraian status</h4>
+              <ul className="m-0 list-none space-y-1.5 p-0">
+                {URUTAN_STATUS_EMPAT.map((u) => {
+                  const st = k.statusEmpat[u.kunci];
+                  return <li key={u.kunci} className="text-[12px] leading-snug text-ink2"><strong className="text-ink">{u.judul}: {st.label}.</strong> {(st.rincian || []).join(" ")}</li>;
+                })}
+              </ul>
+            </section>
+          )}
+          <PanelKelompokPO po={po} />
+          {k && (
+            <ul className="m-0 list-none space-y-1 p-0 text-[11.5px] text-ink3" data-testid="rumus-keuangan-po">
+              <li>Total kas keluar = uang muka dibayar + pembayaran faktur (kas). Mengalokasikan uang muka ke faktur mengurangi sisa utang, bukan kas keluar kedua.</li>
+              <li>Sisa utang = utang tercatat − pembayaran faktur. Utang tercatat = faktur disetujui − uang muka yang dialokasikan − kredit lain (Debit Note).</li>
+              <li>Nilai PO belum tertutup pembayaran = nilai PO − uang muka dibayar − pembayaran faktur (minimal 0). Bukan saldo utang supplier.</li>
+            </ul>
+          )}
+          <p className="m-0 flex items-start gap-1.5 rounded-lg border border-line px-3 py-2 text-[12px] text-ink2" data-testid="petunjuk-simpan-ke-stok" role="note">
+            <Info size={13} className="mt-0.5 shrink-0 text-ink3" aria-hidden="true" /><span>{k?.petunjukSimpanKeStok || KALIMAT_SIMPAN_KE_STOK}</span>
+          </p>
+        </div>
+      )}
     </section>
   );
 }
@@ -149,7 +185,7 @@ export function RiwayatPembayaranPO({ po }) {
   );
 }
 
-/** Dua kelompok yang jelas: A. Pemenuhan barang (nilai menurut harga PO) dan B. Keuangan. Tidak mencampur "sisa komitmen PO" dengan "utang tercatat". */
+/** Dua kelompok pendukung di dalam "Rincian perhitungan": A. Pemenuhan barang (nilai menurut harga PO) dan B. Keuangan. Hanya angka yang tidak sudah tampil di kartu utama. Tidak mencampur sisa komitmen PO dengan utang. */
 export function PanelKelompokPO({ po }) {
   const k = po.keuangan;
   const dp = po.progresDefinisi;
@@ -157,8 +193,7 @@ export function PanelKelompokPO({ po }) {
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="kelompok-po">
       <section className="rounded-lg border border-line p-3" data-testid="kelompok-pemenuhan" aria-label="Pemenuhan barang">
         <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">A. Pemenuhan barang <span className="font-normal normal-case text-ink3">(nilai menurut harga PO)</span></h4>
-        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-          <Angka testid="p-dipesan" label="Dipesan" nilai={po.totalDipesan} definisi={defServer(dp, "dipesan")} />
+        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-2">
           <Angka testid="p-datang" label="Datang fisik" nilai={po.totalDatang} definisi={defServer(dp, "datang")} />
           <Angka testid="p-belum-datang" label="Belum datang" nilai={po.totalBelumDatang} definisi={defServer(dp, "belumDatang")} />
           <Angka testid="p-bersih" label="Diterima bersih dari PO" nilai={po.totalDiterimaBersih} definisi={defServer(dp, "diterimaBersih")} />
@@ -167,21 +202,14 @@ export function PanelKelompokPO({ po }) {
         <p className="m-0 mt-2 text-[11.5px] text-ink3">Hanya “Masuk stok” yang menambah stok. Pembayaran atau faktur tidak pernah menambah stok.</p>
       </section>
       {k && (
-        <section className="rounded-lg border border-line p-3" data-testid="kelompok-keuangan" aria-label="Keuangan">
-          <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">B. Keuangan</h4>
-          <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-            <Angka testid="k-nilai-po" label="Nilai PO" nilai={k.nilaiPO} definisi={defServer(k.definisi, "nilaiPO")} />
-            <Angka testid="k-uang-muka" label="Uang muka dibayar" nilai={k.uangMukaDibayar} definisi={defServer(k.definisi, "uangMukaDibayar")} tebal />
-            <Angka testid="k-ditagih" label="Sudah ditagih" nilai={k.sudahDitagih} definisi={defServer(k.definisi, "sudahDitagih")} />
-            <Angka testid="k-diterapkan" label="Uang muka dialokasikan ke faktur" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
-            <Angka testid="k-belum-diterapkan" label="Uang muka belum diterapkan" nilai={k.uangMukaBelumDiterapkan} definisi={defServer(k.definisi, "uangMukaBelumDiterapkan")} tone={k.uangMukaBelumDiterapkan > 0 ? "orange" : null} />
+        <section className="rounded-lg border border-line p-3" data-testid="rincian-pembayaran-po" aria-label="Keuangan">
+          <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">B. Keuangan <span className="font-normal normal-case text-ink3">(rincian uang muka, utang, dan pembayaran)</span></h4>
+          <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-2">
+            <Angka testid="r-uang-muka-dibayar" label="Uang muka dibayar" nilai={k.uangMukaDibayar} definisi={defServer(k.definisi, "uangMukaDibayar")} />
+            <Angka testid="r-uang-muka-dialokasikan" label="Uang muka dialokasikan ke faktur" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
             <Angka testid="k-utang" label="Utang tercatat" nilai={k.utangTercatat} definisi={defServer(k.definisi, "utangTercatat")} />
-            <Angka testid="k-dibayar" label="Pembayaran faktur" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
-            <Angka testid="k-sisa-utang" label="Sisa utang" nilai={k.sisaUtang} definisi={defServer(k.definisi, "sisaUtang")} tebal />
-            <Angka testid="k-sisa-komitmen" label="Sisa komitmen PO" nilai={k.sisaKomitmen} definisi={defServer(k.definisi, "sisaKomitmen")} tebal tone="orange" />
+            <Angka testid="r-pembayaran-faktur" label="Pembayaran faktur (kas)" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
           </dl>
-          {k.kelebihanPembayaran > 0 && <p className="m-0 mt-2 rounded-md bg-orangebg px-2.5 py-1.5 text-[12px] text-orange" role="status">Kelebihan pembayaran {formatUang(k.kelebihanPembayaran)} di atas nilai PO — menjadi Kredit Supplier (tanpa refund kas otomatis).</p>}
-          <p className="m-0 mt-2 text-[11.5px] text-ink3">“Sisa komitmen PO” bukan utang: utang baru ada setelah faktur disetujui.</p>
         </section>
       )}
     </div>

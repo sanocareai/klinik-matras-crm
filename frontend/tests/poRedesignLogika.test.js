@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   izinPO, aksiRincian, kpiPO, kalimatCakupan, kalimatHasil, ringkasPenerimaan, angkaBaris, statusTampil, langkahBerikut,
-  TAB_PO_TAMPIL, DAMPAK_HARGA_SINGKAT, DAMPAK_HARGA_RINCI, ALUR_PEMBELIAN,
+  TAB_PO_TAMPIL, keteranganTermin, DAMPAK_HARGA_SINGKAT, DAMPAK_HARGA_RINCI, ALUR_PEMBELIAN,
 } from "../src/features/finance/po/poTampilan.js";
 import {
   TAB_PO, STATUS_PO, baris0, subtotal, totalIsian, galatBaris, galatFormulir, bodyDariForm, aksiPO, nilaiBelumDiterima, ringkasProgres,
@@ -158,4 +158,12 @@ test("validasi tidak berubah: pesan & aturan sama (jumlah 3 desimal, harga rupia
 
 test("ringkasProgres lama tetap tersedia dan konsisten dengan persentase server", () => {
   assert.deepEqual(ringkasProgres({ progres: { teks: "x", persenMasukStok: 12 } }), { teks: "x", persen: 12 });
+});
+
+test("termin & jatuh tempo: PO tidak punya tanggal jatuh tempo — dijelaskan di mana tanggalnya ditentukan (bukan 'perkiraan datang')", () => {
+  assert.match(keteranganTermin(null), /diisi saat faktur dicatat/);
+  assert.match(keteranganTermin({ jenis: "TANGGAL_KHUSUS" }), /diisi saat faktur dicatat/);
+  assert.match(keteranganTermin({ jenis: "HARI", hari: 30 }), /per penerimaan, dari tanggal barang tiba/);
+  assert.match(keteranganTermin({ jenis: "HARI", hari: 30, alasan: "nego" }), /Diganti: nego/);
+  for (const t of [null, { jenis: "HARI" }, { jenis: "TANGGAL_KHUSUS" }]) assert.doesNotMatch(keteranganTermin(t), /perkiraan datang/i);
 });

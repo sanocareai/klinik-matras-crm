@@ -173,3 +173,11 @@ export function aksiRincian(po, izin) {
     faktur: baru(["DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI"].includes(s), "catat"),
   };
 }
+
+/** Keterangan termin di Rincian. Jatuh tempo TIDAK ada di PO: dihitung per penerimaan (dari tanggal barang tiba) bila termin hari/tunai, atau diisi saat faktur dicatat. */
+export function keteranganTermin(termin) {
+  if (!termin) return "Belum ada termin di PO ini. Jatuh tempo diisi saat faktur dicatat.";
+  if (termin.jenis === "TANGGAL_KHUSUS") return "Tanggal khusus: tanggalnya diisi saat faktur dicatat.";
+  const dasar = "Jatuh tempo dihitung per penerimaan, dari tanggal barang tiba.";
+  return termin.alasan ? "Diganti: " + termin.alasan + ". " + dasar : dasar;
+}

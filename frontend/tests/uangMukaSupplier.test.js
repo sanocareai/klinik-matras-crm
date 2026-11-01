@@ -67,12 +67,12 @@ test("pemasangan: api, PO (tombol Bayar Uang Muka, dua kelompok, tooltip, pering
   const api = baca("../src/api.js");
   assert.match(api, /bayarUangMukaPO: \(poId, data, idempotencyKey\)/); assert.match(api, /\/uang-muka\/terapkan/); assert.match(api, /penerapan\/\$\{id\}\/batal/); assert.match(api, /getUangMukaSupplierRingkasan/);
   const um = baca("../src/features/finance/UangMukaPO.jsx");
-  for (const t of ["A. Pemenuhan barang", "B. Keuangan", "Nilai PO", "Uang muka dibayar", "Sudah ditagih", "Uang muka dialokasikan ke faktur", "Utang tercatat", "Pembayaran faktur", "Sisa utang", "Sisa komitmen PO", "Datang fisik", "Belum datang", "Diterima bersih dari PO", "Masuk stok", "Uang muka perlu dikembalikan atau dialihkan", "Bayar Uang Muka", "Terapkan Uang Muka", "Bukti transfer"]) assert.ok(um.includes(t), t);
+  for (const t of ["A. Pemenuhan barang", "B. Keuangan", "Nilai PO belum tertutup pembayaran", "Bukan saldo utang supplier", "Uang muka dibayar", "Uang muka dialokasikan ke faktur", "Utang tercatat", "Pembayaran faktur", "Sisa utang", "Datang fisik", "Belum datang", "Diterima bersih dari PO", "Masuk stok", "Uang muka perlu dikembalikan atau dialihkan", "Bayar Uang Muka", "Terapkan Uang Muka", "Bukti transfer"]) assert.ok(um.includes(t), t);
   assert.match(um, /title=\{definisi\}/); assert.match(um, /aria-label=\{`Arti \$\{label\}`\}/, "definisi bisa dibuka di layar sentuh");
   assert.doesNotMatch(um, /Sisa Utang"[^<]*sisaKomitmen|\bsisaKomitmen\b[^\n]{0,60}"Sisa utang"/, "sisa komitmen tidak diberi label utang");
   assert.doesNotMatch(um, /\b(Upload|Cancel|Save|Loading|Retry|Delete|Submit|Pay)\b/);
   const po = sumberPO();
-  assert.match(po, /data-testid="bayar-uang-muka"/); assert.match(po, /<PanelKelompokPO po=\{po\} \/>/); assert.match(po, /<PeringatanUangMukaPO po=\{po\} \/>/); assert.match(po, /<DaftarUangMukaPO/); assert.match(po, /data-testid="terapkan-uang-muka"/); assert.match(po, /<ModalBayarUangMuka/); assert.match(po, /<ModalTerapkanUangMuka/);
+  assert.match(po, /data-testid="bayar-uang-muka"/); assert.match(po, /<RincianPerhitunganPO po=\{po\} \/>/); assert.match(po, /<PeringatanUangMukaPO po=\{po\} \/>/); assert.match(po, /<DaftarUangMukaPO/); assert.match(po, /data-testid="terapkan-uang-muka"/); assert.match(po, /<ModalBayarUangMuka/); assert.match(po, /<ModalTerapkanUangMuka/);
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.match(sup, /Uang Muka Supplier Belum Diterapkan/); assert.match(sup, /<TabelUangMukaSupplier/); assert.match(sup, /modul="uang-muka-supplier"/); assert.match(sup, /label: "Terapkan Uang Muka"/); assert.match(sup, /<ModalTerapkanUangMuka/);
   assert.match(sup, /Sisa utang faktur yang sudah DISETUJUI/, "kartu Utang Aktif hanya faktur disetujui");
@@ -92,7 +92,7 @@ test("pemasangan layar empat status: panel di detail PO, anchor ke faktur & riwa
   assert.match(po, /<StatusEmpatPO po=\{po\}/); assert.match(po, /<RiwayatPembayaranPO po=\{po\} \/>/); assert.match(po, /id="seksi-faktur"/);
   const um = baca("../src/features/finance/UangMukaPO.jsx");
   for (const t of ["1. Progres barang", "2. Faktur supplier", "3. Utang", "4. Pembayaran"]) assert.ok(um.includes(t) || baca("../src/features/finance/uangMukaLogic.js").includes(t), t);
-  for (const t of ["Total PO", "Faktur disetujui", "Sudah dibayar", "Sisa utang", "Lihat faktur di PO ini", "Lihat riwayat pembayaran", "Riwayat pembayaran ke supplier atas PO ini"]) assert.ok(um.includes(t), t);
+  for (const t of ["Faktur disetujui", "Total kas keluar", "Sisa utang", "Rincian perhitungan", "Lihat faktur di PO ini", "Lihat riwayat pembayaran", "Riwayat pembayaran ke supplier atas PO ini"]) assert.ok(um.includes(t), t);
   assert.match(um, /id="seksi-riwayat-pembayaran"/); assert.match(um, /data-testid="petunjuk-simpan-ke-stok"/);
   assert.doesNotMatch(um.split("export function StatusEmpatPO")[1].split("export function RiwayatPembayaranPO")[0], /\.reduce\(|Number\(k\./, "angka dari server, tidak dijumlah di frontend");
   assert.match(baca("../src/pages/finance/FinanceSuppliers.jsx"), /spCari\.get\("cari"\)/); assert.match(baca("../src/pages/finance/FinancePurchases.jsx"), /spCari\.get\("cari"\)/);
@@ -102,13 +102,13 @@ test("pemasangan layar empat status: panel di detail PO, anchor ke faktur & riwa
 
 test("rincian pembayaran & utang dipisah: uang muka dibayar, uang muka dialokasikan ke faktur, pembayaran faktur (kas), sisa utang; total kas keluar = uang muka + pembayaran faktur", () => {
   const um = baca("../src/features/finance/UangMukaPO.jsx");
-  for (const t of ['data-testid="rincian-pembayaran-po"', 'testid="r-uang-muka-dibayar"', 'testid="r-uang-muka-dialokasikan"', 'testid="r-pembayaran-faktur"', 'testid="r-sisa-utang"', "Uang muka dialokasikan ke faktur", "Pembayaran faktur (kas)", "Total kas keluar", "bukan kas keluar kedua"]) assert.ok(um.includes(t), t);
+  for (const t of ['data-testid="rincian-pembayaran-po"', 'testid="r-uang-muka-dibayar"', 'testid="r-uang-muka-dialokasikan"', 'testid="r-pembayaran-faktur"', "Uang muka dialokasikan ke faktur", "Pembayaran faktur (kas)", "Total kas keluar", "bukan kas keluar kedua"]) assert.ok(um.includes(t), t);
   assert.doesNotMatch(um, /Sudah dibayar atas faktur|"Uang muka diterapkan"/, "istilah lama diganti agar tidak membingungkan");
 });
 
 test("aksi pembayaran awal mudah ditemukan: tombol di kartu Pembayaran (hanya bila server mengizinkan), catatan PO draf, sisa belum dibayar di rincian", () => {
   const um = baca("../src/features/finance/UangMukaPO.jsx");
-  for (const t of ["onBayarUangMuka && k.bolehBayarUangMuka", 'data-testid="bayar-uang-muka-status"', 'testid="r-sisa-belum-dibayar"', "Sisa belum dibayar"]) assert.ok(um.includes(t), t);
+  for (const t of ["onBayarUangMuka && k.bolehBayarUangMuka", 'data-testid="bayar-uang-muka-status"', 'testid="r-sisa-belum-dibayar"', "Nilai PO belum tertutup pembayaran", "Bukan saldo utang supplier"]) assert.ok(um.includes(t), t);
   const po = sumberPO();
   for (const t of ["<StatusEmpatPO po={po} onBayarUangMuka={onBayarUangMuka} />", 'data-testid="draf-belum-bisa-dibayar"', "tidak perlu menunggu barang datang, Simpan ke Stok, atau faktur supplier"]) assert.ok(po.includes(t), t);
 });
