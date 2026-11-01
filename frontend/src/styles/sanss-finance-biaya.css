@@ -194,3 +194,16 @@
 }
 :root .app-shell.crm-skin .fin-by .text-\[10\.5px\] { font-size: 12px; line-height: 1.35; }
 :root .app-shell.crm-skin .fin-by-label-kecil, :root .app-shell.crm-skin .fin-seg-n { font-size: 12px; }
+/* Tanggal dokumen: info sekunder di samping nomor pada layout menengah & HP; kolom Tanggal sendiri hanya di tabel desktop. */
+:root .app-shell.crm-skin .fin-by-nomor-baris { display: flex; flex-wrap: wrap; align-items: baseline; margin-top: 1px; }
+:root .app-shell.crm-skin .fin-by-nomor-baris .fin-by-nomor { margin-top: 0; }
+:root .app-shell.crm-skin .fin-by-tgl-sisip { font-size: 12px; font-weight: 400; color: var(--text-secondary); white-space: pre-wrap; }
+@container finpanel (min-width: 980px) { :root .app-shell.crm-skin .fin-by-tgl-sisip { display: none; } }
+:root .app-shell.crm-skin .fin-by-nomor-baris { column-gap: 8px; }
+:root .app-shell.crm-skin .fin-by-tgl-sisip > [aria-hidden] { display: none; }
+@container finpanel (min-width: 640px) { :root .app-shell.crm-skin .fin-by-nomor-baris { column-gap: 0; } :root .app-shell.crm-skin .fin-by-tgl-sisip > [aria-hidden] { display: inline; } }
+/* Lebar menengah: kolom status & tindakan mengikuti isi (chip panjang + tombol utama + menu) agar tidak saling menimpa. */
+@container finpanel (min-width: 640px) and (max-width: 979.98px) {
+  :root .app-shell.crm-skin .fin-by-baris { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) auto auto; }
+  :root .app-shell.crm-skin .fin-by-aksi { display: flex; align-items: center; gap: 6px; }
+}

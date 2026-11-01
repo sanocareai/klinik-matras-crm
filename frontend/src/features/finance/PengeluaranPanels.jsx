@@ -150,7 +150,7 @@ function BarisBiaya({ e, peta, aksi, renderAksi, onBuka }) {
     <li className="fin-by-baris" data-testid="baris-pengeluaran" {...propBaris(() => onBuka(e))}>
       <div className="fin-by-ket">
         <span className="fin-by-nama" title={e.description}>{e.description}</span>
-        <span className="fin-by-nomor">{e.expenseNumber}</span>
+        <span className="fin-by-nomor-baris"><span className="fin-by-nomor">{e.expenseNumber}</span><span className="fin-by-tgl-sisip"><span aria-hidden="true"> · </span>{tanggalPendek(e.date)}</span></span>
         {e.reimburseTo && <span className="fin-by-sekunder" title={`ditalangi ${e.reimburseTo.name}`}>ditalangi {e.reimburseTo.name}</span>}
         {e.supplier && <span className="fin-by-sekunder" title={`ke ${e.supplier.name}`}>ke {e.supplier.name}</span>}
         {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="fin-by-sekunder" title={`ke ${e.payeeName}`}>ke {e.payeeName}</span>}
