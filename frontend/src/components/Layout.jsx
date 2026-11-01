@@ -38,6 +38,7 @@ import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { IKON_NAV_SALES } from "./sanssIcons.jsx";
 import { IKON_NAV_FINANCE } from "./financeIcons.jsx";
+import { IKON_NAV_PRODUKSI } from "./produksiIcons.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { FINANCE_HUBS, hubAktif, badgeHub, hubTerlihat } from "@/lib/financeHubs.js";
@@ -652,7 +653,7 @@ const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
 // badge, dan hak akses tidak tersentuh. Rute tanpa pemetaan memakai ikon aslinya.
 function denganIkonSales(sections) {
   return sections.map((s) => ({ ...s, items: s.items.map((it) => {
-    const Ikon = IKON_NAV_SALES[it.to] || (it.hubKey ? IKON_NAV_FINANCE[it.hubKey] : null);
+    const Ikon = IKON_NAV_SALES[it.to] || IKON_NAV_PRODUKSI[it.to] || (it.hubKey ? IKON_NAV_FINANCE[it.hubKey] : null);
     return Ikon ? { ...it, Icon: Ikon } : it;
   }) }));
 }
@@ -947,7 +948,7 @@ export default function Layout({ user, onLogout }) {
   // legacy role=ADMIN.
   const isAdmin = isAdminUser(user);
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
-  const crmShell = (divisionKey === "growth" || divisionKey === "finance") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
   // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
   // Finance: sidebar hanya memuat hub, jadi pencarian memakai semua halaman hub yang boleh dilihat peran ini (sumber & penyaringan sama dengan sidebar/hub).
   const halamanCari = crmShell
@@ -1062,7 +1063,7 @@ export default function Layout({ user, onLogout }) {
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
     <div
-      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin")}
+      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin", crmShell && divisionKey === "bengkel" && "prod-skin")}
       data-division={divisionKey || "hub"}
       // data-driver-app (9 September 2026) — pagar retheme tipografi APK
       // Driver (styles/driver-app-theme.css). Sama disiplin dgn IS_DRIVER_APP
@@ -1243,7 +1244,7 @@ export default function Layout({ user, onLogout }) {
                 ? sectionIsOpen({ collapsible: true, defaultClosed, items: itemsTampil }, { toggled: toggledSections.has(section), activeTo: location.pathname })
                 : toggledSections.has(section));
               return (
-                <div key={section} className={`nav-section${pinBottom ? " nav-section-bottom" : ""}`}>
+                <div key={section} data-nav-section={section} className={`nav-section${pinBottom ? " nav-section-bottom" : ""}`}>
                   {isCollapsible ? (
                     <button
                       type="button"

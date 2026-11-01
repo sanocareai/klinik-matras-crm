@@ -1,41 +1,75 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock, Hourglass, Loader2, PackageX, PlayCircle, RefreshCw, ShieldCheck, Target, Timer } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { useV1Units } from "@/features/production/v1Source.jsx";
 import { DELAY_TITLE } from "@/features/production/productionLabels.js";
 import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import { api } from "@/api.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { Card } from "@/components/ui/card.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
+import { PageContainer } from "@/components/ui/page.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
-import { summaryFromV1, summaryFromV2 } from "@/features/production/ringkasanModel.js";
+import { bagiTile, jadwalHariIni, summaryFromV1, summaryFromV2, tindakLanjutDari } from "@/features/production/ringkasanModel.js";
+import ReworkPelanggan from "@/features/production/ringkasan/ReworkPelanggan.jsx";
+import { IkAwas, IkBaki, IkDokumen, IkJadwal, IkJam, IkKotak, IkMuatUlang, IkOrang, IkPanahKanan, IkPeriksa, IkProses, IkSelesai, IkTarget, IkTruk } from "@/components/produksiIcons.jsx";
 
-// Ringkasan (P9 UX Realignment) — SATU dashboard produksi. Sebelumnya halaman ini menumpuk DUA dashboard (Ringkasan
-// Produksi V2 + "Pusat Kendali Produksi" V1) dengan KPI ganda dan angka yang saling bertentangan (mis. Target 12 vs 0).
-// Sekarang satu baris KPI, satu strip pipeline, satu daftar Butuh Perhatian, satu tabel aktivitas PIC. Sumber data: Command
-// Center V2 (sama dengan Status Produksi/Rencana Produksi — tidak ada hitungan paralel). Hanya bila Production V2 belum aktif
-// (readerMode OFF) halaman memakai Command Center V1 lewat adaptor yang menghasilkan bentuk ringkasan yang SAMA.
+// Ringkasan (redesain Produksi, 2 Nov 2026) — komposisi: empat KPI utama → metrik pendukung padat → "Perlu ditindaklanjuti" + PIC → posisi unit → jadwal hari ini.
+// SUMBER DATA TIDAK BERUBAH: Command Center V2 (atau V1 lewat adaptor bila reader V2 OFF) — angka server apa adanya, tanpa total baru dan tanpa menggabungkan populasi berbeda
+// ("Belum masuk papan" = Order Diproses di luar papan V2, dihitung hook v1Source, ditampilkan sebagai segmen TERPISAH — tidak dijumlahkan ke pipeline).
 function todayWibISO() { return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10); }
 function currentRoles() { try { return JSON.parse(localStorage.getItem("user"))?.roles || []; } catch { return []; } }
 
-const TILE_ICON = { target: Target, done: CheckCircle2, active: PlayCircle, queue: Hourglass, late: Timer, material: PackageX, qc: ClipboardCheck };
-const TONE_CLS = { neutral: "bg-accentbg text-accent", red: "bg-redbg text-red", orange: "bg-orangebg text-orange", green: "bg-greenbg text-green" };
+const IKON_KPI = { target: IkTarget, done: IkSelesai, active: IkProses, queue: IkJam, late: IkAwas, material: IkKotak, qc: IkDokumen };
+const WARNA_KPI = { target: "biru", done: "muda", active: "lavender", queue: "lime" };
+const LABEL_KPI = { queue: "Menunggu mulai" }; // sumber: kolom "Tiba / belum mulai" (V2) atau antrean (V1) — kata-kata saja berbeda
+const IKON_TAHAP = { AKAN_MASUK: IkTruk, DALAM_PERJALANAN: IkTruk, TIBA_BELUM_MULAI: IkBaki, UJI_FONDASI: IkPeriksa, UJI_TEKSTUR: IkPeriksa, SIAP_KIRIM: IkKotak };
+const TAHAP_AWAL = 5;
 
-function Tile({ tile }) {
-  const Icon = TILE_ICON[tile.key] || Clock;
-  const body = (
-    <Card data-testid="kpi-tile" data-kpi={tile.key} className="flex h-full min-h-[84px] items-center gap-3 p-3.5 transition-colors hover:bg-hovertint">
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-btn ${TONE_CLS[tile.tone] || TONE_CLS.neutral}`}><Icon size={19} aria-hidden /></span>
-      <div className="min-w-0">
-        <p className="m-0 text-[22px] font-bold leading-none text-ink tabular-nums">{tile.value}{tile.of != null && <span className="text-[13px] font-semibold text-ink3">/{tile.of}</span>}</p>
-        <p className="m-0 mt-1 text-[11.5px] leading-tight text-ink3">{tile.label}</p>
+function Kpi({ tile }) {
+  const Ikon = IKON_KPI[tile.key] || IkJam;
+  const isi = (
+    <>
+      <span className="prod-kpi-ikon"><Ikon size={26} /></span>
+      <div className="prod-kpi-isi">
+        <p className="prod-kpi-label">{LABEL_KPI[tile.key] || tile.label}</p>
+        <p className="prod-kpi-angka">{tile.value}{tile.of != null && <span> / {tile.of}</span>}<span className="prod-kpi-satuan">unit</span></p>
       </div>
-    </Card>
+    </>
   );
-  return tile.to ? <Link to={tile.to} className="block min-w-0 no-underline">{body}</Link> : body;
+  const props = { "data-testid": "kpi-tile", "data-kpi": tile.key, className: `prod-kpi ${WARNA_KPI[tile.key] || "lavender"}` };
+  return tile.to ? <Link to={tile.to} {...props}>{isi}</Link> : <div {...props}>{isi}</div>;
+}
+
+function Metrik({ tile }) {
+  const Ikon = IKON_KPI[tile.key] || IkJam;
+  const rawan = tile.tone === "red" || tile.tone === "orange";
+  const isi = (
+    <>
+      <span className={`prod-ikon-ubin ${tile.tone === "red" ? "merah" : tile.tone === "orange" ? "oranye" : ""}`}><Ikon size={22} /></span>
+      <div className="min-w-0">
+        <p className="prod-metrik-label">{LABEL_KPI[tile.key] || tile.label}</p>
+        <p className="prod-metrik-angka" data-rawan={rawan || undefined}>{tile.value}{typeof tile.value === "number" && <small>unit</small>}</p>
+      </div>
+    </>
+  );
+  return tile.to ? <Link to={tile.to} className="prod-metrik" data-testid="kpi-tile" data-kpi={tile.key}>{isi}</Link> : <div className="prod-metrik" data-testid="kpi-tile" data-kpi={tile.key}>{isi}</div>;
+}
+
+function BarisTindakLanjut({ t, testid }) {
+  return (
+    <li data-testid={testid} className={`prod-tl ${t.tingkat}`}>
+      <span className="prod-tl-ikon"><IkAwas size={22} /></span>
+      <div className="prod-tl-isi">
+        <p className="prod-tl-judul"><span className="prod-sr">{t.tingkat === "kritis" ? "Kritis: " : "Perlu perhatian: "}</span>{t.judul}</p>
+        <p className="prod-tl-meta">
+          {t.pelanggan && <span className="nama">{t.pelanggan}</span>}
+          {t.unitCode && <span>Unit: {t.unitCode}</span>}
+          {t.orderNumber && <span>{t.orderNumber}</span>}
+          {t.pemilik && <span>Tindakan: {t.pemilik}</span>}
+          {t.rincian && <span>{t.rincian}</span>}
+        </p>
+      </div>
+      {t.to && <Link to={t.to} className="prod-tombol prod-tl-buka" aria-label={`Buka ${t.unitCode || t.judul}`}>Buka <IkPanahKanan size={14} /></Link>}
+    </li>
+  );
 }
 
 export default function ProductionRingkasan() {
@@ -44,6 +78,7 @@ export default function ProductionRingkasan() {
   const [v1, setV1] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [semuaTahap, setSemuaTahap] = useState(false);
 
   const { v1: orders, total: offBoardTotal, hasMore: offBoardMore } = useV1Units();
   const v1Blocked = useMemo(() => orders.filter((u) => u.productionStatus === "BLOCKED"), [orders]);
@@ -63,114 +98,156 @@ export default function ProductionRingkasan() {
     if (v2.readerMode !== "OFF") return summaryFromV2(v2);
     return v1 ? summaryFromV1(v1) : null;
   }, [v2, v1]);
+  const { utama, pendukung } = useMemo(() => bagiTile(summary?.tiles), [summary]);
+  const jadwal = useMemo(() => (v2 && v2.readerMode !== "OFF" ? jadwalHariIni(v2) : []), [v2]);
+  const tindak = useMemo(() => (summary ? summary.attention.map(tindakLanjutDari) : []), [summary]);
 
   if (!allowed) {
     return (
-      <PageContainer>
-        <div className="py-16 text-center">
-          <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-orange" />
-          <h2 className="text-lg font-semibold text-ink">Tidak Punya Akses</h2>
-          <p className="mt-1 text-sm text-ink2">Halaman ini khusus tim produksi.</p>
-        </div>
+      <PageContainer className="prod-halaman">
+        <div className="prod-kosong"><div><b>Tidak punya akses</b>Halaman ini khusus tim produksi.</div></div>
       </PageContainer>
     );
   }
 
+  const jumlahTindak = tindak.length + v1Blocked.length;
+  const tahap = summary ? summary.pipeline : [];
+  const segmenTahap = [
+    ...(offBoardTotal > 0 ? [{ off: true, key: "OFF", label: "Belum masuk papan", title: "Order Diproses yang belum masuk papan", count: offBoardTotal, to: "/bengkel/order-produksi?tab=aktif" }] : []),
+    ...tahap.map((s) => ({ key: s.key, label: s.label, title: s.label, count: s.count, to: "/bengkel/production-v2" })),
+  ];
+  const tahapTampil = semuaTahap ? segmenTahap : segmenTahap.slice(0, TAHAP_AWAL);
+
   return (
-    <PageContainer>
-      <PageHeader title="Ringkasan" subtitle={`Kendali produksi harian · ${formatTanggal(date)}`}
-        actions={<Button variant="ghost" onClick={load} className="h-10" disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Muat Ulang</Button>} />
-      <PageBody>
+    <PageContainer fluid className="prod-halaman">
+      <div className="prod-stack">
+        <div className="prod-baris-judul">
+          <div>
+            <h1 className="page-title m-0">Ringkasan produksi</h1>
+            <p className="page-subtitle m-0">{formatTanggal(date)}</p>
+          </div>
+          <div className="prod-aksi-judul">
+            <button type="button" className="prod-tombol netral" onClick={load} disabled={loading} data-testid="ringkasan-muat-ulang"><IkMuatUlang size={18} className={loading ? "animate-spin" : undefined} /> Muat ulang</button>
+          </div>
+        </div>
+
         {error && !summary ? (
-          <Card className="p-4 text-[12.5px] text-red">{error}</Card>
+          <div className="prod-galat" role="alert" data-testid="ringkasan-galat"><span>{error}</span><button type="button" className="prod-tombol" onClick={load}>Coba lagi</button></div>
         ) : loading && !summary ? (
-          <Card className="flex items-center justify-center gap-2 p-8 text-ink2"><Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Memuat ringkasan produksi…</span></Card>
+          <div className="prod-panel prod-memuat"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Memuat ringkasan produksi…</div>
         ) : summary ? (
           <>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7" data-testid="kpi-row">
-              {summary.tiles.map((t) => <Tile key={t.key} tile={t} />)}
+            <div className="prod-kpi-grid" data-testid="kpi-row">
+              {utama.map((t) => <Kpi key={t.key} tile={t} />)}
+            </div>
+            {pendukung.length > 0 && <div className="prod-pendukung">{pendukung.map((t) => <Metrik key={t.key} tile={t} />)}</div>}
+
+            <div className="prod-grid-dua">
+              <section className="prod-panel" data-testid="attention-card" aria-labelledby="prod-tl-judul">
+                <div className="prod-panel-kepala">
+                  <span className="prod-ikon-ubin"><IkAwas size={22} /></span>
+                  <h2 id="prod-tl-judul" className="prod-panel-judul">Perlu ditindaklanjuti</h2>
+                  {jumlahTindak > 0 && <span className="prod-hitung merah">{jumlahTindak}</span>}
+                </div>
+                <div className="prod-panel-isi">
+                  {jumlahTindak === 0 ? (
+                    <div className="prod-kosong"><div><b>Tidak ada yang perlu ditindaklanjuti</b>Operasional produksi berjalan normal.</div></div>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {v1Blocked.slice(0, 4).map((u) => (
+                        <BarisTindakLanjut key={`v1-${u.id}`} testid="v1-attention" t={{ tingkat: "kritis", judul: DELAY_TITLE, unitCode: u.unitCode, orderNumber: u.order?.orderNumber || null, pelanggan: null, pemilik: "Tim produksi", rincian: "Pekerjaan tertunda — perlu dilanjutkan", to: unitDetailPath(u.id) }} />
+                      ))}
+                      {tindak.slice(0, 8).map((t, i) => <BarisTindakLanjut key={`${t.judul}-${t.unitCode}-${i}`} t={t} />)}
+                    </ul>
+                  )}
+                  {offBoardMore && <p className="prod-catatan" data-testid="offboard-partial">Pekerjaan tertunda dibaca dari {orders.length} unit terbaru dari {offBoardTotal}; lihat Order produksi untuk semuanya.</p>}
+                  {tindak.length > 8 && <p className="prod-catatan">+{tindak.length - 8} hal lainnya — lihat <Link to="/bengkel/production-v2">Status produksi</Link>.</p>}
+                  <ReworkPelanggan />
+                </div>
+              </section>
+
+              <section className="prod-panel" data-testid="pic-card" aria-labelledby="prod-pic-judul">
+                <div className="prod-panel-kepala">
+                  <span className="prod-ikon-ubin"><IkOrang size={22} /></span>
+                  <h2 id="prod-pic-judul" className="prod-panel-judul">Pekerjaan hari ini</h2>
+                  {summary.pic.length > 0 && <span className="prod-hitung">{summary.pic.length}</span>}
+                </div>
+                <div className="prod-panel-isi">
+                  {summary.pic.length === 0 ? (
+                    <div className="prod-kosong"><div><b>Belum ada PIC dengan unit aktif</b>Pekerjaan PIC muncul di sini setelah unit dijadwalkan.</div></div>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {summary.pic.map((p) => (
+                        <li key={p.name} className="prod-pic">
+                          <span className="prod-avatar" aria-hidden>{p.name.replace(/^QA-PV2\s+/, "").slice(0, 1).toUpperCase()}</span>
+                          <div className="min-w-0"><p className="prod-pic-nama">{p.name}</p><p className="prod-pic-sub">{p.stationLabel || "—"}</p></div>
+                          <p className="prod-pic-hitung"><span><b>{p.active}</b>aktif</span><span><b>{p.completedToday}</b>selesai</span></p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <Link to="/bengkel/rencana-produksi" className="prod-tombol mt-3 w-full justify-between">Buka rencana produksi <IkPanahKanan size={14} /></Link>
+                </div>
+              </section>
             </div>
 
-            {(summary.pipeline.length > 0 || offBoardTotal > 0) && (
-              <Card className="p-4" data-testid="pipeline-strip">
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="m-0 text-[13.5px] font-bold text-ink">Posisi unit di jalur produksi</h2>
-                  <Link to="/bengkel/production-v2" className="text-[12.5px] font-semibold text-accent underline">Buka Status Produksi →</Link>
+            {segmenTahap.length > 0 && (
+              <section className="prod-panel" data-testid="pipeline-strip" aria-labelledby="prod-posisi-judul">
+                <div className="prod-panel-kepala">
+                  <span className="prod-ikon-ubin"><IkTruk size={22} /></span>
+                  <h2 id="prod-posisi-judul" className="prod-panel-judul">Posisi unit</h2>
+                  <span className="ml-auto text-[14px] text-[var(--text-secondary)]">Posisi saat ini · unit</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 xl:grid-cols-9">
-                  {offBoardTotal > 0 && (
-                    <Link to="/bengkel/order-produksi?tab=aktif" data-testid="offboard-segment" className="min-w-0 rounded-btn border border-dashed border-line bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
-                      <p className="m-0 text-[18px] font-bold tabular-nums text-ink">{offBoardTotal}</p>
-                      <p className="m-0 truncate text-[11px] text-ink3" title="Order Diproses yang belum masuk papan">Belum masuk papan</p>
-                    </Link>
+                <div className="prod-panel-isi">
+                  <div className="prod-alur">
+                    {tahapTampil.map((s) => {
+                      const Ikon = s.off ? IkBaki : (IKON_TAHAP[s.key] || IkProses);
+                      return (
+                        <Link key={s.key} to={s.to} title={s.title} data-testid={s.off ? "offboard-segment" : undefined} className={`prod-tahap${s.count ? "" : " kosong"}${s.off ? " garis" : ""}`}>
+                          <span className="prod-ikon-ubin"><Ikon size={22} /></span>
+                          <div className="min-w-0"><p className="prod-tahap-nama">{s.label}</p><p className="prod-tahap-angka">{s.count}<small>unit</small></p></div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {segmenTahap.length > TAHAP_AWAL && (
+                    <button type="button" className="prod-tombol mt-3 w-full" aria-expanded={semuaTahap} onClick={() => setSemuaTahap((v) => !v)} data-testid="posisi-semua-tahap">
+                      {semuaTahap ? "Ringkas tahap" : "Lihat semua tahap"} <ChevronDown size={16} className={semuaTahap ? "rotate-180" : undefined} aria-hidden />
+                    </button>
                   )}
-                  {summary.pipeline.map((s) => (
-                    <Link key={s.key} to="/bengkel/production-v2" className="min-w-0 rounded-btn bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
-                      <p className={`m-0 text-[18px] font-bold tabular-nums ${s.count ? "text-ink" : "text-ink3"}`}>{s.count}</p>
-                      <p className="m-0 truncate text-[11px] text-ink3" title={s.label}>{s.label}</p>
-                    </Link>
-                  ))}
                 </div>
-              </Card>
+              </section>
             )}
 
-            <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <Card className="min-w-0 overflow-hidden p-0" data-testid="attention-card">
-                <div className="flex items-center gap-2 border-b border-line px-4 py-3"><AlertTriangle size={16} className="text-orange" aria-hidden /><h2 className="m-0 text-[13.5px] font-bold text-ink">Butuh Perhatian</h2>
-                  <span className="ml-auto text-[11.5px] text-ink3">{summary.attention.length + v1Blocked.length} hal</span></div>
-                {summary.attention.length === 0 && v1Blocked.length === 0 ? (
-                  <div className="flex items-center gap-2 px-4 py-6 text-[12.5px] text-green"><ShieldCheck size={18} aria-hidden /> Tidak ada yang butuh perhatian saat ini — operasional produksi berjalan normal.</div>
+            <section className="prod-panel" data-testid="jadwal-hari-ini" aria-labelledby="prod-jadwal-judul">
+              <div className="prod-panel-kepala">
+                <span className="prod-ikon-ubin"><IkJadwal size={22} /></span>
+                <h2 id="prod-jadwal-judul" className="prod-panel-judul">Jadwal hari ini</h2>
+                {jadwal.length > 0 && <span className="prod-hitung">{jadwal.length}</span>}
+                <Link to="/bengkel/rencana-produksi" className="prod-tombol primer ml-auto">Buka rencana produksi</Link>
+              </div>
+              <div className="prod-panel-isi">
+                {jadwal.length === 0 ? (
+                  <div className="prod-kosong"><IkJadwal size={30} /><div><b>Belum ada unit dijadwalkan</b>Buka rencana produksi untuk menjadwalkan unit.</div></div>
                 ) : (
-                  <ul className="m-0 list-none divide-y divide-line p-0">
-                    {v1Blocked.slice(0, 4).map((u) => (
-                      <li key={`v1-${u.id}`} data-testid="v1-attention" className="flex items-start gap-2.5 px-4 py-3">
-                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red" aria-hidden />
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><Badge variant="red">{DELAY_TITLE}</Badge>{u.order?.orderNumber && <span className="text-[11px] text-ink3">{u.order.orderNumber}</span>}</div>
-                          <p className="m-0 mt-0.5 break-words text-[12.5px] text-ink2">{u.unitCode}: pekerjaan tertunda — perlu dilanjutkan oleh tim produksi.</p></div>
-                        <Button size="sm" variant="secondary" className="min-h-[40px] shrink-0" asChild><Link to={unitDetailPath(u.id)}>Buka</Link></Button>
-                      </li>
-                    ))}
-                    {summary.attention.slice(0, 8).map((a, i) => (
-                      <li key={`${a.code}-${a.unitCode}-${i}`} className="flex items-start gap-2.5 px-4 py-3">
-                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${a.severity === "critical" ? "bg-red" : "bg-orange"}`} aria-hidden />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <Badge variant={a.severity === "critical" ? "red" : "orange"}>{a.severity === "critical" ? "Kritis" : "Perhatian"}</Badge>
-                            {a.orderNumber && <span className="text-[11px] text-ink3">{a.orderNumber}</span>}
-                          </div>
-                          <p className="m-0 mt-0.5 break-words text-[12.5px] text-ink2">{a.text}</p>
-                        </div>
-                        {a.to && <Button size="sm" variant="secondary" className="min-h-[40px] shrink-0" asChild><Link to={a.to}>Buka</Link></Button>}
+                  <ul className="prod-jadwal">
+                    {jadwal.map((j) => (
+                      <li key={j.runId}>
+                        <Link to={unitDetailPath(j.unitId)} className="prod-jadwal-baris">
+                          <span className="prod-jadwal-meja">{j.meja || "Belum ada meja"}</span>
+                          <span className="prod-jadwal-unit"><b>{j.pelanggan || j.unitCode}</b><span>{j.unitCode}</span></span>
+                          <span className="prod-jadwal-pic">{j.pic || "PIC belum ditetapkan"}</span>
+                          <span className="prod-jadwal-tahap">{j.tahap}</span>
+                        </Link>
                       </li>
                     ))}
                   </ul>
                 )}
-                {offBoardMore && <p className="m-0 border-t border-line px-4 py-2 text-[11.5px] text-ink3" data-testid="offboard-partial">Pekerjaan tertunda dibaca dari {orders.length} unit terbaru dari {offBoardTotal}; lihat Order Produksi untuk semuanya.</p>}
-                {summary.attention.length > 8 && <p className="m-0 border-t border-line px-4 py-2 text-[11.5px] text-ink3">+{summary.attention.length - 8} hal lainnya — lihat Status Produksi.</p>}
-              </Card>
-
-              <Card className="min-w-0 overflow-hidden p-0" data-testid="pic-card">
-                <div className="border-b border-line px-4 py-3"><h2 className="m-0 text-[13.5px] font-bold text-ink">Aktivitas PIC &amp; Meja Hari Ini</h2></div>
-                {summary.pic.length === 0 ? (
-                  <p className="m-0 px-4 py-5 text-[12.5px] text-ink3">Belum ada PIC dengan unit aktif hari ini.</p>
-                ) : (
-                  <ul className="m-0 list-none divide-y divide-line p-0">
-                    {summary.pic.map((p) => (
-                      <li key={p.name} className="flex items-center gap-3 px-4 py-2.5 text-[12.5px]">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-white">{p.name.slice(0, 1).toUpperCase()}</span>
-                        <div className="min-w-0 flex-1"><p className="m-0 truncate font-semibold text-ink">{p.name}</p><p className="m-0 text-[11.5px] text-ink3">{p.stationLabel || "—"}</p></div>
-                        <span className="shrink-0 text-right tabular-nums text-ink2"><b>{p.active}</b> aktif<br /><span className="text-[11.5px] text-ink3">{p.completedToday} selesai</span></span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            </div>
+              </div>
+            </section>
           </>
         ) : null}
-
-        <ActiveComplaintsWidget currentOwner="PRODUCTION" title="Kasus Komplain Perlu Rework" />
-      </PageBody>
+      </div>
     </PageContainer>
   );
 }

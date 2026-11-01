@@ -51,3 +51,50 @@ export function summaryFromV1(v1) {
     pic: [],
   };
 }
+
+// ── Redesain Produksi (2 Nov 2026): bentuk tampilan Ringkasan. Hanya pengelompokan & kata-kata; angka tetap angka server. ──
+// Empat KPI utama (urutan tetap) + metrik pendukung padat. Kunci yang tidak ada pada sumber dilewati (tidak diganti nol).
+export const KPI_UTAMA = Object.freeze(["target", "done", "active", "queue"]);
+export const KPI_PENDUKUNG = Object.freeze(["late", "material", "qc"]);
+export function bagiTile(tiles = []) {
+  const byKey = new Map(tiles.map((t) => [t.key, t]));
+  return { utama: KPI_UTAMA.map((k) => byKey.get(k)).filter(Boolean), pendukung: KPI_PENDUKUNG.map((k) => byKey.get(k)).filter(Boolean) };
+}
+
+// Pemilik tindakan per kode perhatian (kode dari server — productionExperienceReadService.attentionItemsFrom). Kode tak dikenal = tanpa pemilik (tidak menebak).
+const KODE_V2 = Object.freeze({
+  TARGET_BELUM_MULAI: { judul: "Target hari ini belum dimulai", pemilik: "PIC meja" },
+  TERLAMBAT: { judul: "Lewat target selesai", pemilik: "Production Lead" },
+  KEKURANGAN_BAHAN: { judul: "Menunggu bahan baku dari Gudang", pemilik: "Gudang" },
+  TERHENTI: { judul: "Proses terhenti", pemilik: "Production Lead" },
+  DATA_SALES_BELUM_LENGKAP: { judul: "Data pelanggan belum lengkap", pemilik: "Sales" },
+  PIC_BELUM_ADA: { judul: "PIC meja belum ditetapkan", pemilik: "Production Lead" },
+});
+// Teks server berbentuk "KODE-UNIT (Nama pelanggan): alasan". Bagian alasan dipakai sebagai rincian; bila bentuknya lain, teks utuh dipakai apa adanya.
+export function tindakLanjutDari(a) {
+  const peta = KODE_V2[a.code] || null;
+  const text = String(a.text || "");
+  const m = text.match(/^(.*?)\s\(([^)]*)\):\s(.+)$/);
+  const alasan = m ? m[3] : text;
+  const rincian = a.code === "DATA_SALES_BELUM_LENGKAP" ? "Berat badan pelanggan belum diisi Sales" : null;
+  return {
+    tingkat: a.severity === "critical" ? "kritis" : "perhatian",
+    judul: peta?.judul || (alasan ? alasan.charAt(0).toUpperCase() + alasan.slice(1) : "Perlu perhatian"),
+    unitCode: a.unitCode || null,
+    pelanggan: m ? m[2] : null,
+    orderNumber: a.orderNumber || null,
+    pemilik: peta?.pemilik || null,
+    rincian,
+    to: a.to || null,
+  };
+}
+
+// Jadwal hari ini = kartu Command Center yang rencananya jatuh pada tanggal server (cc.date). Bukan hitungan baru: sumber kolom yang sama dengan pipeline.
+export function jadwalHariIni(cc) {
+  if (!cc?.date) return [];
+  const out = [];
+  for (const col of cc.columns || []) for (const it of col.items || []) {
+    if (it.plan?.productionDate === cc.date && it.unit?.id) out.push({ runId: it.runId, unitId: it.unit.id, unitCode: it.unit.unitCode, pelanggan: it.customer?.name || null, meja: it.plan.stationLabel || null, pic: it.plan.operator?.name || null, tahap: col.label, seq: it.plan.stationSequence ?? 0 });
+  }
+  return out.sort((a, b) => String(a.meja || "~").localeCompare(String(b.meja || "~")) || a.seq - b.seq || a.unitCode.localeCompare(b.unitCode));
+}
