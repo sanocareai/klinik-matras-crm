@@ -357,7 +357,7 @@ export default function EditorPO({ kunci, po, izin, onClose, onSaved }) {
   const bahan = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const unitMap = useMemo(() => new Map(materials.map((m) => [m.id, m.unit])), [materials]);
   const dipakai = useMemo(() => { const p = new Map(); f.lines.forEach((l, i) => { if (l.materialId && !p.has(l.materialId)) p.set(l.materialId, i + 1); }); return p; }, [f.lines]);
-  const galatForm = galatFormulir(f, unitMap) || galatTermin(termin);
+  const galatForm = galatFormulir(f, unitMap) || galatTermin(termin, { tanpaTanggal: true });
   const total = totalIsian(f.lines);
   const namaSupplier = suppliers.find((s) => s.id === f.supplierId)?.name || po?.supplier?.name || "";
   const jumlahBaru = daftarBarangBaru(f.lines).length;

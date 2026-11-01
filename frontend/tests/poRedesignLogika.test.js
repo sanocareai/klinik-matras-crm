@@ -6,6 +6,8 @@ import {
   izinPO, aksiRincian, kpiPO, kalimatCakupan, kalimatHasil, ringkasPenerimaan, angkaBaris, statusTampil, langkahBerikut,
   TAB_PO_TAMPIL, keteranganTermin, DAMPAK_HARGA_SINGKAT, DAMPAK_HARGA_RINCI, ALUR_PEMBELIAN,
 } from "../src/features/finance/po/poTampilan.js";
+import fs from "node:fs";
+import { galatTermin, bodyTermin, TERMIN_AWAL } from "../src/features/finance/terminLogic.js";
 import {
   TAB_PO, STATUS_PO, baris0, subtotal, totalIsian, galatBaris, galatFormulir, bodyDariForm, aksiPO, nilaiBelumDiterima, ringkasProgres,
 } from "../src/features/finance/purchaseOrderLogic.js";
@@ -166,4 +168,43 @@ test("termin & jatuh tempo: PO tidak punya tanggal jatuh tempo — dijelaskan di
   assert.match(keteranganTermin({ jenis: "HARI", hari: 30 }), /per penerimaan, dari tanggal barang tiba/);
   assert.match(keteranganTermin({ jenis: "HARI", hari: 30, alasan: "nego" }), /Diganti: nego/);
   for (const t of [null, { jenis: "HARI" }, { jenis: "TANGGAL_KHUSUS" }]) assert.doesNotMatch(keteranganTermin(t), /perkiraan datang/i);
+});
+
+// ── Termin "Tanggal khusus" pada mode PO ─────────────────────────────────────────────────────────────────────────────
+// Server (tentukanTerminPO) hanya menerima terminJenis/terminHari/alasanTermin untuk PO; tanggal jatuh tempo ditentukan saat FAKTUR dicatat / per penerimaan.
+const tk = (o = {}) => ({ ...TERMIN_AWAL, ganti: true, pilihan: "TANGGAL_KHUSUS", alasan: "disepakati dengan supplier", ...o });
+
+test("mode PO: Tanggal khusus TIDAK mewajibkan tanggal jatuh tempo; alasan dan pilihan termin tetap wajib", () => {
+  assert.equal(galatTermin(tk(), { tanpaTanggal: true }), null, "tanpa dueDate boleh");
+  assert.equal(galatTermin(tk({ dueDate: "2026-11-30" }), { tanpaTanggal: true }), null, "tanggal yang diketik tidak dipersoalkan (dibuang dari payload)");
+  assert.match(galatTermin(tk({ alasan: "" }), { tanpaTanggal: true }), /Alasan mengganti termin wajib diisi/, "kewajiban alasan tidak berubah");
+  assert.equal(galatTermin(tk({ pilihan: "" }), { tanpaTanggal: true }), "Pilih termin baru.", "tanpa pilihan termin tetap galat, tanpa menyarankan mengisi tanggal");
+  assert.equal(galatTermin(tk({ pilihan: "HARI:30" }), { tanpaTanggal: true }), null);
+  assert.equal(galatTermin({ ...TERMIN_AWAL }, { tanpaTanggal: true }), null, "tidak mengganti termin = tidak ada galat");
+});
+
+test("form faktur TIDAK berubah: Tanggal khusus tetap wajib tanggal; pesan lama utuh", () => {
+  assert.equal(galatTermin(tk()), "Isi tanggal jatuh tempo untuk termin tanggal khusus.");
+  assert.equal(galatTermin(tk(), { perluTanggal: true }), "Isi tanggal jatuh tempo untuk termin tanggal khusus.");
+  assert.equal(galatTermin(tk({ dueDate: "2026-11-30" })), null);
+  assert.equal(galatTermin(tk({ pilihan: "" })), "Pilih termin baru atau isi tanggal jatuh tempo.");
+  assert.equal(galatTermin(tk({ pilihan: "" , dueDate: "2026-11-30" })), null);
+  assert.match(galatTermin(tk({ alasan: "" })), /Alasan mengganti termin wajib diisi/);
+  assert.equal(galatTermin(tk({ alasan: "" }), { perluTanggal: true }), "Isi tanggal jatuh tempo untuk termin tanggal khusus.", "perluTanggal: alasan tidak diwajibkan (perilaku lama)");
+});
+
+test("payload PO Tanggal khusus: terminJenis + alasanTermin saja (tanpa dueDate/terminHari); kontrak server", () => {
+  const l = { ...baris0(), materialId: "m", qty: "1", unitPrice: "100" };
+  const b = bodyDariForm({ supplierId: "s", orderDate: "2026-11-01", expectedDate: "", notes: "", termin: tk({ dueDate: "2026-11-30" }), lines: [l] });
+  assert.equal(b.terminJenis, "TANGGAL_KHUSUS"); assert.equal(b.alasanTermin, "disepakati dengan supplier");
+  assert.equal("dueDate" in b, false); assert.equal(b.terminHari, undefined);
+  assert.deepEqual(bodyTermin(tk({ dueDate: "2026-11-30" })).dueDate, "2026-11-30", "bodyTermin (dipakai faktur) tetap mengirim dueDate");
+});
+
+test("pemasangan: editor PO dan TerminFaktur mode PO memakai tanpaTanggal; form faktur (RincianPO/FinanceSuppliers) tidak", () => {
+  const baca = (p) => fs.readFileSync(new URL("../src/" + p, import.meta.url), "utf8");
+  assert.match(baca("features/finance/po/EditorPO.jsx"), /galatTermin\(termin, \{ tanpaTanggal: true \}\)/);
+  assert.match(baca("features/finance/TerminFaktur.jsx"), /galatTermin\(value, \{ perluTanggal, tanpaTanggal: mode === "po" \}\)/);
+  assert.doesNotMatch(baca("features/finance/po/RincianPO.jsx"), /tanpaTanggal/);
+  assert.doesNotMatch(baca("pages/finance/FinanceSuppliers.jsx"), /tanpaTanggal/);
 });

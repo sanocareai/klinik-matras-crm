@@ -26,7 +26,7 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
   const set = (patch) => onChange({ ...value, ...patch });
   const perluTanggal = !!pr && pr.perluTanggal;
   const bolehGanti = admin || (mode === "faktur" && perluTanggal);
-  const lokal = galatTermin(value, { perluTanggal });
+  const lokal = galatTermin(value, { perluTanggal, tanpaTanggal: mode === "po" });
   // Mode PO: PO tidak punya kolom tanggal jatuh tempo. Tanpa termin hari/tunai, tanggalnya diisi saat FAKTUR dicatat (bukan di 'Perkiraan datang').
   const bantuanPO = mode === "po" && !!pr && (!pr.ada || pr.jenis === "TANGGAL_KHUSUS");
 
@@ -57,6 +57,7 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
                   <Pilihan value={value.pilihan} onChange={(v) => set({ ganti: true, pilihan: v })} aria-label="Termin baru">
                     {PILIHAN_TERMIN.map((p) => <option key={p.nilai} value={p.nilai}>{p.label}</option>)}
                   </Pilihan>
+                  {mode === "po" && value.pilihan === "TANGGAL_KHUSUS" && <p className="m-0 mt-1 text-[11.5px] text-ink3" data-testid="catatan-tanggal-khusus-po">Tanggal khusus: tanggal jatuh tempo diisi saat faktur dicatat, bukan di PO.</p>}
                 </Field>
               ) : null}
               {mode === "faktur" && (
