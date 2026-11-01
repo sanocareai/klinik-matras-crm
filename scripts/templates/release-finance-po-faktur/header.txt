@@ -1,0 +1,22 @@
+# RILIS FRONTEND-SAJA "Finance — nomor faktur supplier & kelengkapan faktur pada Rincian PO + tautan Catat pemasukan lain" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data.
+# Isi (penyajian saja): (1) bagian "Faktur supplier" pada Rincian PO (tabel/kartu: nomor supplier, nomor internal, tanggal, nilai, status; "Belum ada faktur tercatat" dibedakan dari "Nomor supplier belum diisi"), tombol Lengkapi/Ubah nomor faktur supplier yang memakai endpoint YANG SUDAH ADA (POST /finance/bills/:id/info: izin finance:post, alasan wajib, Idempotency-Key, audit lama/baru, duplikat per supplier ditolak server) sehingga HANYA supplier_ref + jejak audit yang berubah — nilai, status, jatuh tempo, penerimaan, pembayaran, jurnal, dan stok tidak berubah; penjelasan dampak + asal dokumen pada form Catat faktur; label Supplier & Utang "Ref Supplier" → "Nomor faktur supplier".
+# (2) commit f6d003d72 (Redesign-2, terpisah): dua tombol "Catat pemasukan lain"/"Pemasukan Lain" di Pemasukan menuju /finance/cash?tab=pemasukan (rute terdaftar; sebelumnya /finance/other-income tidak ada).
+# TIDAK termasuk: unggah lampiran faktur, penautan tagihan lama ke PO, indikator di daftar PO, perubahan backend. Kas & Bank (skb1), Invoice, Verifikasi, PO spo1 dipertahankan (gerbang kode live == baseline).
+# ALLOWLIST EKSPLISIT: generator menolak bila himpunan berkas aplikasi di diff berbeda dari sembilan berkas yang disetujui (delapan fitur + tes paket ini sendiri) (bukan pola larangan) — branch lain yang kebetulan ada di remote tidak ikut.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif a04976b8 (Kas & Bank skb1, di atas PO 3d7673a7). backend/ harus IDENTIK dengan release aktif (dua berkas tes pemeriksa kontrak metrik dikecualikan HANYA pada perbandingan container-vs-folder, jalur persis); image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-finance-po-faktur.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/spo2.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo2.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-finance-po-faktur.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-finance-po-faktur/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
