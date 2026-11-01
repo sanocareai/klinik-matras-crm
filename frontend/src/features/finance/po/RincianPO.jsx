@@ -602,7 +602,7 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
       }
     >
       {!f ? <p className="py-6 text-[13px] text-ink3">{galat || "Memuat…"}</p> : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <dl className="fin-pof-asal" data-testid="asal-faktur-po">
             <div><dt>Supplier</dt><dd>{po.supplier?.name}</dd></div>
             <div><dt>Faktur atas</dt><dd className="font-mono">{po.poNumber}</dd></div>
