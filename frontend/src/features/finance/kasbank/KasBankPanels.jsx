@@ -209,10 +209,10 @@ function SaldoKartu({ a, k, kartuTermuat, kartuGagal, sakelarAktif }) {
     <>
       <div className="fin-ks-saldo">
         <span className="fin-ks-label-kecil">Saldo pembukuan</span>
-        {a.active ? <span className="fin-ks-saldo-nilai">{tampilUang(a.saldo)}</span> : <span className="fin-ks-saldo-tak">Tidak dihitung</span>}
+        {a.active ? <span className="fin-ks-saldo-nilai">{tampilUang(a.saldo)}</span> : <span className="fin-ks-saldo-tak">Saldo tidak tersedia — rekening nonaktif</span>}
       </div>
       <div className="fin-ks-status">
-        {!a.active ? <ChipKs nada="redup">Nonaktif · saldo tidak dijumlahkan</ChipKs> : (
+        {!a.active ? <ChipKs nada="redup">Nonaktif · tidak ikut total saldo</ChipKs> : (
           <span className={`fin-ks-pencocokan fin-ks-pc-${st.nada}`} title={st.sumber ? `Sumber: ${st.sumber}` : undefined}>
             <FileText size={14} aria-hidden="true" />
             <span>{st.label}{st.tanggal ? ` · ${tanggalPendek(st.tanggal)}` : ""}{st.kode === "selisih" ? ` · ${tampilUang(st.selisih)}` : ""}</span>

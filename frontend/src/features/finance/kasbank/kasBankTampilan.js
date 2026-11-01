@@ -138,10 +138,10 @@ export function saringTransfer(daftar, { q, dari, ke, status, tanggalPendek }) {
   });
 }
 
-/** Batas pemuatan transfer: server memuat paling banyak 200 per periode; baru diaku terpotong bila jumlah termuat = batas. */
+/** Batas pemuatan transfer: server memuat paling banyak 200 per periode TANPA penanda terpotong; bila jumlah termuat tepat 200, hanya dikatakan "mungkin belum mencakup seluruh data" (bukan pasti terpotong). */
 export function kalimatTransfer({ tampil, termuat }) {
   const t = tampil === termuat ? `${termuat} transfer` : `${tampil} dari ${termuat} transfer`;
-  return { teks: t, catatan: termuat >= BATAS_TRANSFER ? `Daftar memuat paling banyak ${BATAS_TRANSFER} transfer terbaru pada periode ini. Persempit periode untuk melihat sisanya.` : null };
+  return { teks: t, catatan: termuat >= BATAS_TRANSFER ? `Menampilkan maksimal ${BATAS_TRANSFER} transfer terbaru; hasil mungkin belum mencakup seluruh data.` : null };
 }
 
 /** Peta id → rekening (untuk logo bank pada baris transfer, yang hanya membawa id & nama rekening). */

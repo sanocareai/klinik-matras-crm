@@ -184,12 +184,12 @@ export default function FinanceCash() {
   // Rincian rekening: identitas lengkap (nomor penuh bisa disalin), akun COA, dan status pencocokan beserta sumbernya.
   function bukaRincianRekening(a) {
     const k = a.active ? kartuDari(a.id) : null;
-    const st = a.active ? statusPencocokan({ kind: a.kind, k, sakelarAktif, kartuTermuat: !!kartu, kartuGagal }) : { label: "Tidak dihitung (rekening nonaktif)" };
+    const st = a.active ? statusPencocokan({ kind: a.kind, k, sakelarAktif, kartuTermuat: !!kartu, kartuGagal }) : { label: "Saldo tidak tersedia — rekening nonaktif" };
     const sumberLabel = k?.sumberSaldoBank === "OPNAME_FISIK" ? "Hitung fisik kas" : k?.sumberSaldoBank === "REKENING_KORAN" ? "Rekening koran yang diimpor" : null;
     const catatan = catatanKartu({ k, sakelarAktif });
     setPanelRincian({
       judul: a.name, sub: LABEL_JENIS[a.kind], logo: <LogoBank r={a} />, chip: a.active ? { label: "Aktif", nada: "hijau" } : { label: "Nonaktif", nada: "redup" },
-      ringkas: [["Saldo pembukuan", a.active ? tampilUang(a.saldo) : "Tidak dihitung"], ["Posisi", a.active ? tanggalPendek(hariIniWib()) : "—"]],
+      ringkas: [["Saldo pembukuan", a.active ? tampilUang(a.saldo) : "Tidak tersedia — rekening nonaktif"], ["Posisi", a.active ? tanggalPendek(hariIniWib()) : "—"]],
       bagian: [
         { judul: "Rekening", baris: [["Jenis", LABEL_JENIS[a.kind]], ["Bank / penyedia", a.bankName], ["Nomor rekening", a.accountNumber ? <span className="fin-ks-nomor-lengkap">{a.accountNumber} <TombolSalin teks={a.accountNumber} /></span> : null], ["Atas nama", a.accountHolder], ["Akun COA", a.account ? `${a.account.code} · ${a.account.name}` : null], ["Catatan", a.notes]] },
         { judul: "Pencocokan & konfirmasi", baris: [["Status", st.label], ["Sumber saldo pembanding", sumberLabel], ["Saldo pembanding", k?.saldoBank != null ? `${tampilUang(k.saldoBank)}${k.tanggalSaldoBank ? ` per ${tanggalPendek(k.tanggalSaldoBank)}` : ""}` : null], ["Selisih dengan buku", k?.selisih != null ? tampilUang(k.selisih) : null], ["Baris belum dipasangkan", k?.belumCocok > 0 ? String(k.belumCocok) : null], ["Terakhir direkonsiliasi", catatan.find((c) => c.tanggal)?.tanggal ? tanggalPendek(catatan.find((c) => c.tanggal).tanggal) : null]] },

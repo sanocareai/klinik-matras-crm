@@ -99,6 +99,7 @@ test("transfer: komponen persis dari server (tidak ditebak), status posting/diba
   assert.deepEqual(nomor({ status: "batal" }), ["TRF-2"]);
   assert.deepEqual(nomor({ q: "10.000.000" }), ["TRF-1"]);
   assert.equal(kalimatTransfer({ tampil: 2, termuat: 2 }).catatan, null);
-  assert.match(kalimatTransfer({ tampil: BATAS_TRANSFER, termuat: BATAS_TRANSFER }).catatan, /paling banyak 200/);
+  assert.match(kalimatTransfer({ tampil: BATAS_TRANSFER, termuat: BATAS_TRANSFER }).catatan, /^Menampilkan maksimal 200 transfer terbaru; hasil mungkin belum mencakup seluruh data.$/);
+  assert.doesNotMatch(kalimatTransfer({ tampil: BATAS_TRANSFER, termuat: BATAS_TRANSFER }).catatan, /pasti|terpotong/);
   assert.equal(kalimatTransfer({ tampil: 1, termuat: 2 }).teks, "1 dari 2 transfer");
 });
