@@ -1,5 +1,5 @@
 # Teks yang HANYA ada di redesain Gudang Fase 2 (Stok & Lokasi: daftar, ruang kerja bahan, form & tindakan) dan tidak ada di dist aktif; teks fitur live (Gudang Fase 1, Finance, Laporan, Order, Invoice, Verifikasi, Tagihan, Produksi) yang HARUS ada di KEDUANYA.
-for s0 in "Informasi bahan" "Perbaiki saldo" "Temukan bahan, pahami saldonya" "Tampilkan nonaktif" "Saldo tercatat"; do
+for s0 in "Informasi bahan" "Perbaiki saldo" "Temukan bahan, pahami saldonya" "Saldo tercatat"; do
   [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks fitur baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat fitur baru: ${s0}"
 done
