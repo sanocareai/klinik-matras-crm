@@ -14,6 +14,8 @@ import KelengkapanBagian from "@/features/production/KelengkapanBagian.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
+import TanggalField from "@/features/production/TanggalField.jsx";
+import { IkAwas, IkBaki, IkDokumen, IkJadwal, IkKotak, IkPanahKanan, IkProses, IkSelesai } from "@/components/produksiIcons.jsx";
 import { KERJA_PERLU_KONFIRMASI, formatJumlah, ketersediaanText, konfirmasiKerja, kunciIdempoten, labelCatatKerja, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
 
 // Panel fokus Order Produksi (adopsi Admin) — urutan: ringkasan + SATU tindakan utama → status & target → rencana bahan → pemakaian aktual → riwayat → lanjutan (Unit 360).
@@ -24,6 +26,7 @@ const PANEL_PROPS = { "data-testid": "order-produksi-panel" };
 const STATUS_ORDER_OPSI = Object.freeze([{ key: "PROCESSING", label: "Diproses" }, { key: "READY", label: "Siap Kirim" }]);
 const aktifUnit = (s) => !["CANCELLED", "DELIVERED"].includes(s);
 
+const IKON_STATUS = { order: IkDokumen, posisi: IkBaki, kerja: IkProses };
 function Status3({ ad, unitStatus, penerimaan }) {
   // Status ORDER = status Sales sebenarnya (ad.orderSales) — bukan turunan status unit. Payload lama tanpa orderSales jatuh ke peta unit.
   const order = ad.orderSales ?? statusOf({ status: unitStatus, unitStatusDisplay: ad.statusOrder });
@@ -35,25 +38,29 @@ function Status3({ ad, unitStatus, penerimaan }) {
     { cap: "Status kerja", sub: sumberKerjaText(ad.kerja) || "Pekerjaan di Produksi", chip: ad.kerja, key: "kerja" },
   ];
   return (
-    <dl className="m-0 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-3" data-testid="tiga-status">
-      {baris.map((b) => (
-        <div key={b.key} className="min-w-0" data-testid={`status-${b.key}`}>
-          <dt className="m-0 text-[11.5px] font-medium uppercase tracking-[0.05em] text-ink3">{b.cap}</dt>
-          <dd className="m-0 mt-1">
-            <Badge variant={nadaBadge(b.chip?.tone)} className="max-w-full whitespace-normal normal-case tracking-normal text-[12.5px]">{b.chip?.label || "—"}</Badge>
-            <span className="mt-1 block text-[12px] leading-snug text-ink3">{b.sub}</span>
-          </dd>
-        </div>
-      ))}
+    <dl className="prod-status3 m-0" data-testid="tiga-status">
+      {baris.map((b) => {
+        const Ikon = IKON_STATUS[b.key];
+        return (
+          <div key={b.key} className={`prod-st nada-${nadaBadge(b.chip?.tone)}`} data-testid={`status-${b.key}`}>
+            <span className="prod-st-ikon" aria-hidden><Ikon size={22} /></span>
+            <div className="min-w-0">
+              <dt className="prod-st-cap">{b.cap}</dt>
+              <dd className="prod-st-nilai"><span data-testid={`status-${b.key}-label`}>{b.chip?.label || "—"}</span></dd>
+              <dd className="prod-st-sub">{b.sub}</dd>
+            </div>
+          </div>
+        );
+      })}
     </dl>
   );
 }
 
-function Kosong({ children }) { return <p className="m-0 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2">{children}</p>; }
+function Kosong({ children }) { return <p className="prod-kosong-kecil m-0">{children}</p>; }
 function Bagian({ id, judul, children, aksi }) {
   return (
-    <section aria-labelledby={id} className="border-t border-line pt-5">
-      <div className="mb-3 flex flex-wrap items-center gap-2"><h3 id={id} className="m-0 text-[15px] font-semibold text-ink">{judul}</h3>{aksi}</div>
+    <section aria-labelledby={id} className="prod-bagian">
+      <div className="prod-bagian-kepala"><h3 id={id} className="m-0">{judul}</h3>{aksi}</div>
       {children}
     </section>
   );
@@ -96,77 +103,88 @@ export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onCh
   const deskripsi = u ? [u.order?.customer?.name, (u.layanan || []).join(", ")].filter(Boolean).join(" · ") : undefined;
   const sesudahUbah = useCallback(async () => { await muat(); onChanged?.(); }, [muat, onChanged]);
 
+  // Tab: Bahan · Status & target · Riwayat · Lanjutan. Memilih tab hanya MENAMPILKAN bagian (tidak menulis apa pun); fokus "bahan" membuka tab Bahan.
+  const [tab, setTab] = useState(fokusBahan ? "bahan" : "status");
+  useEffect(() => { setTab(fokus === "bahan" ? "bahan" : "status"); }, [unitId, fokus]);
+  const ID_KE_TAB = { "sec-aktual": "bahan", "sec-rencana-wrap": "bahan", "sec-status": "status", "sec-riwayat": "riwayat", "sec-status-lipat": "status" };
+  const bukaBagian = (id) => {
+    const tujuan = ID_KE_TAB[id]; if (tujuan) setTab(tujuan);
+    setTimeout(() => { const el = document.getElementById(id); if (!el) return; if (el.tagName === "DETAILS") el.open = true; el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); }, 60);
+  };
+  const TAB = [
+    { key: "bahan", label: "Bahan", ikon: IkKotak, tid: "lompat-bahan" },
+    { key: "status", label: "Status & target", ikon: IkJadwal, tid: "lompat-status" },
+    { key: "riwayat", label: "Riwayat", ikon: IkDokumen, tid: "lompat-riwayat", jumlah: data?.riwayat?.length || 0 },
+    { key: "lanjutan", label: "Lanjutan", ikon: IkPanahKanan, tid: "lompat-lanjutan" },
+  ];
+  const namaPelanggan = u?.order?.customer?.name;
+
   return (
-    <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()} contentProps={PANEL_PROPS} title={judul} description={deskripsi}
-      className="flex w-[920px] max-w-[96vw] flex-col max-sm:!left-0 max-sm:!top-0 max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none">
-      <div className="space-y-6 px-1 pb-2" aria-busy={memuat}>
+    <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()} contentProps={PANEL_PROPS} title={namaPelanggan || judul} description={u ? [namaPelanggan ? judul : null, (u.layanan || []).join(", ")].filter(Boolean).join(" · ") : undefined}
+      className="prod-panel-unit flex w-[980px] max-w-[96vw] flex-col max-sm:!left-0 max-sm:!top-0 max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none">
+      <div className="prod-panel-isi-unit" aria-busy={memuat}>
         {error && (
-          <div role="alert" data-testid="panel-galat" className="rounded-btn bg-redbg px-3 py-3 text-[13px] text-red">
-            <p className="m-0 font-medium">{error.status === 404 ? "Unit tidak ditemukan atau sudah dihapus." : error.message || "Panel gagal dimuat."}</p>
-            <Button variant="secondary" size="sm" className="mt-2 min-h-[40px]" onClick={muat}>Coba lagi</Button>
+          <div role="alert" data-testid="panel-galat" className="prod-galat">
+            <span>{error.status === 404 ? "Unit tidak ditemukan atau sudah dihapus." : error.message || "Panel gagal dimuat."}</span>
+            <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={muat}>Coba lagi</Button>
           </div>
         )}
         {!data && !error && <div className="space-y-3" data-testid="panel-memuat" aria-label="Memuat unit"><div className="h-6 w-1/2 animate-pulse rounded bg-inset motion-reduce:animate-none" /><div className="h-24 animate-pulse rounded bg-inset motion-reduce:animate-none" /><div className="h-40 animate-pulse rounded bg-inset motion-reduce:animate-none" /></div>}
 
         {data && (
           <>
-            {/* 1 · Ringkasan + satu tindakan utama */}
+            {/* 1 · Ringkasan: tiga status terpisah + satu tindakan utama */}
             <div className="space-y-4" data-testid="panel-ringkasan">
               <Status3 ad={ad} unitStatus={u.status} penerimaan={data.penerimaan} />
-              <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} />
+              <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} onKe={bukaBagian} />
               <KartuPenerimaan data={data} aktif={aktif} onDone={sesudahUbah} />
               <CatatanRingkas data={data} />
             </div>
 
-            {/* Bilah lompat: semua bagian tetap terjangkau tanpa menggulir melewati bagian lain */}
-            <nav aria-label="Bagian panel" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1" data-testid="panel-lompat">
-              <Button variant={fokusBahan ? undefined : "secondary"} size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-bahan" aria-pressed={fokusBahan} onClick={() => { setFokusLokal(true); fokusSudahRef.current = ""; setTimeout(() => lompat("sec-aktual"), 60); }}><Package size={14} aria-hidden /> Pemakaian bahan</Button>
-              {(ad?.kelengkapan?.keys?.length > 0 || data.pernyataanTanpaBahan?.aktif) && <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-kelengkapan" onClick={() => lompat("sec-kelengkapan")}><AlertTriangle size={14} aria-hidden /> Kelengkapan{ad.kelengkapan.keys.length ? ` (${ad.kelengkapan.keys.length})` : ""}</Button>}
-              <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-status" onClick={() => lompat("sec-status", { buka: true })}><SlidersHorizontal size={14} aria-hidden /> Status &amp; target</Button>
-              <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-riwayat" onClick={() => lompat("sec-riwayat")}><ScrollText size={14} aria-hidden /> Riwayat</Button>
-            </nav>
-
             {/* 1b · Kelengkapan data — hanya bila ada kekurangan/pernyataan; klasifikasi server yang SAMA dengan daftar/filter/ekspor */}
             <KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} />
 
-            {/* 2 · Status & target — di atas Pemakaian aktual (urutan biasa); bila fokus bahan: terlipat di bawah Pemakaian aktual */}
-            {!fokusBahan && <Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian>}
+            {/* 2 · Tab bagian panel */}
+            <nav aria-label="Bagian panel" className="prod-tab-unit" role="tablist" data-testid="panel-lompat">
+              {TAB.map((t) => (
+                <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} data-testid={t.tid} className={cn("prod-tab", tab === t.key && "aktif")}
+                  onClick={() => { setTab(t.key); if (t.key === "bahan") { setFokusLokal(true); fokusSudahRef.current = ""; } }}>
+                  {t.label}{t.jumlah ? <span>{t.jumlah}</span> : null}
+                </button>
+              ))}
+              {(ad?.kelengkapan?.keys?.length > 0 || data.pernyataanTanpaBahan?.aktif) && <button type="button" className="prod-tab kecil" data-testid="lompat-kelengkapan" onClick={() => lompat("sec-kelengkapan")}><IkAwas size={16} /> Kelengkapan{ad.kelengkapan.keys.length ? ` (${ad.kelengkapan.keys.length})` : ""}</button>}
+            </nav>
 
-            {/* 3 · Pemakaian aktual — tiga sumber selalu terlihat. Bahan dari Gudang mengurangi stok; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang); komponen lama tidak memengaruhi stok */}
-            <Bagian id="sec-aktual" judul="Pemakaian aktual">
-              <PemakaianAktual data={data} aktif={aktif} onDone={sesudahUbah} onMulai={() => { const d = document.getElementById("sec-rencana-wrap"); if (d?.tagName === "DETAILS") d.open = false; }} />
-            </Bagian>
+            {tab === "status" && <Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian>}
 
-            {fokusBahan && (
-              <details className="border-t border-line pt-5" id="sec-status-lipat" data-testid="sec-status-lipat">
-                <summary className="min-h-[44px] cursor-pointer text-[14px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Status &amp; target · {ad.kerja?.label || "—"}{ad.targetSelesai?.at ? " · target diisi" : " · tanpa target"}</summary>
-                <div className="pt-3"><Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian></div>
+            {tab === "bahan" && (
+              <>
+                {/* Pemakaian aktual — tiga sumber selalu terlihat. Bahan dari Gudang mengurangi stok; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang); komponen lama tidak memengaruhi stok */}
+                <Bagian id="sec-aktual" judul="Pemakaian aktual">
+                  <PemakaianAktual data={data} aktif={aktif} onDone={sesudahUbah} onMulai={() => { const d = document.getElementById("sec-rencana-wrap"); if (d?.tagName === "DETAILS") d.open = false; }} />
+                </Bagian>
+                {/* Rencana bahan — opsional, TERTUTUP bawaan, di bawah pemakaian aktual; BUKAN pemakaian dan tidak mengurangi stok */}
+                <details className="prod-lipat" id="sec-rencana-wrap" data-testid="sec-rencana-lama">
+                  <summary>Rencana bahan (opsional, belum mengurangi stok){data.rencanaBahan?.plan ? ` · ${data.rencanaBahan.plan.lines.length} bahan` : ""}</summary>
+                  <div className="pt-3"><MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} /></div>
+                </details>
+              </>
+            )}
+
+            {tab === "riwayat" && (
+              <details open className="prod-lipat" id="sec-riwayat" data-testid="sec-riwayat-lipat">
+                <summary>Riwayat{data.riwayat?.length ? ` (${data.riwayat.length})` : ""}</summary>
+                <div className="pt-3"><Riwayat daftar={data.riwayat} /></div>
               </details>
             )}
 
-            {/* 4 · Rencana bahan — opsional, TERTUTUP bawaan, di bawah pemakaian aktual */}
-            <details className="border-t border-line pt-5" id="sec-rencana-wrap" data-testid="sec-rencana-lama">
-              <summary className="min-h-[44px] cursor-pointer text-[14px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Rencana bahan (opsional, belum mengurangi stok){data.rencanaBahan?.plan ? ` · ${data.rencanaBahan.plan.lines.length} bahan` : ""}</summary>
-              <div className="pt-3"><MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} /></div>
-            </details>
-
-            {/* 5 · Riwayat — TERTUTUP bawaan (jejak lengkap tetap satu ketukan; tombol lompat membukanya) */}
-            <details className="border-t border-line pt-5" id="sec-riwayat" data-testid="sec-riwayat-lipat">
-              <summary className="min-h-[44px] cursor-pointer text-[15px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Riwayat{data.riwayat?.length ? ` (${data.riwayat.length})` : ""}</summary>
-              <div className="pt-3"><Riwayat daftar={data.riwayat} /></div>
-            </details>
-
-            {/* 6 · Lanjutan */}
-            <details className="group border-t border-line pt-4" data-testid="panel-lanjutan">
-              <summary className="flex min-h-[44px] cursor-pointer list-none items-center gap-2 text-[14px] font-medium text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
-                <ChevronRight size={16} className="transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden /> Lanjutan: tahap, dokumentasi, biaya &amp; QC
-              </summary>
-              <div className="mt-2 space-y-2 pl-6 text-[13px] text-ink2">
+            {tab === "lanjutan" && (
+              <div className="prod-lanjutan" data-testid="panel-lanjutan">
                 <p className="m-0">Tahap pengerjaan, foto &amp; dokumentasi, biaya bahan, QC, dan data lama unit ini tetap lengkap di Unit 360.</p>
                 {u.order?.unitLain?.length > 0 && <p className="m-0 text-ink3">Order ini punya {u.order.jumlahUnit} unit: {u.order.unitLain.map((x) => x.unitCode).join(", ")} (status dikelola per unit).</p>}
                 <Button variant="secondary" size="sm" className="min-h-[44px]" data-testid="buka-unit360" onClick={() => onBukaUnit360?.(unitId)}>Buka Unit 360</Button>
               </div>
-            </details>
+            )}
           </>
         )}
       </div>
@@ -198,7 +216,7 @@ export function KonfirmasiKerja({ status, unitCode, sibuk, onYa, onBatal }) {
   );
 }
 
-function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian }) {
+function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian, onKe }) {
   const { adopsi: ad, izin, unit: u } = data;
   const t = ad.tindakan || {};
   const [konfirmasi, setKonfirmasi] = useState(false);
@@ -210,7 +228,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian }) {
   const [sibuk, setSibuk] = useState(false);
   const [hasil, setHasil] = useState({ galat: null, ok: "" });
 
-  const ke = (id) => { const el = document.getElementById(id); if (el) { if (el.tagName === "DETAILS") el.open = true; /* rencana terlipat: buka dulu bila diminta lewat tindakan */ el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); } };
+  const ke = (id) => { if (onKe) { onKe(id); return; } const el = document.getElementById(id); if (el) { if (el.tagName === "DETAILS") el.open = true; /* rencana terlipat: buka dulu bila diminta lewat tindakan */ el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); } };
   async function catat(status) {
     if (catatRef.current) return; catatRef.current = true;
     setSibuk(true); setHasil({ galat: null, ok: "" });
@@ -244,11 +262,11 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian }) {
   }
 
   return (
-    <div className="rounded-card bg-inset px-4 py-3" data-testid="tindakan-utama">
-      <p className="m-0 text-[11.5px] font-medium uppercase tracking-[0.05em] text-ink3">Tindakan berikutnya</p>
-      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="prod-langkah" data-testid="tindakan-utama">
+      <p className="prod-langkah-cap"><IkPanahKanan size={14} /> Tindakan berikutnya</p>
+      <div className="prod-langkah-baris">
         <div className="min-w-0 flex-1 max-sm:basis-full">
-          <p className="m-0 text-[15px] font-semibold text-ink" data-testid="tindakan-label">{t.label || "—"}</p>
+          <p className="prod-langkah-judul" data-testid="tindakan-label">{t.label || "—"}</p>
           <p className="m-0 text-[12.5px] text-ink3">{t.aktor && t.aktor !== "—" ? `Oleh ${t.aktor}` : ""}{t.detail ? `${t.aktor && t.aktor !== "—" ? " · " : ""}${t.detail}` : ""}</p>
         </div>
         {tombol && !konfirmasi && !diprosesBuka && !konfKerja && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="bh-cta min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
@@ -366,7 +384,7 @@ function StatusTarget({ data, aktif, onDone }) {
   const label = "block text-[12px] font-medium text-ink3";
   const field = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50";
   return (
-    <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2" data-testid="status-target">
+    <div className="prod-status-target" data-testid="status-target">
       {/* status kerja manual */}
       <div className="space-y-3 md:col-span-1">
         <p className="m-0 text-[13px] font-semibold text-ink">Status kerja</p>
@@ -419,7 +437,7 @@ function StatusTarget({ data, aktif, onDone }) {
           <p className="m-0 text-[13px] font-semibold text-ink">Target selesai &amp; PIC</p>
           <div className="flex items-end gap-2">
             <label className="block flex-1 space-y-1"><span className={label}>Target selesai</span>
-              <input type="date" value={targetTeks} onChange={(e) => setTargetTeks(e.target.value)} disabled={!izin.target || !aktif || !!sibuk} data-testid="target-tanggal" className={field} /></label>
+              <TanggalField value={targetTeks} onChange={setTargetTeks} disabled={!izin.target || !aktif || !!sibuk} data-testid="target-tanggal" aria-label="Target selesai" placeholder="Pilih tanggal target" clearLabel="Kosongkan target" /></label>
             <Button variant="secondary" className="min-h-[44px]" data-testid="target-simpan" disabled={!izin.target || !aktif || !!sibuk} onClick={simpanTarget}>{sibuk === "target" ? "Menyimpan…" : "Simpan"}</Button>
           </div>
           <p className="m-0 text-[12.5px] text-ink3" data-testid="pic-teks">PIC: <b className="text-ink">{ad.pic?.nama || "Belum ditugaskan"}</b>{ad.meja ? ` · ${ad.meja}` : ""}{ad.pic ? ` (${ad.pic.sumber === "TAHAP" ? "penugasan tahap" : "Rencana Produksi"})` : " — atur di Rencana Produksi."}</p>

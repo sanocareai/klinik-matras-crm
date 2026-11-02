@@ -128,7 +128,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : "Satu daftar untuk memantau status order, posisi, dan pekerjaan setiap unit. Klik baris untuk mengelola unit.";
 
   return (
-    <PageContainer>
+    <PageContainer fluid className="prod-halaman">
       <PageHeader
         title={onScopeChange || scope ? "Order Produksi" : "Work Order"}
         subtitle={subtitle}
@@ -145,59 +145,61 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
         }
       />
 
-      <PageBody>
+      <PageBody className="prod-stack">
         {ekspor.ok && <p role="status" data-testid="order-export-ok" className="m-0 rounded-btn bg-greenbg px-3 py-2 text-[12.5px] text-green">{ekspor.ok}</p>}
         {ekspor.galat && <p role="alert" data-testid="order-export-galat" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{ekspor.galat}</p>}
 
-        <div role="tablist" aria-label="Saring status order" className="flex flex-wrap items-center gap-1 border-b border-line pb-2 max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:[&>*]:shrink-0" data-testid="order-filter">
+        <section className="prod-toolbar" aria-label="Penyaring daftar order produksi">
+        <div role="tablist" aria-label="Saring status order" className="prod-pils" data-testid="order-filter">
           {onScopeChange && ORDER_SCOPES.map((sc) => {
             const n = rows ? scopeCount(sc.key) : null;
             return (
               <button key={sc.key} type="button" role="tab" aria-selected={scope === sc.key} data-testid={`order-scope-${sc.key}`} onClick={() => onScopeChange(sc.key)}
-                className={cn("min-h-[40px] rounded-chip px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none", scope === sc.key ? "bg-accent text-white" : "text-ink2 hover:bg-hovertint")}>
+                className={cn("prod-pil", scope === sc.key && "aktif")}>
                 {sc.label}{n != null && <span className="ml-1 text-[12px] opacity-80">{n}</span>}
               </button>
             );
           })}
-          {onScopeChange && tabsShown.length > 0 && <span className="mx-1 h-5 w-px bg-line" aria-hidden />}
+          {onScopeChange && tabsShown.length > 0 && <span className="prod-pil-sekat" aria-hidden />}
           {tabsShown.length > 0 && (
             <button role="tab" aria-selected={tab === ""} data-testid="order-status-all" onClick={() => setTab("")}
-              className={cn("min-h-[40px] rounded-chip px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none", tab === "" ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>
+              className={cn("prod-pil sekunder", tab === "" && "aktif")}>
               Semua status order{rows && <span className="ml-1 text-[12px] opacity-70">{countOf("")}</span>}
             </button>
           )}
           {tabsShown.map((t) => (
             <button key={t.key} role="tab" aria-selected={tab === t.key} data-testid={`order-status-${t.key}`} onClick={() => setTab(t.key)}
-              className={cn("min-h-[40px] rounded-chip px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none", tab === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>
+              className={cn("prod-pil sekunder", tab === t.key && "aktif")}>
               {t.label}{rows && <span className="ml-1 text-[12px] opacity-70">{countOf(t.key)}</span>}
             </button>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="prod-cari-baris">
           <input
             type="search" value={cari} onChange={(e) => setCari(e.target.value)}
             placeholder="Cari kode unit, no. order, atau nama pelanggan…" aria-label="Cari unit"
-            className="h-11 min-w-[240px] flex-1 rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
+            className="prod-cari"
           />
-          <label className="flex items-center gap-2 text-[13px] text-ink2">
+          <label className="prod-pilih-label">
             <span className="shrink-0">Status kerja</span>
             <select value={kerja} onChange={(e) => setKerja(e.target.value)} data-testid="order-filter-kerja" aria-label="Saring status kerja"
-              className="h-11 rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30">
+              className="prod-pilih">
               <option value="">Semua</option>
               {KERJA_FILTER.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
             </select>
           </label>
           {rows && (
-            <span className="ml-auto self-center text-[12.5px] text-ink3" data-testid="order-rowcount"
+            <span className="prod-jumlah" data-testid="order-rowcount"
               title="Angka pada tab adalah TOTAL unit per status order (tidak mengikuti pencarian dan status kerja). Daftar dimuat bertahap dari server — tekan 'Muat lagi' untuk halaman berikutnya.">
-              {rows.length} dari {meta.total} unit
+              {rows.length} dari {meta.total} unit{meta.hasMore ? " — daftar dimuat bertahap" : ""}
             </span>
           )}
         </div>
 
         <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])}
           periode={periode} onPeriode={setPeriode} urut={urut} onUrut={setUrut} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
+        </section>
 
         {error && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-btn bg-redbg px-3 py-2.5 text-[13px] text-red">

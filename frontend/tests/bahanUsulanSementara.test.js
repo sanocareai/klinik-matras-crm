@@ -133,7 +133,7 @@ test("drawer lama (OrderProduksiPanel): Pemakaian aktual DI ATAS Rencana; rencan
   const p = src("features", "production", "OrderProduksiPanel.jsx");
   const yAktual = p.indexOf('<Bagian id="sec-aktual"'); const yRencana = p.indexOf('id="sec-rencana-wrap"');
   assert.ok(yAktual > 0 && yRencana > yAktual, "aktual sebelum rencana");
-  assert.match(p, /<details className="border-t border-line pt-5" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(yRencana - 80, yRencana + 120)), "tertutup bawaan");
+  assert.match(p, /<details className="prod-lipat" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(yRencana - 80, yRencana + 120)), "tertutup bawaan");
   assert.match(p, /if \(el\.tagName === "DETAILS"\) el\.open = true;/);
   for (const k of ["PemakaianAktualBagian", "tanpaJudul"]) assert.ok(p.includes(k), k);
   const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); for (const k of ["PemakaianSementaraDaftar", "CatatBahanBaru", "BahanBelumAda", "FormKomponenLama"]) assert.ok(b.includes(k), k);
@@ -141,10 +141,11 @@ test("drawer lama (OrderProduksiPanel): Pemakaian aktual DI ATAS Rencana; rencan
 
 test("drawer Order Produksi: FOKUS BAHAN — masuk untuk mencatat bahan langsung ke Pemakaian aktual (tanpa melewati Status & target); Status & target tetap terjangkau (bilah lompat + bagian terlipat); tanpa fokus urutan lama", () => {
   const p = src("features", "production", "OrderProduksiPanel.jsx"); const w = src("pages", "bengkel", "ProductionWorkOrders.jsx");
-  for (const k of ["fokus = null", 'fokus === "bahan" || fokusLokal', 'data-testid="panel-lompat"', 'data-testid="lompat-bahan"', 'data-testid="lompat-status"', 'data-testid="lompat-riwayat"', "!fokusBahan && <Bagian id=\"sec-status\"", "fokusBahan && (", 'data-testid="sec-status-lipat"', "fokusSudahRef", 'scrollIntoView({ behavior: "auto", block: "start" })']) assert.ok(p.includes(k), k);
-  assert.ok(p.indexOf('<Bagian id="sec-aktual"') < p.indexOf('id="sec-status-lipat"'), "fokus bahan: Pemakaian aktual SEBELUM Status & target (terlipat)");
-  assert.ok(p.indexOf('!fokusBahan && <Bagian id="sec-status"') < p.indexOf('<Bagian id="sec-aktual"'), "tanpa fokus: Status & target tetap sebelum Pemakaian aktual");
-  assert.match(p, /if \(el\.tagName === "DETAILS" \|\| buka\)/, "bilah lompat membuka bagian terlipat");
+  // Redesain Produksi: bagian panel kini TAB (Bahan · Status & target · Riwayat · Lanjutan); fokus bahan membuka tab Bahan, selain itu tab Status & target (semua bagian tetap terjangkau lewat tab).
+  for (const k of ["fokus = null", 'fokus === "bahan" || fokusLokal', 'data-testid="panel-lompat"', 'tid: "lompat-bahan"', 'tid: "lompat-status"', 'tid: "lompat-riwayat"', 'tab === "bahan"', 'tab === "status"', 'useState(fokusBahan ? "bahan" : "status")', "fokusSudahRef", 'scrollIntoView({ behavior: "auto", block: "start" })']) assert.ok(p.includes(k), k);
+  assert.ok(p.indexOf('<Bagian id="sec-aktual"') > p.indexOf('tab === "bahan"'), "Pemakaian aktual ada di tab Bahan");
+  assert.ok(p.indexOf('<Bagian id="sec-status"') > p.indexOf('tab === "status"'), "Status & target ada di tab Status");
+  assert.match(p, /if \(el\.tagName === "DETAILS" \|\| buka\)/, "lompat membuka bagian terlipat");
   // daftar: tombol 'Catat bahan' per baris (desktop) dan per kartu (HP) membuka panel dengan fokus bahan; klik baris biasa tanpa fokus
   for (const k of ['data-testid="catat-bahan-baris"', 'setFokusPanel("bahan")', "const bukaBahan", "const bukaPanel", "e.stopPropagation()", "unitAktif(u)"]) assert.ok(w.includes(k), k);
   assert.equal((w.match(/data-testid="catat-bahan-baris"/g) || []).length, 2, "satu di tabel desktop, satu di kartu HP");

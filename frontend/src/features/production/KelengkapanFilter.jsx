@@ -13,7 +13,7 @@ export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, 
   const belumDinilai = hitung?.dataOrder?.belumDinilai ?? 0;
   const adaRiwayat = scope !== "riwayat" && !!onLihatRiwayat && (hitung?.riwayat?.unik ?? 0) > 0;
   return (
-    <div className="space-y-2" data-testid="kelengkapan-filter">
+    <div className="prod-kelengkapan" data-testid="kelengkapan-filter">
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Saring kelengkapan data">
         <span className="text-[12.5px] font-medium text-ink2">Kelengkapan</span>
         <InfoToggleButton info={info} label="Cara menghitung kelengkapan" />
@@ -21,7 +21,7 @@ export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, 
           const n = hitung?.counts?.[k.key]; const on = terpilih.includes(k.key);
           return (
             <button key={k.key} type="button" aria-pressed={on} data-testid={`kel-${k.key}`} title={k.bantu} onClick={() => onToggle(k.key)}
-              className={cn("min-h-[40px] rounded-chip border px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none max-sm:min-h-[44px]", on ? "border-accent bg-accentbg text-accent" : "border-line bg-surface text-ink2 hover:bg-hovertint")}>
+              className={cn("prod-chip", on && "aktif")}>
               {k.label}<span className="ml-1.5 text-[12px] opacity-80" data-testid={`kel-n-${k.key}`}>{memuat && n === undefined ? "…" : n ?? 0}</span>
             </button>
           );
@@ -45,7 +45,7 @@ export default function KelengkapanFilter({ hitung, memuat, terpilih, onToggle, 
         </div>
         <label className="text-[12px] font-medium text-ink3">Urutan
           <select value={urut} onChange={(e) => onUrut(e.target.value)} aria-label="Urutan daftar" data-testid="urutan-daftar"
-            className="mt-0.5 block h-11 rounded-btn border border-line bg-surface px-2 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30">
+            className="prod-pilih mt-0.5 block">
             {URUTAN_DAFTAR.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
           </select>
         </label>

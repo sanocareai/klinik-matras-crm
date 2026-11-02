@@ -18,14 +18,14 @@ import { formatTanggal } from "@/utils/formatDate.js";
 
 function Kartu({ judul, aksi, children, testid, className }) {
   return (
-    <section className={cn("rounded-card border border-line bg-surface px-4 py-3.5", className)} data-testid={testid} aria-label={judul}>
-      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink3">{judul}</h3>{aksi}</div>
+    <section className={cn("prod-kartu", className)} data-testid={testid} aria-label={judul}>
+      <div className="prod-kartu-kepala"><h3 className="m-0">{judul}</h3>{aksi}</div>
       {children}
     </section>
   );
 }
-const Buka = ({ onClick, testid, children }) => <button type="button" onClick={onClick} data-testid={testid} className="inline-flex min-h-[40px] items-center gap-1 rounded-btn px-2 text-[12.5px] font-semibold text-accent outline-none hover:bg-hovertint focus-visible:ring-2 focus-visible:ring-accent/50">{children} <ChevronRight size={14} aria-hidden /></button>;
-function Fakta({ label, children }) { return <div className="min-w-0"><dt className="m-0 text-[11px] font-medium uppercase tracking-[0.05em] text-ink3">{label}</dt><dd className="m-0 mt-0.5 text-[13.5px] text-ink">{children}</dd></div>; }
+const Buka = ({ onClick, testid, children }) => <button type="button" onClick={onClick} data-testid={testid} className="prod-buka">{children} <ChevronRight size={14} aria-hidden /></button>;
+function Fakta({ label, children }) { return <div className="min-w-0"><dt className="prod-fakta-label m-0">{label}</dt><dd className="prod-fakta-isi m-0">{children}</dd></div>; }
 
 export function penjelasanTertahan(data) {
   const t = data?.adopsi?.tindakan; if (!t) return null;

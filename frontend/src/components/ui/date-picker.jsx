@@ -51,7 +51,7 @@ const DELAY_MS = 150;
 // block / clearLabel (19 Sep 2026, form Finance): mode FIELD FORM — pemicu selebar
 // kolom & setinggi input (h-9), bukan pill filter kecil; clearLabel mengganti
 // "Hapus filter" (salah kata untuk field form).
-export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true, block = false, clearLabel = "Hapus filter" }) {
+export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true, block = false, clearLabel = "Hapus filter", minDate, disabled = false, triggerProps = {}, triggerClassName }) {
   const [open, setOpen] = useState(false);
   // Posisi popover saat pemicu ada DI DALAM dialog/modal. Body modal
   // overflow-y-auto akan memotong popover `absolute` (kalender terpotong di
@@ -105,6 +105,7 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
   }, [open]);
 
   function pilih(s) {
+    if (s && minDate && s < minDate) return;
     onChange(s || "");
     setOpen(false);
   }
@@ -113,16 +114,19 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
     <div ref={rootRef} className={cn("relative", className)}>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="dialog"
+        {...triggerProps}
         className={cn(
-          "flex items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150",
+          "flex items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
           block ? "h-9 w-full" : "h-8 max-w-[220px]",
           "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           active
             ? "border-accent/40 bg-accentbg text-accent"
-            : "border-line bg-surface text-ink2 hover:border-accent/30"
+            : "border-line bg-surface text-ink2 hover:border-accent/30",
+          triggerClassName
         )}
       >
         <Calendar size={13} className="shrink-0" style={{ color: active ? "var(--accent)" : "var(--text-tertiary)" }} />
@@ -168,7 +172,7 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
 
           <CalendarMonth
             month={anchor} from={value || null} to={value || null} onPick={pilih}
-            maxDate={allowFuture ? MAKS_TANPA_BATAS : undefined}
+            maxDate={allowFuture ? MAKS_TANPA_BATAS : undefined} minDate={minDate}
           />
 
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">

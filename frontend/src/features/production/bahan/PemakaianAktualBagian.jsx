@@ -24,7 +24,7 @@ function KartuSumber({ aktifKey, kunci, ikon: Ikon, disabled, alasan, onPilih })
   const k = KARTU_SUMBER[kunci]; const pil = PILIHAN_SUMBER[kunci]; const pilih = aktifKey === kunci;
   return (
     <button type="button" role="radio" aria-checked={pilih} aria-disabled={disabled || undefined} disabled={disabled} title={alasan || undefined} data-testid={`sumber-${kunci}`} onClick={() => onPilih(pilih ? null : kunci)}
-      className={cn("flex min-h-[72px] w-full min-w-0 flex-1 items-start gap-3 rounded-card border px-4 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-50", pilih ? "border-accent bg-accentbg" : "border-line hover:bg-hovertint")}>
+      className={cn("prod-sumber", pilih && "aktif")}>
       <Ikon size={18} className={cn("mt-0.5 shrink-0", pilih ? "bh-b-accent" : "text-ink2")} aria-hidden />
       <span className="min-w-0">
         <span className="block text-[14px] font-semibold text-ink">{pil.label}</span>
@@ -77,7 +77,7 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
       </div>
 
       {pilihanTampil && (
-        <div role="radiogroup" aria-label="Sumber pemakaian bahan" className="flex flex-col gap-2 md:flex-row" data-testid="aktual-sumber-tombol">
+        <div role="radiogroup" aria-label="Sumber pemakaian bahan" className="prod-sumber-grup" data-testid="aktual-sumber-tombol">
           <KartuSumber aktifKey={mode === "katalog" ? "gudang" : mode} kunci="gudang" ikon={Package} disabled={rencanaEdit} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : null} onPilih={pilih} />
           <KartuSumber aktifKey={mode} kunci="belum" ikon={HelpCircle} disabled={rencanaEdit || !bolehBelumAda} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : !bolehBelumAda ? "Akun Anda tidak boleh mencatat pemakaian sementara atau mengusulkan bahan" : null} onPilih={pilih} />
           <KartuSumber aktifKey={mode} kunci="lama" ikon={Recycle} disabled={rencanaEdit} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : null} onPilih={pilih} />
@@ -102,10 +102,10 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
 
       {/* TABEL pemakaian aktual (utama): tiga sumber dalam satu tabel, dampak singkat per baris, Edit per baris (unit berjalan DAN terkirim) */}
       {adaTabel && <TabelPemakaian unitId={unitId} kodeUnit={kodeUnit} data={data} izin={izin} aktif={aktif} terkirim={terkirim} rencanaEdit={rencanaEdit} menunggu={menunggu} editId={editId} onEditGudang={bukaEdit} onTutupGudang={() => setEditId(null)} onHasilEdit={setHasilEdit} onDone={onDone} />}
-      {!adaTabel && !pilihanTampil && <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="aktual-kosong">Belum ada pemakaian tercatat.{bolehTambah ? " Tekan “+ Tambah pemakaian”; rencana bahan tidak wajib." : ""}</p>}
+      {!adaTabel && !pilihanTampil && <p className="prod-kosong-kecil m-0" data-testid="aktual-kosong">Belum ada pemakaian tercatat.{bolehTambah ? " Tekan “+ Tambah pemakaian”; rencana bahan tidak wajib." : ""}</p>}
 
       {bolehTambah && mode && (
-        <div className="space-y-3 rounded-card border border-line px-4 py-4" data-testid="panel-catat-aktual" data-mode={mode}>
+        <div className="prod-formpanel" data-testid="panel-catat-aktual" data-mode={mode}>
           {terkirim ? (
             <PembetulanUnitSelesai key={`terkirim-${mode}`} unitId={unitId} kodeUnit={kodeUnit} izin={izin} cara={CARA_TERKIRIM[mode === "katalog" ? "gudang" : mode]} onTutup={tutup} onDone={onDone} />
           ) : (
@@ -121,17 +121,17 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
       )}
 
       {izin.pemakaianAktual && (
-        <details className="rounded-btn bg-inset px-3 text-[12.5px] text-ink2" data-testid="detail-teknis">
-          <summary className="flex min-h-[44px] cursor-pointer items-center font-medium text-ink2">Detail teknis: stok, tanggal, harga, dan persetujuan</summary>
+        <details className="prod-lipat" data-testid="detail-teknis">
+          <summary>Detail teknis: stok, tanggal, harga, dan persetujuan</summary>
           <div className="space-y-2 pb-3">{DETAIL_TEKNIS.map((d) => <p key={d.judul} className="m-0"><b className="text-ink">{d.judul}.</b> {d.teks}</p>)}</div>
         </details>
       )}
 
       {/* RIWAYAT dan dokumen pemakaian — TERTUTUP bawaan. Hanya sumber yang punya isi yang tampil (tidak ada blok kosong / penjelasan berulang). Jejak lengkap: dokumen sumber, pelaku, waktu, dampak saldo, HPP, yang dibatalkan/dikoreksi. */}
       {adaRiwayat && (
-        <details className="rounded-card border border-line" data-testid="riwayat-pemakaian">
-          <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-[13.5px] font-medium text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Riwayat dan dokumen pemakaian ({jumlahRiwayat})</summary>
-          <div className="space-y-4 px-4 pb-4 pt-1">
+        <details className="prod-lipat" data-testid="riwayat-pemakaian">
+          <summary>Riwayat dan dokumen pemakaian ({jumlahRiwayat})</summary>
+          <div className="space-y-4 pb-2 pt-1">
             {adaBaru && <div className="space-y-2" data-testid="sec-bahan-baru"><h4 className="m-0 text-[13px] font-semibold text-ink">{KARTU_SUMBER.gudang.label}</h4><RiwayatBahanBaru unitId={unitId} data={data} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} onDone={onDone} /></div>}
             {adaSementara && <div className="space-y-2" data-testid="sec-pemakaian-sementara"><h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink"><Hourglass size={14} className="text-ink3" aria-hidden />{KARTU_SUMBER.belum.label}{sementara.total.perluRekonsiliasi > 0 && <Badge variant="orange" className="bh-b-orange" title={SUMBER_SEMENTARA.dampak}>{sementara.total.perluRekonsiliasi} perlu rekonsiliasi Gudang</Badge>}</h4>
               <PemakaianSementaraDaftar data={sementara} bolehCatat={!!izin.catatPemakaianSementara} bolehGudang={!!izin.putuskanUsulan} aktif={aktif} onDone={onDone} /></div>}

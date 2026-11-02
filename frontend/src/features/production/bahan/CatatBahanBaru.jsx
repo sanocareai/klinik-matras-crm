@@ -60,12 +60,12 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
   const grup = kelompokkan(baris);
   return (
     <div className="space-y-4" data-testid="catat-bahan-baru">
-      {!belumAda && <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas"><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</span></p>}
+      {!belumAda && <p className="prod-dampak m-0"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas"><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</span></p>}
 
       {!semuaSelesai && (
         <>
           {rencana?.lines?.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-btn border border-line px-3 py-2" data-testid="isian-awal-rencana">
+            <div className="prod-isian-awal" data-testid="isian-awal-rencana">
               <span className="min-w-0 flex-1 text-[12.5px] text-ink">Ada rencana bahan ({rencana.lines.length} bahan). Pakai sebagai isian awal? Anda tetap memeriksa jumlah sebelum dicatat.</span>
               <Button variant="secondary" size="sm" className="min-h-[40px]" onClick={pakaiRencana} disabled={sibuk} data-testid="gunakan-rencana"><Wand2 size={14} aria-hidden /> Gunakan sebagai isian awal</Button>
             </div>
@@ -80,23 +80,23 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
         </>
       )}
 
-      <div className="border-t border-line pt-3" data-testid="aktual-pilihan">
+      <div className="prod-pilihan" data-testid="aktual-pilihan">
         <h4 className="m-0 mb-1 text-[13px] font-semibold text-ink">Bahan yang dicatat ({baris.length})</h4>
-        {!baris.length && <p className="m-0 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink">Belum ada bahan dipilih. Pilih dari daftar di atas, lalu isi jumlah dan satuan.</p>}
+        {!baris.length && <p className="prod-kosong-kecil m-0">Belum ada bahan dipilih. Pilih dari daftar di atas, lalu isi jumlah dan satuan.</p>}
         {grup.map((g) => (
           <section key={g.kode} aria-label={g.label} className="mb-2">
             <h5 className="m-0 mb-1 text-[11.5px] font-semibold uppercase tracking-[0.05em] text-ink3">{g.label}</h5>
-            <ul className="m-0 list-none divide-y divide-line rounded-btn bg-inset p-0">
+            <ul className="prod-isian-daftar m-0">
               {g.baris.map((b) => {
                 const st = status[b.materialId]; const ks = keadaanSaldo(b, b.qty); const terkunci = st?.fase === "ok" || sibuk;
                 const row = st?.movementId ? data.pemakaianAktual?.baris?.find((r) => r.id === st.movementId) : null;
                 return (
-                  <li key={b.materialId} className="px-3 py-2" data-testid="aktual-baris-isian" data-fase={st?.fase || "isi"}>
+                  <li key={b.materialId} className="prod-isian" data-testid="aktual-baris-isian" data-fase={st?.fase || "isi"}>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="min-w-0 basis-full sm:basis-0 sm:flex-1"><span className="block truncate text-[13px] font-medium text-ink">{b.nama}</span><span className="block text-[11.5px] text-ink3">{b.kode || "—"}</span></span>
                       <label className="ml-auto flex shrink-0 items-center gap-1.5 max-sm:ml-0"><span className="sr-only">Jumlah {b.nama}</span>
                         <input inputMode="decimal" value={b.qty} disabled={terkunci} onChange={(e) => setBaris((x) => ubahJumlah(x, b.materialId, e.target.value))} data-testid="aktual-qty" placeholder="0"
-                          className="h-11 w-24 rounded-btn border border-line bg-surface px-2 text-right text-[14px] tabular-nums text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-60" />
+                          className="prod-qty" />
                         <span className="w-12 text-[12px] text-ink3" data-testid="aktual-satuan">{b.satuan}</span></label>
                       {!terkunci && <Button variant="secondary" size="sm" className="min-h-[40px] shrink-0" data-testid="aktual-ganti" aria-label={`Ganti bahan ${b.nama}`} onClick={() => gantiBahan(b.materialId)}><ArrowLeftRight size={14} aria-hidden /> Ganti bahan</Button>}
                       {!terkunci && <button type="button" onClick={() => setBaris((x) => hapusBaris(x, b.materialId))} aria-label={`Hapus ${b.nama} dari daftar`} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-btn text-ink3 outline-none hover:bg-hovertint hover:text-red focus-visible:ring-2 focus-visible:ring-accent/40"><Trash2 size={16} aria-hidden /></button>}
@@ -130,13 +130,13 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
 
       {!semuaSelesai && baris.length > 0 && (
         <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} disabled={sibuk} placeholder="Catatan untuk pemakaian ini (opsional)" aria-label="Catatan pemakaian" data-testid="aktual-catatan"
-          className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
+          className="prod-catatan-input" />
       )}
       {!semuaSelesai && baris.length > 0 && boleh.ok && (
-        <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink" data-testid="aktual-ringkasan-konfirmasi">Stok Gudang akan berkurang: {baris.filter((b) => status[b.materialId]?.fase !== "ok").map((b) => `${formatJumlah(parseJumlah(b.qty))} ${b.satuan} ${b.nama}`).join("; ")}.</p>
+        <p className="prod-dampak konfirmasi m-0" data-testid="aktual-ringkasan-konfirmasi">Stok Gudang akan berkurang: {baris.filter((b) => status[b.materialId]?.fase !== "ok").map((b) => `${formatJumlah(parseJumlah(b.qty))} ${b.satuan} ${b.nama}`).join("; ")}.</p>
       )}
       {boleh.alasan && !semuaSelesai && <p className="m-0 text-[12px] text-red">{boleh.alasan}</p>}
-      <div className="flex flex-wrap justify-end gap-2">
+      <div className="prod-aksi-form">
         <Button variant="neutral" className="min-h-[44px]" onClick={onTutup} disabled={sibuk}>{semuaSelesai ? "Selesai" : "Batal"}</Button>
         {!semuaSelesai && <Button className="bh-cta min-h-[44px]" data-testid="aktual-konfirmasi" disabled={sibuk || !boleh.ok} onClick={konfirmasi}>{sibuk ? "Mencatat…" : adaGagal ? "Coba lagi yang gagal" : "Konfirmasi & kurangi stok"}</Button>}
       </div>

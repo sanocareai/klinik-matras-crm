@@ -30,16 +30,16 @@ export default function PemilihBahanKatalog({ dipilihIds, onTambah, disabled = f
       <label className="relative block"><span className="sr-only">{labelKelompok ? `Cari bahan di kategori ${labelKelompok}` : "Cari bahan di seluruh katalog"}</span>
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
         <input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder={labelKelompok ? `Cari di ${labelKelompok} (nama atau kode)…` : "Cari bahan di semua kategori (nama atau kode)…"} data-testid={`${testid}-cari`} disabled={disabled}
-          className="h-11 w-full rounded-btn border border-line bg-surface pl-9 pr-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" /></label>
+          className="prod-cari-bahan" /></label>
       <div role="group" aria-label="Kategori bahan" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
         {[{ kode: "", label: "Semua", jumlah: null }, ...kat.kelompok.filter((k) => k.jumlah > 0 || k.kode === kelompok)].map((k) => (
           <button key={k.kode || "semua"} type="button" aria-pressed={kelompok === k.kode} disabled={disabled} data-testid={`${testid}-kelompok-${k.kode || "semua"}`} onClick={() => setKelompok(k.kode)}
-            className={cn("min-h-[40px] shrink-0 rounded-chip px-3 text-[13px] font-medium transition-colors disabled:opacity-40", kelompok === k.kode ? "bh-chip-on bg-accent text-white" : "bg-inset text-ink hover:bg-hovertint")}>
+            className={cn("prod-chip shrink-0 disabled:opacity-40", kelompok === k.kode && "aktif")}>
             {k.label}{k.jumlah != null && <span className="bh-count">{k.jumlah}</span>}
           </button>
         ))}
       </div>
-      <div className="overflow-y-auto rounded-btn bg-inset" style={{ maxHeight: tinggi }} data-testid={`${testid}-daftar`} aria-busy={kat.memuat}>
+      <div className="prod-katalog overflow-y-auto" style={{ maxHeight: tinggi }} data-testid={`${testid}-daftar`} aria-busy={kat.memuat}>
         {kat.galat && <p role="alert" className="m-0 flex items-center justify-between gap-2 px-3 py-2 text-[12.5px] text-red">{kat.galat}<Button variant="tertiary" size="sm" onClick={muat}>Coba lagi</Button></p>}
         {kat.memuat && !kat.rows.length && <div className="space-y-2 p-3" aria-label="Memuat katalog bahan">{[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded bg-line/60 motion-reduce:animate-none" />)}</div>}
         {!kat.memuat && !kat.galat && !kat.rows.length && (
@@ -65,7 +65,7 @@ export default function PemilihBahanKatalog({ dipilihIds, onTambah, disabled = f
         {kat.total > kat.rows.length && <p className="m-0 px-3 py-2 text-center text-[12px] text-ink3">Menampilkan {kat.rows.length} dari {kat.total}. Persempit dengan kata kunci atau kategori.</p>}
       </div>
       {onBahanBelumAda && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-btn border border-dashed border-line px-3 py-2">
+        <div className="prod-belum-ada">
           <span className="text-[12.5px] text-ink2">Bahan yang dipakai tidak ada di daftar?</span>
           <Button variant="secondary" size="sm" className="min-h-[40px]" disabled={disabled} data-testid={`${testid}-belum-ada`} onClick={() => onBahanBelumAda(tunda)}><HelpCircle size={14} aria-hidden /> Bahan belum ada?</Button>
         </div>

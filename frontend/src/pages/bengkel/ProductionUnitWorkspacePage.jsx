@@ -17,7 +17,7 @@ export default function ProductionUnitWorkspacePage() {
     else openInActiveTab(LIST_PATH, { title: "Status Produksi" }); // dibuka langsung / setelah muat ulang: tidak ada riwayat → ke daftar bawaan
   }, [navigate, openInActiveTab]);
   return (
-    <PageContainer fluid>
+    <PageContainer fluid className="prod-halaman">
       <PageBody><UnitWorkspace unitId={unitId} bagian={bagian} onBagian={onBagian} onKembali={onKembali} /></PageBody>
     </PageContainer>
   );

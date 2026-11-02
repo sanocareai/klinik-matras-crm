@@ -48,7 +48,7 @@ test("Ringkasan: SATU dashboard — tidak lagi menumpuk CommandCenterSummary + h
   assert.match(RINGKASAN, /data-testid="kpi-row"/);
   assert.match(RINGKASAN, /data-testid="attention-card"/);
   assert.match(RINGKASAN, /data-testid="pic-card"/);
-  assert.equal((RINGKASAN.match(/Butuh Perhatian/g) || []).length, 1, "hanya satu daftar perhatian");
+  assert.equal((RINGKASAN.match(/Perlu ditindaklanjuti/g) || []).length, 1, "hanya satu daftar tindak lanjut");
 });
 
 test("Ringkasan adaptor V2: 7 KPI (target, selesai, aktif, antre, terlambat, bahan, QC) dari angka server apa adanya", () => {

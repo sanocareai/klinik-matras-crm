@@ -19,7 +19,7 @@ const BULAN_ID = [
 //   maxDate   "YYYY-MM-DD" — tanggal setelah ini dinonaktifkan (default: hari ini WIB;
 //             tanggal masa depan tidak punya data, jadi tidak ada gunanya dipilih)
 //   onPick(dateStr)
-export default function CalendarMonth({ month, from, to, hover, maxDate, onPick, onHoverDate }) {
+export default function CalendarMonth({ month, from, to, hover, maxDate, minDate, onPick, onHoverDate }) {
   const awal = month.startOf("month");
   const jumlahHari = awal.daysInMonth();
   // Berapa sel kosong sebelum tanggal 1 — day() 0=Minggu, cocok dgn urutan HARI.
@@ -50,7 +50,7 @@ export default function CalendarMonth({ month, from, to, hover, maxDate, onPick,
         {sel.map((d, i) => {
           if (!d) return <div key={`e${i}`} />;
           const s = d.format("YYYY-MM-DD");
-          const disabled  = s > batas;
+          const disabled  = s > batas || (!!minDate && s < minDate);
           const isFrom    = lo && s === lo;
           const isTo      = hi && s === hi;
           const inRange   = lo && hi && s > lo && s < hi;
