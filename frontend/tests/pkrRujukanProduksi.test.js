@@ -35,7 +35,9 @@ test("pemasangan: kartu backlog, kartu rencana, kartu akan-masuk, kartu V1, Orde
   assert.match(baca("../src/features/production/UnitCard.jsx"), /<PkrRujukan pkr=\{item\.penjualanKaryawan\} \/>/);
   assert.match(baca("../src/features/production/v1Source.jsx"), /<PkrRujukan pkr=\{unit\.penjualanKaryawan\} \/>/);
   assert.match(baca("../src/pages/bengkel/ProductionOrders.jsx"), /rujukanDariRingkas\(o\.penjualanKaryawan\)/);
-  assert.equal((baca("../src/pages/bengkel/ProductionWorkOrders.jsx").match(/<PkrRujukan pkr=\{u\.penjualanKaryawan\}/g) || []).length, 2, "tabel Order Produksi + kartu mobile");
+  const wo = baca("../src/pages/bengkel/ProductionWorkOrders.jsx");
+  assert.equal((wo.match(/<PkrRujukan pkr=\{u\.penjualanKaryawan\}/g) || []).length, 1, "satu di IdentitasSel");
+  assert.ok(wo.includes("<IdentitasSel u={u} pr={pr} a={a} />") && (wo.match(/<IdentitasSel /g) || []).length === 2, "IdentitasSel dipakai tabel Order Produksi + kartu mobile");
   assert.match(baca("../src/pages/bengkel/ProductionPlannerV2.jsx"), /<PkrRujukan pkr=\{u\.penjualanKaryawan\}/);
   assert.match(baca("../src/features/production/UnitOverviewDrawer.jsx"), /<PkrRujukan pkr=\{data\.identity\.penjualanKaryawan\} rinci \/>/);
   assert.match(baca("../src/features/production/UnitOrderFallback.jsx"), /<PkrRujukan pkr=\{data\.penjualanKaryawan\} rinci \/>/);

@@ -65,7 +65,7 @@ test("jalur tulis status kerja manual SELALU lewat konfirmasi dan dijaga klik ga
   // klik ganda: satu permintaan pada satu waktu + tombol dinonaktifkan saat sibuk
   assert.ok(panel.includes("if (catatRef.current) return; catatRef.current = true;"));
   assert.ok(panel.includes("if (simpanRef.current) return; simpanRef.current = true;"));
-  assert.ok(panel.includes('disabled={sibuk}') && panel.includes("disabled={!!sibuk || konf ||"));
+  assert.ok(panel.includes('disabled={sibuk}') && panel.includes("disabled={sibuk || konf ||"));
   // HP: konfirmasi digulirkan ke tengah layar agar tidak tertutup banner/toolbar bawah
   assert.ok(panel.includes("el.scrollIntoView({ block: \"center\"") && panel.includes("scroll-mb-24"));
   // hanya dua tempat yang memanggil API tulis status kerja

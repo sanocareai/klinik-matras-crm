@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
@@ -86,9 +86,12 @@ function FormNyatakan({ unitId, unitCode, onDone }) {
   );
 }
 
-export default function KelengkapanBagian({ data, aktif, onDone }) {
+export default function KelengkapanBagian({ data, aktif, onDone, ringkas = false, terbukaAwal = false }) {
   const kel = data?.adopsi?.kelengkapan; const unit = data?.unit;
   const info = useInfoToggle(); const izin = data?.izin ?? {};
+  // Mode ringkas (panel samping): satu baris label kekurangan + tombol "Lihat detail"; rincian, penjelasan, dan formulir pernyataan dibuka dari sana. Membuka TIDAK menulis apa pun.
+  const [buka, setBuka] = useState(!ringkas || terbukaAwal);
+  useEffect(() => { if (terbukaAwal) setBuka(true); }, [terbukaAwal]);
   if (!kel || !unit) return null;
   const items = kel.keys.map((k) => kel.items[k]).filter(Boolean);
   const aktifPernyataan = data?.pernyataanTanpaBahan?.aktif ?? null;
@@ -106,13 +109,18 @@ export default function KelengkapanBagian({ data, aktif, onDone }) {
     );
   }
   const lengkap = !items.length;
+  const kelasBagian = ringkas ? "prod-kel-bagian ringkas" : "scroll-mt-4 border-t border-line pt-5";
   return (
-    <section id="sec-kelengkapan" aria-labelledby="sec-kelengkapan-judul" className="scroll-mt-4 border-t border-line pt-5" data-testid="kelengkapan-bagian" data-lengkap={lengkap ? "1" : "0"}>
+    <section id="sec-kelengkapan" aria-labelledby="sec-kelengkapan-judul" className={kelasBagian} data-testid="kelengkapan-bagian" data-lengkap={lengkap ? "1" : "0"}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h3 id="sec-kelengkapan-judul" className="m-0 text-[15px] font-semibold text-ink">Kelengkapan data</h3>
         {lengkap ? <Badge variant={belumDinilai ? "neutral" : "green"} className="normal-case tracking-normal" data-testid="kelengkapan-ringkas">{kel.ringkas}</Badge> : <Badge variant="orange" className="normal-case tracking-normal" data-testid="kelengkapan-ringkas">{kel.ringkas}</Badge>}
         <InfoToggleButton info={info} label="Apa yang dihitung sebagai kekurangan" />
+        {ringkas && <button type="button" className="prod-tautan prod-kel-toggle" aria-expanded={buka} aria-controls="kel-isi" data-testid="kel-detail-toggle" onClick={() => setBuka((v) => !v)}>{buka ? "Sembunyikan detail" : "Lihat detail"}</button>}
       </div>
+      {ringkas && !buka && items.length > 0 && <p className="prod-kel-ringkas-baris" data-testid="kel-ringkas-baris">{items.map((it) => it.label).join(" · ")}</p>}
+      {buka && (
+      <div id="kel-isi">
       <InfoToggleIsi info={info}>
         <p className="m-0">{KELENGKAPAN_BUKAN}</p>
         <p className="m-0">HPP di sini adalah HPP operasional (harga berlaku Gudang pada waktu pemakaian). Bukan nilai persediaan dan bukan biaya/jurnal Finance.</p>
@@ -130,6 +138,8 @@ export default function KelengkapanBagian({ data, aktif, onDone }) {
       {bisaNyatakan && !aktifPernyataan && <div className="mt-3"><FormNyatakan unitId={unit.id} unitCode={unit.unitCode} onDone={onDone} /></div>}
       {kel.items.BAHAN_BELUM_DICATAT && !izin.pernyataanTanpaBahan && !aktifPernyataan && (
         <p className="m-0 mt-3 text-[12.5px] text-ink3" data-testid="pernyataan-tanpa-izin">Catat bahan lewat “Pemakaian aktual”. Menyatakan unit tanpa bahan baru hanya untuk Admin, Owner, atau Kepala Produksi.</p>
+      )}
+      </div>
       )}
     </section>
   );

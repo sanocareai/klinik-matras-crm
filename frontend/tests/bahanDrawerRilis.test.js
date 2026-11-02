@@ -20,9 +20,10 @@ test("peran 'Catat bahan' di frontend = peran ber-izin unit:material:write di ba
 
 test("daftar Order Produksi: akun hanya-lihat melihat 'Lihat bahan', bukan 'Catat bahan' (desktop dan HP)", () => {
   const w = src("pages", "bengkel", "ProductionWorkOrders.jsx");
-  for (const k of ['bisaCatatBahan(bacaPengguna())', 'bisaCatat ? "Catat bahan" : "Lihat bahan"', 'data-aksi={bisaCatat ? "catat" : "lihat"}', '>{labelBahan}</Button>']) assert.ok(w.includes(k), k);
-  assert.ok(!/>Catat bahan<\/Button>/.test(w), "tidak ada label 'Catat bahan' yang dipatok untuk semua akun");
-  assert.equal((w.match(/data-testid="catat-bahan-baris"/g) || []).length, 2);
+  // Redesain daftar (mockup): baris hanya chevron; tidak ada tombol 'Catat bahan' yang dipatok untuk semua akun. Mencatat dari panel; tombolnya mengikuti izin server.
+  assert.ok(!/>Catat bahan<\/Button>/.test(w) && !w.includes("catat-bahan-baris"), "tidak ada label 'Catat bahan' di daftar");
+  const panel = src("features", "production", "OrderProduksiPanel.jsx");
+  assert.ok(panel.includes('case "RECORD_MATERIAL": tombol = izin.pemakaianAktual ? { label: "Catat pemakaian bahan"'), "akun hanya-lihat tidak mendapat tombol catat di panel");
 });
 
 test("susunCatatanRekon: bahan ADA di katalog → alasan + kode katalog; alasan lain wajib teks; belum ada → alasan katalog; deterministik; maks 500", () => {
@@ -68,7 +69,7 @@ test("UI 'Catat sementara — stok belum diketahui' (bahan KATALOG tanpa catatan
   assert.ok(!/name:\s*bahan\.nama/.test(f), "nama tidak dikirim dari klien (server memakai nama katalog)");
   for (const k of ["ALASAN_KATALOG", "STOK_BELUM_TERCATAT", "SUDAH_DIPAKAI_DULU", "LAINNYA"]) assert.ok(m.includes(k), k);
   assert.ok(c.includes("onPakaiSementara({ materialId: b.materialId, kode: b.kode, nama: b.nama, satuan: b.satuan, qty: b.qty })") && c.includes("izin.catatPemakaianSementara"), "tombol hanya untuk yang berizin catat sementara");
-  for (const k of ["FormSementaraKatalog", 'mode === "katalog" && bahanKat', "bukaKatalog", "onSementaraKatalog={bukaKatalog}", 'aktifKey={mode === "katalog" ? "gudang" : mode}']) assert.ok(p.includes(k), k);
+  for (const k of ["FormSementaraKatalog", 'mode === "katalog" && bahanKat', "bukaKatalog", "onSementaraKatalog={bukaKatalog}", '(mode === "katalog" ? "gudang" : mode) === kunci']) assert.ok(p.includes(k), k);
 });
 
 test("daftar + Gudang + koreksi: catatan tertaut katalog ditandai 'Bahan katalog KODE · stok belum diketahui'; koreksi mengunci bahan+satuan dan mewajibkan asal; Gudang diberi langkah resmi", () => {

@@ -57,7 +57,7 @@ test("Order Produksi: tab = Status order (displayStatus di server, hitungan disp
   assert.match(wo, /api\.getWorkOrders\(queryServer\(/); assert.match(wo, /displayStatus: displayParam/);
   assert.equal((wo.match(/displayStatusCounts/g) || []).length, 2);
   assert.match(wo, /const ACTIVE_KEYS = Object\.freeze\(\["PENGAMBILAN", "DIPROSES", "SIAP_KIRIM"\]\)/);
-  assert.match(wo, /data-testid="posisi-perhatian"/, "posisi yang perlu perhatian (mis. sudah dijemput · belum diterima workshop) tampil terpisah dari status order");
+  assert.match(wo, /data-testid="posisi-unit"/, "posisi unit (mis. sudah dijemput · belum diterima workshop) tampil di kolom sendiri, terpisah dari status order");
   const v1 = strip(read("features", "production", "v1Source.jsx"));
   assert.match(v1, /getWorkOrders\(\{ statusIn: "RECEIVED,IN_PRODUCTION", real: "1"/, "himpunan lama (unit tersimpan RECEIVED/IN_PRODUCTION) tetap persis sama");
 });

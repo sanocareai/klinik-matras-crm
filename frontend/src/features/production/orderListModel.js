@@ -49,3 +49,21 @@ export async function salinTeks(teks) {
     document.body.appendChild(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); return !!ok;
   } catch { return false; }
 }
+
+// ── warna penanda (SATU peta untuk daftar dan panel): hanya warna, tidak menyimpulkan makna. Diturunkan dari kode/label server + nada server; tak dikenal = abu.
+import { nadaBadge } from "@/features/production/orderProduksiModel.js";
+export function warnaPosisi(p) {
+  const t = `${p?.key || ""} ${p?.label || ""}`.toLowerCase();
+  if (/workshop/.test(t)) return "biru"; if (/perjalanan|transit/.test(t)) return "ungu"; if (/jemput|menunggu|belum/.test(t)) return "kuning";
+  const n = nadaBadge(p?.tone); return n === "red" ? "merah" : n === "green" ? "hijau" : "abu";
+}
+export function warnaKerja(k) {
+  const key = String(k?.key || "");
+  if (key === "MENUNGGU_QC") return "ungu"; if (key === "DIKERJAKAN" || key === "DIKERJAKAN_ULANG") return "biru"; if (key === "SELESAI" || key === "DIJADWALKAN") return "hijau"; if (key === "TERTUNDA") return "kuning";
+  return nadaBadge(k?.tone) === "red" ? "merah" : "abu";
+}
+export function warnaOrder(o) {
+  const key = String(o?.key || "");
+  if (key === "DIPROSES") return "biru"; if (key === "SIAP_KIRIM" || key === "TERKIRIM") return "hijau"; if (key === "PENGAMBILAN") return "kuning";
+  return nadaBadge(o?.tone) === "red" ? "merah" : "abu";
+}

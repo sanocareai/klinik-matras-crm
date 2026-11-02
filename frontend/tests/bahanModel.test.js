@@ -86,7 +86,7 @@ test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat,
   const bagian = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
   for (const k of ["JUDUL_RENCANA", "rencanaEdit", "aria-expanded={rencanaBuka}", "PemakaianAktualBagian"]) assert.ok(tab.includes(k), k);
   for (const k of ["JUDUL_AKTUAL", 'role="radiogroup"', "KARTU_SUMBER.gudang.label", "KARTU_SUMBER.belum.label", "KARTU_SUMBER.lama.label"]) assert.ok(bagian.includes(k), k);
-  assert.ok(bagian.includes('data-testid={`sumber-${kunci}`}') && bagian.includes('kunci="gudang"') && bagian.includes('kunci="belum"') && bagian.includes('kunci="lama"'));
+  assert.ok(bagian.includes('data-testid={`sumber-${kunci}`}') && bagian.includes('["gudang", Package') && bagian.includes('["belum", HelpCircle') && bagian.includes('["lama", Recycle'));
   assert.ok(!tab.includes("MaterialPlanEditor") || tab.includes("rencanaBuka &&"), "editor rencana hanya dirender saat dibuka (satu katalog pada satu waktu)");
   for (const k of ["api.addUnitMaterial", "kunciIdempoten", "kirimRef.current", "isianAwalDariRencana", "gunakan-rencana", "belum ada yang dicatat", "api.getKatalogBahanProduksi"]) assert.ok(baru.includes(k), k);
   assert.ok(!baru.includes("putRencanaBahan"), "mencatat aktual tidak menulis rencana");

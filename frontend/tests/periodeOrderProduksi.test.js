@@ -65,15 +65,15 @@ test("reset ke Semua waktu membuang kunci periode tetapi mempertahankan kunci la
 test("PENGAWATAN: komponen yang SAMA dengan Order CRM (tanpa tiruan), tanpa Bandingkan, tanpa dua input tanggal lama, satu sumber parameter untuk daftar/hitungan/pagination/Excel", () => {
   const orders = src("pages", "Orders.jsx"); const f = src("features", "production", "KelengkapanFilter.jsx"); const p = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   assert.ok(/import DateRangePicker from "\.\.\/components\/DateRangePicker\.jsx"/.test(orders), "Order CRM memakai DateRangePicker");
-  assert.ok(f.includes('import DateRangePicker from "@/components/DateRangePicker.jsx"'), "Order Produksi memakai komponen yang sama");
-  assert.ok(f.includes("showCompare={false}"), "Bandingkan tidak ditawarkan (daftar Produksi belum mendukung)");
-  assert.ok(!/type="date"/.test(f) && !/Order masuk dari|Order masuk sampai|periode-dari|periode-sampai|periode-hapus/.test(f), "dua input tanggal terpisah dihapus");
-  assert.ok(!/DateRangePicker|SIMPLE_PRESETS|CalendarMonth/.test(p), "halaman tidak membuat pemilih tanggal sendiri");
+  assert.ok(p.includes('import DateRangePicker from "@/components/DateRangePicker.jsx"'), "Order Produksi memakai komponen yang sama");
+  assert.ok(p.includes("showCompare={false}"), "Bandingkan tidak ditawarkan (daftar Produksi belum mendukung)");
+  assert.ok(!/type="date"/.test(p + f) && !/Order masuk dari|Order masuk sampai|periode-dari|periode-sampai|periode-hapus/.test(p + f), "dua input tanggal terpisah dihapus");
+  assert.ok(!/SIMPLE_PRESETS|CalendarMonth/.test(p) && !/DateRangePicker/.test(f), "halaman tidak membuat pemilih tanggal sendiri (hanya memasang komponen standar di bilah filter)");
   assert.ok(p.includes("useHubRange(periodeDariUrl, periodeKeUrl)") && p.includes("paramPeriode(periode)"), "periode di URL (tahan refresh)");
   assert.ok(p.includes("urut, ...rentang }") && p.includes("statusKerja: kerja || undefined, ...rentang }"), "daftar dan hitungan Kelengkapan memakai periode yang sama");
   assert.ok(p.includes("...paramDaftar, page: String(page)") && p.includes("api.eksporOrderProduksiXlsx({ displayStatus: displayParam, ...paramDaftar"), "pagination dan Excel memakai paramDaftar yang sama");
-  assert.ok(p.includes("onPeriode={setPeriode}") && f.includes("onChange={onPeriode}"), "perubahan hanya lewat onChange pemilih (dikirim saat Terapkan)");
+  assert.ok(p.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />"), "perubahan hanya lewat onChange pemilih (dikirim saat Terapkan)");
   const d = src("components", "DateRangePicker.jsx");
   assert.ok(/Batal/.test(d) && /Terapkan/.test(d) && /setDraft\(value\)/.test(d), "komponen standar: draft lokal, Batal membuang, Terapkan mengirim");
-  assert.ok(f.includes("Dasar tanggal: {DASAR_PERIODE_TEKS}") && f.includes("InfoToggleButton info={infoPeriode}") && /WIB/.test(f), "dasar tanggal (unit dibuat) dan batas hari WIB dijelaskan lewat ikon info");
+  assert.ok(f.includes("{DASAR_PERIODE_TEKS}") && f.includes('data-testid="dasar-periode"') && /WIB/.test(f) && p.includes("tanggal order masuk (unit dibuat), WIB"), "dasar tanggal (unit dibuat) dan batas hari WIB dijelaskan (ikon info di filter + keterangan pemilih)");
 });

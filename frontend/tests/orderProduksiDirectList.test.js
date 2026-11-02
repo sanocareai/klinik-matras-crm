@@ -24,7 +24,7 @@ test("tanpa halaman perantara: hub langsung merender daftar (bukan bilah tab/wiz
 });
 
 test("filter ringan di baris saring halaman yang sama (satu tablist), bukan bilah tab terpisah di atas halaman", () => {
-  assert.match(WO, /onScopeChange && ORDER_SCOPES\.map/);
+  assert.match(WO, /\{onScopeChange && \(/); assert.match(WO, /ORDER_SCOPES\.map\(\(sc\) =>/); assert.match(WO, /onClick=\{\(\) => onScopeChange\(sc\.key\)\}/);
   assert.match(WO, /data-testid="order-filter"/);
   assert.match(WO, /data-testid=\{`order-scope-\$\{sc\.key\}`\}/);
   assert.match(WO, /title=\{onScopeChange \|\| scope \? "Order Produksi" : "Work Order"\}/);
@@ -39,15 +39,16 @@ test("membaca order asli TIDAK butuh Production V2 / Mode Latihan: daftar hanya 
 });
 
 test("loading, kosong, dan galat tampil langsung pada daftar", () => {
-  assert.match(WO, /TableSkeletonRows/); assert.match(WO, /<EmptyState[\s\S]{0,200}Tidak ada unit yang cocok/);
+  assert.match(WO, /prod-ol-skel/); assert.match(WO, /<EmptyState[\s\S]{0,200}Tidak ada unit yang cocok/);
   assert.match(WO, /\{error && \(\s*<div role="alert"[^>]*>\s*<span>\{error\}<\/span>/, "galat tampil dengan tombol Coba lagi");
   assert.match(WO, /catch \(e\) \{ if \(id === reqRef\.current\) setError\(e\.message\); \}/);
 });
 
 test("klik baris/kartu membuka Unit 360 (drawer kanonis), bukan halaman lama; unit non-V2 mendapat fallback data order asli", () => {
-  assert.match(WO, /<TR key=\{u\.id\} clickable data-testid="order-row"[^>]*onClick=\{\(\) => bukaPanel\(u\)\}/);
-  assert.match(WO, /data-testid="order-row" data-unit-code=\{u\.unitCode\} data-priority=\{pr\.key\}\s*onClick=\{\(\) => bukaPanel\(u\)\}/, "kartu mobile juga");
-  assert.match(WO, /<OrderProduksiPanel unitId=\{openUnitId\} fokus=\{fokusPanel\} onClose=\{\(\) => \{ setFokusPanel\(null\); setDetailUnit\(null\); \}\} onChanged=\{reload\} onBukaUnit360=/, "klik baris membuka panel fokus Order Produksi");
+  assert.equal((WO.match(/data-testid="order-row"/g) || []).length, 2, "baris desktop dan kartu HP");
+  assert.equal((WO.match(/const buka = \(e\) => onBuka\(u, e\.currentTarget\);/g) || []).length, 2, "keduanya membuka panel dan menyimpan pemicu untuk mengembalikan fokus");
+  assert.match(WO, /onBuka={bukaBaris}/);
+  assert.match(WO, /<OrderProduksiPanel unitId=\{openUnitId\} fokus=\{fokusPanel\} dock=\{dock\} onClose=\{\(\) => \{ setFokusPanel\(null\); setDetailUnit\(null\); \}\} onChanged=\{reload\} onBukaUnit360=/, "klik baris membuka panel fokus Order Produksi");
   assert.match(WO, /<UnitOverviewDrawer unitId=\{unit360Id\} onClose=\{\(\) => setUnit360Id\(null\)\} onChanged=\{reload\} \/>/, "Unit 360 lengkap tetap dapat dibuka dari panel (Lanjutan)");
   assert.doesNotMatch(WO, /<Modal\b|navigate\(|useNavigate/, "tanpa modal ringkas terpisah dan tanpa navigasi ke halaman/tab lain");
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
