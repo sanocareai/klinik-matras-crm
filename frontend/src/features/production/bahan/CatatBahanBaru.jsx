@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, CheckCircle2, Trash2, Wand2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
@@ -13,7 +13,7 @@ import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
 import "@/features/production/bahan/bahan.css";
 const NADA = { green: "bh-ok", orange: "bh-warn", red: "bh-bad" };
 
-export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null, onBukanBahanIni = null, onTertinggal = null }) {
+export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null, onBukanBahanIni = null, onTertinggal = null, onDirty = null }) {
   const rencana = data.rencanaBahan?.plan ?? null; const total = data.pemakaianAktual?.total ?? [];
   const [baris, setBaris] = useState([]); const [catatan, setCatatan] = useState(""); const [status, setStatus] = useState({}); const [sibuk, setSibuk] = useState(false); const [infoRencana, setInfoRencana] = useState("");
   const kunciRef = useRef(new Map()); const kirimRef = useRef(false);
@@ -58,9 +58,12 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
     setTimeout(() => { const el = pemilihRef.current?.querySelector("input[type=search]"); if (el) { el.scrollIntoView?.({ block: "center" }); el.focus(); } }, 0);
   }
   const grup = kelompokkan(baris);
+  // Lapor ke pemilik form: ada isian yang belum dikonfirmasi (untuk peringatan saat sumber diganti / form ditutup). Tidak menulis apa pun.
+  useEffect(() => { onDirty?.(!semuaSelesai && (baris.length > 0 || catatan.trim() !== "")); return () => onDirty?.(false); }, [baris.length, catatan, semuaSelesai]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="space-y-4" data-testid="catat-bahan-baru">
-      {!belumAda && <p className="prod-dampak m-0"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas"><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</span></p>}
+    <div className="prod-bhn-gudang" data-testid="catat-bahan-baru">
+      <div className="prod-bhn-2k">
+      <div className="prod-bhn-kol kiri">
 
       {!semuaSelesai && (
         <>
@@ -80,9 +83,11 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
         </>
       )}
 
+      </div>
+      <div className="prod-bhn-kol kanan">
       <div className="prod-pilihan" data-testid="aktual-pilihan">
-        <h4 className="m-0 mb-1 text-[13px] font-semibold text-ink">Bahan yang dicatat ({baris.length})</h4>
-        {!baris.length && <p className="prod-kosong-kecil m-0">Belum ada bahan dipilih. Pilih dari daftar di atas, lalu isi jumlah dan satuan.</p>}
+        <h4 className="prod-bhn-judul-kol">Bahan dipilih ({baris.length})</h4>
+        {!baris.length && <p className="prod-kosong-kecil m-0">Belum ada bahan dipilih. Pilih dari katalog, lalu isi jumlah.</p>}
         {grup.map((g) => (
           <section key={g.kode} aria-label={g.label} className="mb-2">
             <h5 className="m-0 mb-1 text-[11.5px] font-semibold uppercase tracking-[0.05em] text-ink3">{g.label}</h5>
@@ -128,6 +133,8 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
         ))}
       </div>
 
+      <div className="prod-bhn-konfirmasi">
+      {!belumAda && <p className="prod-dampak m-0"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas"><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</span></p>}
       {!semuaSelesai && baris.length > 0 && (
         <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} disabled={sibuk} placeholder="Catatan untuk pemakaian ini (opsional)" aria-label="Catatan pemakaian" data-testid="aktual-catatan"
           className="prod-catatan-input" />
@@ -139,6 +146,9 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
       <div className="prod-aksi-form">
         <Button variant="neutral" className="min-h-[44px]" onClick={onTutup} disabled={sibuk}>{semuaSelesai ? "Selesai" : "Batal"}</Button>
         {!semuaSelesai && <Button className="bh-cta min-h-[44px]" data-testid="aktual-konfirmasi" disabled={sibuk || !boleh.ok} onClick={konfirmasi}>{sibuk ? "Mencatat…" : adaGagal ? "Coba lagi yang gagal" : "Konfirmasi & kurangi stok"}</Button>}
+      </div>
+      </div>
+      </div>
       </div>
     </div>
   );

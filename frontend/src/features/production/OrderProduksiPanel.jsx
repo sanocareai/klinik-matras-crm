@@ -1,9 +1,13 @@
 import { CatatanRingkas } from "@/features/production/bahan/CatatanHistorisBagian.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/features/production/bahan/bahan.css";
-import { AlertTriangle, CheckCircle2, ChevronRight, Info, Package, ScrollText, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Info, User, X } from "lucide-react";
 import { api } from "@/api.js";
-import { Modal } from "@/components/ui/modal.jsx";
+import { PanelSamping } from "@/components/ui/panel-samping.jsx";
+import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
+import { Link } from "react-router-dom";
+import SalinKode from "@/features/production/SalinKode.jsx";
+import { tabAwalPanel, warnaKerja, warnaOrder, warnaPosisi } from "@/features/production/orderListModel.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
@@ -26,32 +30,26 @@ const PANEL_PROPS = { "data-testid": "order-produksi-panel" };
 const STATUS_ORDER_OPSI = Object.freeze([{ key: "PROCESSING", label: "Diproses" }, { key: "READY", label: "Siap Kirim" }]);
 const aktifUnit = (s) => !["CANCELLED", "DELIVERED"].includes(s);
 
-const IKON_STATUS = { order: IkDokumen, posisi: IkBaki, kerja: IkProses };
-function Status3({ ad, unitStatus, penerimaan }) {
-  // Status ORDER = status Sales sebenarnya (ad.orderSales) — bukan turunan status unit. Payload lama tanpa orderSales jatuh ke peta unit.
+// Tiga status RINGKAS berupa label–nilai (bukan tiga kartu). Status order = status Sales sebenarnya (ad.orderSales), BUKAN turunan status unit; posisi = fakta fisik dari dokumen; status kerja = pekerjaan Produksi.
+function Status3({ ad, unitStatus }) {
   const order = ad.orderSales ?? statusOf({ status: unitStatus, unitStatusDisplay: ad.statusOrder });
   const subOrder = ad.orderSales?.terkunci ? `Dikunci manual${ad.orderSales.pengunci?.nama ? ` oleh ${ad.orderSales.pengunci.nama}` : ""}${ad.orderSales.pengunci?.at ? `, ${waktuWib(ad.orderSales.pengunci.at)}` : ""}` : "Dilihat Sales & Delivery";
-  const subPosisi = penerimaan ? `Diterima ${penerimaan.receivedBy?.name ? `oleh ${penerimaan.receivedBy.name}` : "petugas"} · ${waktuWib(penerimaan.receivedAt)}${penerimaan.location?.code ? ` · ${penerimaan.location.code}` : ""}` : (ad.posisi?.detail || "Dari dokumen jemput/terima/kirim");
   const baris = [
-    { cap: "Status order", sub: subOrder, chip: order, key: "order" },
-    { cap: "Posisi unit", sub: subPosisi, chip: ad.posisi, key: "posisi" },
-    { cap: "Status kerja", sub: sumberKerjaText(ad.kerja) || "Pekerjaan di Produksi", chip: ad.kerja, key: "kerja" },
+    { cap: "Status order", chip: order, key: "order", bentuk: "chip", warna: warnaOrder(order), title: subOrder, kunci: !!ad.orderSales?.terkunci },
+    { cap: "Posisi unit", chip: ad.posisi, key: "posisi", bentuk: "titik", warna: warnaPosisi(ad.posisi), title: ad.posisi?.detail || "Dari dokumen jemput/terima/kirim" },
+    { cap: "Status kerja", chip: ad.kerja, key: "kerja", bentuk: "chip", warna: warnaKerja(ad.kerja), title: sumberKerjaText(ad.kerja) || "Pekerjaan di Produksi" },
   ];
   return (
-    <dl className="prod-status3 m-0" data-testid="tiga-status">
-      {baris.map((b) => {
-        const Ikon = IKON_STATUS[b.key];
-        return (
-          <div key={b.key} className={`prod-st nada-${nadaBadge(b.chip?.tone)}`} data-testid={`status-${b.key}`}>
-            <span className="prod-st-ikon" aria-hidden><Ikon size={22} /></span>
-            <div className="min-w-0">
-              <dt className="prod-st-cap">{b.cap}</dt>
-              <dd className="prod-st-nilai"><span data-testid={`status-${b.key}-label`}>{b.chip?.label || "—"}</span></dd>
-              <dd className="prod-st-sub">{b.sub}</dd>
-            </div>
-          </div>
-        );
-      })}
+    <dl className="prod-pn-status" data-testid="tiga-status">
+      {baris.map((b) => (
+        <div key={b.key} className="prod-pn-status-baris" data-testid={`status-${b.key}`} title={b.title}>
+          <dt>{b.cap}</dt>
+          <dd>
+            {b.bentuk === "chip" ? <span className={`prod-ol-chip ${b.warna}`} data-testid={`status-${b.key}-label`}>{b.chip?.label || "—"}</span> : <span className="prod-ol-posisi"><span className={`prod-ol-titik ${b.warna}`} aria-hidden /><span data-testid={`status-${b.key}-label`}>{b.chip?.label || "—"}</span></span>}
+            {b.kunci && <span className="prod-pn-kunci">dikunci manual</span>}
+          </dd>
+        </div>
+      ))}
     </dl>
   );
 }
@@ -65,130 +63,159 @@ function Bagian({ id, judul, children, aksi }) {
     </section>
   );
 }
+// Bantuan yang bisa dibuka (penjelasan panjang); peringatan penting TIDAK disembunyikan di sini.
+function Bantuan({ label, children }) {
+  const info = useInfoToggle();
+  return (<div className="prod-bantuan"><span className="prod-bantuan-baris"><InfoToggleButton info={info} label={label} /><button type="button" className="prod-tautan" aria-expanded={info.buka} onClick={info.toggle}>{label}</button></span><InfoToggleIsi info={info}>{children}</InfoToggleIsi></div>);
+}
 
-export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onChanged, onBukaUnit360 }) {
+export default function OrderProduksiPanel({ unitId, fokus = null, dock = false, onClose, onChanged, onBukaUnit360, onKembaliFokus }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [memuat, setMemuat] = useState(false);
   const reqRef = useRef(0);
-  // FOKUS BAHAN: masuk untuk mencatat bahan (tombol "Catat bahan" di daftar, atau "Pemakaian bahan" di bilah lompat) → Pemakaian aktual naik tepat di bawah ringkasan dan layar diarahkan ke sana;
-  // Status & target tetap bisa dicapai (bagian terlipat di bawahnya + bilah lompat). Tanpa fokus, urutan lama dipertahankan.
-  const [fokusLokal, setFokusLokal] = useState(false); const fokusSudahRef = useRef("");
-  const fokusBahan = fokus === "bahan" || fokusLokal;
+  const [tab, setTab] = useState(tabAwalPanel(fokus)); const [sinyalForm, setSinyalForm] = useState(0);
+  const kepalaRef = useRef(null); const fokusSudahRef = useRef("");
 
   const muat = useCallback(async () => {
     if (!unitId) return;
     const id = ++reqRef.current; setMemuat(true); setError(null);
     try { const d = await api.getUnitAdopsi(unitId); if (id === reqRef.current) setData(d); } catch (e) { if (id === reqRef.current) setError(e); } finally { if (id === reqRef.current) setMemuat(false); }
   }, [unitId]);
-  useEffect(() => { setData(null); setFokusLokal(false); fokusSudahRef.current = ""; if (unitId) muat(); }, [unitId, muat]);
-  useEffect(() => {
-    if (!fokusBahan || !data?.unit?.id || fokusSudahRef.current === data.unit.id) return undefined;
-    fokusSudahRef.current = data.unit.id;
-    const t = setTimeout(() => { const el = document.getElementById("sec-aktual"); if (el) { el.scrollIntoView({ behavior: "auto", block: "start" }); el.setAttribute("tabindex", "-1"); el.style.outline = "none"; el.focus({ preventScroll: true }); } }, 60);
-    return () => clearTimeout(t);
-  }, [fokusBahan, data?.unit?.id]);
+  useEffect(() => { setData(null); fokusSudahRef.current = ""; setTab(tabAwalPanel(fokus)); if (unitId) muat(); }, [unitId, muat]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setTab(tabAwalPanel(fokus)); }, [fokus]);
+  // Panel menempel (dock) bukan dialog: fokus dipindah ke judul panel saat unit termuat supaya pembaca layar/keyboard mendarat di rincian.
+  useEffect(() => { if (dock && data?.unit?.id) kepalaRef.current?.focus?.({ preventScroll: true }); }, [dock, data?.unit?.id]);
   useEffect(() => {
     if (fokus !== "kelengkapan" || !data?.unit?.id || fokusSudahRef.current === `k:${data.unit.id}`) return undefined;
     fokusSudahRef.current = `k:${data.unit.id}`;
     const t = setTimeout(() => { const el = document.getElementById("sec-kelengkapan"); if (el) { el.scrollIntoView({ behavior: "auto", block: "start" }); el.setAttribute("tabindex", "-1"); el.style.outline = "none"; el.focus({ preventScroll: true }); } }, 80);
     return () => clearTimeout(t);
   }, [fokus, data?.unit?.id]);
-  const lompat = (id, { buka = false } = {}) => { const el = document.getElementById(id); if (!el) return; if (el.tagName === "DETAILS" || buka) { const d = el.closest("details") || el; if (d.tagName === "DETAILS") d.open = true; } el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); };
 
   const izin = data?.izin || {};
   const u = data?.unit; const ad = data?.adopsi;
   const aktif = !!u && aktifUnit(u.status);
   const judul = u ? `${u.unitCode}${u.order?.orderNumber ? ` · ${u.order.orderNumber}` : ""}` : "Memuat unit…";
-  const deskripsi = u ? [u.order?.customer?.name, (u.layanan || []).join(", ")].filter(Boolean).join(" · ") : undefined;
+  const namaPelanggan = u?.order?.customer?.name;
+  const layanan = u ? (u.layanan || []).join(", ") : "";
   const sesudahUbah = useCallback(async () => { await muat(); onChanged?.(); }, [muat, onChanged]);
+  const tutup = useCallback(() => { onClose?.(); if (dock) setTimeout(() => onKembaliFokus?.(), 0); }, [onClose, onKembaliFokus, dock]);
 
-  // Tab: Bahan · Status & target · Riwayat · Lanjutan. Memilih tab hanya MENAMPILKAN bagian (tidak menulis apa pun); fokus "bahan" membuka tab Bahan.
-  const [tab, setTab] = useState(fokusBahan ? "bahan" : "status");
-  useEffect(() => { setTab(fokus === "bahan" ? "bahan" : "status"); }, [unitId, fokus]);
-  const ID_KE_TAB = { "sec-aktual": "bahan", "sec-rencana-wrap": "bahan", "sec-status": "status", "sec-riwayat": "riwayat", "sec-status-lipat": "status" };
+  // Tujuan bagian: id lama → tab. Memilih tab/menggulir TIDAK menulis apa pun; "sec-aktual" dari tindakan berikutnya juga membuka form catat bahan (hanya MEMBUKA form).
+  const ID_KE_TAB = { "sec-aktual": "bahan", "sec-rencana-wrap": "bahan", "sec-status": "pekerjaan", "sec-status-order": "pekerjaan", "sec-riwayat": "riwayat" };
   const bukaBagian = (id) => {
     const tujuan = ID_KE_TAB[id]; if (tujuan) setTab(tujuan);
-    setTimeout(() => { const el = document.getElementById(id); if (!el) return; if (el.tagName === "DETAILS") el.open = true; el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); }, 60);
+    if (id === "sec-aktual") setSinyalForm((n) => n + 1);
+    setTimeout(() => { const el = document.getElementById(id); if (!el) return; if (el.tagName === "DETAILS") el.open = true; el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); }, 60);
   };
   const TAB = [
-    { key: "bahan", label: "Bahan", ikon: IkKotak, tid: "lompat-bahan" },
-    { key: "status", label: "Status & target", ikon: IkJadwal, tid: "lompat-status" },
-    { key: "riwayat", label: "Riwayat", ikon: IkDokumen, tid: "lompat-riwayat", jumlah: data?.riwayat?.length || 0 },
-    { key: "lanjutan", label: "Lanjutan", ikon: IkPanahKanan, tid: "lompat-lanjutan" },
+    { key: "pekerjaan", label: "Pekerjaan" },
+    { key: "bahan", label: "Bahan" },
+    { key: "riwayat", label: "Riwayat", jumlah: data?.riwayat?.length || 0 },
   ];
-  const namaPelanggan = u?.order?.customer?.name;
+  const onKeyTab = (e) => {
+    const i = TAB.findIndex((t) => t.key === tab); let n = null;
+    if (e.key === "ArrowRight") n = (i + 1) % TAB.length; else if (e.key === "ArrowLeft") n = (i - 1 + TAB.length) % TAB.length; else if (e.key === "Home") n = 0; else if (e.key === "End") n = TAB.length - 1;
+    if (n != null) { e.preventDefault(); setTab(TAB[n].key); requestAnimationFrame(() => document.getElementById(`pn-tab-${TAB[n].key}`)?.focus()); }
+  };
 
-  return (
-    <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()} contentProps={PANEL_PROPS} title={namaPelanggan || judul} description={u ? [namaPelanggan ? judul : null, (u.layanan || []).join(", ")].filter(Boolean).join(" · ") : undefined}
-      className="prod-panel-unit flex w-[980px] max-w-[96vw] flex-col max-sm:!left-0 max-sm:!top-0 max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none">
-      <div className="prod-panel-isi-unit" aria-busy={memuat}>
-        {error && (
-          <div role="alert" data-testid="panel-galat" className="prod-galat">
-            <span>{error.status === 404 ? "Unit tidak ditemukan atau sudah dihapus." : error.message || "Panel gagal dimuat."}</span>
-            <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={muat}>Coba lagi</Button>
+  const subjudul = u ? (
+    <>
+      <span className="prod-pn-kode"><span data-testid="panel-kode">{u.unitCode}</span><SalinKode teks={u.unitCode} /></span>
+      {u.order?.orderNumber && <span className="prod-pn-order">Order {u.order.orderNumber}</span>}
+      {layanan && <span className="prod-pn-layanan">{layanan}</span>}
+    </>
+  ) : null;
+
+  const badan = (
+    <div className="prod-pn" aria-busy={memuat}>
+      {error && (
+        <div role="alert" data-testid="panel-galat" className="prod-galat">
+          <span>{error.status === 404 ? "Unit tidak ditemukan atau sudah dihapus." : error.message || "Panel gagal dimuat."}</span>
+          <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={muat}>Coba lagi</Button>
+        </div>
+      )}
+      {!data && !error && <div className="prod-pn-memuat" data-testid="panel-memuat" aria-label="Memuat unit"><div /><div /><div /></div>}
+
+      {data && (
+        <>
+          <div className="prod-pn-atas" data-testid="panel-ringkasan">
+            <Status3 ad={ad} unitStatus={u.status} />
+            <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} onKe={bukaBagian} />
+            <KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} ringkas terbukaAwal={fokus === "kelengkapan"} />
+            <CatatanRingkas data={data} />
           </div>
-        )}
-        {!data && !error && <div className="space-y-3" data-testid="panel-memuat" aria-label="Memuat unit"><div className="h-6 w-1/2 animate-pulse rounded bg-inset motion-reduce:animate-none" /><div className="h-24 animate-pulse rounded bg-inset motion-reduce:animate-none" /><div className="h-40 animate-pulse rounded bg-inset motion-reduce:animate-none" /></div>}
 
-        {data && (
-          <>
-            {/* 1 · Ringkasan: tiga status terpisah + satu tindakan utama */}
-            <div className="space-y-4" data-testid="panel-ringkasan">
-              <Status3 ad={ad} unitStatus={u.status} penerimaan={data.penerimaan} />
-              <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} onKe={bukaBagian} />
-              <KartuPenerimaan data={data} aktif={aktif} onDone={sesudahUbah} />
-              <CatatanRingkas data={data} />
-            </div>
+          <div className="prod-pn-tab" role="tablist" aria-label="Bagian rincian unit" data-testid="panel-lompat" onKeyDown={onKeyTab}>
+            {TAB.map((t) => (
+              <button key={t.key} id={`pn-tab-${t.key}`} type="button" role="tab" aria-selected={tab === t.key} aria-controls={`pn-isi-${t.key}`} tabIndex={tab === t.key ? 0 : -1} data-testid={`lompat-${t.key === "pekerjaan" ? "status" : t.key}`}
+                className={cn("prod-pn-tab-item", tab === t.key && "aktif")} onClick={() => setTab(t.key)}>
+                {t.label}{t.jumlah ? <span>{t.jumlah}</span> : null}
+              </button>
+            ))}
+          </div>
 
-            {/* 1b · Kelengkapan data — hanya bila ada kekurangan/pernyataan; klasifikasi server yang SAMA dengan daftar/filter/ekspor */}
-            <KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} />
-
-            {/* 2 · Tab bagian panel */}
-            <nav aria-label="Bagian panel" className="prod-tab-unit" role="tablist" data-testid="panel-lompat">
-              {TAB.map((t) => (
-                <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} data-testid={t.tid} className={cn("prod-tab", tab === t.key && "aktif")}
-                  onClick={() => { setTab(t.key); if (t.key === "bahan") { setFokusLokal(true); fokusSudahRef.current = ""; } }}>
-                  {t.label}{t.jumlah ? <span>{t.jumlah}</span> : null}
-                </button>
-              ))}
-              {(ad?.kelengkapan?.keys?.length > 0 || data.pernyataanTanpaBahan?.aktif) && <button type="button" className="prod-tab kecil" data-testid="lompat-kelengkapan" onClick={() => lompat("sec-kelengkapan")}><IkAwas size={16} /> Kelengkapan{ad.kelengkapan.keys.length ? ` (${ad.kelengkapan.keys.length})` : ""}</button>}
-            </nav>
-
-            {tab === "status" && <Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian>}
-
+          <div id={`pn-isi-${tab}`} role="tabpanel" aria-labelledby={`pn-tab-${tab}`} className="prod-pn-isi" data-testid={`panel-isi-${tab}`}>
+            {tab === "pekerjaan" && <TabPekerjaan data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} />}
             {tab === "bahan" && (
-              <>
-                {/* Pemakaian aktual — tiga sumber selalu terlihat. Bahan dari Gudang mengurangi stok; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang); komponen lama tidak memengaruhi stok */}
-                <Bagian id="sec-aktual" judul="Pemakaian aktual">
-                  <PemakaianAktual data={data} aktif={aktif} onDone={sesudahUbah} onMulai={() => { const d = document.getElementById("sec-rencana-wrap"); if (d?.tagName === "DETAILS") d.open = false; }} />
-                </Bagian>
-                {/* Rencana bahan — opsional, TERTUTUP bawaan, di bawah pemakaian aktual; BUKAN pemakaian dan tidak mengurangi stok */}
-                <details className="prod-lipat" id="sec-rencana-wrap" data-testid="sec-rencana-lama">
-                  <summary>Rencana bahan (opsional, belum mengurangi stok){data.rencanaBahan?.plan ? ` · ${data.rencanaBahan.plan.lines.length} bahan` : ""}</summary>
-                  <div className="pt-3"><MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} /></div>
-                </details>
-              </>
+              <PemakaianAktual data={data} aktif={aktif} onDone={sesudahUbah} sinyalBuka={sinyalForm}
+                slotRencana={(
+                  <details className="prod-lipat" id="sec-rencana-wrap" data-testid="sec-rencana-lama">
+                    <summary>Rencana bahan{data.rencanaBahan?.plan ? ` · ${data.rencanaBahan.plan.lines.length} bahan` : ""}</summary>
+                    <p className="prod-pn-catatan">Rencana bahan hanya rencana: tidak mengurangi stok dan bukan pemakaian aktual.</p>
+                    <div className="pt-1"><MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} /></div>
+                  </details>
+                )} />
             )}
+            {tab === "riwayat" && <div id="sec-riwayat" data-testid="sec-riwayat-lipat"><Riwayat daftar={data.riwayat} /></div>}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
-            {tab === "riwayat" && (
-              <details open className="prod-lipat" id="sec-riwayat" data-testid="sec-riwayat-lipat">
-                <summary>Riwayat{data.riwayat?.length ? ` (${data.riwayat.length})` : ""}</summary>
-                <div className="pt-3"><Riwayat daftar={data.riwayat} /></div>
-              </details>
-            )}
-
-            {tab === "lanjutan" && (
-              <div className="prod-lanjutan" data-testid="panel-lanjutan">
-                <p className="m-0">Tahap pengerjaan, foto &amp; dokumentasi, biaya bahan, QC, dan data lama unit ini tetap lengkap di Unit 360.</p>
-                {u.order?.unitLain?.length > 0 && <p className="m-0 text-ink3">Order ini punya {u.order.jumlahUnit} unit: {u.order.unitLain.map((x) => x.unitCode).join(", ")} (status dikelola per unit).</p>}
-                <Button variant="secondary" size="sm" className="min-h-[44px]" data-testid="buka-unit360" onClick={() => onBukaUnit360?.(unitId)}>Buka Unit 360</Button>
-              </div>
-            )}
-          </>
-        )}
+  if (!unitId) return null;
+  if (dock) {
+    return (
+      <div className="prod-pn-dock" data-testid="order-produksi-panel" onKeyDown={(e) => { if (e.key === "Escape" && e.currentTarget.contains(e.target) && !e.defaultPrevented) { e.stopPropagation(); tutup(); } }}>
+        <header className="prod-ps-kepala">
+          <div className="min-w-0 flex-1">
+            <h2 ref={kepalaRef} tabIndex={-1} className="prod-ps-judul" data-testid="panel-judul">{namaPelanggan || judul}</h2>
+            <div className="prod-ps-sub">{subjudul}</div>
+          </div>
+          <button type="button" className="prod-ps-tutup" aria-label="Tutup rincian unit" data-testid="panel-tutup" onClick={tutup}><X size={20} aria-hidden /></button>
+        </header>
+        <div className="prod-ps-isi">{badan}</div>
       </div>
-    </Modal>
+    );
+  }
+  return (
+    <PanelSamping open={!!unitId} onOpenChange={(v) => !v && onClose?.()} judul={namaPelanggan || judul} subjudul={subjudul} contentProps={PANEL_PROPS} lebar={980}
+      onCloseAutoFocus={(e) => { e.preventDefault(); onKembaliFokus?.(); }}>
+      {badan}
+    </PanelSamping>
+  );
+}
+
+// ───────────────────────────── tab Pekerjaan ─────────────────────────────
+function TabPekerjaan({ data, aktif, onDone, onBukaUnit360 }) {
+  const { unit: u } = data;
+  return (
+    <>
+      <Bagian id="sec-status" judul="Pekerjaan">
+        <div className="prod-pn-2k"><StatusKerjaForm data={data} aktif={aktif} onDone={onDone} /><TargetPicForm data={data} aktif={aktif} onDone={onDone} /></div>
+      </Bagian>
+      <KartuPenerimaan data={data} aktif={aktif} onDone={onDone} />
+      <Bagian id="sec-status-order" judul="Status order lintas workspace"><StatusOrderForm data={data} aktif={aktif} onDone={onDone} /></Bagian>
+      <Bagian id="sec-lanjutan" judul="Tahap, dokumentasi, dan unit lain">
+        <div className="prod-lanjutan" data-testid="panel-lanjutan">
+          <p className="m-0">Tahap pengerjaan, foto &amp; dokumentasi, biaya bahan, QC, dan data lama unit ini tetap lengkap di Unit 360.</p>
+          {u.order?.unitLain?.length > 0 && <p className="m-0 prod-ol-redup">Order ini punya {u.order.jumlahUnit} unit: {u.order.unitLain.map((x) => x.unitCode).join(", ")} (status dikelola per unit).</p>}
+          <Button variant="secondary" size="sm" className="min-h-[44px]" data-testid="buka-unit360" onClick={onBukaUnit360}>Buka Unit 360</Button>
+        </div>
+      </Bagian>
+    </>
   );
 }
 
@@ -263,12 +290,13 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian, onKe }) {
 
   return (
     <div className="prod-langkah" data-testid="tindakan-utama">
-      <p className="prod-langkah-cap"><IkPanahKanan size={14} /> Tindakan berikutnya</p>
       <div className="prod-langkah-baris">
-        <div className="min-w-0 flex-1 max-sm:basis-full">
-          <p className="prod-langkah-judul" data-testid="tindakan-label">{t.label || "—"}</p>
-          <p className="m-0 text-[12.5px] text-ink3">{t.aktor && t.aktor !== "—" ? `Oleh ${t.aktor}` : ""}{t.detail ? `${t.aktor && t.aktor !== "—" ? " · " : ""}${t.detail}` : ""}</p>
+        <span className="prod-langkah-ikon" aria-hidden><IkPanahKanan size={18} /></span>
+        <div className="prod-langkah-isi">
+          <p className="prod-langkah-judul"><span className="prod-langkah-cap">Berikutnya:</span> <b data-testid="tindakan-label">{t.label || "—"}</b></p>
+          {t.detail && <p className="prod-langkah-detail">{t.detail}</p>}
         </div>
+        {t.aktor && t.aktor !== "—" && <span className="prod-langkah-aktor" data-testid="tindakan-aktor"><User size={16} aria-hidden /> {t.aktor}</span>}
         {tombol && !konfirmasi && !diprosesBuka && !konfKerja && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="bh-cta min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
       </div>
       {t.penghalang && t.aksi !== "UBAH_ORDER_DIPROSES" && (
@@ -349,102 +377,121 @@ function Hasil({ hasil, onMuat }) {
 }
 
 // ───────────────────────────── status & target ─────────────────────────────
-function StatusTarget({ data, aktif, onDone }) {
+// Tiga formulir TERPISAH (tiap satu punya endpoint/tindakan sendiri, tidak atomik, tanpa "Simpan semua"): status kerja · target & PIC · status order lintas workspace.
+// StatusTarget (di bawah) menyusunnya seperti sebelumnya untuk Ruang Kerja Unit; panel samping memakainya terpisah di tab Pekerjaan.
+const field = "prod-pn-field";
+const label = "prod-pn-label";
+
+function StatusKerjaForm({ data, aktif, onDone }) {
   const { adopsi: ad, izin, unit: u, kerjaManual: km } = data;
   const [kerja, setKerja] = useState(km.nilaiBoleh.find((n) => n.key === ad.kerja?.key)?.key || "DIJADWALKAN");
   const [catatan, setCatatan] = useState("");
-  const [orderPilih, setOrderPilih] = useState(u.status === "READY_FOR_DELIVERY" ? "READY" : "PROCESSING");
-  const [targetTeks, setTargetTeks] = useState(() => (u.productionDueAt ? new Date(new Date(u.productionDueAt).getTime() + 7 * 3600000).toISOString().slice(0, 10) : ""));
-  const [hKerja, setHKerja] = useState({ galat: null, ok: "" }); const [hOrder, setHOrder] = useState({ galat: null, ok: "" }); const [hTarget, setHTarget] = useState({ galat: null, ok: "" });
-  const [sibuk, setSibuk] = useState("");
+  const [hKerja, setHKerja] = useState({ galat: null, ok: "" });
+  const [sibuk, setSibuk] = useState(false);
   const [konf, setKonf] = useState(false); // konfirmasi sebelum menyimpan status yang menyatakan pekerjaan sudah dilakukan
   const simpanRef = useRef(false); // klik ganda: hanya satu permintaan
   const kunci = km.dikunciAplikasi;
   const perluCatatan = kerja === "TERTUNDA";
-
   async function simpanKerja() {
     if (simpanRef.current) return; simpanRef.current = true;
-    setSibuk("kerja"); setHKerja({ galat: null, ok: "" });
-    try { const r = await api.postStatusKerjaManual(u.id, { status: kerja, note: catatan.trim() || undefined, expectedLatestId: km.terakhirId }); setKonf(false); setHKerja({ galat: null, ok: r.dicatat ? "Status kerja dicatat manual (bukan dari pemakaian bahan). Tidak ada stok, tahap, foto, QC, Run, atau jurnal yang dibuat." : "Sudah sama dengan catatan terakhir — tidak ada yang berubah." }); setCatatan(""); await onDone(); } catch (e) { setKonf(false); setHKerja({ galat: e, ok: "" }); } finally { setSibuk(""); simpanRef.current = false; }
+    setSibuk(true); setHKerja({ galat: null, ok: "" });
+    try { const r = await api.postStatusKerjaManual(u.id, { status: kerja, note: catatan.trim() || undefined, expectedLatestId: km.terakhirId }); setKonf(false); setHKerja({ galat: null, ok: r.dicatat ? "Status kerja dicatat manual (bukan dari pemakaian bahan). Tidak ada stok, tahap, foto, QC, Run, atau jurnal yang dibuat." : "Sudah sama dengan catatan terakhir — tidak ada yang berubah." }); setCatatan(""); await onDone(); } catch (e) { setKonf(false); setHKerja({ galat: e, ok: "" }); } finally { setSibuk(false); simpanRef.current = false; }
   }
   const perluKonf = KERJA_PERLU_KONFIRMASI.includes(kerja);
-  async function simpanOrder() {
-    setSibuk("order"); setHOrder({ galat: null, ok: "" });
-    try { await api.updateOrder(u.order.id, { status: orderPilih, statusOverrideNote: "Diubah dari Order Produksi" }); setHOrder({ galat: null, ok: `Status order diubah ke ${STATUS_ORDER_OPSI.find((o) => o.key === orderPilih)?.label}. Sales dan Delivery melihat status yang sama.` }); await onDone(); } catch (e) { setHOrder({ galat: e, ok: "" }); } finally { setSibuk(""); }
-  }
+  return (
+    <div className="prod-pn-blok" data-testid="status-kerja-form">
+      <h4>Status kerja</h4>
+      {kunci
+        ? <Kosong>Unit ini sudah dikerjakan lewat aplikasi Produksi, jadi status kerja <b>mengikuti aplikasi</b> ({ad.kerja?.label}) dan tidak bisa dicatat manual.</Kosong>
+        : (
+          <>
+            <label className="block"><span className={label}>Catat status kerja</span>
+              <select value={kerja} onChange={(e) => { setKerja(e.target.value); setKonf(false); }} disabled={!izin.statusKerja || !aktif || sibuk} data-testid="kerja-pilih" className={field}>
+                {km.nilaiBoleh.map((n) => <option key={n.key} value={n.key}>{n.label}</option>)}
+              </select></label>
+            <label className="block"><span className={label}>Catatan {perluCatatan ? "(wajib untuk Tertunda)" : "(opsional)"}</span>
+              <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={500} disabled={!izin.statusKerja || !aktif || sibuk} data-testid="kerja-catatan" placeholder={perluCatatan ? "Mis. menunggu kain dari supplier" : "Tambahkan catatan singkat"} className={field} /></label>
+            {izin.statusKerja && aktif
+              ? <Button className="min-h-[44px]" data-testid="kerja-simpan" disabled={sibuk || konf || (perluCatatan && catatan.trim().length < 3)} onClick={() => (perluKonf ? setKonf(true) : simpanKerja())}>{sibuk ? "Menyimpan…" : labelCatatKerja(kerja)}</Button>
+              : <p className="prod-pn-catatan">{!aktif ? "Unit sudah selesai/dibatalkan." : "Akun Anda hanya bisa melihat."}</p>}
+            <Bantuan label="Tentang status kerja">
+              <p className="m-0">Untuk Admin yang belum memakai aplikasi Meja. Pilih “Sudah dikerjakan” hanya bila pekerjaannya memang sudah dilakukan (boleh tanpa bahan baru). Hanya mencatat status — tidak membuat stok, tahap, foto, QC, Run, atau jurnal.</p>
+            </Bantuan>
+          </>
+        )}
+      {konf && perluKonf && <KonfirmasiKerja status={kerja} unitCode={u.unitCode} sibuk={sibuk} onYa={simpanKerja} onBatal={() => setKonf(false)} />}
+      <Hasil hasil={hKerja} onMuat={onDone} />
+      {km.riwayat.length > 0 && (
+        <ul className="prod-pn-jejak" data-testid="kerja-riwayat">
+          {[...km.riwayat].reverse().slice(0, 4).map((r) => (
+            <li key={r.id}><b>{r.label}</b> · Dicatat manual oleh {r.by || "—"}, {waktuWib(r.at)}{r.note ? ` — “${r.note}”` : ""}{r.digantikanBuktiAplikasi ? <span className="text-orange"> · digantikan bukti aplikasi sejak {waktuWib(r.digantikanBuktiAplikasi)}</span> : null}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function TargetPicForm({ data, aktif, onDone }) {
+  const { adopsi: ad, izin, unit: u } = data;
+  const [targetTeks, setTargetTeks] = useState(() => (u.productionDueAt ? new Date(new Date(u.productionDueAt).getTime() + 7 * 3600000).toISOString().slice(0, 10) : ""));
+  const [hTarget, setHTarget] = useState({ galat: null, ok: "" });
+  const [sibuk, setSibuk] = useState(false);
   async function simpanTarget() {
-    setSibuk("target"); setHTarget({ galat: null, ok: "" });
+    setSibuk(true); setHTarget({ galat: null, ok: "" });
     try {
       const iso = targetTeks ? new Date(`${targetTeks}T17:00:00+07:00`).toISOString() : null;
       await api.updateUnitProduction(u.id, { productionDueAt: iso, expected: { productionDueAt: u.productionDueAt ?? null } });
       setHTarget({ galat: null, ok: targetTeks ? "Target selesai disimpan." : "Target selesai dikosongkan." }); await onDone();
-    } catch (e) { setHTarget({ galat: e.code === "UNIT_CONFLICT" || e.status === 409 ? Object.assign(e, { code: "RIWAYAT_BERUBAH" }) : e, ok: "" }); } finally { setSibuk(""); }
+    } catch (e) { setHTarget({ galat: e.code === "UNIT_CONFLICT" || e.status === 409 ? Object.assign(e, { code: "RIWAYAT_BERUBAH" }) : e, ok: "" }); } finally { setSibuk(false); }
   }
+  return (
+    <div className="prod-pn-blok" data-testid="target-pic-form">
+      <h4>Target selesai &amp; PIC</h4>
+      <div className="prod-pn-baris-form">
+        <label className="block flex-1"><span className={label}>Target selesai</span>
+          <TanggalField value={targetTeks} onChange={setTargetTeks} disabled={!izin.target || !aktif || sibuk} data-testid="target-tanggal" aria-label="Target selesai" placeholder="Pilih tanggal target" clearLabel="Kosongkan target" /></label>
+        <Button variant="secondary" className="min-h-[44px]" data-testid="target-simpan" disabled={!izin.target || !aktif || sibuk} onClick={simpanTarget}>{sibuk ? "Menyimpan…" : "Simpan target"}</Button>
+      </div>
+      {ad.targetSelesai && <p className="prod-pn-catatan">Target saat ini {formatTanggal(ad.targetSelesai.at)} ({ad.targetSelesai.sumber === "UNIT" ? "diisi di unit" : "dari Rencana Produksi"}).</p>}
+      <Hasil hasil={hTarget} onMuat={onDone} />
+      <p className="prod-pn-pic" data-testid="pic-teks"><User size={16} aria-hidden /> <span>PIC: <b>{ad.pic?.nama || "Belum ditugaskan"}</b>{ad.meja ? ` · ${ad.meja}` : ""}{ad.pic ? ` (${ad.pic.sumber === "TAHAP" ? "penugasan tahap" : "Rencana Produksi"})` : ""}</span></p>
+      <p className="prod-pn-catatan">PIC dan meja diatur di <Link to="/bengkel/rencana-produksi" className="prod-tautan">Rencana Produksi</Link>; tidak diubah dari sini.</p>
+    </div>
+  );
+}
 
-  const label = "block text-[12px] font-medium text-ink3";
-  const field = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50";
+function StatusOrderForm({ data, aktif, onDone }) {
+  const { adopsi: ad, izin, unit: u } = data;
+  const [orderPilih, setOrderPilih] = useState(u.status === "READY_FOR_DELIVERY" ? "READY" : "PROCESSING");
+  const [hOrder, setHOrder] = useState({ galat: null, ok: "" });
+  const [sibuk, setSibuk] = useState(false);
+  async function simpanOrder() {
+    setSibuk(true); setHOrder({ galat: null, ok: "" });
+    try { await api.updateOrder(u.order.id, { status: orderPilih, statusOverrideNote: "Diubah dari Order Produksi" }); setHOrder({ galat: null, ok: `Status order diubah ke ${STATUS_ORDER_OPSI.find((o) => o.key === orderPilih)?.label}. Sales dan Delivery melihat status yang sama.` }); await onDone(); } catch (e) { setHOrder({ galat: e, ok: "" }); } finally { setSibuk(false); }
+  }
+  return (
+    <div className="prod-pn-blok prod-pn-lintas" data-testid="status-order-form">
+      <p className="prod-pn-peringatan"><Info size={16} aria-hidden /> Sama dengan yang dilihat Sales dan Delivery — perubahan di sini berlaku di semua workspace.</p>
+      {ad.orderSales && <p className="m-0" data-testid="order-saat-ini">Status order saat ini: <b>{ad.orderSales.label}</b>{ad.orderSales.terkunci ? " (dikunci manual)" : ""}.</p>}
+      <div className="prod-pn-baris-form">
+        <label className="block flex-1"><span className={label}>Ubah ke</span>
+          <select value={orderPilih} onChange={(e) => setOrderPilih(e.target.value)} disabled={!izin.statusOrder || !aktif || sibuk} data-testid="order-pilih" className={field}>
+            {STATUS_ORDER_OPSI.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select></label>
+        <Button variant="secondary" className="min-h-[44px]" data-testid="order-simpan" disabled={!izin.statusOrder || !aktif || sibuk} onClick={simpanOrder}>{sibuk ? "Menyimpan…" : "Ubah status order"}</Button>
+      </div>
+      {!izin.statusOrder && <p className="prod-pn-catatan">Akun Anda hanya bisa melihat.</p>}
+      <Hasil hasil={hOrder} onMuat={onDone} />
+    </div>
+  );
+}
+
+function StatusTarget({ data, aktif, onDone }) {
   return (
     <div className="prod-status-target" data-testid="status-target">
-      {/* status kerja manual */}
-      <div className="space-y-3 md:col-span-1">
-        <p className="m-0 text-[13px] font-semibold text-ink">Status kerja</p>
-        {kunci
-          ? <Kosong>Unit ini sudah dikerjakan lewat aplikasi Produksi, jadi status kerja <b>mengikuti aplikasi</b> ({ad.kerja?.label}) dan tidak bisa dicatat manual.</Kosong>
-          : (
-            <>
-              <p className="m-0 text-[12.5px] text-ink3">Untuk Admin yang belum memakai aplikasi Meja. Pilih “Sudah dikerjakan” hanya bila pekerjaannya memang sudah dilakukan (boleh tanpa bahan baru). Hanya mencatat status — tidak membuat stok, tahap, foto, QC, Run, atau jurnal.</p>
-              <label className="block space-y-1"><span className={label}>Catat status kerja</span>
-                <select value={kerja} onChange={(e) => { setKerja(e.target.value); setKonf(false); }} disabled={!izin.statusKerja || !aktif || !!sibuk} data-testid="kerja-pilih" className={field}>
-                  {km.nilaiBoleh.map((n) => <option key={n.key} value={n.key}>{n.label}</option>)}
-                </select></label>
-              <label className="block space-y-1"><span className={label}>Catatan {perluCatatan ? "(wajib untuk Tertunda)" : "(opsional)"}</span>
-                <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={500} disabled={!izin.statusKerja || !aktif || !!sibuk} data-testid="kerja-catatan" placeholder={perluCatatan ? "Mis. menunggu kain dari supplier" : "Tambahkan catatan singkat"} className={field} /></label>
-              {izin.statusKerja && aktif
-                ? <Button className="min-h-[44px]" data-testid="kerja-simpan" disabled={!!sibuk || konf || (perluCatatan && catatan.trim().length < 3)} onClick={() => (perluKonf ? setKonf(true) : simpanKerja())}>{sibuk === "kerja" ? "Menyimpan…" : labelCatatKerja(kerja)}</Button>
-                : <p className="m-0 text-[12.5px] text-ink3">{!aktif ? "Unit sudah selesai/dibatalkan." : "Akun Anda hanya bisa melihat."}</p>}
-            </>
-          )}
-        {konf && perluKonf && <KonfirmasiKerja status={kerja} unitCode={u.unitCode} sibuk={!!sibuk} onYa={simpanKerja} onBatal={() => setKonf(false)} />}
-        <Hasil hasil={hKerja} onMuat={onDone} />
-        {km.riwayat.length > 0 && (
-          <ul className="m-0 list-none space-y-1 p-0 text-[12px] text-ink2" data-testid="kerja-riwayat">
-            {[...km.riwayat].reverse().slice(0, 4).map((r) => (
-              <li key={r.id}><b className="text-ink">{r.label}</b> · Dicatat manual oleh {r.by || "—"}, {waktuWib(r.at)}{r.note ? ` — “${r.note}”` : ""}{r.digantikanBuktiAplikasi ? <span className="text-orange"> · digantikan bukti aplikasi sejak {waktuWib(r.digantikanBuktiAplikasi)}</span> : null}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="space-y-6">
-        {/* status order */}
-        <div className="space-y-3">
-          <p className="m-0 text-[13px] font-semibold text-ink">Status order</p>
-          <p className="m-0 text-[12.5px] text-ink3">Sama dengan yang dilihat Sales dan Delivery — perubahan di sini berlaku di semua workspace.</p>
-          {ad.orderSales && <p className="m-0 text-[12.5px] text-ink2" data-testid="order-saat-ini">Status order saat ini: <b className="text-ink">{ad.orderSales.label}</b>{ad.orderSales.terkunci ? " (dikunci manual)" : ""}.</p>}
-          <div className="flex items-end gap-2">
-            <label className="block flex-1 space-y-1"><span className={label}>Ubah ke</span>
-              <select value={orderPilih} onChange={(e) => setOrderPilih(e.target.value)} disabled={!izin.statusOrder || !aktif || !!sibuk} data-testid="order-pilih" className={field}>
-                {STATUS_ORDER_OPSI.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select></label>
-            <Button variant="secondary" className="min-h-[44px]" data-testid="order-simpan" disabled={!izin.statusOrder || !aktif || !!sibuk} onClick={simpanOrder}>{sibuk === "order" ? "Menyimpan…" : "Ubah"}</Button>
-          </div>
-          {!izin.statusOrder && <p className="m-0 text-[12.5px] text-ink3">Akun Anda hanya bisa melihat.</p>}
-          <Hasil hasil={hOrder} onMuat={onDone} />
-        </div>
-
-        {/* target + PIC */}
-        <div className="space-y-3">
-          <p className="m-0 text-[13px] font-semibold text-ink">Target selesai &amp; PIC</p>
-          <div className="flex items-end gap-2">
-            <label className="block flex-1 space-y-1"><span className={label}>Target selesai</span>
-              <TanggalField value={targetTeks} onChange={setTargetTeks} disabled={!izin.target || !aktif || !!sibuk} data-testid="target-tanggal" aria-label="Target selesai" placeholder="Pilih tanggal target" clearLabel="Kosongkan target" /></label>
-            <Button variant="secondary" className="min-h-[44px]" data-testid="target-simpan" disabled={!izin.target || !aktif || !!sibuk} onClick={simpanTarget}>{sibuk === "target" ? "Menyimpan…" : "Simpan"}</Button>
-          </div>
-          <p className="m-0 text-[12.5px] text-ink3" data-testid="pic-teks">PIC: <b className="text-ink">{ad.pic?.nama || "Belum ditugaskan"}</b>{ad.meja ? ` · ${ad.meja}` : ""}{ad.pic ? ` (${ad.pic.sumber === "TAHAP" ? "penugasan tahap" : "Rencana Produksi"})` : " — atur di Rencana Produksi."}</p>
-          {ad.targetSelesai && <p className="m-0 text-[12px] text-ink3">Target saat ini {formatTanggal(ad.targetSelesai.at)} ({ad.targetSelesai.sumber === "UNIT" ? "diisi di unit" : "dari Rencana Produksi"}).</p>}
-          <Hasil hasil={hTarget} onMuat={onDone} />
-        </div>
-      </div>
+      <div><StatusKerjaForm data={data} aktif={aktif} onDone={onDone} /></div>
+      <div className="prod-status-target-kanan"><StatusOrderForm data={data} aktif={aktif} onDone={onDone} /><TargetPicForm data={data} aktif={aktif} onDone={onDone} /></div>
     </div>
   );
 }
@@ -452,11 +499,11 @@ function StatusTarget({ data, aktif, onDone }) {
 // ───────────────────────────── pemakaian aktual ─────────────────────────────
 // Tombol "+ Tambah pemakaian" + tabel perbandingan rencana vs aktual dengan tombol "Edit" per bahan + komponen BERSAMA PemakaianAktualBagian (tiga sumber selalu terlihat: Bahan dari Gudang · Bahan belum ada di katalog · Komponen lama dari kasur ini;
 // sama dengan tab Bahan Ruang Kerja Unit). Bahan dari Gudang = stok berkurang tepat sekali; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang, stok/biaya/jurnal tidak berubah).
-function PemakaianAktual({ data, aktif, onDone, onMulai }) {
+function PemakaianAktual({ data, aktif, onDone, onMulai, sinyalBuka = 0, slotRencana = null }) {
   const { unit: u } = data;
   return (
     <div className="space-y-4" data-testid="pemakaian-aktual">
-      <PemakaianAktualBagian unitId={u.id} data={data} izin={data.izin || {}} aktif={aktif} onDone={onDone} onMulai={onMulai} tanpaJudul />
+      <PemakaianAktualBagian unitId={u.id} data={data} izin={data.izin || {}} aktif={aktif} onDone={onDone} onMulai={onMulai} tanpaJudul sinyalBuka={sinyalBuka} slotRencana={slotRencana} />
     </div>
   );
 }

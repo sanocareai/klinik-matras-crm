@@ -44,26 +44,28 @@ test("teks dampak: bukan Material Issue, stok/biaya/jurnal tidak berubah; tetap 
   assert.equal(SUMBER_SEMENTARA.ringkas, "Perlu rekonsiliasi Gudang");
 });
 
-test("BahanTab: Pemakaian aktual DI ATAS Rencana; rencana tertutup bawaan; satu kolom; dua tombol sumber; sementara terpisah", () => {
+test("BahanTab: Pemakaian aktual DI ATAS Rencana; rencana tertutup bawaan; satu kolom; tiga sumber di dialog form; sementara terpisah", () => {
   const tab = src("features", "production", "bahan", "BahanTab.jsx");
   assert.ok(tab.indexOf("<PemakaianAktualBagian") > 0 && tab.indexOf("<PemakaianAktualBagian") < tab.indexOf('data-testid="sec-rencana"'), "aktual sebelum rencana");
   assert.ok(!tab.includes("xl:grid-cols"), "tidak lagi dua kolom berdampingan");
   assert.match(tab, /useState\(false\); const \[rencanaEdit/, "rencanaBuka = false (tertutup bawaan)");
   assert.ok(tab.includes("izin={izin}") && tab.includes("data={data}"));
-  // tiga sumber = kartu di komponen bersama (drawer dan tab memakai komponen yang SAMA)
+  // tiga sumber = pilihan segmen di komponen bersama (drawer dan tab memakai komponen yang SAMA)
   const bagian = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
-  for (const k of ['data-testid="aktual-sumber-tombol"', 'data-testid="sec-pemakaian-sementara"', "PemakaianSementaraDaftar", 'kunci="gudang"', 'kunci="belum"', 'kunci="lama"']) assert.ok(bagian.includes(k), k);
+  for (const k of ['data-testid="aktual-sumber-tombol"', 'data-testid="sec-pemakaian-sementara"', "PemakaianSementaraDaftar", '["gudang", Package', '["belum", HelpCircle', '["lama", Recycle', 'data-testid={`sumber-${kunci}`}']) assert.ok(bagian.includes(k), k);
 });
 
-test("PemakaianAktualBagian: TIGA sumber selalu terlihat (kartu di luar panel formulir, tanpa menggulir daftar); 'belum ada' langsung membuka formulir pemakaian sementara + usulan; komponen lama; kartu dimatikan saat edit rencana atau tanpa izin", () => {
+test("PemakaianAktualBagian: TIGA sumber = pilihan segmen di dialog form (Bahan Gudang · Bahan belum tercatat · Komponen pelanggan); 'belum ada' langsung membuka formulir pemakaian sementara + usulan; komponen lama; pilihan dimatikan saat edit rencana atau tanpa izin", () => {
   const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const m = src("features", "production", "bahan", "bahanModel.js");
   for (const k of ["Bahan dari Gudang", "Bahan belum ada di katalog", "Komponen lama dari kasur ini", "Perlu rekonsiliasi Gudang", "Mengurangi stok saat dikonfirmasi", "Tidak memengaruhi stok"]) assert.ok(m.includes(k), k);
-  // kartu dirender tanpa syarat mode (hanya izin+aktif), formulir di bawahnya bergantung mode
-  const iKartu = b.indexOf('data-testid="aktual-sumber-tombol"'); const iPanel = b.indexOf('data-testid="panel-catat-aktual"');
-  assert.ok(iKartu > 0 && iPanel > iKartu, "kartu sebelum panel formulir"); assert.match(b, /\{pilihanTampil && \(\s*<div role="radiogroup"/, "pilihan sumber tampil selama dibuka lewat '+ Tambah pemakaian' atau ada mode (bukan hanya saat mode kosong)");
+  // dialog form: pilihan sumber di dalamnya, formulir sesuai mode di bawahnya; dialog hanya terbuka lewat '+ Tambah pemakaian' / tindakan berikutnya dan hanya bagi yang berizin (membuka TIDAK menulis)
+  const iPanel = b.indexOf('data-testid="panel-catat-aktual"'); const iSeg = b.indexOf('data-testid="aktual-sumber-tombol"');
+  assert.ok(iPanel > 0 && iSeg > iPanel, "pilihan sumber ada di dalam dialog form");
+  assert.ok(b.includes("const formTampil = bolehTambah && (tambahBuka || !!mode)"), "dialog hanya terbuka sengaja dan berizin");
   assert.match(b, /mode === "belum" && <BahanBelumAda/); assert.match(b, /mode === "gudang" && <CatatBahanBaru/); assert.match(b, /mode === "lama" && <FormKomponenLama/);
-  assert.match(b, /disabled=\{rencanaEdit\}/); assert.match(b, /disabled=\{rencanaEdit \|\| !bolehBelumAda\}/); assert.match(b, /bolehBelumAda = bolehTambah && \(!!izin\.catatPemakaianSementara \|\| !!izin\.usulBahan\)/);
+  assert.match(b, /disabled=\{rencanaEdit\}/); assert.ok(b.includes("disabled={mati || rencanaEdit}") && b.includes('["belum", HelpCircle, !bolehBelumAda,'), "'belum tercatat' mati tanpa izin"); assert.match(b, /bolehBelumAda = bolehTambah && \(!!izin\.catatPemakaianSementara \|\| !!izin\.usulBahan\)/);
   assert.match(b, /Akun Anda hanya bisa melihat pemakaian bahan/);
+  assert.ok(b.includes("konfirmasi-ganti-sumber") && b.includes("adaIsian"), "ganti sumber / tutup saat ada isian diberi peringatan, tidak membuang diam-diam");
   for (const k of ["sec-bahan-baru", "sec-pemakaian-sementara", "sec-komponen-lama"]) assert.ok(b.includes(k), "daftar per sumber tetap terpisah: " + k);
   assert.ok(!b.includes("addUnitMaterial") && !b.includes("api.catatPemakaianSementara") && !b.includes("api.ajukanBahanBaru"), "komponen ini hanya merakit; jalur API ada di formulir masing-masing");
 });
@@ -129,25 +131,26 @@ test("koreksi & pembatalan beralasan: kunci idempoten per niat, alasan wajib, la
   assert.ok(!d.includes("addUnitMaterial"), "koreksi bukan jalur stok");
 });
 
-test("drawer lama (OrderProduksiPanel): Pemakaian aktual DI ATAS Rencana; rencana terlipat bawaan dan dibuka oleh tindakan 'Susun rencana bahan'; pemakaian sementara tampil; pemilih bahan = pemilih bersama", () => {
-  const p = src("features", "production", "OrderProduksiPanel.jsx");
-  const yAktual = p.indexOf('<Bagian id="sec-aktual"'); const yRencana = p.indexOf('id="sec-rencana-wrap"');
-  assert.ok(yAktual > 0 && yRencana > yAktual, "aktual sebelum rencana");
-  assert.match(p, /<details className="prod-lipat" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(yRencana - 80, yRencana + 120)), "tertutup bawaan");
+test("panel Order Produksi: Pemakaian aktual DI ATAS Rencana; rencana terlipat bawaan dan dibuka oleh tindakan 'Susun rencana bahan'; pemakaian sementara tampil; pemilih bahan = pemilih bersama", () => {
+  const p = src("features", "production", "OrderProduksiPanel.jsx"); const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
+  assert.ok(b.indexOf("<TabelPemakaian") > 0 && b.indexOf("{slotRencana}") > b.indexOf("<TabelPemakaian"), "aktual sebelum rencana (rencana dititipkan lewat slotRencana, di bawah pemakaian)");
+  assert.match(p, /<details className="prod-lipat" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(p.indexOf('id="sec-rencana-wrap"') - 80, p.indexOf('id="sec-rencana-wrap"') + 120)), "tertutup bawaan");
   assert.match(p, /if \(el\.tagName === "DETAILS"\) el\.open = true;/);
-  for (const k of ["PemakaianAktualBagian", "tanpaJudul"]) assert.ok(p.includes(k), k);
-  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); for (const k of ["PemakaianSementaraDaftar", "CatatBahanBaru", "BahanBelumAda", "FormKomponenLama"]) assert.ok(b.includes(k), k);
+  assert.ok(p.includes('"sec-rencana-wrap": "bahan"') && p.includes('case "PLAN_MATERIAL": tombol = izin.rencanaBahan ? { label: "Susun rencana bahan", onClick: () => ke("sec-rencana-wrap") }'), "tindakan 'Susun rencana bahan' membuka rencana");
+  for (const k of ["PemakaianAktualBagian", "tanpaJudul", "slotRencana"]) assert.ok(p.includes(k), k);
+  for (const k of ["PemakaianSementaraDaftar", "CatatBahanBaru", "BahanBelumAda", "FormKomponenLama"]) assert.ok(b.includes(k), k);
 });
 
-test("drawer Order Produksi: FOKUS BAHAN — masuk untuk mencatat bahan langsung ke Pemakaian aktual (tanpa melewati Status & target); Status & target tetap terjangkau (bilah lompat + bagian terlipat); tanpa fokus urutan lama", () => {
-  const p = src("features", "production", "OrderProduksiPanel.jsx"); const w = src("pages", "bengkel", "ProductionWorkOrders.jsx");
-  // Redesain Produksi: bagian panel kini TAB (Bahan · Status & target · Riwayat · Lanjutan); fokus bahan membuka tab Bahan, selain itu tab Status & target (semua bagian tetap terjangkau lewat tab).
-  for (const k of ["fokus = null", 'fokus === "bahan" || fokusLokal', 'data-testid="panel-lompat"', 'tid: "lompat-bahan"', 'tid: "lompat-status"', 'tid: "lompat-riwayat"', 'tab === "bahan"', 'tab === "status"', 'useState(fokusBahan ? "bahan" : "status")', "fokusSudahRef", 'scrollIntoView({ behavior: "auto", block: "start" })']) assert.ok(p.includes(k), k);
-  assert.ok(p.indexOf('<Bagian id="sec-aktual"') > p.indexOf('tab === "bahan"'), "Pemakaian aktual ada di tab Bahan");
-  assert.ok(p.indexOf('<Bagian id="sec-status"') > p.indexOf('tab === "status"'), "Status & target ada di tab Status");
-  assert.match(p, /if \(el\.tagName === "DETAILS" \|\| buka\)/, "lompat membuka bagian terlipat");
-  // daftar: tombol 'Catat bahan' per baris (desktop) dan per kartu (HP) membuka panel dengan fokus bahan; klik baris biasa tanpa fokus
-  for (const k of ['data-testid="catat-bahan-baris"', 'setFokusPanel("bahan")', "const bukaBahan", "const bukaPanel", "e.stopPropagation()", "unitAktif(u)"]) assert.ok(w.includes(k), k);
-  assert.equal((w.match(/data-testid="catat-bahan-baris"/g) || []).length, 2, "satu di tabel desktop, satu di kartu HP");
-  assert.match(w, /setFokusPanel\(null\); setDetailUnit\(u\)/, "klik baris biasa = tanpa fokus");
+test("panel Order Produksi: FOKUS BAHAN — masuk untuk mencatat bahan langsung ke tab Bahan (tanpa melewati Pekerjaan); tab Pekerjaan/Riwayat tetap terjangkau; tanpa fokus = tab Pekerjaan", () => {
+  const p = src("features", "production", "OrderProduksiPanel.jsx"); const w = src("pages", "bengkel", "ProductionWorkOrders.jsx"); const mo = src("features", "production", "orderListModel.js");
+  // Redesain Order Produksi: rincian unit = ruang kerja dengan tiga TAB (Pekerjaan · Bahan · Riwayat); fokus bahan membuka tab Bahan, selain itu tab Pekerjaan.
+  for (const k of ["fokus = null", 'data-testid="panel-lompat"', 'data-testid={`lompat-${t.key === "pekerjaan" ? "status" : t.key}`}', "tabAwalPanel(fokus)", 'const ID_KE_TAB', "fokusSudahRef", 'scrollIntoView({ behavior: "auto", block: "start" })']) assert.ok(p.includes(k), k);
+  assert.ok(mo.includes('export const tabAwalPanel = (fokus) => (fokus === "bahan" ? "bahan" : "pekerjaan");'), "fokus bahan -> tab Bahan, selain itu Pekerjaan");
+  assert.ok(p.indexOf("<PemakaianAktual data={data}") > p.indexOf('tab === "bahan"'), "Pemakaian aktual ada di tab Bahan");
+  assert.ok(p.indexOf("<TabPekerjaan") > p.indexOf('tab === "pekerjaan"'), "Status & target ada di tab Pekerjaan");
+  assert.ok(p.includes('"sec-aktual": "bahan"') && p.includes('"sec-status": "pekerjaan"') && p.includes('"sec-riwayat": "riwayat"'), "tujuan lama dipetakan ke tab");
+  assert.ok(p.includes('if (el.tagName === "DETAILS") el.open = true;'), "tujuan di bagian terlipat membuka bagiannya");
+  // daftar: klik baris/kartu membuka panel (pemicu disimpan untuk mengembalikan fokus); fokus bahan hanya lewat tab="bahan"
+  for (const k of ['setFokusPanel(tab === "bahan" ? "bahan"', "const bukaPanel", "pemicuRef", "unitAktif"]) assert.ok(w.includes(k), k);
+  assert.ok(!w.includes("catat-bahan-baris"), "tidak ada tombol Catat bahan per baris");
 });

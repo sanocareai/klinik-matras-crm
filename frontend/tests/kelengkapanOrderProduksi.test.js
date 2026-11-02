@@ -77,8 +77,8 @@ test("pengawatan daftar: hitungan dari server, filter+periode+urutan dikirim ke 
   assert.ok(p.includes("setVersiHitung((v) => v + 1)"), "hitungan diperbarui setelah data dilengkapi");
   assert.ok(!/paramHitung = useMemo\(\(\) => \(\{[^}]*kelengkapan/.test(p), "hitungan TIDAK dibatasi oleh pilihan kelengkapan sendiri");
   assert.ok(p.includes("useHubRange(periodeDariUrl, periodeKeUrl)") && p.includes("paramPeriode(periode)"), "periode dari pemilih standar (URL), dikirim lewat paramPeriode");
-  assert.ok(p.includes('<KelengkapanBaris row={u} onLengkapi={bukaLengkapi}'), "label per baris + Lengkapi");
-  assert.ok(p.includes("const bukaLengkapi = (u, sasaran) => { setFokusPanel("), "Lengkapi hanya membuka drawer");
+  assert.ok(p.includes('<KelengkapanBaris row={u} onLengkapi={onLengkapi} tampilTombol={false} />') && p.includes('onLengkapi={() => onBuka(u, null, "kelengkapan")}'), "label per baris + Lengkapi");
+  assert.ok(p.includes('tab === "kelengkapan" ? "kelengkapan"'), "Lengkapi hanya membuka drawer");
   assert.ok(!/api\.(nyatakanTanpaBahan|cabutTanpaBahan)/.test(p), "daftar tidak menulis");
   assert.ok(p.includes("setKelengkapan([]); setPeriode(periodeSemuaWaktu())"), "Hapus filter ikut membersihkan kelengkapan dan periode");
 });
@@ -87,10 +87,11 @@ test("pengawatan filter: server menghitung; dasar tanggal dinyatakan; akses ke r
   const f = src("features", "production", "KelengkapanFilter.jsx");
   assert.ok(f.includes("aria-pressed={on}") && f.includes("InfoToggleButton"), "toggle tersedia + ikon info");
   assert.ok(f.includes("DASAR_PERIODE_TEKS") && f.includes('data-testid="dasar-periode"'), "dasar tanggal periode dinyatakan");
-  assert.ok(f.includes('data-testid="periode-picker"') && f.includes("<DateRangePicker value={periode} onChange={onPeriode} showCompare={false} />") && f.includes('data-testid="urutan-daftar"'), "pemilih periode standar + urutan");
-  assert.ok(f.includes("URUTAN_DAFTAR.map") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani");
+  const hal = src("pages", "bengkel", "ProductionWorkOrders.jsx");
+  assert.ok(hal.includes('data-testid="periode-picker"') && hal.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />") && hal.includes('ariaLabel="Urutan daftar"'), "pemilih periode standar + urutan (di bilah filter halaman)");
+  assert.ok(hal.includes("URUTAN_DAFTAR.map") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani");
   assert.ok(f.includes('data-testid="kel-lihat-riwayat"') && f.includes("hitung.riwayat.unik"), "akses ke unit Terkirim berkekurangan");
-  assert.ok(f.includes("max-sm:min-h-[44px]"), "target sentuh HP");
+  assert.ok(f.includes("min-h-[44px]") && src("styles", "sanss-produksi.css").includes("@media (max-width: 639px) { :root .app-shell.crm-skin.prod-skin .prod-chip { min-height: 44px; } }"), "target sentuh HP");
   assert.ok(!/api\./.test(f), "komponen filter tidak memanggil API sendiri");
 });
 
@@ -111,8 +112,8 @@ test("pengawatan drawer: Kelengkapan memakai klasifikasi server; pernyataan eksp
   assert.ok(/Bukan nilai persediaan dan bukan biaya\/jurnal Finance/.test(k) && k.includes("HPP operasional"), "HPP operasional dibedakan dari Finance");
   assert.ok(k.includes("KELENGKAPAN_BUKAN"), "opsional tidak dihitung kekurangan");
   assert.ok(k.includes('to="/warehouse/inventory"'), "arah perbaikan HPP ke Stok & Lokasi (Harga Berlaku)");
-  assert.ok(panel.includes("<KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} />") && panel.includes('fokus !== "kelengkapan"'), "terpasang di drawer + fokus kelengkapan");
-  assert.ok(panel.includes('data-testid="lompat-kelengkapan"'), "bilah lompat ke Kelengkapan");
+  assert.ok(panel.includes('<KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} ringkas terbukaAwal={fokus === "kelengkapan"} />') && panel.includes('fokus !== "kelengkapan"'), "terpasang di drawer + fokus kelengkapan");
+  assert.ok(k.includes("terbukaAwal") && k.includes('data-testid="kel-detail-toggle"'), "ringkas di panel; 'Lihat detail' membuka rincian (tanpa menulis)");
 });
 
 test("Belum dinilai: hitungan dataOrder dibaca dari server; filter menampilkan jumlahnya; drawer tidak menyebut 'Lengkap' bila data order belum dinilai", () => {
@@ -120,7 +121,7 @@ test("Belum dinilai: hitungan dataOrder dibaca dari server; filter menampilkan j
   assert.deepEqual(h.dataOrder, { lengkap: 2, kurang: 1, belumDinilai: 60 });
   assert.deepEqual(bacaHitungKelengkapan(null).dataOrder, { lengkap: 0, kurang: 0, belumDinilai: 0 });
   const f = src("features", "production", "KelengkapanFilter.jsx"); const k = src("features", "production", "KelengkapanBagian.jsx");
-  assert.ok(f.includes('data-testid="kel-belum-dinilai"') && /bukan lengkap, dan tidak dihitung sebagai kekurangan/.test(f), "jumlah belum dinilai terlihat di filter");
+  assert.ok(f.includes('data-testid="kel-belum-dinilai"') && /bukan “lengkap” dan tidak dihitung sebagai kekurangan/.test(f), "jumlah belum dinilai terlihat di filter");
   assert.ok(k.includes('kel.dataOrder?.status === "BELUM_DINILAI"') && k.includes('data-testid="data-order-belum-dinilai"'), "drawer: belum dinilai");
   assert.ok(!/Lengkap menurut aturan saat ini/.test(k), "ringkasan dari server (kel.ringkas), tidak di-hardcode 'Lengkap'");
   assert.match(KELENGKAPAN_FILTER.find((x) => x.key === "DATA_ORDER_KURANG").bantu, /Belum dinilai/);

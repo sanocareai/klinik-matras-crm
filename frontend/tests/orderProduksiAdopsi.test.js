@@ -92,22 +92,27 @@ const PANEL = strip(src("features", "production", "OrderProduksiPanel.jsx"));
 const EDITOR = strip(src("features", "production", "MaterialPlanEditor.jsx"));
 const API = src("api.js");
 
-test("daftar: kolom Status order · Status kerja · Target · PIC · Tindakan; filter status kerja di server; ekspor memakai parameter yang SAMA; kosong/galat/loading ada", () => {
-  for (const h of ["Status order", "Status kerja", "Target selesai", "PIC", "Tindakan berikutnya"]) assert.match(WO, new RegExp(`<TH>${h}</TH>`));
+test("daftar: kolom Pelanggan & unit · Posisi unit · Pekerjaan · Target & PIC (+ chevron); filter status order/kerja di server; ekspor memakai parameter yang SAMA; kosong/galat/loading ada", () => {
+  for (const h of ["Pelanggan &amp; unit", "Posisi unit", "Pekerjaan", "Target &amp; PIC"]) assert.ok(WO.includes(`<span role="columnheader">${h}</span>`), h);
   assert.match(WO, /parameterDaftar\(\{ q: qDebounced \|\| undefined, kerja: kerja \? \[kerja\] : \[\], kelengkapan, urut, /, "paramDaftar memuat q, status kerja, kelengkapan, urutan, periode — satu sumber untuk daftar DAN ekspor");
   assert.match(WO, /api\.eksporOrderProduksiXlsx\(\{ displayStatus: displayParam, \.\.\.paramDaftar,/, "ekspor = daftar yang sama");
   assert.match(WO, /\.\.\.paramDaftar, page: String\(page\)/, "daftar memakai paramDaftar yang sama");
-  assert.match(WO, /data-testid="order-export-excel"/); assert.match(WO, /data-testid="order-filter-kerja"/);
-  assert.match(WO, /TableSkeletonRows/); assert.match(WO, /Tidak ada unit yang cocok/); assert.match(WO, /Hapus filter/);
-  assert.match(WO, /data-testid="posisi-perhatian"/, "posisi yang perlu perhatian tampil terpisah dari status order");
-  assert.match(WO, /className="hidden lg:block"/); assert.match(WO, /ul className="m-0 list-none divide-y divide-line p-0 lg:hidden"/, "tabel desktop, kartu kerja di HP");
-  assert.match(WO, /Berikutnya:/, "kartu HP memuat tindakan berikutnya");
+  assert.match(WO, /data-testid="order-export-excel"/); assert.match(WO, /ariaLabel="Saring status kerja"/); assert.match(WO, /ariaLabel="Saring status order"/);
+  assert.match(WO, /prod-ol-skel/); assert.match(WO, /Tidak ada unit yang cocok/); assert.match(WO, /Hapus filter/);
+  assert.match(WO, /data-testid="posisi-unit"/, "posisi unit tampil terpisah dari status order");
+  assert.match(WO, /className="prod-ol-tabel hidden lg:block"/); assert.match(WO, /ul className="prod-ol-kartu m-0 list-none p-0 lg:hidden"/, "tabel desktop, kartu kerja di HP");
+  assert.ok(WO.includes("<dt>Pekerjaan</dt>") && WO.includes("<dt>Target &amp; PIC</dt>") && WO.includes("<dt>Posisi unit</dt>"), "kartu HP memuat fakta yang sama dengan kolom desktop");
+  assert.ok(!WO.includes("Tindakan berikutnya"), "tindakan berikutnya ada di panel unit, bukan kolom daftar");
   assert.doesNotMatch(WO, /transition-all|animate-bounce/); assert.match(WO, /motion-reduce:/);
 });
 
 test("panel: urutan ringkasan+tindakan → status&target → pemakaian aktual → rencana bahan (opsional, terlipat) → riwayat → lanjutan; tiga status berlabel; Rencana vs Aktual dibedakan tegas", () => {
-  const order = ["panel-ringkasan", "panel-lompat", 'id="sec-status"', 'id="sec-aktual"', 'id="sec-rencana-wrap"', 'id="sec-riwayat"', "panel-lanjutan"].map((k) => PANEL.indexOf(k));
-  assert.ok(order.every((x) => x > 0) && order.every((x, i) => i === 0 || x > order[i - 1]), `urutan bagian: ${order}`);
+  // Ruang kerja = ringkasan + "Berikutnya" di atas → tiga tab (Pekerjaan · Bahan · Riwayat). Tab Bahan: pemakaian aktual dulu, rencana (opsional, terlipat) di bawahnya.
+  const order = ["panel-ringkasan", "panel-lompat"].map((k) => PANEL.indexOf(k));
+  assert.ok(order.every((x) => x > 0) && order[1] > order[0], `urutan bagian: ${order}`);
+  const tabs = ['key: "pekerjaan"', 'key: "bahan"', 'key: "riwayat"'].map((k) => PANEL.indexOf(k)); assert.ok(tabs.every((x) => x > 0) && tabs[1] > tabs[0] && tabs[2] > tabs[1], "tab: Pekerjaan, Bahan, Riwayat");
+  for (const k of ['id="sec-status"', 'id="sec-rencana-wrap"', 'id="sec-riwayat"', "panel-lanjutan"]) assert.ok(PANEL.includes(k), k);
+  assert.ok(src("features", "production", "bahan", "PemakaianAktualBagian.jsx").includes('id="sec-aktual"'), "pemakaian aktual");
   for (const t of ["Status order", "Posisi unit", "Status kerja"]) assert.match(PANEL, new RegExp(t));
   assert.match(EDITOR, /Rencana · tidak mengurangi stok/);
   // dampak stok dijelaskan PER SUMBER di komponen bersama (bukan satu lencana "mengurangi stok" untuk semuanya)
