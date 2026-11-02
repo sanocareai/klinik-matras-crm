@@ -20,4 +20,7 @@ frontend/src/pages/bengkel/ProductionWorkOrders.jsx
 frontend/src/styles/sanss-produksi.css
 frontend/tests/bahanUsulanSementara.test.js
 frontend/tests/releaseSpr1Paket.test.js
+frontend/tests/shellSalesCrm.test.js
+frontend/tests/statusProduksiWorkspace.test.js
+frontend/tests/tabelPemakaianAktual.test.js
 frontend/tests/uxRealignment.test.js
