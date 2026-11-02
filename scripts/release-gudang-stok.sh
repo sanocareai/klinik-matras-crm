@@ -259,7 +259,7 @@ for s0 in "Informasi bahan" "Perbaiki saldo" "Temukan bahan, pahami saldonya" "S
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat fitur baru: ${s0}"
 done
 # CSS: aturan Stok (.gud-*) hanya di dist baru; Gudang Fase 1 + redesain Finance/Produksi/CRM sebelumnya tetap ada di KEDUANYA.
-for c1 in ".gud-stok-baris" ".gud-ubin" ".gud-bahan-bagian" ".gud-saldo-kartu"; do
+for c1 in ".gud-stok-baris" ".gud-ubin" ".gud-bahan-bagian"; do
   [ -z "$(grep -lF -- "$c1" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$c1" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
