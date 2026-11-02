@@ -57,7 +57,7 @@ test("skrip: kode spt2, bandingkan_kode dua berkas persis, tanpa pengecualian se
 test("penanda dist: teks/CSS baru ada di dist baru & TIDAK di dist aktif; lapisan sebelumnya (redesain Tagihan supplier, UX PO, Kas & Bank) harus tetap ada", () => {
   const fd = baca("scripts/templates/release-finance-tagihan-ubah/fitur-dist.txt");
   const baru = fd.split("for s0 in")[1].split("; do")[0];
-  for (const t of ["Tidak bisa diubah di sini", "Alasan wajib diisi.", "Sisa kurang dari Rp1: selisih sen"]) assert.ok(baru.includes(`"${t}"`), t);
+  for (const t of ["Tidak bisa diubah di sini", "Koreksi transaksi hanya untuk admin keuangan.", "Sisa kurang dari Rp1: selisih sen"]) assert.ok(baru.includes(`"${t}"`), t);
   assert.ok(fd.split("for c1 in")[1].split("; do")[0].includes('".fin-tg-ubah-kartu"'));
   const lama = fd.split("for s2 in")[1].split("; do")[0];
   for (const t of ["Tentang angka dan pencatatan", "Nomor faktur belum diisi", "Sudah menerima faktur supplier?", "Rincian perhitungan"]) assert.ok(lama.includes(`"${t}"`), t);

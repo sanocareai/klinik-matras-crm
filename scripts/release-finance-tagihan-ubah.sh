@@ -254,7 +254,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Teks yang HANYA ada di perbaikan Tagihan supplier (Ubah tagihan, dialog, sen) dan tidak ada di dist aktif; teks fitur live (Finance, Laporan, Order, Invoice, Verifikasi, dst) yang HARUS ada di KEDUANYA.
-for s0 in "Tidak bisa diubah di sini" "Mengubah tagihan tidak membatalkan, memindahkan, atau mengurangi pembayaran secara otomatis" "Alasan wajib diisi." "Lihat apa yang bisa diubah menurut status tagihan." "Sisa kurang dari Rp1: selisih sen"; do
+for s0 in "Tidak bisa diubah di sini" "Mengubah tagihan tidak membatalkan, memindahkan, atau mengurangi pembayaran secara otomatis" "Koreksi transaksi hanya untuk admin keuangan." "Lihat apa yang bisa diubah menurut status tagihan." "Sisa kurang dari Rp1: selisih sen"; do
   [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks fitur baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat fitur baru: ${s0}"
 done
