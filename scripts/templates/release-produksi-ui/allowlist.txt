@@ -1,9 +1,4 @@
-frontend/src/components/produksiIcons.jsx
-frontend/src/features/production/rencana/KartuUnit.jsx
-frontend/src/features/production/rencana/PilihMeja.jsx
-frontend/src/features/production/rencana/RencanaAntrean.jsx
-frontend/src/features/production/rencana/RencanaKalender.jsx
-frontend/src/pages/bengkel/ProductionMaterialUsage.jsx
-frontend/src/pages/bengkel/ProductionRencanaMinggu.jsx
-frontend/src/pages/bengkel/ProductionStatusPage.jsx
+frontend/src/features/production/workerApp/WorkerAppShell.jsx
+frontend/src/pages/bengkel/ProductionAndon.jsx
+frontend/src/styles/sanss-produksi-app.css
 frontend/src/styles/sanss-produksi.css
