@@ -58,6 +58,6 @@ test("pengawatan: tabel terpadu di atas; Edit per baris memakai formulir yang ad
   assert.match(t, /role="table"/); assert.match(t, /role="row"/); assert.match(t, /role="cell"/); assert.match(t, /role="columnheader"/); assert.match(t, /max-sm:hidden/, "kepala kolom disembunyikan di HP; baris menjadi kartu"); assert.match(t, /min-h-\[44px\]/);
   for (const id of ["edit-bahan", "edit-sementara", "edit-komponen"]) assert.ok(t.includes(`"${id}"`), id);
   for (const k of ["<EditPemakaianForm", "<BarisSementara", "<KomponenLamaDaftar"]) assert.ok(t.includes(k), `Edit memakai formulir yang ada: ${k}`);
-  assert.match(o, /id="sec-riwayat" data-testid="sec-riwayat-lipat"/); assert.doesNotMatch(o.split('id="sec-riwayat"')[0].split("<details").pop(), /\sopen[\s=>]/, "Riwayat drawer tertutup bawaan"); assert.match(o, /id="sec-rencana-wrap"/);
+  assert.match(o, /id="sec-riwayat" data-testid="sec-riwayat-lipat"/); assert.ok(o.indexOf('id="sec-riwayat"') > o.indexOf('tab === "riwayat"'), "Riwayat drawer kini tab sendiri: hanya tampil bila tab Riwayat dipilih"); assert.match(o, /id="sec-rencana-wrap"/);
   assert.doesNotMatch(o.split('id="sec-rencana-wrap"')[0].split("<details").pop(), /\sopen[\s=>]/, "Rencana bahan tertutup bawaan");
 });
