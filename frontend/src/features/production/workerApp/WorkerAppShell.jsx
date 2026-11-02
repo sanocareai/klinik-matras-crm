@@ -6,6 +6,7 @@ import { useOnline } from "@/components/StandaloneShell.jsx";
 import { NAV_TABS } from "./workerAppModel.js";
 import "./worker-app.css";
 import "@/styles/sanss-produksi-app.css";
+import { useWorkspaceFont } from "@/hooks/useWorkspaceFont.js";
 
 // Kerangka aplikasi lantai (mobile-first): header ringkas + bottom navigation (maks. 4). TANPA sidebar desktop. Halaman tetap memakai sesi & tema aplikasi.
 // P12D: kerangka yang SAMA dipakai Aplikasi Dokumentasi lewat prop `tabs` (default = tab Meja/Corner; perilaku Meja/Corner tidak berubah).
@@ -15,6 +16,7 @@ const ICONS = { Briefcase, Package, Activity, User, Layers, Camera, CloudUpload,
 // Pekerja lantai murni tidak mendapat tombol ini (tidak punya workspace). onLeave = penjaga keluar (mis. draf foto belum terkirim).
 export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, tabs = NAV_TABS, onRefresh, refreshing = false, onBack = null, exitTo = null, onLeave = null, children, hideNav = false, actionPad = false }) {
   const online = useOnline();
+  useWorkspaceFont(true); // portal (dropdown/kalender) di <body> ikut tipografi Produksi
   return (
     <div className="wa prod-app" data-testid="worker-app">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>

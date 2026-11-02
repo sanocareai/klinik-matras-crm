@@ -1,0 +1,99 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TIPOGRAFI WORKSPACE PRODUKSI — karakter website Apple (Redesain 3 Nov 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Keputusan Owner: KHUSUS Produksi, stack sistem Apple (SF Pro di perangkat Apple lewat -apple-system / BlinkMacSystemFont) dengan Inter sebagai alternatif lintas
+   perangkat; ini menggantikan aturan lama "Manrope wajib". Sales, Finance, Gudang, login, PDF, dan ekspor TIDAK berubah (tetap --font-ui = Manrope).
+   • SF Pro TIDAK disalin/dibundel. Inter Variable dibundel lokal lewat @fontsource-variable/inter (lisensi SIL OFL 1.1, ikut di node_modules/@fontsource-variable/inter/LICENSE;
+     dipasang di main.jsx; unicode-range membuat peramban hanya mengunduh subset yang dipakai).
+   • Cakupan: (1) `.app-shell.crm-skin.prod-skin` = seluruh kerangka + halaman Produksi dan semua modal/panel yang di-portal ke .app-shell;
+     (2) `:root[data-workspace="produksi"]` = dipasang Layout saat workspace Produksi aktif dan oleh halaman mandiri Produksi (Meja, Corner, Dokumentasi, QC, Andon), supaya portal yang
+     dirender di <body> (dropdown, kalender, tooltip) ikut. Pindah workspace melepas atribut itu (efek pembersih), sehingga tidak bocor ke Sales/Finance/Gudang.
+   • Token di bawah adalah SATU-SATUNYA tempat ukuran/bobot tipografi Produksi; aturan halaman memakai token, bukan !important.
+   Skala: judul halaman 30/600 · judul panel 19/600 · nama/butir 15/500 · isi, tabel, filter, tombol 14 (400 / tombol 500) · keterangan 13/400 · angka KPI 34/500.
+   Tanpa 700/800, tanpa letter-spacing negatif; angka yang dibandingkan memakai tabular-nums. */
+
+:root {
+  /* Chrome/Edge memetakan -apple-system dan BlinkMacSystemFont ke font sistem di SEMUA OS (Segoe UI di Windows), sehingga Inter tidak pernah terpakai bila stack dimulai dengan keduanya.
+     Karena itu stack dua tingkat: perangkat Apple memulai dengan font sistem Apple (SF Pro) lalu Inter; perangkat lain memulai dengan Inter. Penanda data-plat dipasang useWorkspaceFont.js sebelum render. */
+  --prod-font-ui: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+  --prod-fw-isi: 400;
+  --prod-fw-sedang: 500;
+  --prod-fw-judul: 600;
+  --prod-fs-halaman: 30px;
+  --prod-fs-panel: 19px;
+  --prod-fs-butir: 15px;
+  --prod-fs-isi: 14px;
+  --prod-fs-ket: 13px;
+  --prod-fs-kpi: 34px;
+  --prod-lh-judul: 1.25;
+  --prod-lh-isi: 1.45;
+}
+
+:root[data-plat="apple"] { --prod-font-ui: -apple-system, BlinkMacSystemFont, "Inter Variable", Inter, system-ui, "Segoe UI", sans-serif; }
+
+/* Font: token --font-ui dialihkan ke stack Produksi hanya di lingkup Produksi */
+:root[data-workspace="produksi"],
+:root .app-shell.crm-skin.prod-skin,
+.prod-app, .prod-tv {
+  --font-ui: var(--prod-font-ui);
+}
+:root .app-shell.crm-skin.prod-skin,
+.prod-app, .prod-tv {
+  font-family: var(--prod-font-ui);
+  font-optical-sizing: auto;
+  font-feature-settings: "calt" 1, "kern" 1;
+  -webkit-font-smoothing: antialiased;
+}
+/* kode/monospace Tailwind di Produksi: kode unit dan nomor tampil sebagai angka tabular sans, bukan monospace */
+:root .app-shell.crm-skin.prod-skin .font-mono,
+.prod-app .font-mono, .prod-tv .font-mono {
+  font-family: var(--prod-font-ui);
+  font-variant-numeric: tabular-nums;
+}
+/* form kontrol mewarisi font (peramban default-nya font sistem sendiri) */
+:root .app-shell.crm-skin.prod-skin :is(button, input, select, textarea),
+.prod-app :is(button, input, select, textarea), .prod-tv :is(button, input, select, textarea) { font-family: inherit; }
+
+/* ── skala (judul → keterangan) ─────────────────────────────────────────── */
+:root .app-shell.crm-skin.prod-skin .prod-halaman .page-title,
+:root .app-shell.crm-skin.prod-skin .page-container .page-title { font-size: var(--prod-fs-halaman); font-weight: var(--prod-fw-judul); line-height: 1.2; letter-spacing: 0; }
+:root .app-shell.crm-skin.prod-skin .page-subtitle { font-size: var(--prod-fs-isi); font-weight: var(--prod-fw-isi); }
+:root .app-shell.crm-skin.prod-skin :is(.prod-panel-judul, .prod-bagian-kepala h3, .prod-kartu-kepala h3, .prod-bhn-kepala h3, .prod-ruang-judul, .prod-rc-hari-kepala h2, .prod-rc-meja-kepala h3, [role="dialog"] .t-card-title) {
+  font-size: var(--prod-fs-panel); font-weight: var(--prod-fw-judul); line-height: var(--prod-lh-judul); letter-spacing: 0;
+}
+.prod-ps-judul { font-size: 22px; font-weight: var(--prod-fw-judul); line-height: var(--prod-lh-judul); letter-spacing: 0; }
+:root .app-shell.crm-skin.prod-skin :is(.prod-ol-nama, .prod-pic-nama, .prod-tahap-nama) { font-size: var(--prod-fs-butir); font-weight: var(--prod-fw-sedang); }
+:root .app-shell.crm-skin.prod-skin :is(.prod-ol-kode, .prod-ol-redup, .prod-pic-sub, .prod-metrik-label, .prod-kpi-label) { font-size: var(--prod-fs-isi); font-weight: var(--prod-fw-isi); }
+:root .app-shell.crm-skin.prod-skin :is(.prod-ol-baris-kecil, .prod-ol-ukuran, .prod-fl-bantu, .prod-kel-catatan, .prod-catatan) { font-size: var(--prod-fs-ket); font-weight: var(--prod-fw-isi); }
+/* tombol: 14px/500 */
+:root .app-shell.crm-skin.prod-skin :is(.prod-tombol, .btn-secondary, .prod-ol-tombol-kepala, .prod-ol-scope-item, .prod-ol-lainnya, .prod-ol-hapus, .prod-ol-bar-rincian, .prod-chip, .prod-pil, .prod-tab, .prod-buka),
+.prod-app :is(button, .prod-tombol) { font-size: var(--prod-fs-isi); font-weight: var(--prod-fw-sedang); letter-spacing: 0; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-bar-teks { font-size: var(--prod-fs-isi); font-weight: var(--prod-fw-sedang); }
+/* angka KPI */
+:root .app-shell.crm-skin.prod-skin .prod-kpi-angka { font-size: var(--prod-fs-kpi); font-weight: var(--prod-fw-sedang); line-height: 1.1; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+:root .app-shell.crm-skin.prod-skin :is(.prod-metrik-angka, .prod-tahap-angka, .prod-pic-hitung, .prod-ol-hasil, .prod-hitung, [data-testid="rowcount"]) { font-variant-numeric: tabular-nums; }
+:root .app-shell.crm-skin.prod-skin :is(table, [role="table"], [role="grid"]) { font-variant-numeric: tabular-nums; }
+
+/* ── ikon: satu keluarga garis rounded dengan bobot seragam ─────────────── */
+:root .app-shell.crm-skin.prod-skin svg.lucide,
+.prod-app svg.lucide, .prod-tv svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── standalone (aplikasi lantai, Andon) ────────────────────────────────── */
+.prod-app .wa-h1 { font-size: 28px; font-weight: var(--prod-fw-judul); letter-spacing: 0; }
+.prod-tv .tv-judul { font-weight: var(--prod-fw-judul); letter-spacing: 0; }
+
+/* ── kerangka (sidebar, header, tab aplikasi): bobot ≤ 600, ukuran ≥ 12px, tanpa letter-spacing negatif ───────────────── */
+:root .app-shell.crm-skin.prod-skin .sidebar-brand-name { font-weight: var(--prod-fw-judul); letter-spacing: 0; }
+:root .app-shell.crm-skin.prod-skin .sidebar-brand-sub { font-size: 12px; font-weight: var(--prod-fw-isi); }
+:root .app-shell.crm-skin.prod-skin .sidebar-user-name { font-weight: var(--prod-fw-sedang); }
+:root .app-shell.crm-skin.prod-skin .topbar-searchfield-kbd { font-weight: var(--prod-fw-sedang); font-size: 12px; }
+:root .app-shell.crm-skin.prod-skin .tab-chip-label { font-weight: var(--prod-fw-sedang); font-size: var(--prod-fs-isi); }
+:root .app-shell.crm-skin.prod-skin .workspace-switcher-ringkas :is(.workspace-switcher-label, .workspace-switcher-sub, span) { font-size: max(12px, 1em); }
+:root .app-shell.crm-skin.prod-skin .sidebar-section-label, :root .app-shell.crm-skin.prod-skin .sidebar-section-label span { font-size: var(--prod-fs-ket); letter-spacing: 0; }
+:root .app-shell.crm-skin.prod-skin [class*="tracking-tight"], :root .app-shell.crm-skin.prod-skin [class*="tracking-tighter"],
+.prod-app [class*="tracking-tight"], .prod-tv [class*="tracking-tight"], .prod-tv [class*="tracking-tighter"] { letter-spacing: 0; }
+.prod-tv :is(.font-extrabold, .font-black, .font-bold), .prod-app :is(.font-extrabold, .font-black, .font-bold) { font-weight: var(--prod-fw-judul); }
+.prod-app .wa-badge { font-size: 12px; }
+/* label kecil Tailwind (9–11px) di Produksi dinaikkan ke batas terbaca 12px */
+:root .app-shell.crm-skin.prod-skin :is([class*="text-[9px]"], [class*="text-[10px]"], [class*="text-[10.5px]"], [class*="text-[11px]"]) { font-size: 12px; }
+:root .app-shell.crm-skin.prod-skin :is(.role-badge, .sidebar-version, .block.uppercase) { font-size: 12px; }

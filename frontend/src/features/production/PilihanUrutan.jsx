@@ -5,16 +5,16 @@ import { URUTAN_DAFTAR } from "@/features/production/orderProduksiModel.js";
 
 // Urutan daftar Order Produksi: pilihan TUNGGAL tanpa baris "kosong" (FilterDropdown selalu menambah baris placeholder di atas opsi, sehingga "Terbaru dulu" muncul dua kali).
 // Setiap pilihan hanya muncul sekali; definisi urutan sama dengan server (terbaru = order masuk terbaru dulu, terlama = order masuk paling lama dulu).
-export default function PilihanUrutan({ value, onChange }) {
+export default function PilihanUrutan({ value, onChange, ringkas = false }) {
   const aktif = URUTAN_DAFTAR.find((u) => u.key === value) ?? URUTAN_DAFTAR[0];
   return (
     <Menu
       align="start"
       trigger={
-        <button type="button" className="prod-filter-pemicu prod-ol-urut-pemicu" aria-label={`Urutan daftar: ${aktif.label}`} data-testid="urutan-pemicu">
+        <button type="button" className={"prod-filter-pemicu prod-ol-urut-pemicu" + (ringkas ? " ringkas" : "")} title={`Urutan: ${aktif.label}`} aria-label={`Urutan daftar: ${aktif.label}`} data-testid="urutan-pemicu">
           <ArrowDownUp size={16} aria-hidden className="shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-left">{aktif.label}</span>
-          <ChevronDown size={16} aria-hidden className="shrink-0 opacity-60" />
+          {!ringkas && <span className="min-w-0 flex-1 truncate text-left">{aktif.label}</span>}
+          {!ringkas && <ChevronDown size={16} aria-hidden className="shrink-0 opacity-60" />}
         </button>
       }
     >

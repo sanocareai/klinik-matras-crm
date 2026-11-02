@@ -39,6 +39,7 @@ import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { IKON_NAV_SALES } from "./sanssIcons.jsx";
 import { IKON_NAV_FINANCE } from "./financeIcons.jsx";
 import { IKON_NAV_PRODUKSI } from "./produksiIcons.jsx";
+import { useWorkspaceFont } from "@/hooks/useWorkspaceFont.js";
 import { IKON_NAV_GUDANG, IKON_GRUP_GUDANG } from "./gudangIcons.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
@@ -954,6 +955,7 @@ export default function Layout({ user, onLogout }) {
   const isAdmin = isAdminUser(user);
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
   const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  useWorkspaceFont(crmShell && divisionKey === "bengkel"); // tipografi Produksi juga untuk portal di <body>; dilepas saat pindah workspace
   // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
   // Finance: sidebar hanya memuat hub, jadi pencarian memakai semua halaman hub yang boleh dilihat peran ini (sumber & penyaringan sama dengan sidebar/hub).
   const halamanCari = crmShell

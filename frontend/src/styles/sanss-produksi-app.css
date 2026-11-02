@@ -2,7 +2,7 @@
    SANSS PRODUKSI — TEMA APLIKASI LANTAI (Meja, Corner, Dokumentasi, PIC QC) + ANDON TV (redesain 2 Nov 2026)
    ═══════════════════════════════════════════════════════════════════════════
    Visual saja. Halaman mandiri (di luar sidebar) memakai akar `.wa` (WorkerAppShell) atau `.prod-tv` (Andon). Semua aturan terkunci ke `.prod-app` / `.prod-tv`.
-   Palet sama dengan workspace: #3965FA, #99B7FC, #E9EBFF, #E0FFB7, teks #1B1B39; Manrope (tanpa font-family baru); isi 400, label/nama/angka/tombol 500, judul maks. 600.
+   Palet sama dengan workspace: #3965FA, #99B7FC, #E9EBFF, #E0FFB7, teks #1B1B39; stack Apple/Inter (produksi-tipografi.css); isi 400, label/nama/angka/tombol 500, judul maks. 600.
    Mode gelap = tukar token. Area sentuh ≥ 44px; fokus keyboard jelas; tanpa font kecil untuk memaksa muat. */
 
 .prod-app, .prod-tv {
@@ -26,7 +26,7 @@
 /* ── bobot teks: tanpa 700/800 ─────────────────────────────────────────── */
 .prod-app :is(.font-bold, .font-extrabold, .font-black, .font-semibold, b, strong, th) { font-weight: 500; }
 .prod-app :is(h1, h2, h3, h4, .wa-h1) { font-weight: 600; }
-.prod-app .wa-h1 { font-size: 28px; letter-spacing: -0.02em; }
+.prod-app .wa-h1 { font-size: 28px; letter-spacing: 0; }
 .prod-app .wa-chip, .prod-app .wa-nav-btn, .prod-app .wa-nav-btn[aria-current="page"], .prod-app .wa-primary, .prod-app .wa-badge,
 .prod-app .da-seg-btn, .prod-app .da-seg-sub, .prod-app .da-select, .prod-app .da-secondary { font-weight: 500; }
 .prod-app header p:first-of-type { font-weight: 600; }
@@ -65,7 +65,7 @@
 
 /* ── Andon TV (kiosk 1920×1080): tinggi baris & ukuran besar dipertahankan; hanya bobot, palet, bentuk ───── */
 .prod-tv :is(.font-bold, .font-extrabold, .font-black, .font-semibold, b) { font-weight: 500; }
-.prod-tv .tv-judul { font-weight: 600; letter-spacing: -0.02em; }
+.prod-tv .tv-judul { font-weight: 600; letter-spacing: 0; }
 .prod-tv .tv-jam { font-weight: 500; }
 .prod-tv .tv-kpi { border-radius: 20px; box-shadow: var(--shadow-card); }
 .prod-tv .tv-kolom { border-radius: 28px; background: var(--bg-inset); }
