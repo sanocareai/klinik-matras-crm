@@ -1,6 +1,10 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, ClipboardList, Download, RefreshCw } from "lucide-react";
+import { ClipboardList, Download, ListChecks, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import SalinKode from "@/features/production/SalinKode.jsx";
+import { teksJumlah, tindakanBaris, unitBerjalan } from "@/features/production/orderListModel.js";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -19,7 +23,7 @@ import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx
 import OrderProduksiPanel from "@/features/production/OrderProduksiPanel.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
-import { KERJA_FILTER, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, kunciKelengkapan, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu } from "@/features/production/orderProduksiModel.js";
+import { KERJA_FILTER, URUTAN_DAFTAR, bacaHitungKelengkapan, nadaBadge, parameterDaftar, ringkasAdopsi, sumberKerjaText, sasaranLengkapi, toggleKelengkapan, kunciKelengkapan, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu } from "@/features/production/orderProduksiModel.js";
 import KelengkapanFilter from "@/features/production/KelengkapanFilter.jsx";
 import KelengkapanBaris from "@/features/production/KelengkapanBaris.jsx";
 
@@ -56,11 +60,12 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [localUnitId, setLocalUnitId] = useState(null);
   const [unit360Id, setUnit360Id] = useState(null);
   const openUnitId = onUnitChange ? (unitIdProp || null) : localUnitId;
+  const [lainnyaBuka, setLainnyaBuka] = useState(false); const pemicuRef = useRef(null);
   const [fokusPanel, setFokusPanel] = useState(null); // "bahan" = masuk untuk mencatat bahan: panel langsung ke Pemakaian aktual (tanpa melewati Status & target)
   const setDetailUnit = (u) => (onUnitChange ? onUnitChange(u?.id || null) : setLocalUnitId(u?.id || null));
-  const bukaPanel = (u) => { setFokusPanel(null); setDetailUnit(u); };
-  const bukaBahan = (u) => { setFokusPanel("bahan"); setDetailUnit(u); };
-  const bukaLengkapi = (u, sasaran) => { setFokusPanel(sasaran === "bahan" ? "bahan" : "kelengkapan"); setDetailUnit(u); }; // membuka drawer saja — tidak menulis apa pun
+  // Membuka panel unit tidak menulis apa pun. `el` = pemicu (baris/tombol) untuk mengembalikan fokus saat panel ditutup; `tab` = "bahan" | "pekerjaan" (selain itu tab bawaan).
+  const bukaPanel = (u, el, tab) => { pemicuRef.current = el || document.activeElement; setFokusPanel(tab === "bahan" ? "bahan" : tab === "pekerjaan" ? "pekerjaan" : null); setDetailUnit(u); };
+  const bukaLengkapi = (u, sasaran) => { pemicuRef.current = document.activeElement; setFokusPanel(sasaran === "bahan" ? "bahan" : "kelengkapan"); setDetailUnit(u); };
   const unitAktif = (u) => !["CANCELLED", "DELIVERED"].includes(u.status);
   // Akun hanya-lihat tidak boleh melihat tombol yang berbunyi "Catat bahan": labelnya "Lihat bahan" (isi panel tetap sama; server menolak tulis).
   const bisaCatat = bisaCatatBahan(bacaPengguna()); const labelBahan = bisaCatat ? "Catat bahan" : "Lihat bahan";
@@ -125,7 +130,13 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
 
   const kosong = !loading && rows && rows.length === 0;
   const adaFilter = !!(qDebounced || kerja || tab || kelengkapan.length || dari || sampai);
-  const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : "Satu daftar untuk memantau status order, posisi, dan pekerjaan setiap unit. Klik baris untuk mengelola unit.";
+  const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : "Pantau posisi, pekerjaan, dan tindakan berikutnya tiap unit.";
+  const jumlahFilterLain = (kelengkapan.length ? 1 : 0);
+  const opsiStatusOrder = [{ value: "", label: `Semua status order${rows ? ` · ${countOf("")}` : ""}` }, ...tabsShown.map((t) => ({ value: t.key, label: `${t.label}${rows ? ` · ${countOf(t.key)}` : ""}` }))];
+  const opsiKerja = KERJA_FILTER.map((k) => ({ value: k.key, label: k.label }));
+  const opsiUrut = URUTAN_DAFTAR.map((u) => ({ value: u.key, label: u.label }));
+  const hapusFilter = () => { setCari(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); };
+  const bukaBaris = (u, el) => bukaPanel(u, el);
 
   return (
     <PageContainer fluid className="prod-halaman">
@@ -135,173 +146,91 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
         actions={
           <>
             {headerExtra}
-            <Button variant="neutral" size="sm" className="min-h-[40px]" data-testid="order-export-excel" onClick={unduhExcel} disabled={ekspor.sibuk || loading || !rows?.length} title="Unduh .xlsx sesuai filter dan pencarian yang sedang aktif">
-              <Download size={14} aria-hidden /> {ekspor.sibuk ? "Menyiapkan…" : "Export Excel"}
+            <Button variant="neutral" size="sm" className="min-h-[44px]" data-testid="order-export-excel" onClick={unduhExcel} disabled={ekspor.sibuk || loading || !rows?.length} title="Unduh .xlsx sesuai filter dan pencarian yang sedang aktif">
+              <Download size={16} aria-hidden /> {ekspor.sibuk ? "Menyiapkan…" : "Export Excel"}
             </Button>
-            <Button variant="ghost" size="sm" className="min-h-[40px]" onClick={reload} disabled={loading}>
-              <RefreshCw size={14} className={loading ? "animate-spin motion-reduce:animate-none" : ""} aria-hidden /> <span className="max-sm:sr-only">Muat Ulang</span>
+            <Button variant="ghost" size="sm" className="min-h-[44px]" onClick={reload} disabled={loading}>
+              <RefreshCw size={16} className={loading ? "animate-spin motion-reduce:animate-none" : ""} aria-hidden /> <span className="max-sm:sr-only">Muat ulang</span>
             </Button>
           </>
         }
       />
 
       <PageBody className="prod-stack">
-        {ekspor.ok && <p role="status" data-testid="order-export-ok" className="m-0 rounded-btn bg-greenbg px-3 py-2 text-[12.5px] text-green">{ekspor.ok}</p>}
-        {ekspor.galat && <p role="alert" data-testid="order-export-galat" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{ekspor.galat}</p>}
+        {ekspor.ok && <p role="status" data-testid="order-export-ok" className="prod-umpan ok m-0">{ekspor.ok}</p>}
+        {ekspor.galat && <p role="alert" data-testid="order-export-galat" className="prod-umpan galat m-0">{ekspor.galat}</p>}
 
-        <section className="prod-toolbar" aria-label="Penyaring daftar order produksi">
-        <div role="tablist" aria-label="Saring status order" className="prod-pils" data-testid="order-filter">
-          {onScopeChange && ORDER_SCOPES.map((sc) => {
-            const n = rows ? scopeCount(sc.key) : null;
-            return (
-              <button key={sc.key} type="button" role="tab" aria-selected={scope === sc.key} data-testid={`order-scope-${sc.key}`} onClick={() => onScopeChange(sc.key)}
-                className={cn("prod-pil", scope === sc.key && "aktif")}>
-                {sc.label}{n != null && <span className="ml-1 text-[12px] opacity-80">{n}</span>}
-              </button>
-            );
-          })}
-          {onScopeChange && tabsShown.length > 0 && <span className="prod-pil-sekat" aria-hidden />}
-          {tabsShown.length > 0 && (
-            <button role="tab" aria-selected={tab === ""} data-testid="order-status-all" onClick={() => setTab("")}
-              className={cn("prod-pil sekunder", tab === "" && "aktif")}>
-              Semua status order{rows && <span className="ml-1 text-[12px] opacity-70">{countOf("")}</span>}
-            </button>
-          )}
-          {tabsShown.map((t) => (
-            <button key={t.key} role="tab" aria-selected={tab === t.key} data-testid={`order-status-${t.key}`} onClick={() => setTab(t.key)}
-              className={cn("prod-pil sekunder", tab === t.key && "aktif")}>
-              {t.label}{rows && <span className="ml-1 text-[12px] opacity-70">{countOf(t.key)}</span>}
-            </button>
-          ))}
-        </div>
-
-        <div className="prod-cari-baris">
-          <input
-            type="search" value={cari} onChange={(e) => setCari(e.target.value)}
-            placeholder="Cari kode unit, no. order, atau nama pelanggan…" aria-label="Cari unit"
-            className="prod-cari"
-          />
-          <label className="prod-pilih-label">
-            <span className="shrink-0">Status kerja</span>
-            <select value={kerja} onChange={(e) => setKerja(e.target.value)} data-testid="order-filter-kerja" aria-label="Saring status kerja"
-              className="prod-pilih">
-              <option value="">Semua</option>
-              {KERJA_FILTER.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
-            </select>
-          </label>
-          {rows && (
-            <span className="prod-jumlah" data-testid="order-rowcount"
-              title="Angka pada tab adalah TOTAL unit per status order (tidak mengikuti pencarian dan status kerja). Daftar dimuat bertahap dari server — tekan 'Muat lagi' untuk halaman berikutnya.">
-              {rows.length} dari {meta.total} unit{meta.hasMore ? " — daftar dimuat bertahap" : ""}
-            </span>
-          )}
-        </div>
-
-        <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])}
-          periode={periode} onPeriode={setPeriode} urut={urut} onUrut={setUrut} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
-        </section>
-
-        {error && (
-          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-btn bg-redbg px-3 py-2.5 text-[13px] text-red">
-            <span>{error}</span><Button variant="secondary" size="sm" className="min-h-[40px]" onClick={reload}>Coba lagi</Button>
-          </div>
-        )}
-
-        <Card className="overflow-hidden">
-          {kosong ? (
-            <EmptyState icon={ClipboardList} title="Tidak ada unit yang cocok"
-              description={adaFilter ? "Tidak ada unit dengan filter ini. Ubah kata kunci, tab status order, atau status kerja." : "Belum ada unit di lingkup ini."}
-              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={() => { setCari(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); }}>Hapus filter</Button> : null} />
-          ) : (
-            <>
-              <TableWrap className="hidden lg:block">
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH sticky>Unit</TH><TH>Pelanggan &amp; layanan</TH><TH>Status order</TH><TH>Status kerja</TH><TH>Target selesai</TH><TH>PIC</TH><TH>Tindakan berikutnya</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {loading && !rows && <TableSkeletonRows rows={8} cols={7} />}
-                    {rows?.map((u) => {
-                      const st = statusOf(u); const pr = priorityOf(u); const a = ringkasAdopsi(u);
-                      const perluPosisi = a.ada && a.posisi?.tone === "orange";
-                      return (
-                        <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key} onClick={() => bukaPanel(u)}>
-                          <TD sticky className="whitespace-nowrap">
-                            <span className="font-semibold text-ink">{u.unitCode}</span>{pr.key !== "NORMAL" && <Badge variant={pr.tone} className="ml-1.5 align-middle" data-testid="priority-badge">{pr.label}</Badge>}
-                            <span className="block text-[12px] text-ink3">{u.order?.orderNumber || "—"}</span>
-                          </TD>
-                          <TD>
-                            <span className="block break-words text-ink">{u.order?.customer?.name || "—"}</span>
-                            <span className="block text-[12px] text-ink3" data-testid="sales-services">{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}</span>
-                            <PkrRujukan pkr={u.penjualanKaryawan} className="mt-0.5" />
-                          </TD>
-                          <TD>
-                            <Badge variant={a.ada ? statusTone(u, a) : st.tone} data-testid="status-badge">{a.ada ? a.statusOrder?.label : st.label}</Badge>
-                            {perluPosisi && <span className="mt-1 block text-[12px] font-medium text-orange" data-testid="posisi-perhatian">{a.posisi.label}</span>}
-                          </TD>
-                          <TD>
-                            {a.ada ? <><Badge variant={nadaBadge(a.kerja.tone)} data-testid="kerja-badge">{a.kerja.label}</Badge>{sumberKerjaText(a.kerja) && <span className="mt-1 block max-w-[220px] text-[12px] text-ink3" data-testid="kerja-sumber">{sumberKerjaText(a.kerja)}</span>}</> : <span className="text-ink3">—</span>}
-                            {u.productionStatus === "BLOCKED" && <Badge variant="red" className="mt-1">{DELAY_TITLE}</Badge>}
-                          </TD>
-                          <TD className="whitespace-nowrap text-ink2" data-testid="target-selesai">{a.target ? formatTanggal(a.target.at) : <span className="text-ink3">Belum ada</span>}</TD>
-                          <TD className="text-ink2">{a.pic?.nama || <span className="text-ink3">Belum ditugaskan</span>}{a.meja && <span className="block text-[12px] text-ink3">{a.meja}</span>}</TD>
-                          <TD data-testid="tindakan-berikutnya">
-                            <span className="flex items-center gap-1 font-medium text-ink">{a.tindakan?.label || "—"}<ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden /></span>
-                            {a.tindakan?.aktor && a.tindakan.aktor !== "—" && <span className="block text-[12px] text-ink3">{a.tindakan.aktor}</span>}
-                            <KelengkapanBaris row={u} onLengkapi={bukaLengkapi} />
-                            {unitAktif(u) && sasaranLengkapi(kunciKelengkapan(u)) !== "bahan" && <Button variant="secondary" size="sm" className="mt-1.5 min-h-[36px]" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={(e) => { e.stopPropagation(); bukaBahan(u); }}>{labelBahan}</Button>}
-                          </TD>
-                        </TR>
-                      );
-                    })}
-                  </TBody>
-                </Table>
-              </TableWrap>
-
-              <ul className="m-0 list-none divide-y divide-line p-0 lg:hidden">
-                {loading && !rows && [0, 1, 2, 3].map((i) => <li key={i} className="px-4 py-4"><div className="h-4 w-1/3 animate-pulse rounded bg-inset motion-reduce:animate-none" /><div className="mt-2 h-4 w-2/3 animate-pulse rounded bg-inset motion-reduce:animate-none" /></li>)}
-                {rows?.map((u) => {
-                  const st = statusOf(u); const pr = priorityOf(u); const a = ringkasAdopsi(u);
+        <section className="prod-ol" aria-label="Daftar order produksi">
+          {/* Baris 1: antrean (Aktif / Semua / Riwayat) + pencarian */}
+          <div className="prod-ol-baris1">
+            {onScopeChange && (
+              <div role="tablist" aria-label="Antrean order produksi" className="prod-ol-scope" data-testid="order-filter">
+                {ORDER_SCOPES.map((sc) => {
+                  const n = rows ? scopeCount(sc.key) : null;
                   return (
-                    <li key={u.id}>
-                      <button
-                        type="button" data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key}
-                        onClick={() => bukaPanel(u)}
-                        className="w-full px-4 py-3.5 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset motion-reduce:transition-none"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-[14px] font-semibold text-ink">{u.unitCode}</span>
-                          {pr.key !== "NORMAL" && <Badge variant={pr.tone} className="shrink-0">{pr.label}</Badge>}
-                          <Badge variant={a.ada ? statusTone(u, a) : st.tone} className="ml-auto shrink-0">{a.ada ? a.statusOrder?.label : st.label}</Badge>
-                        </div>
-                        <div className="mt-0.5 truncate text-[14px] text-ink">{u.order?.customer?.name || "—"}</div>
-                        <PkrRujukan pkr={u.penjualanKaryawan} className="mt-0.5" />
-                        <div className="mt-0.5 break-words text-[12.5px] text-ink3">
-                          {u.order?.orderNumber || "—"} · {salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}
-                          {(u.merk || u.ukuran) && ` · ${[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" ")}`}
-                        </div>
-                        {a.ada && (
-                          <dl className="m-0 mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[12.5px]">
-                            <div><dt className="text-ink3">Status kerja</dt><dd className="m-0 font-medium text-ink">{a.kerja.label}</dd></div>
-                            <div><dt className="text-ink3">Target selesai</dt><dd className="m-0 font-medium text-ink">{a.target ? formatTanggal(a.target.at) : "Belum ada"}</dd></div>
-                            <div><dt className="text-ink3">PIC</dt><dd className="m-0 font-medium text-ink">{a.pic?.nama || "Belum ditugaskan"}</dd></div>
-                            {a.posisi?.tone === "orange" && <div><dt className="text-ink3">Posisi</dt><dd className="m-0 font-medium text-orange">{a.posisi.label}</dd></div>}
-                          </dl>
-                        )}
-                        <div className="mt-2 flex items-center gap-1 rounded-btn bg-inset px-3 py-2 text-[13px] font-medium text-ink" data-testid="tindakan-berikutnya">
-                          <span className="text-ink3">Berikutnya:</span> <span className="min-w-0 flex-1 truncate">{a.tindakan?.label || "—"}</span><ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden />
-                        </div>
-                      </button>
-                      <div className="px-4"><KelengkapanBaris row={u} onLengkapi={bukaLengkapi} /></div>
-                      {unitAktif(u) && sasaranLengkapi(kunciKelengkapan(u)) !== "bahan" && <div className="px-4 pb-3"><Button variant="secondary" size="sm" className="min-h-[44px] w-full" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={() => bukaBahan(u)}>{labelBahan}</Button></div>}
-                    </li>
+                    <button key={sc.key} type="button" role="tab" aria-selected={scope === sc.key} data-testid={`order-scope-${sc.key}`} onClick={() => onScopeChange(sc.key)} className={cn("prod-ol-scope-item", scope === sc.key && "aktif")}>
+                      {sc.label}{n != null && <span>{n}</span>}
+                    </button>
                   );
                 })}
+              </div>
+            )}
+            <label className="prod-ol-cari">
+              <span className="prod-sr">Cari kode unit, nomor order, atau nama pelanggan</span>
+              <Search size={17} className="prod-ol-cari-ikon" aria-hidden />
+              <input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari pelanggan, kode unit, atau no. order" aria-label="Cari unit" />
+            </label>
+          </div>
+
+          {/* Baris 2: filter utama + periode + urutan + Filter lainnya */}
+          <div className="prod-ol-baris2" data-testid="periode-urutan">
+            {tabsShown.length > 0 && <FilterDropdown value={tab} onChange={setTab} options={opsiStatusOrder} placeholder={opsiStatusOrder[0].label} ariaLabel="Saring status order" triggerClassName="prod-filter-pemicu" />}
+            <FilterDropdown value={kerja} onChange={setKerja} options={opsiKerja} placeholder="Semua status kerja" ariaLabel="Saring status kerja" triggerClassName="prod-filter-pemicu" icon={ListChecks} />
+            <span data-testid="periode-picker" className="prod-ol-periode"><DateRangePicker value={periode} onChange={setPeriode} showCompare={false} /></span>
+            <FilterDropdown value={urut} onChange={(v) => setUrut(v || "terbaru")} options={opsiUrut} placeholder={opsiUrut[0].label} ariaLabel="Urutan daftar" triggerClassName="prod-filter-pemicu" />
+            <button type="button" className={cn("prod-ol-lainnya", (lainnyaBuka || jumlahFilterLain > 0) && "aktif")} aria-expanded={lainnyaBuka} aria-controls="prod-ol-lainnya-isi" data-testid="filter-lainnya" onClick={() => setLainnyaBuka((v) => !v)}>
+              <SlidersHorizontal size={16} aria-hidden /> Filter lainnya{jumlahFilterLain > 0 && <span className="prod-ol-lainnya-n">{jumlahFilterLain}</span>}
+              {hitung && !lainnyaBuka && hitung.unik > 0 && <span className="prod-ol-lainnya-ringkas" data-testid="kel-unik-ringkas">{hitung.unik} unit berkekurangan</span>}
+            </button>
+            {adaFilter && <button type="button" className="prod-ol-hapus" onClick={hapusFilter} data-testid="hapus-semua-filter">Hapus filter</button>}
+          </div>
+          {lainnyaBuka && (
+            <div id="prod-ol-lainnya-isi" className="prod-ol-lainnya-isi">
+              <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
+            </div>
+          )}
+
+          {error && (
+            <div role="alert" className="prod-umpan galat flex flex-wrap items-center justify-between gap-2">
+              <span>{error}</span><Button variant="secondary" size="sm" className="min-h-[44px]" onClick={reload}>Coba lagi</Button>
+            </div>
+          )}
+
+          <div className="prod-ol-meta" data-testid="order-rowcount" title="Angka pada status order adalah TOTAL unit per status (tidak mengikuti pencarian dan status kerja). Daftar dimuat bertahap dari server.">
+            {rows ? teksJumlah({ dimuat: rows.length, total: meta.total, hasMore: meta.hasMore }) : "Memuat…"}
+          </div>
+
+          {kosong ? (
+            <EmptyState icon={ClipboardList} title="Tidak ada unit yang cocok"
+              description={adaFilter ? "Tidak ada unit dengan filter ini. Ubah kata kunci, status order, atau status kerja." : "Belum ada unit di lingkup ini."}
+              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={hapusFilter}>Hapus filter</Button> : null} />
+          ) : (
+            <>
+              <div className="prod-ol-tabel hidden lg:block" role="table" aria-label="Order produksi" aria-rowcount={rows ? rows.length + 1 : undefined}>
+                <div className="prod-ol-kepala" role="row">
+                  <span role="columnheader">Pelanggan &amp; unit</span><span role="columnheader">Posisi unit</span><span role="columnheader">Pekerjaan</span><span role="columnheader">Target &amp; PIC</span><span role="columnheader">Tindakan</span>
+                </div>
+                {loading && !rows && [0, 1, 2, 3, 4].map((i) => <div key={i} className="prod-ol-baris prod-ol-skel" role="row" aria-hidden><span /><span /><span /><span /><span /></div>)}
+                {rows?.map((u) => <BarisUnit key={u.id} u={u} bisaCatat={bisaCatat} onBuka={bukaBaris} onLengkapi={bukaLengkapi} />)}
+              </div>
+
+              <ul className="prod-ol-kartu m-0 list-none p-0 lg:hidden" aria-label="Order produksi">
+                {loading && !rows && [0, 1, 2, 3].map((i) => <li key={i} className="prod-ol-kartu-item prod-ol-skel" aria-hidden><span /><span /></li>)}
+                {rows?.map((u) => <KartuUnitMobil key={u.id} u={u} bisaCatat={bisaCatat} onBuka={bukaBaris} onLengkapi={bukaLengkapi} />)}
               </ul>
+
               {meta.hasMore && (
-                <div className="border-t border-line p-3 text-center">
+                <div className="prod-ol-lagi">
                   <Button variant="secondary" size="sm" className="min-h-[44px]" data-testid="order-load-more" disabled={loading} onClick={() => fetchPage(meta.page + 1, { append: true })}>
                     {loading ? "Memuat…" : `Muat lagi (${Math.max(0, meta.total - (rows?.length || 0))} tersisa)`}
                   </Button>
@@ -309,13 +238,110 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
               )}
             </>
           )}
-        </Card>
+        </section>
       </PageBody>
 
-      {/* Klik baris → panel fokus Order Produksi. Tahap, dokumentasi, biaya & QC tetap lengkap di Unit 360 (tombol di bagian "Lanjutan"). */}
-      <OrderProduksiPanel unitId={openUnitId} fokus={fokusPanel} onClose={() => { setFokusPanel(null); setDetailUnit(null); }} onChanged={reload} onBukaUnit360={(id) => { setDetailUnit(null); setUnit360Id(id); }} />
+      {/* Klik baris → panel samping ruang kerja unit. Tahap, dokumentasi, biaya & QC tetap lengkap di Unit 360 (tombol di tab Pekerjaan). */}
+      <OrderProduksiPanel unitId={openUnitId} fokus={fokusPanel} onClose={() => { setFokusPanel(null); setDetailUnit(null); }} onChanged={reload} onBukaUnit360={(id) => { setDetailUnit(null); setUnit360Id(id); }} onKembaliFokus={() => { const el = pemicuRef.current; if (el && document.contains(el)) el.focus({ preventScroll: true }); }} />
       <UnitOverviewDrawer unitId={unit360Id} onClose={() => setUnit360Id(null)} onChanged={reload} />
     </PageContainer>
+  );
+}
+
+// ───────────── baris desktop ─────────────
+function PosisiSel({ a }) {
+  if (!a.ada) return <span className="prod-ol-redup">—</span>;
+  const nada = nadaBadge(a.posisi?.tone);
+  return (
+    <span className="prod-ol-sel" data-testid="posisi-unit">
+      <span className={`prod-ol-titik ${nada}`} aria-hidden /><span className="prod-ol-nilai">{a.posisi?.label || "—"}</span>
+      {a.posisi?.detail && <span className="prod-ol-redup prod-ol-baris-kecil">{a.posisi.detail}</span>}
+    </span>
+  );
+}
+function PekerjaanSel({ u, a, onLengkapi }) {
+  return (
+    <span className="prod-ol-sel">
+      {a.ada ? <span className="prod-ol-nilai" data-testid="kerja-badge"><span className={`prod-ol-titik ${nadaBadge(a.kerja.tone)}`} aria-hidden />{a.kerja.label}</span> : <span className="prod-ol-redup">—</span>}
+      {a.ada && sumberKerjaText(a.kerja) && <span className="prod-ol-redup prod-ol-baris-kecil" data-testid="kerja-sumber">{sumberKerjaText(a.kerja)}</span>}
+      {u.productionStatus === "BLOCKED" && <span className="prod-ol-label merah">{DELAY_TITLE}</span>}
+      <KelengkapanBaris row={u} onLengkapi={onLengkapi} />
+    </span>
+  );
+}
+function TargetPicSel({ a }) {
+  return (
+    <span className="prod-ol-sel">
+      <span className="prod-ol-nilai" data-testid="target-selesai">{a.target ? formatTanggal(a.target.at) : <span className="prod-ol-redup">Target belum ada</span>}</span>
+      <span className="prod-ol-redup prod-ol-baris-kecil" data-testid="pic-meja">{a.pic?.nama || "PIC belum ditugaskan"}{a.meja ? ` · ${a.meja}` : ""}</span>
+    </span>
+  );
+}
+// Pintasan "Catat bahan" untuk unit berjalan yang tindakan utamanya BUKAN bahan dan kelengkapannya tidak sudah mengarah ke bahan (perilaku lama dipertahankan; hanya tampilannya tertier).
+function CatatBahanCepat({ u, t, bisaCatat, onBuka }) {
+  if (!unitBerjalan(u) || t.tombol?.tab === "bahan" || sasaranLengkapi(kunciKelengkapan(u)) === "bahan") return null;
+  return <button type="button" className="prod-ol-aksi tertier" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={(e) => { e.stopPropagation(); onBuka(u, e.currentTarget, "bahan"); }} onKeyDown={(e) => e.stopPropagation()}>{bisaCatat ? "Catat bahan" : "Lihat bahan"}</button>;
+}
+function TindakanSel({ u, a, bisaCatat, onBuka }) {
+  const t = tindakanBaris(u, u.adopsi, { bisaCatat });
+  return (
+    <span className="prod-ol-sel" data-testid="tindakan-berikutnya">
+      {t.teks && <span className="prod-ol-nilai">{t.teks}</span>}
+      {t.aktor && <span className="prod-ol-redup prod-ol-baris-kecil">{t.aktor}</span>}
+      {t.tombol && (
+        <button type="button" className={cn("prod-ol-aksi", t.tombol.utama && "utama")} data-testid="tindakan-tombol" data-tab={t.tombol.tab}
+          onClick={(e) => { e.stopPropagation(); onBuka(u, e.currentTarget, t.tombol.tab); }} onKeyDown={(e) => e.stopPropagation()}>{t.tombol.label}</button>
+      )}
+      <CatatBahanCepat u={u} t={t} bisaCatat={bisaCatat} onBuka={onBuka} />
+    </span>
+  );
+}
+function IdentitasSel({ u, st, pr, a }) {
+  return (
+    <span className="prod-ol-sel prod-ol-identitas">
+      <span className="prod-ol-nama">{u.order?.customer?.name || "—"}{pr.key !== "NORMAL" && <Badge variant={pr.tone} className="ml-2 align-middle" data-testid="priority-badge">{pr.label}</Badge>}</span>
+      <span className="prod-ol-kode"><span>Unit {u.unitCode}</span><SalinKode teks={u.unitCode} /><span className="prod-ol-redup">· {u.order?.orderNumber || "—"}</span></span>
+      <span className="prod-ol-layanan" data-testid="sales-services">{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}{(u.merk || u.ukuran) ? ` · ${[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" ")}` : ""}</span>
+      <span className="prod-ol-order" data-testid="status-order-sekunder">Status order: <b data-testid="status-badge">{a.ada ? a.statusOrder?.label : st.label}</b></span>
+      <PkrRujukan pkr={u.penjualanKaryawan} className="mt-0.5" />
+    </span>
+  );
+}
+function BarisUnit({ u, bisaCatat, onBuka, onLengkapi }) {
+  const st = statusOf(u); const pr = priorityOf(u); const a = ringkasAdopsi(u);
+  const buka = (e) => onBuka(u, e.currentTarget);
+  return (
+    <div className="prod-ol-baris" role="row" tabIndex={0} data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key} onClick={buka}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); buka(e); } }} aria-label={`Buka unit ${u.unitCode} ${u.order?.customer?.name || ""}`}>
+      <span role="cell"><IdentitasSel u={u} st={st} pr={pr} a={a} /></span>
+      <span role="cell"><PosisiSel a={a} /></span>
+      <span role="cell"><PekerjaanSel u={u} a={a} onLengkapi={onLengkapi} /></span>
+      <span role="cell"><TargetPicSel a={a} /></span>
+      <span role="cell"><TindakanSel u={u} a={a} bisaCatat={bisaCatat} onBuka={onBuka} /></span>
+    </div>
+  );
+}
+
+// ───────────── kartu HP ─────────────
+function KartuUnitMobil({ u, bisaCatat, onBuka, onLengkapi }) {
+  const st = statusOf(u); const pr = priorityOf(u); const a = ringkasAdopsi(u);
+  const t = tindakanBaris(u, u.adopsi, { bisaCatat });
+  const buka = (e) => onBuka(u, e.currentTarget);
+  return (
+    <li className="prod-ol-kartu-item" data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key} tabIndex={0} onClick={buka}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); buka(e); } }} aria-label={`Buka unit ${u.unitCode} ${u.order?.customer?.name || ""}`}>
+      <IdentitasSel u={u} st={st} pr={pr} a={a} />
+      <dl className="prod-ol-fakta">
+        <div><dt>Posisi unit</dt><dd><PosisiSel a={a} /></dd></div>
+        <div><dt>Pekerjaan</dt><dd><PekerjaanSel u={u} a={a} onLengkapi={onLengkapi} /></dd></div>
+        <div><dt>Target &amp; PIC</dt><dd><TargetPicSel a={a} /></dd></div>
+      </dl>
+      <div className="prod-ol-kartu-aksi" data-testid="tindakan-berikutnya">
+        <span className="prod-ol-redup">{t.teks ? `Berikutnya: ${t.teks}${t.aktor ? ` · ${t.aktor}` : ""}` : ""}</span>
+        {t.tombol && <button type="button" className={cn("prod-ol-aksi", t.tombol.utama && "utama")} data-testid="tindakan-tombol" onClick={(e) => { e.stopPropagation(); onBuka(u, e.currentTarget, t.tombol.tab); }}>{t.tombol.label}</button>}
+        <CatatBahanCepat u={u} t={t} bisaCatat={bisaCatat} onBuka={onBuka} />
+      </div>
+    </li>
   );
 }
 
