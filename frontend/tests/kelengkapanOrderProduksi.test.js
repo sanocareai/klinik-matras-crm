@@ -88,7 +88,7 @@ test("pengawatan filter: server menghitung; dasar tanggal dinyatakan; akses ke r
   assert.ok(f.includes("aria-pressed={on}") && f.includes("InfoToggleButton"), "toggle tersedia + ikon info");
   assert.ok(f.includes("DASAR_PERIODE_TEKS") && f.includes('data-testid="dasar-periode"'), "dasar tanggal periode dinyatakan");
   const hal = src("pages", "bengkel", "ProductionWorkOrders.jsx");
-  assert.ok(hal.includes('data-testid="periode-picker"') && hal.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />") && hal.includes("<PilihanUrutan value={urut} onChange={setUrut} />"), "pemilih periode standar + urutan (di bilah filter halaman)");
+  assert.ok(hal.includes('data-testid="periode-picker"') && hal.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />") && hal.includes("<PilihanUrutan value={urut} onChange={setUrut} ringkas={sempit} />"), "pemilih periode standar + urutan (di bilah filter halaman)");
   assert.ok(src("features", "production", "PilihanUrutan.jsx").includes('aria-label={`Urutan daftar: ${aktif.label}`}'), "urutan: pilihan tunggal berlabel");
   assert.ok(src("features", "production", "PilihanUrutan.jsx").includes("URUTAN_DAFTAR.map") && !src("features", "production", "PilihanUrutan.jsx").includes("filter-dropdown.jsx") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani (tiap opsi sekali; bukan FilterDropdown yang menambah baris placeholder ganda)");
   assert.ok(f.includes('data-testid="kel-lihat-riwayat"') && f.includes("hitung.riwayat.unik"), "akses ke unit Terkirim berkekurangan");

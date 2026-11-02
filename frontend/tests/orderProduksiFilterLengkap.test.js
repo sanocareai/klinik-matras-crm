@@ -80,7 +80,7 @@ test("halaman daftar: filter tidak diduplikasi di klien (server menyaring), Rese
   assert.ok(p.includes("<ChipFilterAktif chip={chip} onHapus={hapusChip} onReset={hapusFilter}"), "chip bisa dihapus + Reset");
   assert.ok(p.includes("jumlahHasilTeks") && p.includes('data-testid="order-rowcount"'), "jumlah hasil terpisah dari kontrol");
   assert.ok(p.includes('placeholder="Semua status order"') && p.includes('placeholder="Semua status kerja"') && !/Status order\$\{rows/.test(p), "label jelas tanpa angka bercampur");
-  assert.ok(p.includes("<PilihanUrutan value={urut} onChange={setUrut} />") && !p.includes("URUTAN_DAFTAR"), "Urutan di toolbar utama, bukan di Filter lainnya");
+  assert.ok(p.includes("<PilihanUrutan value={urut} onChange={setUrut} ringkas={sempit} />") && !p.includes("URUTAN_DAFTAR"), "Urutan di toolbar utama, bukan di Filter");
   assert.ok(p.includes('periode?.preset === PERIODE_BAWAAN && "semua"'), "periode bawaan tanpa kata 'Semua' berulang");
   assert.ok(p.includes("hp && (") && p.includes("<PanelSamping open={lainnyaBuka}") && p.includes("tombolFilterRef.current?.focus"), "HP: lembar filter + fokus kembali ke tombol");
 });
@@ -100,9 +100,9 @@ test("PilihanUrutan: pilihan tunggal tanpa baris kosong; tiap opsi satu kali (su
   assert.ok(f.includes("onSelect={() => onChange(\"\")}") && f.includes("{placeholder}"), "penyebab duplikat: FilterDropdown selalu menambah baris placeholder di atas opsi");
 });
 
-test("FilterLainnya memuat posisi, PIC, target, kelengkapan, dan hubungan filter; semua chip aria-pressed", () => {
+test("FilterLainnya memuat posisi, PIC, target, kelengkapan, dan hubungan filter (checkbox/radio/select, bukan chip)", () => {
   const f = src("features", "production", "FilterLainnya.jsx");
-  for (const s of ["POSISI_FILTER.map", "TARGET_FILTER.map", "opsiPic(hitung, pic)", "<KelengkapanFilter", "HUBUNGAN_FILTER_TEKS", "aria-pressed={on}", 'ariaLabel="Saring PIC"']) assert.ok(f.includes(s), s);
+  for (const s of ["POSISI_FILTER.map", "TARGET_FILTER.map", "opsiPic(hitung, draf.pic)", "KELENGKAPAN_FILTER.map", "HUBUNGAN_FILTER_TEKS", 'type={tipe}', 'aria-label="Saring PIC"', 'role="radiogroup"']) assert.ok(f.includes(s), s);
   assert.equal(KELENGKAPAN_FILTER.length, 4);
   assert.ok(!f.includes("api."), "tidak menulis");
 });

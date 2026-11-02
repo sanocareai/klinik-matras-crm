@@ -20,7 +20,7 @@ const ALLOW = `${TPL}/allowlist.txt`;
 const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`, `${TPL}/bandingkan-kode.txt`, `${TPL}/verifikasi-hotfix.txt`,
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const FILE_TETAP = [OUT, GENERATOR, ALLOW, ...TPL_FILES];
-const CAND_BRANCH = "feat/produksi-order-kerja-on-a7cc6af1";
+const CAND_BRANCH = "feat/produksi-tipografi-filter-on-e38b5bd1";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };

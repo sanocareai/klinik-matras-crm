@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useWorkspaceFont } from "@/hooks/useWorkspaceFont.js";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Clock, Maximize2, PackageX } from "lucide-react";
 import { api } from "@/api.js";
@@ -46,6 +47,7 @@ function Tile({ item }) {
 }
 
 export default function ProductionAndon() {
+  useWorkspaceFont(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState(null);

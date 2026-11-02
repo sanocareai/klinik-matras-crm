@@ -96,6 +96,8 @@ import "./styles/sanss-finance-biaya.css";
 import "./styles/sanss-finance-invoice.css";
 // Workspace Produksi (redesain 2 Nov 2026) — kerangka/kontrol/modal; terkunci ke .crm-skin.prod-skin.
 import "./styles/sanss-produksi.css";
+// Tipografi KHUSUS Produksi (3 Nov 2026): stack Apple/Inter + token skala; terkunci ke .prod-skin / :root[data-workspace="produksi"] / .prod-app / .prod-tv.
+import "./styles/produksi-tipografi.css";
 // Workspace Gudang (redesain 3 Nov 2026) — komponen .gud-* + kerangka terkunci ke .crm-skin.gud-skin.
 import "./styles/sanss-gudang.css";
 // Stok & Lokasi (redesain Gudang Fase 2, 3 Nov 2026).

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -111,6 +111,9 @@ export default function KelengkapanBagian({ data, aktif, onDone, ringkas = false
   const lengkap = !items.length;
   const kelasBagian = ringkas ? "prod-kel-bagian ringkas" : "scroll-mt-4 border-t border-line pt-5";
   return (
+    <>
+    {/* Mode ringkas: "Data order belum dinilai" berdiri sendiri (baris netral) — tidak digabung dengan kekurangan bahan/HPP di bawahnya dan tidak menyiratkan data lengkap */}
+    {ringkas && belumDinilai && items.length > 0 && <p className="prod-kel-belum" data-testid="data-order-belum-dinilai-baris"><Info size={16} aria-hidden /> Data order belum dinilai</p>}
     <section id="sec-kelengkapan" aria-labelledby="sec-kelengkapan-judul" className={kelasBagian} data-testid="kelengkapan-bagian" data-lengkap={lengkap ? "1" : "0"}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h3 id="sec-kelengkapan-judul" className="m-0 text-[15px] font-semibold text-ink">Kelengkapan data</h3>
@@ -118,7 +121,7 @@ export default function KelengkapanBagian({ data, aktif, onDone, ringkas = false
         <InfoToggleButton info={info} label="Apa yang dihitung sebagai kekurangan" />
         {ringkas && <button type="button" className="prod-tautan prod-kel-toggle" aria-expanded={buka} aria-controls="kel-isi" data-testid="kel-detail-toggle" onClick={() => setBuka((v) => !v)}>{buka ? "Sembunyikan detail" : "Lihat detail"}</button>}
       </div>
-      {ringkas && !buka && items.length > 0 && <p className="prod-kel-ringkas-baris" data-testid="kel-ringkas-baris">{items.map((it) => it.label).join(" · ")}</p>}
+      {ringkas && !buka && items.length > 0 && <ul className="prod-kel-ringkas-baris" data-testid="kel-ringkas-baris">{items.map((it) => <li key={it.key} data-kunci={it.key} className={it.key === "HPP_BELUM_LENGKAP" ? "hpp" : undefined}>{it.label}</li>)}</ul>}
       {buka && (
       <div id="kel-isi">
       <InfoToggleIsi info={info}>
@@ -142,5 +145,6 @@ export default function KelengkapanBagian({ data, aktif, onDone, ringkas = false
       </div>
       )}
     </section>
+    </>
   );
 }
