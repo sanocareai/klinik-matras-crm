@@ -1,6 +1,7 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Download, Info, RefreshCw, Search, SlidersHorizontal, User } from "lucide-react";
+import { PanelSamping } from "@/components/ui/panel-samping.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import SalinKode from "@/features/production/SalinKode.jsx";
@@ -17,8 +18,10 @@ import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx
 import OrderProduksiPanel from "@/features/production/OrderProduksiPanel.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
-import { KELENGKAPAN_BUKAN, KERJA_FILTER, URUTAN_DAFTAR, bacaHitungKelengkapan, parameterDaftar, ringkasAdopsi, sumberKerjaText, toggleKelengkapan, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu } from "@/features/production/orderProduksiModel.js";
-import KelengkapanFilter from "@/features/production/KelengkapanFilter.jsx";
+import { KELENGKAPAN_BUKAN, KERJA_FILTER, bacaHitungKelengkapan, chipFilterAktif, jumlahFilterLainnya, parameterDaftar, ringkasAdopsi, sumberKerjaText, toggleKelengkapan, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu, PERIODE_BAWAAN } from "@/features/production/orderProduksiModel.js";
+import FilterLainnya from "@/features/production/FilterLainnya.jsx";
+import PilihanUrutan from "@/features/production/PilihanUrutan.jsx";
+import ChipFilterAktif from "@/features/production/ChipFilterAktif.jsx";
 import KelengkapanBaris from "@/features/production/KelengkapanBaris.jsx";
 
 // Order Produksi (daftar unit) — adopsi Admin. TIGA status yang dipisah jelas dan berlabel teks:
@@ -43,6 +46,9 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [periode, setPeriode] = useHubRange(periodeDariUrl, periodeKeUrl); // periode = tanggal order masuk (unit dibuat); pemilih standar app, tersimpan di URL, diterapkan saat Terapkan
   const rentang = useMemo(() => paramPeriode(periode), [periode]); const dari = rentang.dari ?? ""; const sampai = rentang.sampai ?? "";
   const [urut, setUrut] = useState("terbaru");
+  const [posisi, setPosisi] = useState([]); // posisi unit (fisik; pilihan ganda = ATAU) — disaring server
+  const [pic, setPic] = useState(""); // nama PIC, atau PIC_TANPA ("~tanpa") = belum ditugaskan
+  const [target, setTarget] = useState(""); // terlambat | hari_ini | tujuh_hari | belum_ada (hari menurut WIB)
   const [hitung, setHitung] = useState(null); const [hitungMemuat, setHitungMemuat] = useState(false); const [versiHitung, setVersiHitung] = useState(0); const hitungReq = useRef(0);
   const [cari, setCari] = useState(() => { try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; } }); // ?q= dari tautan "Lengkapi" (Laporan Produksi)
   const [qDebounced, setQDebounced] = useState("");
@@ -54,7 +60,11 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [localUnitId, setLocalUnitId] = useState(null);
   const [unit360Id, setUnit360Id] = useState(null);
   const openUnitId = onUnitChange ? (unitIdProp || null) : localUnitId;
-  const [lainnyaBuka, setLainnyaBuka] = useState(false); const [kelBuka, setKelBuka] = useState(false); const pemicuRef = useRef(null);
+  const [lainnyaBuka, setLainnyaBuka] = useState(false); const pemicuRef = useRef(null); const tombolFilterRef = useRef(null);
+  // HP (<= 640px): filter tambahan memakai lembar samping (layar penuh); lebih lebar = panel inline di bawah toolbar.
+  const [hp, setHp] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(max-width: 640px)").matches : false));
+  useEffect(() => { if (!window.matchMedia) return undefined; const m = window.matchMedia("(max-width: 640px)"); const f = () => setHp(m.matches); m.addEventListener?.("change", f); return () => m.removeEventListener?.("change", f); }, []);
+  const [muatBaru, setMuatBaru] = useState(false); // true = memuat HALAMAN PERTAMA untuk filter baru (daftar lama diredupkan; jumlah lama tidak ditampilkan)
   // Layar lebar (>= 1200px): panel unit menempel di kanan daftar (daftar tetap terlihat dan bisa dipakai); di bawah itu panel menjadi lembar samping / layar penuh.
   const [dock, setDock] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(min-width: 1200px)").matches : false));
   useEffect(() => { if (!window.matchMedia) return undefined; const m = window.matchMedia("(min-width: 1200px)"); const f = () => setDock(m.matches); m.addEventListener?.("change", f); return () => m.removeEventListener?.("change", f); }, []);
@@ -75,9 +85,10 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     if (scope === "aktif") return ACTIVE_KEYS.join(",");
     return undefined;
   }, [tab, scope]);
-  const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [], kelengkapan, urut, ...rentang }), [qDebounced, kerja, kelengkapan, urut, rentang]);
+  const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [], kelengkapan, urut, posisi, pic, target, ...rentang }), [qDebounced, kerja, kelengkapan, urut, posisi, pic, target, rentang]);
   // hitungan kelengkapan: lingkup + pencarian + status kerja + periode (TANPA pilihan kelengkapan itu sendiri), seluruh unit yang cocok di server
-  const paramHitung = useMemo(() => ({ displayStatus: displayParam, q: qDebounced || undefined, statusKerja: kerja || undefined, ...rentang }), [displayParam, qDebounced, kerja, rentang]);
+  // (filter posisi/PIC/target IKUT: jumlah kategori kekurangan dan pilihan PIC mengikuti hasil yang sama dengan daftar)
+  const paramHitung = useMemo(() => ({ displayStatus: displayParam, q: qDebounced || undefined, statusKerja: kerja || undefined, posisi: posisi.length ? posisi.join(",") : undefined, pic: pic || undefined, target: target || undefined, ...rentang }), [displayParam, qDebounced, kerja, posisi, pic, target, rentang]);
   useEffect(() => {
     const id = ++hitungReq.current; setHitungMemuat(true);
     api.getKelengkapanHitung(paramHitung).then((h) => { if (id === hitungReq.current) setHitung(bacaHitungKelengkapan(h)); }).catch(() => { if (id === hitungReq.current) setHitung(null); }).finally(() => { if (id === hitungReq.current) setHitungMemuat(false); });
@@ -87,13 +98,13 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   useEffect(() => { setEkspor({ sibuk: false, ok: "", galat: "" }); }, [displayParam, paramDaftar]); // pesan ekspor lama tidak boleh menempel setelah filter berubah
   const fetchPage = useCallback(async (page, { append }) => {
     const id = ++reqRef.current;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setMuatBaru(!append);
     try {
       const d = await api.getWorkOrders(queryServer(page));
       if (id !== reqRef.current) return;
       setRows((prev) => (append && prev ? prev.concat(d.units || []) : d.units || []));
       setMeta({ total: d.total ?? (d.units || []).length, hasMore: !!d.hasMore, page, counts: d.displayStatusCounts || {} });
-    } catch (e) { if (id === reqRef.current) setError(e.message); } finally { if (id === reqRef.current) setLoading(false); }
+    } catch (e) { if (id === reqRef.current) setError(e.message); } finally { if (id === reqRef.current) { setLoading(false); setMuatBaru(false); } }
   }, [queryServer]);
   useEffect(() => { fetchPage(1, { append: false }); }, [fetchPage]); // filter/pencarian berubah -> halaman 1
   const reload = useCallback(() => {
@@ -124,12 +135,34 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   }
 
   const kosong = !loading && rows && rows.length === 0;
-  const adaFilter = !!(qDebounced || kerja || tab || kelengkapan.length || dari || sampai);
+  const chip = useMemo(() => chipFilterAktif({ scope, tab, kerja, cari: qDebounced, dari, sampai, urut, posisi, pic, target, kelengkapan }, { statusOrderLabel: (k) => DISPLAY_STATUS_TABS.find((t) => t.key === k)?.label ?? k, fmtTgl: formatTanggal }), [scope, tab, kerja, qDebounced, dari, sampai, urut, posisi, pic, target, kelengkapan]);
+  const adaFilter = chip.length > 0;
   const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : "Pantau unit dan lanjutkan pekerjaan.";
-  const jumlahFilterLain = (kelengkapan.length ? 1 : 0) + (urut !== "terbaru" ? 1 : 0);
-  const opsiStatusOrder = tabsShown.map((t) => ({ value: t.key, label: `${t.label}${rows ? ` · ${countOf(t.key)}` : ""}` }));
+  const jumlahFilterLain = jumlahFilterLainnya({ posisi, pic, target, kelengkapan });
+  const opsiStatusOrder = tabsShown.map((t) => ({ value: t.key, label: t.label }));
   const opsiKerja = KERJA_FILTER.map((k) => ({ value: k.key, label: k.label }));
-  const hapusFilter = () => { setCari(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); setUrut("terbaru"); };
+  // Reset: semua filter daftar kembali ke bawaan (pencarian, status order/kerja, periode, posisi, PIC, target, kelengkapan, urutan). Antrean Aktif/Riwayat/Semua TIDAK berubah.
+  const hapusFilter = () => { setCari(""); setQDebounced(""); setKerja(""); setKelengkapan([]); setPeriode(periodeSemuaWaktu()); setTab(scope === "riwayat" ? "TERKIRIM" : ""); setUrut("terbaru"); setPosisi([]); setPic(""); setTarget(""); };
+  const hapusChip = (c) => {
+    switch (c.kelompok) {
+      case "cari": setCari(""); setQDebounced(""); break;
+      case "statusOrder": setTab(""); break;
+      case "kerja": setKerja(""); break;
+      case "periode": setPeriode(periodeSemuaWaktu()); break;
+      case "posisi": setPosisi((t) => t.filter((k) => k !== c.nilai)); break;
+      case "pic": setPic(""); break;
+      case "target": setTarget(""); break;
+      case "kelengkapan": setKelengkapan((t) => t.filter((k) => k !== c.nilai)); break;
+      case "urut": setUrut("terbaru"); break;
+      default: break;
+    }
+  };
+  const togglePosisi = (k) => setPosisi((t) => (t.includes(k) ? t.filter((x) => x !== k) : [...t, k]));
+  const jumlahHasilTeks = rows && !muatBaru ? `${meta.total} unit` : "Memuat…";
+  const isiFilterLainnya = (
+    <FilterLainnya posisi={posisi} onTogglePosisi={togglePosisi} pic={pic} onPic={setPic} target={target} onTarget={setTarget} hitung={hitung} memuat={hitungMemuat}
+      kelengkapan={kelengkapan} onToggleKelengkapan={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersihKelengkapan={() => setKelengkapan([])} scope={scope} onLihatRiwayat={onScopeChange ? () => { setLainnyaBuka(false); onScopeChange("riwayat"); } : null} />
+  );
   const bukaBaris = (u, el) => bukaPanel(u, el);
   const unikKurang = hitung?.unik ?? 0; const belumDinilai = hitung?.dataOrder?.belumDinilai ?? 0;
 
@@ -179,36 +212,27 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
 
           {/* Baris 2: filter utama (status order, status kerja, periode) + Filter lainnya (urutan, kelengkapan) */}
           <div className="prod-ol-baris2" data-testid="periode-urutan">
-            {tabsShown.length > 0 && <FilterDropdown value={tab} onChange={setTab} options={opsiStatusOrder} placeholder={`Status order${rows ? ` · ${countOf("")}` : ""}`} ariaLabel="Saring status order" triggerClassName="prod-filter-pemicu" />}
-            <FilterDropdown value={kerja} onChange={setKerja} options={opsiKerja} placeholder="Status kerja" ariaLabel="Saring status kerja" triggerClassName="prod-filter-pemicu" />
-            <span data-testid="periode-picker" className="prod-ol-periode" title="Periode memakai tanggal order masuk (unit dibuat), WIB"><DateRangePicker value={periode} onChange={setPeriode} showCompare={false} /></span>
-            <button type="button" className={cn("prod-ol-lainnya", (lainnyaBuka || jumlahFilterLain > 0) && "aktif")} aria-expanded={lainnyaBuka} aria-controls="prod-ol-lainnya-isi" data-testid="filter-lainnya" onClick={() => setLainnyaBuka((v) => !v)}>
-              <SlidersHorizontal size={17} aria-hidden /> Filter lainnya{jumlahFilterLain > 0 && <span className="prod-ol-lainnya-n">{jumlahFilterLain}</span>}
+            {tabsShown.length > 0 && <FilterDropdown value={tab} onChange={setTab} options={opsiStatusOrder} placeholder="Semua status order" ariaLabel="Saring status order" triggerClassName="prod-filter-pemicu" />}
+            <FilterDropdown value={kerja} onChange={setKerja} options={opsiKerja} placeholder="Semua status kerja" ariaLabel="Saring status kerja" triggerClassName="prod-filter-pemicu" />
+            <span data-testid="periode-picker" className={cn("prod-ol-periode", periode?.preset === PERIODE_BAWAAN && "semua")} title="Periode memakai tanggal order masuk (unit dibuat), WIB"><DateRangePicker value={periode} onChange={setPeriode} showCompare={false} /></span>
+            <PilihanUrutan value={urut} onChange={setUrut} />
+            <button type="button" ref={tombolFilterRef} className={cn("prod-ol-lainnya", (lainnyaBuka || jumlahFilterLain > 0) && "aktif")} aria-expanded={lainnyaBuka} aria-controls={hp ? undefined : "prod-ol-lainnya-isi"} aria-haspopup={hp ? "dialog" : undefined} data-testid="filter-lainnya" onClick={() => setLainnyaBuka((v) => !v)}>
+              <SlidersHorizontal size={17} aria-hidden /> Filter lainnya{jumlahFilterLain > 0 && <span className="prod-ol-lainnya-n" aria-label={`${jumlahFilterLain} filter aktif`}>{jumlahFilterLain}</span>}
             </button>
-            {adaFilter && <button type="button" className="prod-ol-hapus" onClick={hapusFilter} data-testid="hapus-semua-filter">Hapus filter</button>}
           </div>
-          {lainnyaBuka && (
-            <div id="prod-ol-lainnya-isi" className="prod-ol-lainnya-isi">
-              <label className="prod-ol-urut"><span>Urutan</span>
-                <FilterDropdown value={urut} onChange={(v) => setUrut(v || "terbaru")} options={URUTAN_DAFTAR.map((u) => ({ value: u.key, label: u.label }))} placeholder={URUTAN_DAFTAR[0].label} ariaLabel="Urutan daftar" triggerClassName="prod-filter-pemicu" />
-              </label>
-            </div>
-          )}
+          {lainnyaBuka && !hp && <div id="prod-ol-lainnya-isi" className="prod-ol-lainnya-isi">{isiFilterLainnya}</div>}
+
+          {/* Hasil + filter aktif (chip yang bisa dihapus) + Reset */}
+          <ChipFilterAktif chip={chip} onHapus={hapusChip} onReset={hapusFilter} jumlah={jumlahHasilTeks} />
 
           {/* Ringkasan kelengkapan: satu baris, rincian bisa dibuka (angka & definisi tetap tersedia) */}
           {(unikKurang > 0 || belumDinilai > 0 || kelengkapan.length > 0) && (
             <div className={cn("prod-ol-bar", unikKurang > 0 ? "kurang" : "netral")} data-testid="kel-bar">
               <AlertCircle size={20} aria-hidden />
               <span className="prod-ol-bar-teks" data-testid="kel-unik-ringkas">{unikKurang > 0 ? `${unikKurang} unit perlu dilengkapi` : `${belumDinilai} unit belum dinilai kelengkapannya`}</span>
-              <button type="button" className="prod-ol-bar-rincian" aria-expanded={kelBuka} aria-controls="prod-ol-kel-isi" data-testid="kel-rincian" onClick={() => setKelBuka((v) => !v)}>Rincian <ChevronDown size={16} className={kelBuka ? "rotate-180" : undefined} aria-hidden /></button>
+              <button type="button" className="prod-ol-bar-rincian" aria-expanded={lainnyaBuka} aria-controls={hp ? undefined : "prod-ol-lainnya-isi"} data-testid="kel-rincian" onClick={() => setLainnyaBuka((v) => !v)}>Rincian <ChevronDown size={16} className={lainnyaBuka ? "rotate-180" : undefined} aria-hidden /></button>
             </div>
           )}
-          {kelBuka && (
-            <div id="prod-ol-kel-isi" className="prod-ol-kel-isi">
-              <KelengkapanFilter hitung={hitung} memuat={hitungMemuat} terpilih={kelengkapan} onToggle={(k) => setKelengkapan((t) => toggleKelengkapan(t, k))} onBersih={() => setKelengkapan([])} scope={scope} onLihatRiwayat={onScopeChange ? () => onScopeChange("riwayat") : null} />
-            </div>
-          )}
-
           {error && (
             <div role="alert" className="prod-umpan galat flex flex-wrap items-center justify-between gap-2">
               <span>{error}</span><Button variant="secondary" size="sm" className="min-h-[44px]" onClick={reload}>Coba lagi</Button>
@@ -217,11 +241,11 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
 
           {kosong ? (
             <EmptyState icon={ClipboardList} title="Tidak ada unit yang cocok"
-              description={adaFilter ? "Tidak ada unit dengan filter ini. Ubah kata kunci, status order, atau status kerja." : "Belum ada unit di lingkup ini."}
-              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={hapusFilter}>Hapus filter</Button> : null} />
+              description={adaFilter ? "Tidak ada unit dengan kombinasi filter ini. Hapus salah satu chip filter di atas atau reset semuanya." : "Belum ada unit di lingkup ini."}
+              action={adaFilter ? <Button variant="secondary" size="sm" className="min-h-[44px]" onClick={hapusFilter}>Reset filter</Button> : null} />
           ) : (
             <>
-              <div className="prod-ol-tabel hidden lg:block" role="table" aria-label="Order produksi" aria-rowcount={rows ? rows.length + 1 : undefined}>
+              <div className={cn("prod-ol-tabel hidden lg:block", muatBaru && "memuat")} role="table" aria-label="Order produksi" aria-busy={muatBaru || undefined} aria-rowcount={rows ? rows.length + 1 : undefined}>
                 <div className="prod-ol-kepala" role="row">
                   <span role="columnheader">Pelanggan &amp; unit</span><span role="columnheader">Posisi unit</span><span role="columnheader">Pekerjaan</span><span role="columnheader">Target &amp; PIC</span><span role="columnheader" className="prod-sr">Buka</span>
                 </div>
@@ -229,13 +253,13 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                 {rows?.map((u) => <BarisUnit key={u.id} u={u} aktifId={openUnitId} onBuka={bukaBaris} />)}
               </div>
 
-              <ul className="prod-ol-kartu m-0 list-none p-0 lg:hidden" aria-label="Order produksi">
+              <ul className={cn("prod-ol-kartu m-0 list-none p-0 lg:hidden", muatBaru && "memuat")} aria-label="Order produksi" aria-busy={muatBaru || undefined}>
                 {loading && !rows && [0, 1, 2, 3].map((i) => <li key={i} className="prod-ol-kartu-item prod-ol-skel" aria-hidden><span /><span /></li>)}
                 {rows?.map((u) => <KartuUnitMobil key={u.id} u={u} aktifId={openUnitId} onBuka={bukaBaris} />)}
               </ul>
 
-              <div className="prod-ol-kaki" data-testid="order-rowcount" title="Angka pada status order adalah TOTAL unit per status (tidak mengikuti pencarian dan status kerja). Daftar dimuat bertahap dari server.">
-                <span>{rows ? teksJumlah({ dimuat: rows.length, total: meta.total, hasMore: meta.hasMore }) : "Memuat…"}</span>
+              <div className="prod-ol-kaki" data-testid="order-rowcount" title="Jumlah ini mengikuti semua filter yang aktif (dihitung server atas seluruh hasil). Angka pada Aktif/Riwayat/Semua adalah total unit per antrean. Daftar dimuat bertahap dari server.">
+                <span>{rows && !muatBaru ? teksJumlah({ dimuat: rows.length, total: meta.total, hasMore: meta.hasMore }) : "Memuat…"}</span>
                 {meta.hasMore && (
                   <Button variant="secondary" size="sm" className="prod-ol-lagi" data-testid="order-load-more" disabled={loading} onClick={() => fetchPage(meta.page + 1, { append: true })}>
                     {loading ? "Memuat…" : `Muat berikutnya`} <ChevronDown size={16} aria-hidden />
@@ -259,6 +283,18 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     </>
   );
 
+  const lembarFilter = hp && (
+    <PanelSamping open={lainnyaBuka} onOpenChange={setLainnyaBuka} judul="Filter lainnya" subjudul={<span data-testid="lembar-filter-ringkas">{jumlahFilterLain > 0 ? `${jumlahFilterLain} kelompok filter aktif` : "Belum ada filter tambahan"} · {jumlahHasilTeks}</span>} lebar={480} contentProps={{ "data-testid": "lembar-filter" }} onCloseAutoFocus={(e) => { e.preventDefault(); tombolFilterRef.current?.focus({ preventScroll: true }); }}>
+      <div className="prod-fl-lembar">
+        {isiFilterLainnya}
+        <div className="prod-fl-kaki">
+          <Button variant="neutral" size="sm" className="min-h-[44px]" data-testid="lembar-reset" onClick={hapusFilter} disabled={!adaFilter}>Reset filter</Button>
+          <Button variant="primary" size="sm" className="min-h-[44px]" data-testid="lembar-selesai" onClick={() => setLainnyaBuka(false)}>Lihat {rows && !muatBaru ? meta.total : ""} unit</Button>
+        </div>
+      </div>
+    </PanelSamping>
+  );
+
   const panel = (
     <OrderProduksiPanel unitId={openUnitId} fokus={fokusPanel} dock={dock} onClose={() => { setFokusPanel(null); setDetailUnit(null); }} onChanged={reload} onBukaUnit360={(id) => { setDetailUnit(null); setUnit360Id(id); }} onKembaliFokus={() => { const el = pemicuRef.current; if (el && document.contains(el)) el.focus({ preventScroll: true }); }} />
   );
@@ -270,6 +306,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
         {dock && openUnitId && <aside className="prod-ol-dock" aria-label="Rincian unit">{panel}</aside>}
       </div>
       {!dock && panel}
+      {lembarFilter}
       <UnitOverviewDrawer unitId={unit360Id} onClose={() => setUnit360Id(null)} onChanged={reload} />
     </PageContainer>
   );
@@ -293,7 +330,10 @@ function PosisiSel({ a }) {
 function PekerjaanSel({ u, a, onLengkapi }) {
   return (
     <span className="prod-ol-sel">
-      <span className="prod-ol-layanan" data-testid="sales-services">{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}{(u.merk || u.ukuran) ? ` · ${[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" ")}` : ""}</span>
+      <span className="prod-ol-layanan" data-testid="sales-services">
+        <span className="prod-ol-layanan-nama" title={salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}>{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}</span>
+        {(u.merk || u.ukuran) && <span className="prod-ol-ukuran" data-testid="unit-ukuran">{[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" ")}</span>}
+      </span>
       <span className="prod-ol-chips">
         {a.ada ? <span className={`prod-ol-chip ${warnaKerja(a.kerja)}`} data-testid="kerja-badge">{a.kerja.label}</span> : <span className="prod-ol-redup">—</span>}
         {u.productionStatus === "BLOCKED" && <span className="prod-ol-chip merah">{DELAY_TITLE}</span>}

@@ -5,6 +5,9 @@ import { BUKAN_KEKURANGAN, CATATAN_HPP, KELENGKAPAN_LABEL } from "../lib/domain/
 import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import ExcelJS from "exceljs";
 import { WIB_OFFSET_MS } from "../utils/wib.js";
+import { PIC_TANPA, POSISI_FILTER, TARGET_FILTER } from "../lib/domain/filterDaftarOrderProduksi.js";
+
+const POSISI_LABEL = Object.freeze(Object.fromEntries(POSISI_FILTER.map((p) => [p.key, p.label])));
 import { netralkanRumus } from "./finance/export/excel.js";
 import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM } from "../constants/kelompokBahan.js";
 import { stokLokasi } from "./stokLokasi.js";
@@ -177,7 +180,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
   const info = [
     ["Judul", "Order Produksi — ekspor Excel"], ["Diekspor (WIB)", `${s.tanggal} ${s.jam} WIB`], ["Diekspor oleh", pengguna || "—"], ["Zona waktu", "WIB (UTC+7)"],
     ["Filter: pencarian", f.q || "Tanpa pencarian"], ["Filter: status order", (f.displayStatus || []).join(", ") || "Semua"], ["Filter: posisi/milestone", (f.globalStatus || []).join(", ") || "Semua"],
-    ["Filter: status kerja", (f.statusKerja || []).join(", ") || "Semua"], ["Filter: kelengkapan", (f.kelengkapan || []).map((k) => KELENGKAPAN_LABEL[k] ?? k).join(" ATAU ") || "Semua"], ["Filter: periode", f.periode?.dari || f.periode?.sampai ? `${f.periode.dari || "…"} s.d. ${f.periode.sampai || "…"} (dasar: ${f.dasarPeriode || "tanggal order masuk (unit dibuat)"})` : "Semua tanggal"], ["Urutan", f.urut === "terlama" ? "Paling lama belum ditangani (tanggal order masuk terlama dulu)" : "Terbaru dulu"], ["Filter: lingkup", f.scope || "Sesuai tab yang dipilih"],
+    ["Filter: status kerja", (f.statusKerja || []).join(", ") || "Semua"], ["Filter: kelengkapan", (f.kelengkapan || []).map((k) => KELENGKAPAN_LABEL[k] ?? k).join(" ATAU ") || "Semua"], ["Filter: posisi unit", (f.posisi || []).map((k) => POSISI_LABEL[k] ?? k).join(" ATAU ") || "Semua"], ["Filter: PIC", f.pic === PIC_TANPA ? "Belum ditugaskan" : f.pic || "Semua"], ["Filter: target selesai", (TARGET_FILTER.find((t) => t.key === f.target)?.label) || "Semua"], ["Filter: periode", f.periode?.dari || f.periode?.sampai ? `${f.periode.dari || "…"} s.d. ${f.periode.sampai || "…"} (dasar: ${f.dasarPeriode || "tanggal order masuk (unit dibuat)"})` : "Semua tanggal"], ["Urutan", f.urut === "terlama" ? "Paling lama belum ditangani (tanggal order masuk terlama dulu)" : "Terbaru dulu"], ["Filter: lingkup", f.scope || "Sesuai tab yang dipilih"],
     ["Jumlah unit (Ringkasan Unit)", rows.length], ["Jumlah baris Rencana Bahan", barisRencana.length], ["Jumlah baris Pemakaian Aktual", barisAktual.length], ["Jumlah baris Komponen Lama", barisKomponen.length], ["Jumlah baris Pemakaian Sementara", barisSementara.length],
     ["Arti Status Order", "Status yang dilihat Sales/Delivery (Pengambilan · Diproses · Siap Kirim · Terkirim · Dibatalkan)."],
     ["Arti Posisi Unit", "Fakta fisik dari dokumen penjemputan, penerimaan workshop, dan pengiriman."],

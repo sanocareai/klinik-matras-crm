@@ -72,7 +72,7 @@ test("pesanGalatPernyataan: kode server → kalimat jelas; kode tak dikenal mema
 test("pengawatan daftar: hitungan dari server, filter+periode+urutan dikirim ke daftar DAN ekspor (satu paramDaftar), hitungan dimuat ulang setelah reload, buka drawer tidak menulis", () => {
   const p = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   assert.ok(p.includes("api.getKelengkapanHitung(paramHitung)"), "hitungan dari server");
-  assert.ok(/kelengkapan, urut, [.][.][.]rentang/.test(p) && p.includes("parameterDaftar({"), "paramDaftar memuat kelengkapan, urut, periode");
+  assert.ok(/kelengkapan, urut, posisi, pic, target, [.][.][.]rentang/.test(p) && p.includes("parameterDaftar({"), "paramDaftar memuat kelengkapan, urut, posisi, PIC, target, periode");
   assert.ok(p.includes("api.eksporOrderProduksiXlsx({ displayStatus: displayParam, ...paramDaftar"), "ekspor memakai paramDaftar yang sama");
   assert.ok(p.includes("setVersiHitung((v) => v + 1)"), "hitungan diperbarui setelah data dilengkapi");
   assert.ok(!/paramHitung = useMemo\(\(\) => \(\{[^}]*kelengkapan/.test(p), "hitungan TIDAK dibatasi oleh pilihan kelengkapan sendiri");
@@ -88,8 +88,9 @@ test("pengawatan filter: server menghitung; dasar tanggal dinyatakan; akses ke r
   assert.ok(f.includes("aria-pressed={on}") && f.includes("InfoToggleButton"), "toggle tersedia + ikon info");
   assert.ok(f.includes("DASAR_PERIODE_TEKS") && f.includes('data-testid="dasar-periode"'), "dasar tanggal periode dinyatakan");
   const hal = src("pages", "bengkel", "ProductionWorkOrders.jsx");
-  assert.ok(hal.includes('data-testid="periode-picker"') && hal.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />") && hal.includes('ariaLabel="Urutan daftar"'), "pemilih periode standar + urutan (di bilah filter halaman)");
-  assert.ok(hal.includes("URUTAN_DAFTAR.map") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani");
+  assert.ok(hal.includes('data-testid="periode-picker"') && hal.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />") && hal.includes("<PilihanUrutan value={urut} onChange={setUrut} />"), "pemilih periode standar + urutan (di bilah filter halaman)");
+  assert.ok(src("features", "production", "PilihanUrutan.jsx").includes('aria-label={`Urutan daftar: ${aktif.label}`}'), "urutan: pilihan tunggal berlabel");
+  assert.ok(src("features", "production", "PilihanUrutan.jsx").includes("URUTAN_DAFTAR.map") && !src("features", "production", "PilihanUrutan.jsx").includes("filter-dropdown.jsx") && /Paling lama belum ditangani/.test(src("features", "production", "orderProduksiModel.js")), "urutan paling lama belum ditangani (tiap opsi sekali; bukan FilterDropdown yang menambah baris placeholder ganda)");
   assert.ok(f.includes('data-testid="kel-lihat-riwayat"') && f.includes("hitung.riwayat.unik"), "akses ke unit Terkirim berkekurangan");
   assert.ok(f.includes("min-h-[44px]") && src("styles", "sanss-produksi.css").includes("@media (max-width: 639px) { :root .app-shell.crm-skin.prod-skin .prod-chip { min-height: 44px; } }"), "target sentuh HP");
   assert.ok(!/api\./.test(f), "komponen filter tidak memanggil API sendiri");

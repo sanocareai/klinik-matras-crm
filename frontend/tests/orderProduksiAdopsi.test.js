@@ -75,7 +75,7 @@ test("ringkasan baris daftar: payload lama tanpa adopsi = '—' jujur (tidak men
   const a = ringkasAdopsi({ adopsi: { statusOrder: { label: "Diproses" }, posisi: { key: "SUDAH_DIJEMPUT" }, kerja: { key: "DIKERJAKAN", label: "Dikerjakan", source: "MANUAL", detail: "Dicatat manual oleh Rina, 20 Okt 2026, 10.30 WIB" }, tindakan: { label: "x" }, targetSelesai: { at: "2026-10-26T00:00:00Z" }, pic: { nama: "Bayu" }, meja: "TABLE_2" } });
   assert.equal(a.ada, true); assert.equal(a.pic.nama, "Bayu");
   assert.match(sumberKerjaText(a.kerja), /Dicatat manual oleh Rina/); assert.equal(sumberKerjaText({ source: "APLIKASI" }), "Dari aplikasi Produksi");
-  assert.equal(sumberKerjaText({ source: "STATUS_ORDER", key: "SELESAI" }), "Mengikuti status order"); assert.equal(sumberKerjaText({ source: "STATUS_ORDER", key: "DIBATALKAN" }), null); assert.equal(sumberKerjaText({ source: "JADWAL" }), null);
+  assert.equal(sumberKerjaText({ source: "STATUS_ORDER", key: "SELESAI" }), "Mengikuti status order — bukan bukti tahap kerja atau QC", "Selesai dari status order diberi sumber dan bukan bukti tahap/QC"); assert.equal(sumberKerjaText({ source: "STATUS_ORDER", key: "DIJADWALKAN" }), "Mengikuti status order"); assert.equal(sumberKerjaText({ source: "STATUS_ORDER", key: "DIBATALKAN" }), null); assert.equal(sumberKerjaText({ source: "JADWAL" }), null);
   assert.equal(nadaBadge("orange"), "orange"); assert.equal(nadaBadge("ungu"), "neutral");
 });
 
@@ -98,9 +98,9 @@ test("daftar: kolom Pelanggan & unit · Posisi unit · Pekerjaan · Target & PIC
   assert.match(WO, /api\.eksporOrderProduksiXlsx\(\{ displayStatus: displayParam, \.\.\.paramDaftar,/, "ekspor = daftar yang sama");
   assert.match(WO, /\.\.\.paramDaftar, page: String\(page\)/, "daftar memakai paramDaftar yang sama");
   assert.match(WO, /data-testid="order-export-excel"/); assert.match(WO, /ariaLabel="Saring status kerja"/); assert.match(WO, /ariaLabel="Saring status order"/);
-  assert.match(WO, /prod-ol-skel/); assert.match(WO, /Tidak ada unit yang cocok/); assert.match(WO, /Hapus filter/);
+  assert.match(WO, /prod-ol-skel/); assert.match(WO, /Tidak ada unit yang cocok/); assert.match(WO, /Reset filter/);
   assert.match(WO, /data-testid="posisi-unit"/, "posisi unit tampil terpisah dari status order");
-  assert.match(WO, /className="prod-ol-tabel hidden lg:block"/); assert.match(WO, /ul className="prod-ol-kartu m-0 list-none p-0 lg:hidden"/, "tabel desktop, kartu kerja di HP");
+  assert.ok(WO.includes('className={cn("prod-ol-tabel hidden lg:block", muatBaru && "memuat")}'), "tabel desktop (diredupkan saat memuat filter baru)"); assert.ok(WO.includes('className={cn("prod-ol-kartu m-0 list-none p-0 lg:hidden", muatBaru && "memuat")}'), "kartu kerja di HP");
   assert.ok(WO.includes("<dt>Pekerjaan</dt>") && WO.includes("<dt>Target &amp; PIC</dt>") && WO.includes("<dt>Posisi unit</dt>"), "kartu HP memuat fakta yang sama dengan kolom desktop");
   assert.ok(!WO.includes("Tindakan berikutnya"), "tindakan berikutnya ada di panel unit, bukan kolom daftar");
   assert.doesNotMatch(WO, /transition-all|animate-bounce/); assert.match(WO, /motion-reduce:/);

@@ -18,7 +18,7 @@ function todayWibISO() { return new Date(Date.now() + 7 * 3600_000).toISOString(
 function currentRoles() { try { return JSON.parse(localStorage.getItem("user"))?.roles || []; } catch { return []; } }
 
 const IKON_KPI = { target: IkTarget, done: IkSelesai, active: IkProses, queue: IkJam, late: IkAwas, material: IkKotak, qc: IkDokumen };
-const WARNA_KPI = { target: "biru", done: "muda", active: "lavender", queue: "lime" };
+const WARNA_KPI = { target: "biru", done: "muda", active: "lavender", queue: "netral" }; // Menunggu mulai: netral + aksen amber (bukan hijau yang menyiratkan berhasil)
 const LABEL_KPI = { queue: "Menunggu mulai" }; // sumber: kolom "Tiba / belum mulai" (V2) atau antrean (V1) — kata-kata saja berbeda
 const IKON_TAHAP = { AKAN_MASUK: IkTruk, DALAM_PERJALANAN: IkTruk, TIBA_BELUM_MULAI: IkBaki, UJI_FONDASI: IkPeriksa, UJI_TEKSTUR: IkPeriksa, SIAP_KIRIM: IkKotak };
 const TAHAP_AWAL = 5;
@@ -166,58 +166,60 @@ export default function ProductionRingkasan() {
                 </div>
               </section>
 
-              <section className="prod-panel" data-testid="pic-card" aria-labelledby="prod-pic-judul">
-                <div className="prod-panel-kepala">
-                  <span className="prod-ikon-ubin"><IkOrang size={22} /></span>
-                  <h2 id="prod-pic-judul" className="prod-panel-judul">Pekerjaan hari ini</h2>
-                  {summary.pic.length > 0 && <span className="prod-hitung">{summary.pic.length}</span>}
-                </div>
-                <div className="prod-panel-isi">
-                  {summary.pic.length === 0 ? (
-                    <div className="prod-kosong"><div><b>Belum ada PIC dengan unit aktif</b>Pekerjaan PIC muncul di sini setelah unit dijadwalkan.</div></div>
-                  ) : (
-                    <ul className="flex flex-col gap-2">
-                      {summary.pic.map((p) => (
-                        <li key={p.name} className="prod-pic">
-                          <span className="prod-avatar" aria-hidden>{p.name.replace(/^QA-PV2\s+/, "").slice(0, 1).toUpperCase()}</span>
-                          <div className="min-w-0"><p className="prod-pic-nama">{p.name}</p><p className="prod-pic-sub">{p.stationLabel || "—"}</p></div>
-                          <p className="prod-pic-hitung"><span><b>{p.active}</b>aktif</span><span><b>{p.completedToday}</b>selesai</span></p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <Link to="/bengkel/rencana-produksi" className="prod-tombol mt-3 w-full justify-between">Buka rencana produksi <IkPanahKanan size={14} /></Link>
-                </div>
-              </section>
-            </div>
-
-            {segmenTahap.length > 0 && (
-              <section className="prod-panel" data-testid="pipeline-strip" aria-labelledby="prod-posisi-judul">
-                <div className="prod-panel-kepala">
-                  <span className="prod-ikon-ubin"><IkTruk size={22} /></span>
-                  <h2 id="prod-posisi-judul" className="prod-panel-judul">Posisi unit</h2>
-                  <span className="ml-auto text-[14px] text-[var(--text-secondary)]">Posisi saat ini · unit</span>
-                </div>
-                <div className="prod-panel-isi">
-                  <div className="prod-alur">
-                    {tahapTampil.map((s) => {
-                      const Ikon = s.off ? IkBaki : (IKON_TAHAP[s.key] || IkProses);
-                      return (
-                        <Link key={s.key} to={s.to} title={s.title} data-testid={s.off ? "offboard-segment" : undefined} className={`prod-tahap${s.count ? "" : " kosong"}${s.off ? " garis" : ""}`}>
-                          <span className="prod-ikon-ubin"><Ikon size={22} /></span>
-                          <div className="min-w-0"><p className="prod-tahap-nama">{s.label}</p><p className="prod-tahap-angka">{s.count}<small>unit</small></p></div>
-                        </Link>
-                      );
-                    })}
+              <div className="prod-kolom">
+                <section className="prod-panel" data-testid="pic-card" aria-labelledby="prod-pic-judul">
+                  <div className="prod-panel-kepala">
+                    <span className="prod-ikon-ubin"><IkOrang size={22} /></span>
+                    <h2 id="prod-pic-judul" className="prod-panel-judul">Pekerjaan hari ini</h2>
+                    {summary.pic.length > 0 && <span className="prod-hitung">{summary.pic.length}</span>}
                   </div>
-                  {segmenTahap.length > TAHAP_AWAL && (
-                    <button type="button" className="prod-tombol mt-3 w-full" aria-expanded={semuaTahap} onClick={() => setSemuaTahap((v) => !v)} data-testid="posisi-semua-tahap">
-                      {semuaTahap ? "Ringkas tahap" : "Lihat semua tahap"} <ChevronDown size={16} className={semuaTahap ? "rotate-180" : undefined} aria-hidden />
-                    </button>
-                  )}
-                </div>
-              </section>
-            )}
+                  <div className="prod-panel-isi">
+                    {summary.pic.length === 0 ? (
+                      <div className="prod-kosong"><div><b>Belum ada PIC dengan unit aktif</b>Pekerjaan PIC muncul di sini setelah unit dijadwalkan.</div></div>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
+                        {summary.pic.map((p) => (
+                          <li key={p.name} className="prod-pic">
+                            <span className="prod-avatar" aria-hidden>{p.name.replace(/^QA-PV2\s+/, "").slice(0, 1).toUpperCase()}</span>
+                            <div className="min-w-0"><p className="prod-pic-nama">{p.name}</p><p className="prod-pic-sub">{p.stationLabel || "—"}</p></div>
+                            <p className="prod-pic-hitung"><span><b>{p.active}</b>aktif</span><span><b>{p.completedToday}</b>selesai</span></p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <Link to="/bengkel/rencana-produksi" className="prod-tombol mt-3 w-full justify-between">Buka rencana produksi <IkPanahKanan size={14} /></Link>
+                  </div>
+                </section>
+              {segmenTahap.length > 0 && (
+                <section className="prod-panel" data-testid="pipeline-strip" aria-labelledby="prod-posisi-judul">
+                  <div className="prod-panel-kepala">
+                    <span className="prod-ikon-ubin"><IkTruk size={22} /></span>
+                    <h2 id="prod-posisi-judul" className="prod-panel-judul">Posisi unit</h2>
+                    <span className="ml-auto text-[14px] text-[var(--text-secondary)]">Posisi saat ini · unit</span>
+                  </div>
+                  <div className="prod-panel-isi">
+                    <div className="prod-alur">
+                      {tahapTampil.map((s) => {
+                        const Ikon = s.off ? IkBaki : (IKON_TAHAP[s.key] || IkProses);
+                        return (
+                          <Link key={s.key} to={s.to} title={s.title} data-testid={s.off ? "offboard-segment" : undefined} className={`prod-tahap${s.count ? "" : " kosong"}${s.off ? " garis" : ""}`}>
+                            <span className="prod-ikon-ubin"><Ikon size={22} /></span>
+                            <div className="min-w-0"><p className="prod-tahap-nama">{s.label}</p><p className="prod-tahap-angka">{s.count}<small>unit</small></p></div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                    {segmenTahap.length > TAHAP_AWAL && (
+                      <button type="button" className="prod-tombol mt-3 w-full" aria-expanded={semuaTahap} onClick={() => setSemuaTahap((v) => !v)} data-testid="posisi-semua-tahap">
+                        {semuaTahap ? "Ringkas tahap" : "Lihat semua tahap"} <ChevronDown size={16} className={semuaTahap ? "rotate-180" : undefined} aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              </div>
+            </div>
 
             <section className="prod-panel" data-testid="jadwal-hari-ini" aria-labelledby="prod-jadwal-judul">
               <div className="prod-panel-kepala">

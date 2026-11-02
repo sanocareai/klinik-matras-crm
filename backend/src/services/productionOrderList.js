@@ -15,8 +15,9 @@ import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./p
 import { WORK_STATUS, effectiveWorkStatus, posisiUnitOf, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { loadAppEvidence, loadLatestManual } from "./productionAdoptionService.js";
 import { kelengkapanBaris, muatFaktaKelengkapan } from "./productionKelengkapan.js";
-import { hitungDataOrder, hitungKelengkapan, lolosKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
+import { hitungDataOrder, hitungKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
 import { endOfDayExclusiveWIB, startOfDayWIB } from "../utils/wib.js";
+import { adaFilterBaris, fasetPic, lolosFilterBaris, parseFilterBaris, saringDanHalaman } from "../lib/domain/filterDaftarOrderProduksi.js";
 
 export const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus
 export const BATAS_EKSPOR = 5000;
@@ -168,7 +169,8 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
   const kerjaFilter = csv(query.statusKerja).filter((k) => k in WORK_STATUS);
   const kelFilter = parseKelengkapan(query.kelengkapan); // penyaring kelengkapan (gabungan/OR) — dihitung di SERVER atas SELURUH unit yang cocok, bukan halaman yang dimuat
   const urutTerlama = String(query.urut || "").toLowerCase() === "terlama"; // "paling lama belum ditangani" = tanggal order masuk (unit dibuat) terlama dulu
-  const penuh = semua || kerjaFilter.length > 0 || kelFilter.length > 0;
+  const filterBaris = parseFilterBaris(query); // posisi unit · PIC · target selesai: disaring atas baris yang sudah diperkaya (definisi sama dengan hitungan dan ekspor)
+  const penuh = semua || kerjaFilter.length > 0 || kelFilter.length > 0 || adaFilterBaris(filterBaris);
   const orderBy = [{ createdAt: urutTerlama ? "asc" : "desc" }, { id: "asc" }];
   let units; let total;
   if (penuh) {
@@ -179,10 +181,8 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
     total = await prisma.unit.count({ where });
   }
   let rows = await perkayaBarisUnit(prisma, units);
-  if (kerjaFilter.length) rows = rows.filter((r) => kerjaFilter.includes(r.adopsi.kerja.key));
-  if (kelFilter.length) rows = rows.filter((r) => lolosKelengkapan(r.adopsi.kelengkapan?.keys ?? [], kelFilter));
-  if (penuh) total = rows.length;
-  const hasil = semua ? rows : penuh ? rows.slice((page - 1) * pageSize, page * pageSize) : rows;
+  let hasil = rows;
+  if (penuh) { const s = saringDanHalaman(rows, { kerjaFilter, kelFilter, filterBaris, page, pageSize, semua }); hasil = s.rows; total = s.total; }
   const statusCounts = await prisma.unit.groupBy({ by: ["status"], _count: { _all: true } });
   return {
     units: hasil,
@@ -191,7 +191,7 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
     globalStatusCounts: await countByGlobalStatus(prisma, {}),
     globalStatusFlow: GLOBAL_STATUS_FLOW,
     page, pageSize, total, hasMore: !semua && (page - 1) * pageSize + hasil.length < total,
-    filterDipakai: { q: query.q?.trim() || null, displayStatus: csv(query.displayStatus), globalStatus: csv(query.globalStatus), statusKerja: kerjaFilter, kelengkapan: kelFilter, periode: periodeDariQuery(query), urut: urutTerlama ? "terlama" : "terbaru", dasarPeriode: DASAR_PERIODE, scope: query.scope || null },
+    filterDipakai: { q: query.q?.trim() || null, displayStatus: csv(query.displayStatus), globalStatus: csv(query.globalStatus), statusKerja: kerjaFilter, kelengkapan: kelFilter, posisi: filterBaris.posisi, pic: filterBaris.pic, target: filterBaris.target, periode: periodeDariQuery(query), urut: urutTerlama ? "terlama" : "terbaru", dasarPeriode: DASAR_PERIODE, scope: query.scope || null },
   };
 }
 
@@ -205,6 +205,7 @@ export const DASAR_PERIODE = "Tanggal order masuk (unit dibuat)";
  */
 export async function hitungKelengkapanDaftar(prisma, query = {}) {
   const kerjaFilter = csv(query.statusKerja).filter((k) => k in WORK_STATUS);
+  const filterBaris = parseFilterBaris(query);
   const displayFilter = csv(query.displayStatus).filter((k) => k in DISPLAY_STATUS_UNIT_FILTER);
   const statusLingkup = displayFilter.length ? new Set(displayFilter.flatMap((k) => DISPLAY_STATUS_UNIT_FILTER[k])) : null;
   // dasar: semua status order (lingkup dibagi di memori) dengan q + periode yang sama; status DIBATALKAN tetap masuk where tetapi tidak pernah punya kekurangan
@@ -213,10 +214,15 @@ export async function hitungKelengkapanDaftar(prisma, query = {}) {
   if (units.length > BATAS_EKSPOR) { const e = new Error(`Terlalu banyak unit (${BATAS_EKSPOR}+). Persempit filter atau pencarian.`); e.statusCode = 413; e.code = "TERLALU_BANYAK"; throw e; }
   let rows = await perkayaBarisUnit(prisma, units);
   if (kerjaFilter.length) rows = rows.filter((r) => kerjaFilter.includes(r.adopsi.kerja.key));
+  const sekarang = new Date();
+  // pilihan PIC dihitung TANPA filter PIC itu sendiri (memilih satu PIC tidak menyembunyikan PIC lain); filter posisi dan target tetap berlaku
+  const tanpaPicFilter = { ...filterBaris, pic: null };
+  const dasarFaset = (statusLingkup ? rows.filter((r) => statusLingkup.has(r.status)) : rows).filter((r) => lolosFilterBaris(r, tanpaPicFilter, sekarang));
+  if (adaFilterBaris(filterBaris)) rows = rows.filter((r) => lolosFilterBaris(r, filterBaris, sekarang));
   const lingkup = statusLingkup ? rows.filter((r) => statusLingkup.has(r.status)) : rows;
   const { counts, unik } = hitungKelengkapan(lingkup.map((r) => r.adopsi.kelengkapan?.keys ?? []));
   const terkirim = rows.filter((r) => r.status === "DELIVERED");
   const riwayat = hitungKelengkapan(terkirim.map((r) => r.adopsi.kelengkapan?.keys ?? []));
   const dataOrder = hitungDataOrder(lingkup.map((r) => r.adopsi.kelengkapan?.dataOrder?.status));
-  return { counts, unik, totalUnit: lingkup.length, dataOrder, riwayat: { unik: riwayat.unik, counts: riwayat.counts, totalUnit: terkirim.length }, dasarPeriode: DASAR_PERIODE, periode: periodeDariQuery(query) };
+  return { counts, unik, totalUnit: lingkup.length, dataOrder, ...fasetPic(dasarFaset), riwayat: { unik: riwayat.unik, counts: riwayat.counts, totalUnit: terkirim.length }, dasarPeriode: DASAR_PERIODE, periode: periodeDariQuery(query) };
 }

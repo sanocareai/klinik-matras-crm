@@ -64,7 +64,7 @@ export function sumberKerjaText(kerja) {
   if (kerja.source === "APLIKASI") return "Dari aplikasi Produksi";
   if (kerja.source === "PEMAKAIAN_BAHAN") return "Otomatis dari pemakaian bahan";
   if (kerja.source === "PEMAKAIAN_SEMENTARA") return "Pemakaian sementara — perlu rekonsiliasi Gudang";
-  if (kerja.source === "STATUS_ORDER" && kerja.key !== "DIBATALKAN") return "Mengikuti status order";
+  if (kerja.source === "STATUS_ORDER" && kerja.key !== "DIBATALKAN") return kerja.key === "SELESAI" ? "Mengikuti status order — bukan bukti tahap kerja atau QC" : "Mengikuti status order";
   return null;
 }
 
@@ -86,7 +86,7 @@ export function sumberKerjaPendek(kerja) {
 }
 
 /** Parameter ekspor/daftar dari state layar — SATU fungsi dipakai daftar dan ekspor supaya berkas persis sama dengan daftar yang difilter. */
-export function parameterDaftar({ globalStatus, q, kerja, scope, kelengkapan, dari, sampai, urut } = {}) {
+export function parameterDaftar({ globalStatus, q, kerja, scope, kelengkapan, dari, sampai, urut, posisi, pic, target } = {}) {
   const out = {};
   if (globalStatus) out.globalStatus = globalStatus;
   if (q) out.q = q;
@@ -96,6 +96,9 @@ export function parameterDaftar({ globalStatus, q, kerja, scope, kelengkapan, da
   if (dari) out.dari = dari;
   if (sampai) out.sampai = sampai;
   if (urut === "terlama") out.urut = "terlama";
+  if (Array.isArray(posisi) && posisi.length) out.posisi = posisi.join(",");
+  if (pic) out.pic = pic;
+  if (target) out.target = target;
   return out;
 }
 
@@ -113,6 +116,42 @@ export const DATA_ORDER_BELUM_DINILAI_TEKS = "Belum dinilai: order ini belum pun
 export const KELENGKAPAN_BUKAN = "Target selesai, PIC, dan rencana bahan opsional — tidak dihitung sebagai kekurangan. Pekerjaan yang belum dilakukan juga bukan kekurangan data.";
 export const DASAR_PERIODE_TEKS = "Tanggal order masuk (unit dibuat)";
 export const URUTAN_DAFTAR = Object.freeze([{ key: "terbaru", label: "Terbaru dulu" }, { key: "terlama", label: "Paling lama belum ditangani" }]);
+// Filter posisi unit / PIC / target selesai — kunci dan definisi MENCERMINKAN backend (lib/domain/filterDaftarOrderProduksi.js); server yang menyaring atas SELURUH hasil.
+// Hubungan antarfilter = DAN (semua yang aktif harus cocok); beberapa pilihan di satu kelompok (posisi unit, kelengkapan) = ATAU.
+export const POSISI_FILTER = Object.freeze([
+  { key: "MENUNGGU_DIJEMPUT", label: "Menunggu dijemput" }, { key: "DALAM_PENJEMPUTAN", label: "Dalam penjemputan" }, { key: "SUDAH_DIJEMPUT", label: "Sudah dijemput · belum diterima workshop" },
+  { key: "DI_WORKSHOP", label: "Di workshop" }, { key: "DI_WORKSHOP_TANPA_BUKTI", label: "Di workshop · penerimaan belum tercatat" }, { key: "DI_WORKSHOP_SIAP", label: "Di workshop · siap diambil" },
+  { key: "DALAM_PENGIRIMAN", label: "Dalam pengiriman" }, { key: "DI_PELANGGAN", label: "Sudah di pelanggan" },
+]);
+export const PIC_TANPA = "~tanpa";
+export const TARGET_FILTER = Object.freeze([
+  { key: "terlambat", label: "Terlambat", bantu: "Tanggal target sebelum hari ini (WIB) dan pekerjaan belum selesai. Unit Terkirim, Dibatalkan, atau berstatus kerja Selesai tidak dihitung terlambat." },
+  { key: "hari_ini", label: "Hari ini", bantu: "Tanggal target = hari ini (WIB)." },
+  { key: "tujuh_hari", label: "7 hari ke depan", bantu: "Tanggal target dari hari ini sampai 6 hari berikutnya (WIB)." },
+  { key: "belum_ada", label: "Belum ada target", bantu: "Unit belum punya target selesai. Target bersifat opsional — ini bukan kekurangan data." },
+]);
+const labelDari = (daftar, key) => daftar.find((x) => x.key === key)?.label ?? key;
+/** Penjelasan hubungan antarfilter (sama dengan implementasi server) — ditampilkan di panel filter. */
+export const HUBUNGAN_FILTER_TEKS = "Semua filter yang aktif harus cocok (DAN). Beberapa pilihan di satu kelompok — posisi unit atau kelengkapan — berarti salah satu cocok (ATAU). Periode memakai tanggal order masuk, bukan target selesai.";
+/**
+ * Chip filter aktif: { id, kelompok, label, nilai? }. SATU sumber untuk chip, jumlah filter, dan Reset. Antrean Aktif/Riwayat/Semua BUKAN filter (tidak pernah ikut chip atau Reset).
+ * status order di antrean Riwayat selalu "Terkirim" (bawaan antrean), sehingga bukan filter.
+ */
+export function chipFilterAktif({ scope = "", tab = "", kerja = "", cari = "", dari = "", sampai = "", urut = "terbaru", posisi = [], pic = "", target = "", kelengkapan = [] } = {}, { statusOrderLabel = (k) => k, fmtTgl = (x) => x } = {}) {
+  const out = [];
+  if (cari) out.push({ id: "cari", kelompok: "cari", label: `Cari: ${cari}` });
+  if (tab && scope !== "riwayat") out.push({ id: "statusOrder", kelompok: "statusOrder", label: `Status order: ${statusOrderLabel(tab)}` });
+  if (kerja) out.push({ id: "kerja", kelompok: "kerja", label: `Status kerja: ${labelDari(KERJA_FILTER, kerja)}` });
+  if (dari || sampai) out.push({ id: "periode", kelompok: "periode", label: `Order masuk: ${teksPeriode(dari, sampai, fmtTgl)}` });
+  for (const k of posisi) out.push({ id: `posisi:${k}`, kelompok: "posisi", nilai: k, label: `Posisi: ${labelDari(POSISI_FILTER, k)}` });
+  if (pic) out.push({ id: "pic", kelompok: "pic", label: pic === PIC_TANPA ? "PIC: Belum ditugaskan" : `PIC: ${pic}` });
+  if (target) out.push({ id: "target", kelompok: "target", label: `Target selesai: ${labelDari(TARGET_FILTER, target)}` });
+  for (const k of kelengkapan) out.push({ id: `kel:${k}`, kelompok: "kelengkapan", nilai: k, label: `Kelengkapan: ${labelDari(KELENGKAPAN_FILTER, k)}` });
+  if (urut && urut !== "terbaru") out.push({ id: "urut", kelompok: "urut", label: `Urutan: ${labelDari(URUTAN_DAFTAR.map((u) => ({ key: u.key, label: u.label })), urut)}` });
+  return out;
+}
+/** Jumlah filter yang dikelola di panel "Filter lainnya" (posisi unit, PIC, target, kelengkapan) — lencana tombol. Tiap kelompok dihitung SATU. */
+export const jumlahFilterLainnya = ({ posisi = [], pic = "", target = "", kelengkapan = [] } = {}) => (posisi.length ? 1 : 0) + (pic ? 1 : 0) + (target ? 1 : 0) + (kelengkapan.length ? 1 : 0);
 
 /** Kunci kelengkapan satu baris (server). Payload lama tanpa kelengkapan → kosong (jujur, tidak menebak). */
 export const kunciKelengkapan = (row) => row?.adopsi?.kelengkapan?.keys ?? [];
@@ -125,7 +164,13 @@ export function sasaranLengkapi(keys) {
 /** Hitungan per kategori + unik dari respons server; angka tidak diturunkan dari halaman yang dimuat. */
 export function bacaHitungKelengkapan(h) {
   const counts = h?.counts ?? {};
-  return { counts: Object.fromEntries(KELENGKAPAN_KEYS.map((k) => [k, counts[k] ?? 0])), unik: h?.unik ?? 0, totalUnit: h?.totalUnit ?? 0, dataOrder: { lengkap: h?.dataOrder?.lengkap ?? 0, kurang: h?.dataOrder?.kurang ?? 0, belumDinilai: h?.dataOrder?.belumDinilai ?? 0 }, riwayat: { unik: h?.riwayat?.unik ?? 0, totalUnit: h?.riwayat?.totalUnit ?? 0 } };
+  return { counts: Object.fromEntries(KELENGKAPAN_KEYS.map((k) => [k, counts[k] ?? 0])), unik: h?.unik ?? 0, totalUnit: h?.totalUnit ?? 0, dataOrder: { lengkap: h?.dataOrder?.lengkap ?? 0, kurang: h?.dataOrder?.kurang ?? 0, belumDinilai: h?.dataOrder?.belumDinilai ?? 0 }, riwayat: { unik: h?.riwayat?.unik ?? 0, totalUnit: h?.riwayat?.totalUnit ?? 0 }, pic: Array.isArray(h?.pic) ? h.pic : [], tanpaPic: h?.tanpaPic ?? 0 };
+}
+/** Pilihan PIC untuk dropdown: "Belum ditugaskan" + PIC yang muncul pada hasil (dengan jumlah unit). PIC yang sedang dipilih selalu ada (jumlah 0 bila tidak ada lagi di hasil), supaya pilihan aktif tidak tampil seolah "Semua PIC". */
+export function opsiPic(hitung, terpilih = "") {
+  const daftar = (hitung?.pic ?? []).map((p) => ({ value: p.nama, label: `${p.nama} · ${p.jumlah}` }));
+  if (terpilih && terpilih !== PIC_TANPA && !daftar.some((o) => o.value === terpilih)) daftar.push({ value: terpilih, label: `${terpilih} · 0` });
+  return [{ value: PIC_TANPA, label: hitung ? `Belum ditugaskan · ${hitung.tanpaPic ?? 0}` : "Belum ditugaskan" }, ...daftar];
 }
 /** Toggle satu kategori dalam daftar terpilih (gabungan). */
 export const toggleKelengkapan = (terpilih, key) => (terpilih.includes(key) ? terpilih.filter((k) => k !== key) : KELENGKAPAN_KEYS.filter((k) => k === key || terpilih.includes(k)));
