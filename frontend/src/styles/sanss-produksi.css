@@ -118,15 +118,18 @@
 :root .app-shell.crm-skin.prod-skin .prod-kpi-label { font-size: 14px; font-weight: 400; line-height: 1.3; opacity: 0.9; }
 :root .app-shell.crm-skin.prod-skin .prod-kpi-angka { display: flex; align-items: baseline; gap: 6px; font-size: 32px; font-weight: 500; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 :root .app-shell.crm-skin.prod-skin .prod-kpi-satuan { font-size: 14px; font-weight: 400; letter-spacing: 0; opacity: 0.85; }
-:root .app-shell.crm-skin.prod-skin .prod-kpi.biru { background: linear-gradient(155deg, #DCE5FF 0%, #CBD8FE 100%); color: #1B1B39; }
-:root .app-shell.crm-skin.prod-skin .prod-kpi.muda { background: linear-gradient(155deg, #BCD0FD 0%, #99B7FC 100%); color: #1B1B39; }
-:root .app-shell.crm-skin.prod-skin .prod-kpi.lavender { background: linear-gradient(155deg, #F1F2FF 0%, #E3E6FF 100%); color: #1B1B39; }
-:root .app-shell.crm-skin.prod-skin .prod-kpi.lime { background: linear-gradient(155deg, #EDFFD6 0%, #E0FFB7 100%); color: #1B1B39; }
-:root[data-theme="dark"] .app-shell.crm-skin.prod-skin .prod-kpi.biru { background: linear-gradient(155deg, #2F4C9E 0%, #263F85 100%); color: #F2F3FF; }
-:root[data-theme="dark"] .app-shell.crm-skin.prod-skin .prod-kpi.muda { background: linear-gradient(155deg, #4A6DBB 0%, #3F5EAD 100%); color: #FFFFFF; }
-:root[data-theme="dark"] .app-shell.crm-skin.prod-skin .prod-kpi.lavender { background: linear-gradient(155deg, #2C2F57 0%, #232548 100%); color: #F2F3FF; }
-:root[data-theme="dark"] .app-shell.crm-skin.prod-skin .prod-kpi.lime { background: linear-gradient(155deg, #34452F 0%, #2A3927 100%); color: #E9FFD0; }
-:root[data-theme="dark"] .app-shell.crm-skin.prod-skin .prod-kpi-ikon { background: rgba(255, 255, 255, 0.14); color: inherit; }
+/* Warna KPI TEGAS dan SAMA di terang & gelap (Redesain 3 Nov 2026): Target #3965FA/putih · Selesai #99B7FC/#1B1B39 · Sedang dikerjakan #E9EBFF/#1B1B39 · Menunggu mulai = netral + aksen amber (bukan hijau). Kontras: putih/#3965FA 4,8:1; #1B1B39 di #99B7FC 7,4:1 dan di #E9EBFF 15:1. */
+:root .app-shell.crm-skin.prod-skin .prod-kpi.biru { background: #3965FA; color: #FFFFFF; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.biru .prod-kpi-ikon { background: rgba(255, 255, 255, 0.22); color: #FFFFFF; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.biru .prod-kpi-label { opacity: 1; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.biru .prod-kpi-satuan { opacity: 0.95; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.muda { background: #99B7FC; color: #1B1B39; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.lavender { background: #E9EBFF; color: #1B1B39; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi:is(.muda, .lavender) .prod-kpi-ikon { background: rgba(255, 255, 255, 0.65); color: #1B1B39; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi:is(.muda, .lavender) :is(.prod-kpi-label, .prod-kpi-satuan) { opacity: 1; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.netral { background: var(--crm-panel); color: var(--text-primary); box-shadow: var(--crm-shadow), inset 5px 0 0 #E8A317; }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.netral .prod-kpi-ikon { background: var(--prod-kuning-bg); color: var(--prod-kuning-fg); }
+:root .app-shell.crm-skin.prod-skin .prod-kpi.netral :is(.prod-kpi-label, .prod-kpi-satuan) { color: var(--text-secondary); opacity: 1; }
 
 :root .app-shell.crm-skin.prod-skin .prod-pendukung { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 @container prodhal (min-width: 640px) { :root .app-shell.crm-skin.prod-skin .prod-pendukung { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; } }
@@ -803,3 +806,54 @@
   :root .app-shell.crm-skin.prod-skin .prod-bhn-kol.kanan .prod-pilihan { flex: none; overflow: visible; }
 }
 @media (max-width: 639px) { :root .app-shell.crm-skin.prod-skin .prod-chip { min-height: 44px; } }
+
+/* ── Redesain 3 Nov 2026: Ringkasan (kolom kanan mengikuti isi) + Order Produksi (toolbar, filter, chip) ───────────────── */
+:root .app-shell.crm-skin.prod-skin a.prod-kpi.netral:hover { box-shadow: var(--crm-shadow-pop), inset 5px 0 0 #E8A317; }
+:root .app-shell.crm-skin.prod-skin .prod-grid-dua { align-items: start; }
+:root .app-shell.crm-skin.prod-skin .prod-kolom { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@container prodhal (min-width: 900px) { :root .app-shell.crm-skin.prod-skin .prod-kolom .prod-alur { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* urutan di toolbar utama */
+:root .app-shell.crm-skin.prod-skin .prod-ol-urut-pemicu { min-width: 0; max-width: 260px; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-urut-pemicu > span { font-size: 15px; }
+
+/* baris hasil + chip filter aktif */
+:root .app-shell.crm-skin.prod-skin .prod-ol-aktif { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-hasil { font-size: 14px; font-weight: 500; color: var(--text-secondary); font-variant-numeric: tabular-nums; margin: 0; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-chip-daftar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-chip-aktif { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 32px; padding: 0 4px 0 12px; border-radius: 999px; background: var(--crm-soft-2); color: var(--crm-primary-ink); font-size: 14px; font-weight: 500; line-height: 1.2; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-chip-aktif > span { min-width: 0; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-chip-x { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -6px -8px -6px -2px; border: 0; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-chip-x:hover svg { opacity: 0.7; }
+
+/* isi "Filter lainnya" */
+:root .app-shell.crm-skin.prod-skin .prod-fl { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+:root .app-shell.crm-skin.prod-skin .prod-fl-dua { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { :root .app-shell.crm-skin.prod-skin .prod-fl-dua { grid-template-columns: minmax(0, 1fr); } }
+:root .app-shell.crm-skin.prod-skin .prod-fl-bagian { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+:root .app-shell.crm-skin.prod-skin .prod-fl-judul { margin: 0; font-size: 15px; font-weight: 500; color: var(--text-primary); }
+:root .app-shell.crm-skin.prod-skin .prod-fl-bantu { margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-secondary); }
+:root .app-shell.crm-skin.prod-skin .prod-fl-pemicu { width: 100%; max-width: 100%; }
+:root .app-shell.crm-skin.prod-skin .prod-fl .prod-chip { min-height: 44px; text-align: left; }
+:root .app-shell.crm-skin.prod-skin .prod-fl-hubungan { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-top: 12px; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+:root .app-shell.crm-skin.prod-skin .prod-fl .prod-kelengkapan { border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+:root .app-shell.crm-skin.prod-skin .prod-fl-lembar { display: flex; flex-direction: column; gap: 16px; padding-top: 4px; }
+:root .app-shell.crm-skin.prod-skin .prod-fl-kaki { position: sticky; bottom: 0; display: flex; gap: 10px; justify-content: space-between; padding: 12px 0 4px; background: var(--crm-panel); border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+:root .app-shell.crm-skin.prod-skin .prod-fl-kaki > * { flex: 1 1 0; }
+
+/* daftar: diredupkan sementara filter baru dimuat; Layanan + ukuran terpisah */
+:root .app-shell.crm-skin.prod-skin :is(.prod-ol-tabel, .prod-ol-kartu).memuat { opacity: 0.5; pointer-events: none; transition: opacity 0.15s ease; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-layanan { display: flex; flex-direction: column; gap: 2px; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-layanan-nama { font-size: 15px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-ukuran { font-size: 13px; line-height: 1.3; color: var(--text-secondary); }
+@media (max-width: 640px) {
+  :root .app-shell.crm-skin.prod-skin .prod-ol-baris2 .prod-ol-lainnya { order: -1; }
+  :root .app-shell.crm-skin.prod-skin .prod-ol-aktif { gap: 6px 10px; }
+}
+/* Periode "Semua waktu": tanpa kata "Semua" berulang dan tanpa tombol geser (tidak ada panjang periode untuk digeser) */
+:root .app-shell.crm-skin.prod-skin .prod-ol-periode.semua .date-range-picker-trigger > span:first-of-type { display: none; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-periode.semua button[aria-label^="Periode "] { display: none; }
+@media (max-width: 640px) {
+  /* kolom bertingkat+wrap membuat semua item selebar item terlebar (melewati kartu); satu lajur saja → pencarian dan antrean selebar kartu, antrean menggulir sendiri */
+  :root .app-shell.crm-skin.prod-skin .prod-ol-baris1 { flex-wrap: nowrap; }
+}

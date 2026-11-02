@@ -70,7 +70,7 @@ test("PENGAWATAN: komponen yang SAMA dengan Order CRM (tanpa tiruan), tanpa Band
   assert.ok(!/type="date"/.test(p + f) && !/Order masuk dari|Order masuk sampai|periode-dari|periode-sampai|periode-hapus/.test(p + f), "dua input tanggal terpisah dihapus");
   assert.ok(!/SIMPLE_PRESETS|CalendarMonth/.test(p) && !/DateRangePicker/.test(f), "halaman tidak membuat pemilih tanggal sendiri (hanya memasang komponen standar di bilah filter)");
   assert.ok(p.includes("useHubRange(periodeDariUrl, periodeKeUrl)") && p.includes("paramPeriode(periode)"), "periode di URL (tahan refresh)");
-  assert.ok(p.includes("urut, ...rentang }") && p.includes("statusKerja: kerja || undefined, ...rentang }"), "daftar dan hitungan Kelengkapan memakai periode yang sama");
+  assert.ok(p.includes("posisi, pic, target, ...rentang }") && p.includes("target: target || undefined, ...rentang }"), "daftar dan hitungan Kelengkapan memakai periode yang sama");
   assert.ok(p.includes("...paramDaftar, page: String(page)") && p.includes("api.eksporOrderProduksiXlsx({ displayStatus: displayParam, ...paramDaftar"), "pagination dan Excel memakai paramDaftar yang sama");
   assert.ok(p.includes("<DateRangePicker value={periode} onChange={setPeriode} showCompare={false} />"), "perubahan hanya lewat onChange pemilih (dikirim saat Terapkan)");
   const d = src("components", "DateRangePicker.jsx");

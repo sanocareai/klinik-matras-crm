@@ -1,0 +1,21 @@
+# RILIS "FILTER ORDER PRODUKSI LENGKAP + RINGKASAN" (Produksi → Order Produksi: filter Posisi unit · PIC · Target selesai di server, Urutan di toolbar, chip filter aktif, Reset, lembar filter HP; Ringkasan: warna KPI tegas, panel mengikuti isi): WEB + BACKEND BACA-SAJA, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Backend (aditif, BACA-SAJA): GET /api/production/work-orders, /work-orders/kelengkapan-hitung, dan /work-orders/export.xlsx menerima tiga parameter baru: posisi (daftar kunci posisi fisik; salah satu cocok), pic (nama persis atau ~tanpa) dan target (terlambat|hari_ini|tujuh_hari|belum_ada; hari menurut WIB).
+#     Penyaringan dilakukan di SERVER atas seluruh hasil (baris yang sudah diperkaya, tanpa query per unit): total, hasMore, Muat berikutnya, hitungan, dan Excel mengikuti filter yang SAMA. Nilai tidak dikenal = 400 (bukan diabaikan). Izin tidak berubah (unit:read). Batas jalur penuh 5000 unit tetap (413 jujur).
+#     Hitungan kelengkapan mengembalikan faset PIC (nama + jumlah, tanpaPic) secara aditif untuk pilihan filter. Info Ekspor mencatat filter baru.
+#   • Frontend: Urutan pindah ke toolbar utama (tanpa baris "Terbaru dulu" ganda), "Semua status order"/"Semua status kerja", periode "Semua waktu", panel Filter lainnya (Posisi unit · PIC · Target · Kelengkapan + keterangan DAN/ATAU), chip filter aktif yang bisa dihapus + Reset
+#     (tidak mengganti Aktif/Riwayat/Semua), lembar filter di HP, layanan dan ukuran dipisah, sumber status kerja Selesai diberi keterangan; Ringkasan: KPI #3965FA/#99B7FC/#E9EBFF + Menunggu mulai netral beraksen amber, sama di terang dan gelap; kolom kanan mengikuti isi.
+#   • Rilis ini TIDAK membuat atau mengubah data bisnis: tidak ada tulis ke stok, Material Issue, harga, biaya beku, jurnal, unit, pernyataan, run, jadwal, atau status. Smoke pasca-switch hanya membaca; tidak ada transaksi uji di produksi.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; invarian filter: partisi posisi, PIC = hitungan, target per hari WIB, halaman bertahap di luar 50 pertama, ekspor, waktu respons, izin, tanpa jejak tulis);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (kode smoke yang sama dengan rehearsal; data identik sebelum vs sesudah).
+#   • PENGUNCIAN: kunci deploy BERSAMA (release-deploy-bersama.lock) + kunci sendiri diambil ATOMIK sebelum memeriksa kunci/proses lain; kepemilikan ditentukan oleh proses (perangkat:inode fd 7/9), BUKAN nama berkas; diperiksa di fase 0,
+#     sebelum persiapan akhir, dan tepat sebelum switch. Rehearsal MENGUJI logika ini (kunci sendiri/lain, bagian kritis, baseline bergeser) lalu gerbang fase 7 pada production nyata tanpa switch.
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi / berkas tambahan / proses
+#     berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip. Gerbang disk (minimal 5 GiB) TIDAK diturunkan.
+#
+#   cat scripts/release-produksi-filter.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/pof.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/pof.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pof.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/pofr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pof.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/pof.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru, tanpa data baru). Rollback hanya mengembalikan daftar Order Produksi dan Ringkasan ke tampilan sebelumnya; tidak ada data yang berubah.
+# (dibangkitkan oleh scripts/gen-release-produksi-filter.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-produksi-filter/* + pustaka scripts/lib/{rehearsal,smoke}-produksi-filter.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)
