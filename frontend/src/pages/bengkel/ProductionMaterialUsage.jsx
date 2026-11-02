@@ -51,7 +51,7 @@ export default function ProductionMaterialUsage() {
   const kosong = !loading && movements && movements.length === 0;
 
   return (
-    <PageContainer>
+    <PageContainer fluid className="prod-halaman">
       <PageHeader
         title="Bahan Produksi"
         subtitle="Seluruh pemakaian bahan baku per unit, lintas order."
@@ -62,16 +62,16 @@ export default function ProductionMaterialUsage() {
         }
       />
 
-      <PageBody>
-        <div className="flex flex-wrap items-center gap-2">
+      <PageBody className="prod-stack">
+        <div className="prod-toolbar prod-cari-baris">
           <input
             type="search" value={cari} onChange={(e) => setCari(e.target.value)}
             placeholder="Cari kode unit, no. order, atau nama pelanggan…" aria-label="Cari"
-            className="h-9 min-w-[240px] flex-1 rounded-btn border border-border bg-surface px-3 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            className="prod-cari"
           />
           <select
             value={fMaterial} onChange={(e) => setFMaterial(e.target.value)} aria-label="Filter bahan"
-            className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
+            className="prod-pilih"
           >
             <option value="">Semua bahan</option>
             {materials.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -100,11 +100,11 @@ export default function ProductionMaterialUsage() {
                   {loading && <TableSkeletonRows rows={8} cols={8} />}
                   {!loading && movements?.map((m) => (
                     <TR key={m.id} clickable onClick={() => navigate(unitDetailPath(m.unit.id))}>
-                      <TD className="text-ink2">{formatTanggalJam(m.createdAt)}</TD>
-                      <TD className="font-semibold text-ink">{m.unit?.unitCode || "—"}</TD>
-                      <TD className="text-ink2">{m.unit?.order?.orderNumber || "—"}</TD>
-                      <TD truncate>{m.unit?.order?.customer?.name || "—"}</TD>
-                      <TD truncate className="text-ink2">{m.material.name}</TD>
+                      <TD className="min-w-[110px] text-ink2">{formatTanggalJam(m.createdAt)}</TD>
+                      <TD className="whitespace-nowrap font-semibold text-ink">{m.unit?.unitCode || "—"}</TD>
+                      <TD className="break-words text-ink2">{m.unit?.order?.orderNumber || "—"}</TD>
+                      <TD className="min-w-[180px] break-words">{m.unit?.order?.customer?.name || "—"}</TD>
+                      <TD className="min-w-[160px] break-words text-ink2">{m.material.name}</TD>
                       <TD>
                         <Badge variant={m.type === "ISSUE" ? "accent" : m.type === "WASTE" ? "red" : "orange"}>
                           {m.type === "ISSUE" ? "Pemakaian" : m.type === "WASTE" ? "Terbuang" : "Koreksi"}

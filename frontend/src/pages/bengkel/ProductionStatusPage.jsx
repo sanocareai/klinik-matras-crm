@@ -105,7 +105,7 @@ export default function ProductionStatusPage() {
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   return (
-    <PageContainer fluid>
+    <PageContainer fluid className="prod-halaman">
       <div ref={wadahRef}>
         <PageHeader title="Status Produksi" subtitle="Apa yang perlu ditindak hari ini, di mana unitnya, dan siapa yang mengerjakan. Buka satu order untuk tindakan cepat; buka unit untuk ruang kerjanya."
           actions={
@@ -116,7 +116,7 @@ export default function ProductionStatusPage() {
               ))}
             </div>
           } />
-        <PageBody>
+        <PageBody className="prod-stack">
           {notice && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{notice}</div>}
           {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
           {canRoute && <MorningPriorityApprovalPanel />}

@@ -137,7 +137,7 @@ export default function ProductionRencanaMinggu() {
   const visibleUnitIds = [...(antrean?.items || []).map((i) => i.unitId), ...(dayData?.stations || []).flatMap((s) => s.items).map((i) => i.unitId)];
 
   return (
-    <PageContainer fluid className={sempit ? "!p-3" : ""}>
+    <PageContainer fluid className={`prod-halaman${sempit ? " !p-3" : ""}`}>
       {sempit ? (
         <div data-testid="header-mobile">
           <div className="flex items-center justify-between gap-2">
@@ -150,9 +150,9 @@ export default function ProductionRencanaMinggu() {
             ]} />
           </div>
           <div className="mt-1.5 flex items-center gap-2">
-            <div className="flex items-center rounded-btn border border-line" role="group" aria-label="Pindah minggu">
+            <div className="prod-rc-nav" role="group" aria-label="Pindah minggu">
               <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" aria-label="Minggu sebelumnya" data-testid="minggu-sebelum" onClick={() => ubahUrl({ start: shiftKey(start, -7), hari: shiftKey(hari, -7) })}><ChevronLeft size={16} aria-hidden /></Button>
-              <span className="px-1 text-[13px] font-medium text-ink" data-testid="minggu-label">{labelMinggu(start)}</span>
+              <span className="px-1" data-testid="minggu-label">{labelMinggu(start)}</span>
               <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" aria-label="Minggu berikutnya" data-testid="minggu-sesudah" onClick={() => ubahUrl({ start: shiftKey(start, 7), hari: shiftKey(hari, 7) })}><ChevronRight size={16} aria-hidden /></Button>
             </div>
             <Button variant="neutral" size="sm" className="min-h-[44px]" data-testid="hari-ini" onClick={() => ubahUrl({ start: shiftKey(today, 0), hari: today })}>Hari ini</Button>
@@ -163,29 +163,29 @@ export default function ProductionRencanaMinggu() {
         <PageHeader title="Rencana Produksi" subtitle={`Jadwal mingguan · ${labelMinggu(start)}`}
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-btn border border-line" role="group" aria-label="Pindah minggu">
-                <Button variant="ghost" size="sm" className="min-h-[40px]" aria-label="Minggu sebelumnya" data-testid="minggu-sebelum" onClick={() => ubahUrl({ start: shiftKey(start, -7), hari: shiftKey(hari, -7) })}><ChevronLeft size={16} aria-hidden /></Button>
-                <span className="px-2 text-[13px] font-medium text-ink" data-testid="minggu-label">{labelMinggu(start)}</span>
-                <Button variant="ghost" size="sm" className="min-h-[40px]" aria-label="Minggu berikutnya" data-testid="minggu-sesudah" onClick={() => ubahUrl({ start: shiftKey(start, 7), hari: shiftKey(hari, 7) })}><ChevronRight size={16} aria-hidden /></Button>
+              <div className="prod-rc-nav" role="group" aria-label="Pindah minggu">
+                <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" aria-label="Minggu sebelumnya" data-testid="minggu-sebelum" onClick={() => ubahUrl({ start: shiftKey(start, -7), hari: shiftKey(hari, -7) })}><ChevronLeft size={16} aria-hidden /></Button>
+                <span className="px-2" data-testid="minggu-label">{labelMinggu(start)}</span>
+                <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" aria-label="Minggu berikutnya" data-testid="minggu-sesudah" onClick={() => ubahUrl({ start: shiftKey(start, 7), hari: shiftKey(hari, 7) })}><ChevronRight size={16} aria-hidden /></Button>
               </div>
               <Button variant="neutral" size="sm" className="min-h-[40px]" data-testid="hari-ini" onClick={() => ubahUrl({ start: shiftKey(today, 0), hari: today })}>Hari ini</Button>
               <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={reloadAll} aria-label="Muat ulang"><RefreshCw size={14} aria-hidden /> Muat ulang</Button>
               <RencanaExportButton date={hari} stations={["TABLE_1", "TABLE_2", "TABLE_3", "TABLE_4"]} visibleRunIds={visibleRunIds} visibleUnitIds={visibleUnitIds} dateLabel={labelTanggal(hari)} />
-              <button type="button" className="inline-flex min-h-[40px] items-center rounded-btn px-3 text-[13px] text-accent hover:bg-accentbg" data-testid="link-papan-meja" onClick={() => bukaPapan("meja")}><LayoutGrid size={14} className="mr-1" aria-hidden /> Papan Meja</button>
-              <button type="button" className="inline-flex min-h-[40px] items-center rounded-btn px-3 text-[13px] text-accent hover:bg-accentbg" data-testid="link-corner" onClick={() => bukaPapan("corner")}>Corner</button>
+              <button type="button" className="prod-tombol netral" data-testid="link-papan-meja" onClick={() => bukaPapan("meja")}><LayoutGrid size={14} className="mr-1" aria-hidden /> Papan Meja</button>
+              <button type="button" className="prod-tombol netral" data-testid="link-corner" onClick={() => bukaPapan("corner")}>Corner</button>
             </div>
           } />
       )}
-      <PageBody>
+      <PageBody className="prod-stack">
         {error && <p role="alert" className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red" data-testid="rencana-galat">{error} <button type="button" className="underline" onClick={() => { setError(""); reloadAll(); }}>Coba lagi</button></p>}
         {minggu && !sempit && <p className="m-0 mb-2 text-[13px] text-ink3" data-testid="ringkas-minggu">Minggu ini (Sen–Sab): <b className="text-ink">{minggu.ringkasan.terencanaKerja}</b> unit terencana dari {minggu.ringkasan.slotKerja} slot{minggu.ringkasan.diLuarHariKerja > 0 ? <span className="text-orange"> · +{minggu.ringkasan.diLuarHariKerja} di hari Minggu (libur, di luar hari kerja rutin)</span> : ""} · {minggu.ringkasan.perhatian ? <span className="text-orange">{minggu.ringkasan.perhatian} perlu perhatian</span> : "tidak ada yang perlu perhatian"}</p>}
         <div className={sempit ? "mt-2" : ""}><WeekStrip ringkas={sempit} minggu={minggu} hari={hari} onPilih={(d) => { ubahUrl({ hari: d }); setPanel("hari"); }} dragAktif={!!drag && !!izin.jadwalkan} onLepas={lepasKeHari} loading={loading.minggu} /></div>
         <p className="m-0 mt-2 text-[12.5px] text-ink3" data-testid="petunjuk-tanggal">Jadwal disimpan untuk <b className="text-ink">{labelTanggal(hari)}{hari === today ? " (hari ini)" : ""}</b>. {izin.jadwalkan ? "Seret unit ke Meja 1–4, atau tekan Pilih meja." : "Anda hanya dapat melihat jadwal."}</p>
         {sempit && <div className="mt-2"><div className="flex gap-1" role="tablist" aria-label="Tampilan">
-          <button type="button" role="tab" aria-selected={panel === "antrean"} data-testid="panel-antrean" onClick={() => setPanel("antrean")} className={`inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-btn text-[13px] font-medium ${panel === "antrean" ? "rc-tab-on bg-accent text-white" : "bg-inset text-ink2"}`}><ListChecks size={14} aria-hidden /> Antrean</button>
-          <button type="button" role="tab" aria-selected={panel === "hari"} data-testid="panel-hari" onClick={() => setPanel("hari")} className={`inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-btn text-[13px] font-medium ${panel === "hari" ? "rc-tab-on bg-accent text-white" : "bg-inset text-ink2"}`}><CalendarDays size={14} aria-hidden /> Hari {labelHari(hari)}</button>
+          <button type="button" role="tab" aria-selected={panel === "antrean"} data-testid="panel-antrean" onClick={() => setPanel("antrean")} className={`prod-pil flex-1 justify-center${panel === "antrean" ? " aktif rc-tab-on" : ""}`}><ListChecks size={14} aria-hidden /> Antrean</button>
+          <button type="button" role="tab" aria-selected={panel === "hari"} data-testid="panel-hari" onClick={() => setPanel("hari")} className={`prod-pil flex-1 justify-center${panel === "hari" ? " aktif rc-tab-on" : ""}`}><CalendarDays size={14} aria-hidden /> Hari {labelHari(hari)}</button>
         </div></div>}
-        <div className="mt-3 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(400px,480px)_minmax(0,1fr)]">
+        <div className="prod-rc-papan">
           <div className={`${panel === "antrean" ? "block" : "hidden"} min-w-0 lg:block`}>
             {seleksi.size > 0 && izin.jadwalkan && (
               <div className="mb-2 flex flex-wrap items-center gap-2 rounded-card border border-accent/50 bg-accentbg px-3 py-2" data-testid="seleksi-bar" role="region" aria-label="Unit dipilih">
@@ -204,11 +204,11 @@ export default function ProductionRencanaMinggu() {
         </div>
       </PageBody>
       {pesan && createPortal(
-        <div role="status" aria-live="polite" data-testid="rencana-pesan" data-tone={pesan.tone} className={`fixed bottom-4 left-1/2 z-[9999] flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-card border px-4 py-2.5 text-[13px] shadow-lg ${pesan.tone === "err" ? "border-red/40 bg-redbg text-red" : "border-line bg-surface text-ink"}`}>
+        <div role="status" aria-live="polite" data-testid="rencana-pesan" data-tone={pesan.tone} className={`prod-rc-toast ${pesan.tone === "err" ? "galat" : pesan.tone === "busy" ? "sibuk" : "ok"}`}>
           {pesan.tone === "busy" && <Loader2 size={14} className="animate-spin" aria-hidden />}
           <span>{pesan.teks}</span>
-          {undo && <Button size="sm" variant="neutral" className="min-h-[36px]" data-mutates onClick={urungkan} data-testid="undo-jadwal"><Undo2 size={14} className="mr-1" aria-hidden /> Urungkan</Button>}
-          {pesan.tone !== "busy" && <button type="button" className="text-ink3 underline" onClick={() => { setPesan(null); setUndo(null); }} aria-label="Tutup pesan">Tutup</button>}
+          {undo && <Button size="sm" variant="neutral" className="min-h-[44px]" data-mutates onClick={urungkan} data-testid="undo-jadwal"><Undo2 size={14} className="mr-1" aria-hidden /> Urungkan</Button>}
+          {pesan.tone !== "busy" && <button type="button" className="prod-rc-toast-tutup" onClick={() => { setPesan(null); setUndo(null); }} aria-label="Tutup pesan">Tutup</button>}
         </div>, document.body)}
       {picker && <PilihMeja anchor={picker.anchor} items={picker.items} minggu={minggu} hari={hari} onClose={() => setPicker(null)}
         onAtur={picker.items.length === 1 ? () => { const it = picker.items[0]; setPicker(null); setModal({ jenis: "jadwal", item: it }); } : null}
