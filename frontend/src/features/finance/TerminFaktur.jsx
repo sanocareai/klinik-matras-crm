@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { Pilihan, tanggalPendek } from "@/features/finance/shared.jsx";
+import { tanggalPendek } from "@/features/finance/shared.jsx";
+import { SelectPO, TanggalPO } from "@/features/finance/po/KontrolPO.jsx";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { api } from "@/api.js";
 import { PILIHAN_TERMIN, LABEL_SUMBER_TERMIN, galatTermin } from "@/features/finance/terminLogic.js";
@@ -54,15 +55,13 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {mode === "faktur" || admin ? (
                 <Field label="Termin baru">
-                  <Pilihan value={value.pilihan} onChange={(v) => set({ ganti: true, pilihan: v })} aria-label="Termin baru">
-                    {PILIHAN_TERMIN.map((p) => <option key={p.nilai} value={p.nilai}>{p.label}</option>)}
-                  </Pilihan>
+                  <SelectPO value={value.pilihan} onChange={(v) => set({ ganti: true, pilihan: v })} ariaLabel="Termin baru" opsi={PILIHAN_TERMIN.map((p) => ({ nilai: p.nilai, label: p.label }))} />
                   {mode === "po" && value.pilihan === "TANGGAL_KHUSUS" && <p className="m-0 mt-1 text-[11.5px] text-ink3" data-testid="catatan-tanggal-khusus-po">Tanggal khusus: tanggal jatuh tempo diisi saat faktur dicatat, bukan di PO.</p>}
                 </Field>
               ) : null}
               {mode === "faktur" && (
                 <Field label="Tanggal jatuh tempo" hint={value.pilihan && value.pilihan !== "TANGGAL_KHUSUS" ? "Dihitung dari termin baru" : "Isi bila tanggal khusus"}>
-                  <Input type="date" min={tanggalFaktur || undefined} value={value.dueDate} disabled={!!value.pilihan && value.pilihan !== "TANGGAL_KHUSUS"} onChange={(e) => set({ ganti: !perluTanggal || value.ganti, dueDate: e.target.value })} aria-label="Tanggal jatuh tempo" />
+                  <TanggalPO value={value.dueDate} min={tanggalFaktur || ""} bolehKosong disabled={!!value.pilihan && value.pilihan !== "TANGGAL_KHUSUS"} onChange={(v) => set({ ganti: !perluTanggal || value.ganti, dueDate: v })} ariaLabel="Tanggal jatuh tempo" />
                 </Field>
               )}
               {value.ganti && (

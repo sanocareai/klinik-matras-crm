@@ -1,6 +1,7 @@
 import React from "react";
 import { Field } from "@/components/ui/field.jsx";
-import { Pilihan, formatUang } from "@/features/finance/shared.jsx";
+import { formatUang } from "@/features/finance/shared.jsx";
+import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
 
 // JENIS TAGIHAN SUPPLIER (B3.3). Menentukan ke mana nilai tagihan masuk buku besar saat DISETUJUI.
 // Aturan & penjaga double-counting ditegakkan server (backend/src/services/finance/jenisTagihan.js); di sini hanya pilihan
@@ -15,7 +16,7 @@ export { JENIS_TAGIHAN, opsiKategori, bodyJenis, jenisLengkap } from "@/features
  * @param unbilled penerimaan barang yang belum ditagih (GET /finance/bills/unbilled-receipts)
  * @param grTertaut penerimaan yang sudah tertaut ke tagihan ini (mode edit)
  */
-export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbilled = [], grTertaut = null, namaSupplier = "", metodeInfo = null }) {
+export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbilled = [], grTertaut = null, namaSupplier = "", metodeInfo = null, sembunyikanPenerimaan = false }) {
   const jenis = JENIS_TAGIHAN.find((j) => j.kode === f.billType);
   const opsi = opsiKategori(f.billType, { kategori, kategoriBeli });
   const daftarGr = grTertaut && !unbilled.some((r) => r.id === grTertaut.id) ? [grTertaut, ...unbilled] : unbilled;
@@ -27,22 +28,16 @@ export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbi
   return (
     <div className="space-y-3" data-testid="jenis-tagihan">
       <Field label="Jenis tagihan" required hint={jenis?.ket || "Menentukan akun buku besar saat tagihan disetujui"}>
-        <Pilihan value={f.billType || ""} onChange={(v) => { set("billType", v); set("expenseCategoryId", ""); set("purchaseCategoryId", ""); if (v !== "BAHAN_BAKU") set("goodsReceiptId", ""); }}>
-          <option value="">— pilih jenis tagihan —</option>
-          {JENIS_TAGIHAN.map((j) => <option key={j.kode} value={j.kode}>{j.label}</option>)}
-        </Pilihan>
+        <SelectPO value={f.billType || ""} onChange={(v) => { set("billType", v); set("expenseCategoryId", ""); set("purchaseCategoryId", ""); if (v !== "BAHAN_BAKU") set("goodsReceiptId", ""); }} ariaLabel="Jenis tagihan" opsi={[{ nilai: "", label: "— pilih jenis tagihan —" }, ...JENIS_TAGIHAN.map((j) => ({ nilai: j.kode, label: j.label }))]} />
       </Field>
 
       {f.billType === "BAHAN_BAKU" && (
         <>
-          <Field label="Penerimaan barang (Gudang)" hint="Tautkan bila barangnya sudah dicatat di Gudang — nilainya sudah masuk Persediaan saat diterima, jadi tagihan hanya menutupnya.">
-            <Pilihan value={f.goodsReceiptId || ""} onChange={(v) => set("goodsReceiptId", v)}>
-              <option value="">— tanpa penerimaan gudang —</option>
-              {daftarGr.map((r) => (
-                <option key={r.id} value={r.id}>{r.receiptNumber} · {r.supplier || "tanpa supplier"} · diterima {formatUang(r.nilaiTerima)}</option>
-              ))}
-            </Pilihan>
-          </Field>
+          {!sembunyikanPenerimaan && (
+            <Field label="Penerimaan barang (Gudang)" hint="Tautkan bila barangnya sudah dicatat di Gudang — nilainya sudah masuk Persediaan saat diterima, jadi tagihan hanya menutupnya.">
+              <SelectPO value={f.goodsReceiptId || ""} onChange={(v) => set("goodsReceiptId", v)} ariaLabel="Penerimaan barang (Gudang)" opsi={[{ nilai: "", label: "— tanpa penerimaan gudang —" }, ...daftarGr.map((r) => ({ nilai: r.id, label: `${r.receiptNumber} · ${r.supplier || "tanpa supplier"} · diterima ${formatUang(r.nilaiTerima)}` }))]} />
+            </Field>
+          )}
           {gr ? (
             <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-lg bg-inset px-3 py-2 text-[12.5px] sm:grid-cols-2">
               <div><dt className="text-ink3">Supplier (penerimaan)</dt><dd className="text-ink">{gr.supplier || "—"}{namaSupplier && gr.supplier && gr.supplier.toLowerCase() !== namaSupplier.toLowerCase() ? <span className="text-orange"> · beda nama dengan supplier tagihan</span> : null}</dd></div>
@@ -76,13 +71,12 @@ export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbi
 
       {f.billType && f.billType !== "BAHAN_BAKU" && (
         <Field label={pakaiAset ? "Jenis aset" : "Kategori biaya"} required>
-          <Pilihan
+          <SelectPO
             value={(pakaiAset ? f.purchaseCategoryId : f.expenseCategoryId) || ""}
             onChange={(v) => set(pakaiAset ? "purchaseCategoryId" : "expenseCategoryId", v)}
-          >
-            <option value="">— pilih —</option>
-            {opsi.map((k) => <option key={k.id} value={k.id}>{k.name} → {k.account?.code}</option>)}
-          </Pilihan>
+            ariaLabel={pakaiAset ? "Jenis aset" : "Kategori biaya"}
+            opsi={[{ nilai: "", label: "— pilih —" }, ...opsi.map((k) => ({ nilai: k.id, label: `${k.name} → ${k.account?.code}` }))]}
+          />
         </Field>
       )}
     </div>

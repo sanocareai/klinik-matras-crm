@@ -20,6 +20,8 @@ import { IkJam } from "@/components/financeIconsBiaya.jsx";
 import { ChipStatusPO, BarPenerimaan } from "./DaftarPO.jsx";
 import { BagianFakturSupplier, DialogNomorFaktur, PeringatanDuplikatNomor, useTagihanSupplier } from "./FakturSupplierPO.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { TanggalPO } from "./KontrolPO.jsx";
+import "@/styles/sanss-finance-tagihan.css";
 import { aksiRincian, statusTampil, ringkasPenerimaan, angkaBaris, langkahBerikut, keteranganTermin, nomorSupplierBermakna, TEKS_NOMOR_BELUM_DIISI } from "./poTampilan.js";
 import { langkahFakturSetelahSimpan } from "./poKontrol.js";
 import PanelKedatangan, { LegendaProgres } from "@/features/kedatangan/PanelKedatangan.jsx";
@@ -577,7 +579,7 @@ function KartuFaktur({ fk, ringkas, adaUangMuka, segar, onUbah, onSetujui, onTol
 }
 
 // Formulir faktur atas PO: per baris jumlah & harga faktur, dengan petunjuk dini (akan tertahan / beda harga). Server tetap memutuskan.
-function ModalFaktur({ po, editBillId, onClose, onSaved }) {
+export function ModalFaktur({ po, editBillId, onClose, onSaved }) {
   const mengubah = !!editBillId;
   const [kunci] = useState(idKunci);
   const [termin, setTermin] = useState(TERMIN_AWAL);
@@ -620,7 +622,7 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
       open onOpenChange={(v) => !v && onClose()}
       title={mengubah ? "Ubah Faktur atas PO" : `Catat Faktur atas ${po.poNumber}`}
       description="Faktur dicocokkan per baris dengan PO. Disimpan sebagai Menunggu Persetujuan. Faktur dan pembayarannya tidak menambah stok."
-      className="w-[860px]"
+      className="fin-tg-modal w-[860px] max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
       footer={
         <div className="flex w-full flex-col gap-2">
           {(galat || (galatForm && f && f.supplierRef)) && <p role="alert" data-testid="galat-faktur" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{galat || galatForm}</p>}
@@ -643,7 +645,7 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
           <p className="fin-pof-dampak" data-testid="dampak-catat-faktur">Mencatat faktur tidak berarti barang sudah diterima atau sudah dibayar. Faktur disimpan sebagai Menunggu Persetujuan: belum ada jurnal sampai disetujui, tidak menambah stok, dan tidak membuat pembayaran.</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Nomor faktur supplier" required hint="Nomor yang tertera di faktur dari supplier. Bukan nomor tagihan SANSS (BILL-…) dan bukan nomor PO."><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} placeholder="mis. 2327/CR/EB/10/2026" aria-label="Nomor faktur supplier" /></Field>
-            <Field label="Tanggal faktur" required><Input type="date" value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></Field>
+            <Field label="Tanggal faktur" required><TanggalPO value={f.billDate} onChange={(v) => set("billDate", v)} ariaLabel="Tanggal faktur" /></Field>
           </div>
           <PeringatanDuplikatNomor supplierId={po.supplier?.id} nomor={f.supplierRef} kecualiId={editBillId || null} tagihan={tagihanSupplier} />
           <TerminFaktur purchaseOrderId={po.id} supplierId={po.supplier?.id} tanggalFaktur={f.billDate} value={termin} onChange={setTermin} />

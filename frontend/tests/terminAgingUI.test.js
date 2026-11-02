@@ -57,7 +57,7 @@ test("pemasangan: tab Jadwal & Aging di Supplier & Utang, export aging-utang, pe
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.match(sup, /key: "aging", label: "Jadwal & Aging"/);
   assert.match(sup, /<JadwalAgingUtang /);
-  assert.match(sup, /<TerminFaktur /);
+  assert.match(baca("../src/features/finance/tagihan/CatatTagihan.jsx"), /<TerminFaktur /);
   assert.match(sup, /createFinanceSupplierPayment\(d, kunci\)/);
   const aging = baca("../src/features/finance/JadwalAgingUtang.jsx");
   assert.match(aging, /modul="aging-utang"/);

@@ -66,12 +66,21 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
 
 test("halaman berdaftar dengan kartu (HP) juga bisa dibuka: RowCard memakai onClick", () => {
   // Pengeluaran tidak lagi memakai RowCard: satu daftar <li> melayani desktop & HP (CSS container query); seluruh baris diklik lewat klikBuka (diuji di atas).
-  for (const f of ["FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
+  for (const f of ["FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
     const s = baca(path.join(halaman, f));
     const kartu = (s.match(/<RowCard\n/g) || []).length;
     const ber = (s.match(/<RowCard\n\s+key=\{[^}]+\}\n\s+onClick=/g) || []).length;
     assert.ok(kartu > 0 && ber === kartu, `${f}: ${kartu} RowCard tetapi hanya ${ber} yang punya onClick`);
   }
+});
+
+test("Tagihan supplier: baris daftar dibuka lewat klik & Enter/Spasi (aksi di baris tidak ikut membuka), rincian punya panel sendiri dengan akses ke seluruh bidang dokumen", () => {
+  const d = baca(path.join(akar, "src/features/finance/tagihan/DaftarTagihan.jsx"));
+  assert.ok(d.includes("onClick={bukaDariKlik}") && d.includes('e.key === "Enter" || e.key === " "'));
+  assert.ok(d.includes(`closest("button, a, input, select, textarea, [role='menuitem'], [data-tanpa-detail]")`));
+  const r = baca(path.join(akar, "src/features/finance/tagihan/RincianTagihan.jsx"));
+  assert.ok(r.includes("Semua rincian dokumen") && r.includes("spec?.bagian"));
+  const hal = baca(path.join(halaman, "FinanceSuppliers.jsx")); assert.ok(hal.includes("<RincianTagihan") && hal.includes("specOtomatis("));
 });
 
 test("PanelDetail: klik pada tombol/tautan/portal tidak membuka panel; Enter/Spasi membuka; dokumentasi penggunaan ada", () => {

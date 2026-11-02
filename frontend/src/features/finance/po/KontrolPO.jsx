@@ -58,7 +58,7 @@ const LEBAR_KAL = 308, TINGGI_KAL = 372;
  * keyboard (panah, PageUp/PageDown, Shift = tahun, Home/End, Enter/Spasi), Esc menutup dan mengembalikan fokus ke pemicu.
  * `min` hanya menonaktifkan hari sebelumnya (aturan yang sudah ada: perkiraan datang tidak boleh sebelum tanggal PO); tidak ada batas maksimum.
  */
-export function TanggalPO({ id, value, onChange, placeholder = "Pilih tanggal", bolehKosong = false, min = "", invalid = false, ariaLabel, ariaDescribedBy }) {
+export function TanggalPO({ id, value, onChange, placeholder = "Pilih tanggal", bolehKosong = false, min = "", invalid = false, disabled = false, ariaLabel, ariaDescribedBy }) {
   const [buka, setBuka] = useState(false);
   const [kursor, setKursor] = useState(() => (uraiTanggal(value) ? value : hariIniWIB())); // hari yang memegang fokus di kisi
   const [pos, setPos] = useState(null);
@@ -175,7 +175,7 @@ export function TanggalPO({ id, value, onChange, placeholder = "Pilih tanggal", 
   return (
     <div className="fin-tgl">
       <button
-        ref={pemicu} id={id} type="button" className={cn("fin-tgl-pemicu", adaNilai && "isi", invalid && "salah")} aria-haspopup="dialog" aria-expanded={buka} aria-controls={buka ? idPop : undefined}
+        ref={pemicu} id={id} type="button" disabled={disabled} className={cn("fin-tgl-pemicu", adaNilai && "isi", invalid && "salah")} aria-haspopup="dialog" aria-expanded={buka} aria-controls={buka ? idPop : undefined}
         aria-invalid={invalid || undefined} aria-label={ariaLabel ? `${ariaLabel}: ${adaNilai ? formatTanggalPO(value) : "belum dipilih"}` : undefined} aria-describedby={ariaDescribedBy}
         onClick={() => (buka ? tutup(false) : bukaKalender())}
         onKeyDown={(e) => { if (e.key === "ArrowDown" && !buka) { e.preventDefault(); bukaKalender(); } }}
