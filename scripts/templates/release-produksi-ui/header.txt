@@ -1,7 +1,6 @@
 # RILIS FRONTEND-SAJA "Redesain workspace Produksi" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA perubahan logika bisnis.
 # Isi (penyajian saja; endpoint, payload, izin, status, jadwal, bahan, stok, Material Issue, QC, dan jurnal tidak berubah): kerangka Produksi memakai lapisan visual bersama (.crm-skin + penanda .prod-skin), ikon duotone Produksi,
 # Ringkasan, daftar Order Produksi (toolbar terpadu), panel/ruang kerja unit (tiga status terpisah, tab Bahan/Status & target/Riwayat/Lanjutan), form pemakaian bahan (kartu sumber, dampak stok dekat konfirmasi), pemilih tanggal aplikasi.
-# ALLOWLIST EKSPLISIT dari scripts/templates/release-produksi-ui/allowlist.txt: generator menolak bila himpunan berkas aplikasi di diff berbeda. Berkas bersama yang disentuh hanya Layout.jsx (crmShell untuk Produksi), WorkspaceSwitcher.jsx (nama pendek),
 # main.jsx (satu impor CSS) dan components/ui/{date-picker,calendar-month}.jsx (prop minDate/disabled/triggerProps OPT-IN; tanpa prop itu perilaku identik).
 # Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
 # BASELINE = release aktif yang diberikan lewat argumen (di atas UX editor PO spo3). backend/ harus IDENTIK dengan release aktif (dua berkas tes pemeriksa kontrak metrik dikecualikan HANYA pada perbandingan container-vs-folder, jalur persis); image backend SAMA.
