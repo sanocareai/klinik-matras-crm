@@ -21,10 +21,3 @@ frontend/src/styles/sanss-produksi.css
 frontend/tests/bahanUsulanSementara.test.js
 frontend/tests/releaseSpr1Paket.test.js
 frontend/tests/uxRealignment.test.js
-scripts/templates/release-produksi-ui/allowlist.txt
-scripts/templates/release-produksi-ui/bandingkan-kode.txt
-scripts/templates/release-produksi-ui/build-only.txt
-scripts/templates/release-produksi-ui/container-baru.txt
-scripts/templates/release-produksi-ui/fitur-dist.txt
-scripts/templates/release-produksi-ui/header.txt
-scripts/templates/release-produksi-ui/verifikasi-hotfix.txt
