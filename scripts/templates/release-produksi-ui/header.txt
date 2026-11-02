@@ -1,5 +1,6 @@
-# RILIS FRONTEND-SAJA "Redesain workspace Produksi" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA perubahan logika bisnis.
-# Isi (penyajian saja; endpoint, payload, izin, status, jadwal, bahan, stok, Material Issue, QC, dan jurnal tidak berubah): kerangka Produksi memakai lapisan visual bersama (.crm-skin + penanda .prod-skin), ikon duotone Produksi,
+# RILIS FRONTEND-SAJA "Order Produksi sebagai ruang kerja" (tahap 2 redesain Produksi) — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA perubahan logika bisnis.
+# Tahap 2: komposisi dan urutan interaksi — daftar Order Produksi (segmen Aktif/Riwayat/Semua, saring, bilah kelengkapan, kolom Pelanggan·Posisi·Pekerjaan·Target&PIC, Muat berikutnya), panel samping tiga tab (Pekerjaan/Bahan/Riwayat; menempel di layar lebar, geser di layar sempit), form pemakaian bahan dua kolom pilih→isi jumlah→periksa→konfirmasi (peringatan saat ganti sumber/tutup dengan isian).
+# Isi tahap 1 (penyajian saja; endpoint, payload, izin, status, jadwal, bahan, stok, Material Issue, QC, dan jurnal tidak berubah): kerangka Produksi memakai lapisan visual bersama (.crm-skin + penanda .prod-skin), ikon duotone Produksi,
 # Ringkasan, daftar Order Produksi (toolbar terpadu), panel/ruang kerja unit (tiga status terpisah, tab Bahan/Status & target/Riwayat/Lanjutan), form pemakaian bahan (kartu sumber, dampak stok dekat konfirmasi), pemilih tanggal aplikasi.
 # main.jsx (satu impor CSS) dan components/ui/{date-picker,calendar-month}.jsx (prop minDate/disabled/triggerProps OPT-IN; tanpa prop itu perilaku identik).
 # Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
