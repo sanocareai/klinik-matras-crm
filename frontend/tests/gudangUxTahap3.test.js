@@ -81,7 +81,7 @@ test("Stok & Lokasi: navigasi kelompok sebagai pintu masuk; ringkasan tidak mend
   assert.match(s, /data-testid="kembali-semua"/); assert.match(s, /<DaftarBahan/); assert.match(s, /<details[^>]*data-testid="rincian-ringkasan"/);
   assert.doesNotMatch(s, /<details[^>]*\bopen=/, "rincian angka tertutup secara default (ringkasan tidak mendominasi)");
   assert.doesNotMatch(s + n, /itemGroup\s*[=!]==?|\.nama\.(includes|match)|toLowerCase\(\)\.includes\("(busa|kain)/i, "layar tidak menebak kelompok dari nama");
-  assert.match(n, /flex-wrap/); assert.match(n, /aria-pressed/); assert.match(n, /belum ada bahan/); // Okt 2026: pilihan kelompok ringkas (segmen dengan jumlah), bukan kartu grid
+  assert.match(n, /gud-kelompok/); assert.match(n, /aria-pressed/); assert.match(n, /belum ada bahan/); // Okt 2026: pilihan kelompok ringkas (segmen dengan jumlah), bukan kartu grid
   assert.match(s, /max-sm:min-h-11/);
 });
 

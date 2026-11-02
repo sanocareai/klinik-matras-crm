@@ -1,49 +1,54 @@
-import React, { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import {
-  UNIT_LABEL, ALL_UNITS, CATEGORY_REAL, SERVICE_LINE_REAL,
-} from "../inventoryReal.js";
+import { AngkaGud, GudField, PilihGud } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkMuatUlang } from "@/components/gudangIcons.jsx";
+import { UNIT_LABEL, ALL_UNITS, CATEGORY_REAL, SERVICE_LINE_REAL } from "../inventoryReal.js";
 
-// Tambah / ubah item katalog — data NYATA (POST & PATCH /inventory/materials).
+// Tambah / ubah bahan katalog — data NYATA (POST & PATCH /inventory/materials). Redesain Gudang (3 Nov 2026): pemilih dan kolom angka aplikasi, galat per kolom, isian bertahan saat gagal, klik ganda = satu permintaan.
 //
-// ⚠️ `code` dan `unit` TIDAK BISA DIUBAH setelah item dibuat. Itu bukan
-// kelalaian UI: backend menolaknya (lihat komentar di routes/inventory.js)
-// karena ledger sudah mengacu ke satuan itu — mengganti satuan diam-diam
-// membuat riwayat qty tidak bisa dibandingkan. Field-nya dikunci dan
-// alasannya ditulis, bukan dihilangkan tanpa penjelasan.
-const KOSONG = {
-  code: "", name: "", unit: "PCS", category: "", serviceLine: "",
-  reorderPoint: "", reorderQty: "",
-};
+// ⚠️ `code`, `unit`, dan `serviceLine` TIDAK BISA DIUBAH setelah bahan dibuat. Itu bukan kelalaian UI: backend menolaknya karena ledger sudah mengacu ke satuan itu — mengganti satuan diam-diam membuat riwayat
+// qty tidak bisa dibandingkan. Kolomnya dikunci dan alasannya ditulis. Mengubah informasi bahan (nama, kategori, batas minimum, jumlah restok) TIDAK mengubah saldo, harga, atau dokumen lama;
+// perubahan saldo dan harga memakai jalurnya sendiri (Koreksi saldo dan Ubah harga di rincian bahan).
+const KOSONG = { code: "", name: "", unit: "PCS", category: "", serviceLine: "", reorderPoint: "", reorderQty: "" };
+const angkaSah = (v) => v === "" || v === null || v === undefined || (Number.isFinite(Number(v)) && Number(v) >= 0);
 
 export default function ItemFormModal({ open, item, onClose, onSaved }) {
   const ubah = !!item;
   const [form, setForm] = useState(KOSONG);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [galat, setGalat] = useState({});
+  const kunci = useRef(false);
 
   useEffect(() => {
     if (!open) return;
-    setErr("");
+    setErr(""); setGalat({});
     setForm(item
-      ? {
-          code: item.code, name: item.name, unit: item.unit,
-          category: item.category || "", serviceLine: item.serviceLine || "",
-          reorderPoint: item.reorderPoint ?? "", reorderQty: item.reorderQty ?? "",
-        }
+      ? { code: item.code, name: item.name, unit: item.unit, category: item.category || "", serviceLine: item.serviceLine || "", reorderPoint: item.reorderPoint ?? "", reorderQty: item.reorderQty ?? "" }
       : KOSONG);
   }, [open, item]);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (v) => { setForm((f) => ({ ...f, [k]: typeof v === "string" ? v : v.target.value })); setGalat((g) => ({ ...g, [k]: undefined })); };
+  const opsiSatuan = useMemo(() => ALL_UNITS.map((u) => ({ nilai: u, label: UNIT_LABEL[u] })), []);
+  const opsiKategori = useMemo(() => [{ nilai: "", label: "Tanpa kategori" }, ...Object.entries(CATEGORY_REAL).map(([k, c]) => ({ nilai: k, label: `${c.label} — ${c.labelId}` }))], []);
+  const opsiLini = useMemo(() => [{ nilai: "", label: "Lintas lini" }, ...Object.entries(SERVICE_LINE_REAL).map(([k, s]) => ({ nilai: k, label: s.labelId }))], []);
+
+  function periksa() {
+    const e = {};
+    if (!String(form.code).trim()) e.code = "Kode wajib diisi";
+    if (!String(form.name).trim()) e.name = "Nama wajib diisi";
+    if (!angkaSah(form.reorderPoint)) e.reorderPoint = "Harus angka 0 atau lebih";
+    if (!angkaSah(form.reorderQty)) e.reorderQty = "Harus angka 0 atau lebih";
+    setGalat(e); return e;
+  }
 
   async function simpan(e) {
     e.preventDefault();
-    if (!form.code.trim() || !form.name.trim()) { setErr("Kode dan nama wajib diisi"); return; }
-    setBusy(true);
+    if (kunci.current) return;
     setErr("");
+    if (Object.keys(periksa()).length) return;
+    kunci.current = true; setBusy(true);
     try {
       if (ubah) {
         // code & unit sengaja TIDAK dikirim — backend menolaknya.
@@ -65,107 +70,47 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
       onSaved();
       onClose();
     } catch (e2) {
-      setErr(e2.message);
+      setErr(e2.message); // isian TIDAK dihapus
     } finally {
-      setBusy(false);
+      kunci.current = false; setBusy(false);
     }
   }
 
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={ubah ? "Ubah Item" : "Tambah Item"}>
-      <form onSubmit={simpan} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="wh-code" className="mb-1 block text-[11.5px] font-semibold text-ink2">
-              Item Code *
-            </label>
-            <input
-              id="wh-code" value={form.code} onChange={set("code")} disabled={ubah}
-              placeholder="FOAM-HR-D18-5CM"
-              className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent disabled:bg-inset disabled:text-ink3"
-            />
-            {ubah && <p className="mt-1 text-[10.5px] text-ink3">Kode tidak bisa diubah setelah item dibuat.</p>}
-          </div>
-          <div>
-            <label htmlFor="wh-unit" className="mb-1 block text-[11.5px] font-semibold text-ink2">
-              Unit of Measure *
-            </label>
-            <select
-              id="wh-unit" value={form.unit} onChange={set("unit")} disabled={ubah}
-              className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent disabled:bg-inset disabled:text-ink3"
-            >
-              {ALL_UNITS.map((u) => <option key={u} value={u}>{UNIT_LABEL[u]}</option>)}
-            </select>
-            {ubah && <p className="mt-1 text-[10.5px] text-ink3">Satuan dikunci — ledger sudah memakainya.</p>}
-          </div>
+    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={ubah ? "Ubah bahan" : "Tambah bahan"} description={ubah ? "Mengubah informasi bahan tidak mengubah saldo, harga, atau dokumen lama." : "Bahan baru belum punya saldo; stok baru bertambah lewat penerimaan resmi."} className="w-[600px] gud-modal">
+      <form onSubmit={simpan} className="gud-form" noValidate data-testid="form-bahan">
+        <div className="gud-form-baris">
+          <GudField label="Kode bahan" htmlFor="wh-code" wajib galat={galat.code} hint={ubah ? "Kode tidak bisa diubah setelah bahan dibuat." : undefined}>
+            <input id="wh-code" className="gud-f-teks" value={form.code} onChange={set("code")} disabled={ubah} placeholder="FOAM-HR-D18-5CM" aria-invalid={!!galat.code || undefined} data-testid="input-kode" />
+          </GudField>
+          <GudField label="Satuan stok" htmlFor="wh-unit" wajib hint={ubah ? "Satuan dikunci — ledger sudah memakainya." : "Tidak bisa diubah setelah bahan dibuat."}>
+            <PilihGud id="wh-unit" value={form.unit} onChange={set("unit")} opsi={opsiSatuan} disabled={ubah} data-testid="pilih-satuan" />
+          </GudField>
         </div>
-
-        <div>
-          <label htmlFor="wh-name" className="mb-1 block text-[11.5px] font-semibold text-ink2">Item Name *</label>
-          <input
-            id="wh-name" value={form.name} onChange={set("name")}
-            placeholder="Busa HR Density 18 — 5cm"
-            className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-          />
+        <GudField label="Nama bahan" htmlFor="wh-name" wajib galat={galat.name}>
+          <input id="wh-name" className="gud-f-teks" value={form.name} onChange={set("name")} placeholder="Busa HR Density 18 — 5cm" aria-invalid={!!galat.name || undefined} data-testid="input-nama" />
+        </GudField>
+        <div className="gud-form-baris">
+          <GudField label="Kategori" htmlFor="wh-cat"><PilihGud id="wh-cat" value={form.category} onChange={set("category")} opsi={opsiKategori} data-testid="pilih-kategori" /></GudField>
+          <GudField label="Lini layanan" htmlFor="wh-line" hint={ubah ? "Dikunci setelah bahan dibuat." : undefined}><PilihGud id="wh-line" value={form.serviceLine} onChange={set("serviceLine")} opsi={opsiLini} disabled={ubah} data-testid="pilih-lini" /></GudField>
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="wh-cat" className="mb-1 block text-[11.5px] font-semibold text-ink2">Category</label>
-            <select
-              id="wh-cat" value={form.category} onChange={set("category")}
-              className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
-            >
-              <option value="">Tanpa kategori</option>
-              {Object.entries(CATEGORY_REAL).map(([k, c]) => (
-                <option key={k} value={k}>{c.label} — {c.labelId}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="wh-line" className="mb-1 block text-[11.5px] font-semibold text-ink2">Service Line</label>
-            <select
-              id="wh-line" value={form.serviceLine} onChange={set("serviceLine")} disabled={ubah}
-              className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent disabled:bg-inset disabled:text-ink3"
-            >
-              <option value="">Lintas lini</option>
-              {Object.entries(SERVICE_LINE_REAL).map(([k, s]) => <option key={k} value={k}>{s.labelId}</option>)}
-            </select>
-          </div>
+        <div className="gud-form-baris">
+          <GudField label="Batas minimum (titik restok)" htmlFor="wh-rop" galat={galat.reorderPoint}>
+            <AngkaGud id="wh-rop" value={String(form.reorderPoint ?? "")} onChange={set("reorderPoint")} satuan={String(form.unit ?? "").toLowerCase()} invalid={!!galat.reorderPoint} placeholder="kosong = belum diatur" data-testid="input-batas-minimum" />
+          </GudField>
+          <GudField label="Jumlah restok standar" htmlFor="wh-roq" galat={galat.reorderQty}>
+            <AngkaGud id="wh-roq" value={String(form.reorderQty ?? "")} onChange={set("reorderQty")} satuan={String(form.unit ?? "").toLowerCase()} invalid={!!galat.reorderQty} placeholder="jumlah restok" data-testid="input-jumlah-restok" />
+          </GudField>
         </div>
+        <p className="gud-petunjuk">Batas minimum kosong berarti <strong>belum diatur</strong>: bahan ini tidak pernah muncul sebagai saran Restok (bukan "restok di angka nol"). Hanya petugas berwenang yang mengisinya; sistem tidak membuat angka sendiri.</p>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="wh-rop" className="mb-1 block text-[11.5px] font-semibold text-ink2">
-              Batas minimum (titik restok)
-            </label>
-            <input
-              id="wh-rop" type="number" step="any" min="0" value={form.reorderPoint} onChange={set("reorderPoint")}
-              placeholder="kosongkan = alert mati"
-              className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-            />
-          </div>
-          <div>
-            <label htmlFor="wh-roq" className="mb-1 block text-[11.5px] font-semibold text-ink2">Jumlah restok standar</label>
-            <input
-              id="wh-roq" type="number" step="any" min="0" value={form.reorderQty} onChange={set("reorderQty")}
-              placeholder="jumlah restok"
-              className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-            />
-          </div>
-        </div>
-        <p className="text-[10.5px] leading-relaxed text-ink3">
-          Batas minimum kosong berarti <strong>belum diatur</strong>: item ini tidak pernah muncul sebagai saran Restok
-          (bukan "restok di angka nol"). Hanya petugas berwenang yang mengisinya; sistem tidak membuat angka sendiri.
-        </p>
+        {err && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-bahan">{err}</p>}
 
-        {err && <p className="text-[12px] text-red">{err}</p>}
-
-        <div className="flex justify-end gap-2 border-t border-line pt-3">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Batal</Button>
-          <Button type="submit" size="sm" disabled={busy}>
-            {busy && <Loader2 size={14} className="animate-spin" />} {ubah ? "Simpan Perubahan" : "Tambah Item"}
-          </Button>
+        <div className="gud-form-aksi">
+          <button type="button" className="gud-tombol" onClick={onClose}>Batal</button>
+          <button type="submit" className="gud-tombol gud-tombol-utama" disabled={busy} data-testid="simpan-bahan">
+            {busy && <IkMuatUlang size={14} className="animate-spin" />} {ubah ? "Simpan perubahan" : "Tambah bahan"}
+          </button>
         </div>
       </form>
     </Modal>

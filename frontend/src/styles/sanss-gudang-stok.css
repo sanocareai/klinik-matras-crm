@@ -1,0 +1,166 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS GUDANG — STOK & LOKASI (redesain Gudang Fase 2, 3 Nov 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Visual saja; data, saldo, ketersediaan, harga, izin, dan endpoint tidak diubah. Memakai komponen & token dari sanss-gudang.css (.gud-*) — berkas ini hanya menambah bagian Stok & Lokasi.
+   Susunan daftar mengikuti LEBAR DAFTAR (container query `gud-daftar`), bukan lebar layar, karena panel rincian menempel di kanan.
+   TIPOGRAFI: Manrope (tidak diubah); isi 400, label/angka/tombol 500, judul maksimal 600. Ikon: keluarga SVG garis (components/gudangIcons.jsx).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ikon kelompok bahan ─────────────────────────────────────────────────── */
+.gud-ikon-bahan { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px; background: var(--crm-soft, #E9EBFF); color: var(--crm-primary-ink, #2F57E0); }
+.gud-ikon-bahan-lg { width: 52px; height: 52px; border-radius: 16px; }
+.gud-ikon-bahan-belum { background: var(--ord-pending-bg, #FFF0C2); color: var(--ord-pending-fg, #6E4300); }
+
+/* ── Ringkasan: empat ubin (jumlah BAHAN, bukan total kuantitas) ─────────── */
+.gud-ubin-baris { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@container gud-daftar (max-width: 760px) { .gud-ubin-baris { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.gud-ubin { min-width: 0; border-radius: 16px; background: var(--bg-inset, #F1F3FF); }
+.gud-ubin-isi { display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 88px; padding: 14px 16px; border: 0; border-radius: 16px; background: transparent; text-align: left; font: inherit; color: inherit; }
+button.gud-ubin-isi { cursor: pointer; }
+button.gud-ubin-isi:hover { background: var(--crm-soft, #E9EBFF); }
+button.gud-ubin-isi:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--crm-primary, #3965FA); }
+.gud-ubin-judul { font-size: 14px; font-weight: 400; color: var(--text-secondary); }
+.gud-ubin-angka { font-size: 28px; font-weight: 500; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.gud-ubin-angka[data-nada="merah"] { color: var(--ord-cancelled-fg, #A3170E); }
+.gud-ubin-angka[data-nada="kuning"] { color: var(--ord-pending-fg, #6E4300); }
+:root[data-theme="dark"] .gud-ubin-angka[data-nada="merah"] { color: #FFB4A8; }
+:root[data-theme="dark"] .gud-ubin-angka[data-nada="kuning"] { color: #FFD97A; }
+.gud-ubin-ket { font-size: 13px; color: var(--text-tertiary); }
+
+/* ── Toolbar saringan ────────────────────────────────────────────────────── */
+.gud-saring-stok { align-items: center; }
+.gud-pilih-isi { display: block; flex: 1 1 180px; min-width: 0; max-width: 260px; }
+.gud-saklar { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px; font-size: 14px; color: var(--text-primary); cursor: pointer; }
+.gud-saklar input { width: 20px; height: 20px; }
+.gud-stok-kelompok { display: flex; flex-direction: column; gap: 6px; }
+.gud-kelompok { list-style: none; margin: 0; }
+.gud-kelompok > li { display: flex; }
+.gud-kelompok button[data-peringatan="ya"] { color: var(--ord-pending-fg, #6E4300); }
+.gud-kelompok button[data-kosong="ya"] { opacity: .65; }
+.gud-stok-ringkas-hasil { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; font-size: 14px; color: var(--text-secondary); }
+.gud-stok-ringkas-hasil [data-testid="rincian-hasil"] { color: var(--text-tertiary); }
+
+/* ── Daftar bahan ────────────────────────────────────────────────────────── */
+.gud-stok-daftar { min-width: 0; }
+.gud-stok-ul { margin: 0; padding: 0; list-style: none; }
+.gud-stok-ul > li + li { border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-stok-kepala, .gud-stok-baris { display: grid; align-items: center; column-gap: 14px; grid-template-columns: 44px minmax(0, 2.6fr) minmax(5.5rem, 1fr) minmax(5.5rem, 1fr) 4.5rem minmax(7rem, 1fr) minmax(9.5rem, 1.2fr) 1.25rem; }
+.gud-stok-kepala[data-harga="tidak"], .gud-stok-baris[data-harga="tidak"] { grid-template-columns: 44px minmax(0, 2.6fr) minmax(5.5rem, 1fr) minmax(5.5rem, 1fr) 4.5rem minmax(9.5rem, 1.2fr) 1.25rem; }
+.gud-stok-kepala { padding: 10px 12px; border-radius: 12px; background: var(--bg-inset, #F1F3FF); font-size: 13px; font-weight: 500; color: var(--text-tertiary); }
+.gud-stok-k-bahan { grid-column: 1 / 3; }
+.gud-stok-k-saldo, .gud-stok-k-tersedia { text-align: right; }
+.gud-stok-k-rincian { grid-column: -2; position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.gud-stok-baris { width: 100%; min-height: 64px; padding: 10px 12px; border: 0; border-radius: 14px; background: transparent; text-align: left; font: inherit; color: var(--text-primary); cursor: pointer; transition: background-color .12s; }
+.gud-stok-baris:hover { background: var(--bg-hover, rgba(57, 101, 250, 0.05)); }
+.gud-stok-baris[aria-current="true"] { background: var(--crm-soft, #E9EBFF); }
+.gud-stok-baris:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--crm-primary, #3965FA) inset; }
+.gud-stok-nama { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gud-stok-judul { font-size: 15px; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+.gud-stok-kode { font-size: 13px; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.gud-stok-sel { min-width: 0; font-size: 14px; }
+.gud-stok-sel em { font-style: normal; font-size: 13px; color: var(--text-tertiary); }
+.gud-stok-saldo, .gud-stok-tersedia { text-align: right; }
+.gud-stok-satuan { color: var(--text-secondary); }
+.gud-stok-harga { overflow-wrap: anywhere; }
+.gud-stok-panah { justify-self: end; color: var(--text-tertiary); }
+.gud-angka { font-variant-numeric: tabular-nums; font-weight: 500; }
+.gud-minus { color: var(--ord-cancelled-fg, #A3170E); }
+.gud-plus { color: var(--ord-delivered-fg, #11663A); }
+:root[data-theme="dark"] .gud-minus { color: #FFB4A8; }
+:root[data-theme="dark"] .gud-plus { color: #9BE8BC; }
+.gud-redup { color: var(--text-tertiary); font-weight: 400; }
+.gud-aksen { color: var(--crm-primary-ink, #2F57E0); }
+.gud-merah-teks { color: var(--ord-cancelled-fg, #A3170E); }
+.gud-awas-teks { color: var(--ord-pending-fg, #6E4300); }
+.gud-pill-titik::before { content: ""; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; opacity: .75; }
+.gud-pill-titik { white-space: nowrap; }
+.gud-stok-halaman { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); font-size: 14px; color: var(--text-secondary); }
+.gud-stok-halaman-kontrol { display: inline-flex; align-items: center; gap: 8px; }
+.gud-stok-halaman-kontrol .gud-tombol-ikon:disabled { opacity: .35; }
+
+/* Daftar menyempit (panel kanan terbuka): kolom Harga disembunyikan — tetap ada di tab Harga */
+@container gud-daftar (max-width: 900px) {
+  .gud-stok-kepala, .gud-stok-baris, .gud-stok-kepala[data-harga="ya"], .gud-stok-baris[data-harga="ya"] { grid-template-columns: 44px minmax(0, 2.4fr) minmax(4.5rem, 1fr) minmax(4.5rem, 1fr) 3.5rem minmax(8.5rem, 1.1fr) 1.25rem; }
+  .gud-stok-harga, .gud-stok-k-harga { display: none; }
+}
+/* Kartu (daftar sempit / HP): nama + kondisi di atas, tiga angka berlabel di bawah */
+@container gud-daftar (max-width: 640px) {
+  .gud-stok-kepala { display: none; }
+  .gud-stok-baris, .gud-stok-baris[data-harga="ya"], .gud-stok-baris[data-harga="tidak"] { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) auto; grid-template-areas: "ikon nama nama kondisi" "ikon saldo tersedia satuan"; row-gap: 8px; padding: 12px; }
+  .gud-stok-ikon { grid-area: ikon; align-self: start; }
+  .gud-stok-nama { grid-area: nama; }
+  .gud-stok-kondisi { grid-area: kondisi; justify-self: end; }
+  .gud-stok-saldo { grid-area: saldo; }
+  .gud-stok-tersedia { grid-area: tersedia; }
+  .gud-stok-satuan { grid-area: satuan; }
+  .gud-stok-saldo, .gud-stok-tersedia { text-align: left; }
+  .gud-stok-sel[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--text-tertiary); font-weight: 400; }
+  .gud-stok-kondisi::before { display: none !important; }
+  .gud-stok-panah { display: none; }
+}
+
+/* Rincian ringkasan di dasar daftar */
+.gud-stok-rincian { display: flex; flex-direction: column; gap: 10px; }
+.gud-stok-angka-baris { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; font-size: 14px; color: var(--text-secondary); }
+.gud-stok-angka-baris strong { font-weight: 500; color: var(--text-primary); }
+.gud-stok-kesimpulan { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+
+/* ── Ruang kerja bahan (panel kanan / layar penuh) ───────────────────────── */
+.gud-bahan-kepala { display: flex; flex-direction: column; gap: 12px; }
+.gud-bahan-baris { display: flex; align-items: center; gap: 12px; }
+.gud-bahan-pil { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.gud-bahan-harga { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.gud-bahan .gud-tab { flex-wrap: nowrap; overflow-x: auto; }
+.gud-bahan-isi { display: flex; flex-direction: column; }
+.gud-bahan-bagian { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.gud-bahan-bagian[hidden] { display: none; }
+.gud-bahan-sub { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-primary); }
+.gud-bahan-judul-baris { display: flex; align-items: center; gap: 8px; }
+.gud-bahan-judul-baris .gud-bahan-sub { flex: 1; }
+.gud-bahan-pendukung { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-bahan-tombol { gap: 8px; }
+.gud-bahan-lipatan { display: flex; flex-direction: column; gap: 10px; }
+.gud-saldo-utama { padding: 16px; border-radius: 16px; background: var(--bg-inset, #F1F3FF); }
+.gud-saldo-label { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-secondary); }
+.gud-saldo-angka { margin-top: 4px; font-size: 34px; font-weight: 500; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.gud-saldo-satuan { margin-left: 6px; font-size: 14px; font-weight: 400; letter-spacing: 0; color: var(--text-tertiary); }
+.gud-saldo-komponen { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.gud-saldo-komponen dt { font-size: 13px; color: var(--text-tertiary); }
+.gud-saldo-komponen dd { margin: 2px 0 0; font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.gud-harga-utama { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+.gud-harga-kosong { font-size: 18px; font-weight: 500; color: var(--text-tertiary); }
+.gud-dl { margin: 0; display: flex; flex-direction: column; }
+.gud-dl-baris { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); font-size: 14px; }
+.gud-dl-baris:first-child { border-top: 0; }
+.gud-dl-baris dt { flex: none; color: var(--text-tertiary); }
+.gud-dl-baris dd { margin: 0; min-width: 0; text-align: right; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+.gud-dl-baris em { font-style: normal; font-weight: 400; color: var(--text-tertiary); }
+.gud-koreksi { display: flex; flex-direction: column; gap: 10px; }
+.gud-tautan-nomor { font-weight: 500; color: var(--crm-primary-ink, #2F57E0); text-decoration: none; }
+.gud-tautan-nomor:hover { text-decoration: underline; }
+.gud-riwayat { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.gud-riwayat > li { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-riwayat > li:first-child { border-top: 0; }
+.gud-riwayat-atas { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.gud-gerak { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.gud-gerak > li { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-gerak > li:first-child { border-top: 0; }
+.gud-gerak-isi { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.gud-gerak-isi .gud-sekunder { margin: 0; font-size: 13px; }
+.gud-gerak-qty { flex: none; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.gud-info[data-nada="ok"] { background: var(--ord-delivered-bg, #DDF6E5); color: var(--ord-delivered-fg, #11663A); }
+.gud-info > svg { flex: none; vertical-align: -3px; }
+
+/* Panel menempel: tinggi, tab, bilah tindakan */
+.gud-bahan.fokus-tempel [data-testid="fokus-header"] { padding-bottom: 12px; }
+.gud-bahan [data-testid="fokus-aksi"] { padding: 12px 24px 16px; }
+.gud-bahan .gud-aksi-baris { justify-content: flex-end; }
+.gud-bahan .gud-aksi-baris .gud-tombol { flex: 0 1 auto; }
+
+/* ── Kontrol formulir tambahan ───────────────────────────────────────────── */
+.gud-f-awalan { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-tertiary); pointer-events: none; }
+.gud-f-waktu > div, .gud-f-waktu button { width: 100%; }
+:root .app-shell .gud-f-waktu button { min-height: 44px; border: 0 !important; border-radius: 12px; background: var(--bg-inset, #F1F3FF) !important; color: var(--text-primary) !important; font-size: 14px; font-weight: 400 !important; max-width: none; }
+.gud-f-waktu[data-invalid="ya"] button { box-shadow: 0 0 0 2px var(--ord-cancelled-dot, #D92D20); }
+.gud-modal .gud-pilih-baris { align-items: flex-start; }
+.gud-modal table { font-size: 13px; }

@@ -1,22 +1,19 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Loader2, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import { Input } from "@/components/ui/input.jsx";
-import { Field } from "@/components/ui/field.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import { GudField, WaktuGud } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkAwas, IkMuatUlang } from "@/components/gudangIcons.jsx";
 import { TEKS, rp, rpNilai, tanggalJam, keInputLokal, periksaIsian, susunMasukan, varianBukti } from "./hargaBerlakuLogic.js";
 
 const TIPE_TEKS = { ISSUE: "Pemakaian", RETURN: "Retur", WASTE: "Waste", ADJUSTMENT: "Penyesuaian" };
 const BEKU_TEKS = { DIBEKUKAN: "sudah dibekukan", DIBEKUKAN_TANPA_HARGA: "dibekukan tanpa harga", BELUM_DIBEKUKAN: "belum dibekukan", GAGAL_PEMBEKUAN: "GAGAL dibekukan (perlu diperbaiki)" };
 
-// UBAH HARGA BERLAKU (atau KOREKSI salah input): isi harga baru, waktu berlaku, alasan, catatan/bukti opsional → PRATINJAU dari server → simpan.
-// Satu Idempotency-Key per pembukaan modal: klik ganda / ulang = satu baris. Hash pratinjau menjaga agar yang disimpan = yang dilihat.
+// UBAH HARGA BERLAKU (atau KOREKSI salah input) — redesain Gudang, 3 Nov 2026: harga baru, waktu berlaku (pemilih tanggal & jam aplikasi), alasan, catatan/bukti opsional → PRATINJAU dari server → simpan.
+// Satu Idempotency-Key per pembukaan modal: klik ganda / ulang = satu baris (kunci sinkron lewat ref). Hash pratinjau menjaga agar yang disimpan = yang dilihat. Harga Berlaku (HPP operasional) bukan nilai persediaan Finance.
 export default function UbahHargaModal({ open, onClose, bahan, hargaSekarang, koreksi = null, onTersimpan }) {
   const [harga, setHarga] = useState(koreksi ? String(koreksi.harga).replace(".", ",") : "");
   const [mode, setMode] = useState("SEKARANG"); const [mulai, setMulai] = useState(koreksi ? keInputLokal(koreksi.berlakuMulai) : keInputLokal(new Date(Date.now() + 86400_000)));
-  const [paham, setPaham] = useState(false);
+  const [paham, setPaham] = useState(false); const kirimRef = useRef(false);
   const [alasan, setAlasan] = useState(""); const [bukti, setBukti] = useState(koreksi?.catatanBukti ?? "");
   const [galatKolom, setGalatKolom] = useState({}); const [galat, setGalat] = useState("");
   const [pra, setPra] = useState(null); const [sibuk, setSibuk] = useState(false);
@@ -30,66 +27,68 @@ export default function UbahHargaModal({ open, onClose, bahan, hargaSekarang, ko
     try { setPra(await api.pratinjauHargaBerlaku(masukan)); } catch (err) { setGalat(err.message); } finally { setSibuk(false); }
   };
   const simpan = async () => {
-    if (sibuk || !pra) return; if (koreksi && !paham) { setGalat("Centang konfirmasi dampak dulu."); return; } setSibuk(true); setGalat("");
+    if (kirimRef.current || sibuk || !pra) return; if (koreksi && !paham) { setGalat("Centang konfirmasi dampak dulu."); return; } kirimRef.current = true; setSibuk(true); setGalat("");
     try { const r = await api.simpanHargaBerlaku({ ...masukan, hashPratinjau: pra.hash, ...(koreksi ? { konfirmasiDampak: true } : {}) }, kunci.current); onTersimpan?.(r); onClose(); }
-    catch (err) { setGalat(err.message); if (err.code === "PRATINJAU_BERUBAH") setPra(null); } finally { setSibuk(false); }
+    catch (err) { setGalat(err.message); if (err.code === "PRATINJAU_BERUBAH") setPra(null); } finally { kirimRef.current = false; setSibuk(false); }
   };
-  const ubahIsian = (set) => (e) => { set(e.target.value); setPra(null); };
+  const ubahIsian = (set) => (e) => { set(typeof e === "string" ? e : e.target.value); setPra(null); };
 
   return (
     <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title={koreksi ? "Koreksi salah input historis (tindakan khusus)" : "Ubah harga berlaku"}
-      description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px]"
+      description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px] gud-modal"
       footer={pra ? (
         <>
-          <Button variant="neutral" size="sm" onClick={() => setPra(null)} disabled={sibuk}>Ubah isian</Button>
-          <Button size="sm" onClick={simpan} disabled={sibuk || (koreksi && !paham)} data-testid="simpan-harga">{sibuk && <Loader2 size={14} className="animate-spin" />}{koreksi ? "Simpan koreksi" : "Simpan harga"}</Button>
+          <button type="button" className="gud-tombol" onClick={() => setPra(null)} disabled={sibuk}>Ubah isian</button>
+          <button type="button" className="gud-tombol gud-tombol-utama" onClick={simpan} disabled={sibuk || (koreksi && !paham)} data-testid="simpan-harga">{sibuk && <IkMuatUlang size={14} className="animate-spin" />}{koreksi ? "Simpan koreksi" : "Simpan harga"}</button>
         </>
       ) : (
         <>
-          <Button variant="neutral" size="sm" onClick={onClose}>Batal</Button>
-          <Button size="sm" onClick={lihatPratinjau} disabled={sibuk} data-testid="lihat-pratinjau">{sibuk && <Loader2 size={14} className="animate-spin" />}Lihat pratinjau</Button>
+          <button type="button" className="gud-tombol" onClick={onClose}>Batal</button>
+          <button type="button" className="gud-tombol gud-tombol-utama" onClick={lihatPratinjau} disabled={sibuk} data-testid="lihat-pratinjau">{sibuk && <IkMuatUlang size={14} className="animate-spin" />}Lihat pratinjau</button>
         </>
       )}>
-      <div className="space-y-3" data-testid="modal-ubah-harga">
-        <p className="rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="catatan-pemisah">
-          <b>{TEKS.bukan}</b> {TEKS.finance}
-        </p>
-        {koreksi ? <p className="rounded-btn bg-orangebg px-3 py-2 text-[12px] text-orange" data-testid="catatan-koreksi">Tindakan khusus: memperbaiki baris harga {rp(koreksi.harga)} (mulai {tanggalJam(koreksi.berlakuMulai)}). Baris lama tidak dihapus (riwayat tetap). Pemakaian yang sudah dibekukan TIDAK diubah diam-diam; semua pemakaian terdampak ditampilkan di pratinjau dan harus Anda konfirmasi.</p>
-          : <p className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="catatan-tanpa-mundur">{TEKS.aturanTanpaMundur}</p>}
+      <form className="gud-form" data-testid="modal-ubah-harga" noValidate onSubmit={(e) => { e.preventDefault(); if (!pra) lihatPratinjau(); }}>
+        <p className="gud-info" data-testid="catatan-pemisah"><b>{TEKS.bukan}</b> {TEKS.finance}</p>
+        {koreksi ? <p className="gud-info" data-nada="awas" data-testid="catatan-koreksi">Tindakan khusus: memperbaiki baris harga {rp(koreksi.harga)} (mulai {tanggalJam(koreksi.berlakuMulai)}). Baris lama tidak dihapus (riwayat tetap). Pemakaian yang sudah dibekukan TIDAK diubah diam-diam; semua pemakaian terdampak ditampilkan di pratinjau dan harus Anda konfirmasi.</p>
+          : <p className="gud-info" data-testid="catatan-tanpa-mundur">{TEKS.aturanTanpaMundur}</p>}
         {!pra && (
           <>
-            <Field label={`Harga baru per ${bahan.satuan}`} htmlFor="hb-harga" required error={galatKolom.harga} hint={`Hanya satuan stok (${bahan.satuan}). Harga per satuan lain (pak/roll) harus dikonversi dulu.`}>
-              <div className="flex items-center gap-2"><span className="text-[13px] text-ink2">Rp</span>
-                <Input id="hb-harga" inputMode="decimal" autoComplete="off" value={harga} onChange={ubahIsian(setHarga)} error={!!galatKolom.harga} placeholder="mis. 36000" data-testid="input-harga" />
-                <span className="shrink-0 text-[13px] font-semibold text-ink2" data-testid="satuan-tetap">/ {bahan.satuan}</span></div>
-            </Field>
+            <GudField label={`Harga baru per ${bahan.satuan}`} htmlFor="hb-harga" wajib galat={galatKolom.harga} hint={`Hanya satuan stok (${bahan.satuan}). Harga per satuan lain (pak/roll) harus dikonversi dulu.`}>
+              <span className="gud-f-angka" data-invalid={galatKolom.harga ? "ya" : undefined}>
+                <span className="gud-f-awalan" aria-hidden="true">Rp</span>
+                <input id="hb-harga" type="text" inputMode="decimal" autoComplete="off" value={harga} onChange={(e) => ubahIsian(setHarga)(e.target.value)} aria-invalid={!!galatKolom.harga || undefined} placeholder="mis. 36000" data-testid="input-harga" style={{ paddingLeft: 44, paddingRight: 72 }} />
+                <span className="gud-f-satuan" data-testid="satuan-tetap">/ {bahan.satuan}</span>
+              </span>
+            </GudField>
             {koreksi ? (
-              <Field label="Waktu berlaku harga yang benar" htmlFor="hb-mulai" required error={galatKolom.mulai} hint="Waktu berlaku baris yang dikoreksi (boleh lampau — ini koreksi, bukan perubahan harga biasa).">
-                <Input id="hb-mulai" type="datetime-local" value={mulai} onChange={ubahIsian(setMulai)} error={!!galatKolom.mulai} data-testid="input-mulai" />
-              </Field>
+              <GudField label="Waktu berlaku harga yang benar" htmlFor="hb-mulai" wajib galat={galatKolom.mulai} hint="Waktu berlaku baris yang dikoreksi (boleh lampau — ini koreksi, bukan perubahan harga biasa).">
+                <WaktuGud id="hb-mulai" value={mulai} onChange={ubahIsian(setMulai)} invalid={!!galatKolom.mulai} data-testid="input-mulai" />
+              </GudField>
             ) : (
-              <fieldset className="space-y-1.5" data-testid="pilih-waktu">
-                <legend className="text-xs font-medium text-ink2">Mulai berlaku</legend>
-                <label className="flex items-center gap-2 text-[13px] text-ink"><input type="radio" name="hb-mode" checked={mode === "SEKARANG"} onChange={() => { setMode("SEKARANG"); setPra(null); }} data-testid="mode-sekarang" /> Saat disimpan (sekarang)</label>
-                <label className="flex items-center gap-2 text-[13px] text-ink"><input type="radio" name="hb-mode" checked={mode === "JADWAL"} onChange={() => { setMode("JADWAL"); setPra(null); }} data-testid="mode-jadwal" /> Jadwalkan waktu mendatang</label>
-                {mode === "JADWAL" && <Field label="Tanggal & jam (harus di masa depan)" htmlFor="hb-mulai" required error={galatKolom.mulai}><Input id="hb-mulai" type="datetime-local" min={keInputLokal(new Date())} value={mulai} onChange={ubahIsian(setMulai)} error={!!galatKolom.mulai} data-testid="input-mulai" /></Field>}
+              <fieldset className="gud-form gud-set" data-testid="pilih-waktu">
+                <legend className="gud-f-label">Mulai berlaku</legend>
+                <div role="radiogroup" aria-label="Mulai berlaku" className="gud-segmen">
+                  <button type="button" role="radio" aria-checked={mode === "SEKARANG"} onClick={() => { setMode("SEKARANG"); setPra(null); }} data-testid="mode-sekarang">Saat disimpan (sekarang)</button>
+                  <button type="button" role="radio" aria-checked={mode === "JADWAL"} onClick={() => { setMode("JADWAL"); setPra(null); }} data-testid="mode-jadwal">Jadwalkan waktu mendatang</button>
+                </div>
+                {mode === "JADWAL" && <GudField label="Tanggal & jam (harus di masa depan)" htmlFor="hb-mulai" wajib galat={galatKolom.mulai}><WaktuGud id="hb-mulai" value={mulai} onChange={ubahIsian(setMulai)} invalid={!!galatKolom.mulai} data-testid="input-mulai" /></GudField>}
               </fieldset>
             )}
-            <Field label="Alasan" htmlFor="hb-alasan" required error={galatKolom.alasan} hint={koreksi ? "Wajib, minimal 10 karakter; tercatat bersama pelaku." : "Wajib; tercatat bersama pelaku."}>
-              <textarea id="hb-alasan" rows={2} value={alasan} onChange={ubahIsian(setAlasan)} className="w-full rounded-lg bg-surface px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40" data-testid="input-alasan" />
-            </Field>
-            <Field label="Catatan / bukti (opsional)" htmlFor="hb-bukti" hint="Mis. nomor nota atau nama supplier. Boleh kosong — harga tetap tersimpan dengan label “Belum didukung bukti”.">
-              <textarea id="hb-bukti" rows={2} value={bukti} onChange={ubahIsian(setBukti)} className="w-full rounded-lg bg-surface px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40" data-testid="input-bukti" />
-            </Field>
+            <GudField label="Alasan" htmlFor="hb-alasan" wajib galat={galatKolom.alasan} hint={koreksi ? "Wajib, minimal 10 karakter; tercatat bersama pelaku." : "Wajib; tercatat bersama pelaku."}>
+              <textarea id="hb-alasan" rows={3} value={alasan} onChange={ubahIsian(setAlasan)} aria-invalid={!!galatKolom.alasan || undefined} className="gud-f-teks gud-f-area" data-testid="input-alasan" />
+            </GudField>
+            <GudField label="Catatan / bukti (opsional)" htmlFor="hb-bukti" hint="Mis. nomor nota atau nama supplier. Boleh kosong — harga tetap tersimpan dengan label “Belum didukung bukti”.">
+              <textarea id="hb-bukti" rows={2} value={bukti} onChange={ubahIsian(setBukti)} className="gud-f-teks gud-f-area" data-testid="input-bukti" />
+            </GudField>
             {hargaSekarang != null
-              ? <p className="text-[11.5px] text-ink3">Harga berlaku sekarang: <b className="text-ink2">{rp(hargaSekarang)}</b> / {bahan.satuan}</p>
-              : <p className="text-[11.5px] text-ink3" data-testid="belum-ada-harga-modal">Belum ada harga berlaku (belum diisi, bukan Rp0). Pemakaian yang diposting sebelum harga ini berlaku tetap tanpa harga operasional.</p>}
+              ? <p className="gud-petunjuk">Harga berlaku sekarang: <b>{rp(hargaSekarang)}</b> / {bahan.satuan}</p>
+              : <p className="gud-petunjuk" data-testid="belum-ada-harga-modal">Belum ada harga berlaku (belum diisi, bukan Rp0). Pemakaian yang diposting sebelum harga ini berlaku tetap tanpa harga operasional.</p>}
           </>
         )}
         {pra && <Pratinjau pra={pra} />}
-        {pra?.dampakKoreksi && <label className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink" data-testid="konfirmasi-dampak"><input type="checkbox" checked={paham} onChange={(e) => setPaham(e.target.checked)} className="mt-0.5" data-testid="centang-dampak" /> Saya sudah membaca {pra.dampakKoreksi.jumlah} pemakaian terdampak di atas. Nilai beku lama tidak berubah; perbaikannya lewat penerapan khusus dua orang.</label>}
-        {galat && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red" data-testid="galat-modal">{galat}</p>}
-      </div>
+        {pra?.dampakKoreksi && <label className="gud-pilih-baris gud-info" data-nada="awas" data-testid="konfirmasi-dampak"><input type="checkbox" checked={paham} onChange={(e) => setPaham(e.target.checked)} data-testid="centang-dampak" /> <span>Saya sudah membaca {pra.dampakKoreksi.jumlah} pemakaian terdampak di atas. Nilai beku lama tidak berubah; perbaikannya lewat penerapan khusus dua orang.</span></label>}
+        {galat && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-modal">{galat}</p>}
+      </form>
     </Modal>
   );
 }
@@ -106,7 +105,7 @@ function Pratinjau({ pra }) {
           {pra.selisihPersen != null && <span className={`text-[12px] font-semibold ${naik ? "text-red" : "text-green"}`}>{naik ? "+" : ""}{pra.selisihPersen}%</span>}
         </div>
         <div className="mt-1 text-[12px] text-ink2">Mulai berlaku <b data-testid="waktu-berlaku">{pra.saatDisimpan ? "saat disimpan (sekarang)" : tanggalJam(pra.berlakuMulai)}</b> · satuan <b>{pra.satuan}</b> · alasan: {pra.alasan}</div>
-        <div className="mt-1.5"><Badge variant={varianBukti(pra.labelBukti)} data-testid="label-bukti-pratinjau">{pra.teksLabelBukti}</Badge></div>
+        <div className="mt-1.5"><span className="gud-pill" data-warna={varianBukti(pra.labelBukti)} data-testid="label-bukti-pratinjau">{pra.teksLabelBukti}</span></div>
       </div>
       {pra.dampakKoreksi && (
         <div className="space-y-1.5 rounded-btn border border-orange/40 px-3 py-2 text-[12px] text-ink2" data-testid="dampak-koreksi">
@@ -127,7 +126,7 @@ function Pratinjau({ pra }) {
         </ul>
       )}
       {pra.peringatan?.map((w) => (
-        <div key={w.kode} className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2" data-testid={`peringatan-${w.kode}`}><TriangleAlert size={13} className="mt-0.5 shrink-0 text-orange" aria-hidden />{w.pesan}</div>
+        <div key={w.kode} className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2" data-testid={`peringatan-${w.kode}`}><IkAwas size={16} aria-hidden />{w.pesan}</div>
       ))}
       <p className="text-[11.5px] leading-relaxed text-ink3">{pra.aturan} Stok, ISSUE lama, jurnal, dan GL tidak berubah oleh perubahan harga ini.</p>
     </div>

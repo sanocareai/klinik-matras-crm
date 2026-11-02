@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { History, Loader2, Pencil, TriangleAlert } from "lucide-react";
+import { IkAwas, IkEdit, IkRiwayat } from "@/components/gudangIcons.jsx";
 import { api } from "@/api.js";
-import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import UbahHargaModal from "./UbahHargaModal.jsx";
 import PenerapanLamaModal from "./PenerapanLamaModal.jsx";
@@ -29,8 +27,8 @@ export default function HargaBerlakuPanel({ materialId }) {
   useEffect(() => { if (bukaRiwayat) muatRiwayat(); }, [bukaRiwayat, muatRiwayat]);
 
   if (tersembunyi) return null;
-  if (galat && !d) return <p role="alert" className="mt-3 rounded-btn bg-redbg px-3 py-2 text-[12px] text-red">{galat}</p>;
-  if (!d) return <p className="mt-3 flex items-center gap-1.5 text-[12px] stok-t2"><Loader2 size={12} className="animate-spin" /> Memuat harga berlaku…</p>;
+  if (galat && !d) return <p role="alert" className="gud-info" data-nada="galat">{galat}</p>;
+  if (!d) return <p className="gud-petunjuk" role="status">Memuat harga berlaku…</p>;
   const h = d.hargaBerlaku; const bahan = d.bahan; const dm = d.dampak;
   const selesai = () => { setModal(null); setPesan("Tersimpan. Pemakaian yang sudah dibekukan tidak berubah."); muat(); if (bukaRiwayat) muatRiwayat(); };
   const tampil = ringkasHarga(h, bahan.satuan, rp);
@@ -40,9 +38,9 @@ export default function HargaBerlakuPanel({ materialId }) {
   const adaFinance = !!d.nilaiPersediaanFinance || !!d.pembanding.biayaPerolehanGRTerakhir || !!d.pembanding.referensiAgustus;
 
   return (
-    <section className="rounded-card bg-surface p-4 shadow-card" aria-label="Harga berlaku bahan" data-testid="panel-harga-berlaku">
-      <div className="flex items-center gap-1.5">
-        <h4 className="m-0 min-w-0 flex-1 text-[13px] font-semibold stok-t2">{TEKS.judul}</h4>
+    <section className="gud-bahan-bagian gud-harga" aria-label="Harga berlaku bahan" data-testid="panel-harga-berlaku">
+      <div className="gud-bahan-judul-baris">
+        <h3 className="gud-bahan-sub">{TEKS.judul}</h3>
         <InfoToggleButton info={info} label="Harga Berlaku (HPP operasional)" />
       </div>
       <InfoToggleIsi info={info}>
@@ -50,70 +48,70 @@ export default function HargaBerlakuPanel({ materialId }) {
         <p className="m-0" data-testid="izin-teks">{d.bolehUbah ? `${d.izinTeks.ubah} ${TEKS.aturanTanpaMundur}` : TEKS.izinLihat}</p>
       </InfoToggleIsi>
 
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div className="gud-harga-utama">
         {h
-          ? <div className="text-[30px] font-extrabold leading-none tabular-nums text-ink" data-testid="harga-berlaku">{tampil.angka}<span className="ml-1 text-[12px] font-semibold stok-t2">/ {tampil.satuan}</span></div>
-          : <div className="text-[18px] font-bold leading-none stok-t2" data-testid="belum-ada-harga">{tampil.angka}</div>}
-        {h && <Badge variant={varianBukti(h.labelBukti)} data-testid="label-bukti">{h.teksLabelBukti}</Badge>}
+          ? <div className="gud-saldo-angka" data-testid="harga-berlaku">{tampil.angka}<span className="gud-saldo-satuan">/ {tampil.satuan}</span></div>
+          : <div className="gud-harga-kosong" data-testid="belum-ada-harga">{tampil.angka}</div>}
+        {h && <span className="gud-pill" data-warna={varianBukti(h.labelBukti)} data-testid="label-bukti">{h.teksLabelBukti}</span>}
       </div>
-      {h && <div className="mt-1 text-[11.5px] stok-t2" data-testid="harga-sejak">Berlaku sejak {tanggalJam(h.berlakuMulai)}</div>}
-      {d.terjadwal.map((t) => <div key={t.id} className="mt-1 text-[11.5px] text-accent" data-testid="harga-terjadwal">Terjadwal: {rp(t.harga)} / {bahan.satuan} mulai {tanggalJam(t.berlakuMulai)}</div>)}
+      {h && <div className="gud-petunjuk" data-testid="harga-sejak">Berlaku sejak {tanggalJam(h.berlakuMulai)}</div>}
+      {d.terjadwal.map((t) => <div key={t.id} className="gud-petunjuk gud-aksen" data-testid="harga-terjadwal">Terjadwal: {rp(t.harga)} / {bahan.satuan} mulai {tanggalJam(t.berlakuMulai)}</div>)}
 
       {peringatan.map((p) => (
-        <p key={p.kode} role="status" data-testid={`peringatan-${p.kode.toLowerCase().replace(/_/g, "-")}`} className={`mt-2 flex items-start gap-2 rounded-btn px-2.5 py-1.5 text-[12px] ${p.nada === "red" ? "bg-redbg text-red" : "bg-orangebg text-ink"}`}>
-          <TriangleAlert size={13} className={`mt-0.5 shrink-0 ${p.nada === "red" ? "text-red" : "text-orange"}`} aria-hidden />{p.teks}
+        <p key={p.kode} role="status" data-testid={`peringatan-${p.kode.toLowerCase().replace(/_/g, "-")}`} className="gud-info" data-nada={p.nada === "red" ? "galat" : "awas"}>
+          <IkAwas size={16} aria-hidden /><span>{p.teks}</span>
         </p>
       ))}
 
-      {pesan && <p className="mt-2 text-[11.5px] text-green" role="status" data-testid="pesan-tersimpan">{pesan}</p>}
-      {galat && <p className="mt-2 text-[11.5px] text-red" role="alert">{galat}</p>}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {d.bolehUbah && <Button size="sm" onClick={() => setModal({ jenis: "ubah" })} className="h-11 flex-1 rounded-xl sm:flex-none" data-testid="tombol-ubah-harga"><Pencil size={13} /> Ubah harga</Button>}
-        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="h-11 rounded-xl" data-testid="tombol-riwayat-harga"><History size={13} /> Riwayat ({d.jumlahRiwayat})</Button>
-        {adaPenerapan && <Button size="sm" variant="secondary" onClick={() => setModal({ jenis: "penerapan" })} className="max-sm:min-h-11" data-testid="tombol-penerapan">Beri harga ke pemakaian lama{d.penerapanAktif ? " · ada pengajuan" : ""}</Button>}
+      {pesan && <p className="gud-info" data-nada="ok" role="status" data-testid="pesan-tersimpan">{pesan}</p>}
+      {galat && <p className="gud-f-galat" role="alert">{galat}</p>}
+      <div className="gud-aksi-baris gud-bahan-tombol">
+        {d.bolehUbah && <button type="button" onClick={() => setModal({ jenis: "ubah" })} className="gud-tombol gud-tombol-utama" data-testid="tombol-ubah-harga"><IkEdit size={16} /> Ubah harga</button>}
+        <button type="button" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="gud-tombol" data-testid="tombol-riwayat-harga"><IkRiwayat size={16} /> Riwayat ({d.jumlahRiwayat})</button>
+        {adaPenerapan && <button type="button" onClick={() => setModal({ jenis: "penerapan" })} className="gud-tombol" data-testid="tombol-penerapan">Beri harga ke pemakaian lama{d.penerapanAktif ? " · ada pengajuan" : ""}</button>}
       </div>
 
       {bukaRiwayat && (
-        <ul className="mt-3 divide-y divide-line" data-testid="riwayat-harga">
-          {!riwayat && <li className="py-2 text-[12px] stok-t2">Memuat riwayat…</li>}
-          {riwayat?.length === 0 && <li className="py-2 text-[12px] stok-t2">Belum ada riwayat harga.</li>}
+        <ul className="gud-riwayat" data-testid="riwayat-harga">
+          {!riwayat && <li className="gud-petunjuk">Memuat riwayat…</li>}
+          {riwayat?.length === 0 && <li className="gud-petunjuk">Belum ada riwayat harga.</li>}
           {riwayat?.map((r) => {
             const st = STATUS_RIWAYAT[r.status] ?? { teks: r.status, varian: "neutral" };
             return (
-              <li key={r.id} className="py-2 text-[12px]" data-testid="baris-riwayat">
-                <div className="flex flex-wrap items-center gap-1.5"><b className="tabular-nums text-ink">{rp(r.harga)}</b><span className="stok-t2">/ {r.satuan}</span>
-                  {r.jenis === "KOREKSI" && <Badge variant="orange">Koreksi</Badge>}<Badge variant={st.varian}>{st.teks}</Badge><Badge variant={varianBukti(r.labelBukti)}>{r.teksLabelBukti}</Badge></div>
-                <div className="mt-0.5 stok-t2">Mulai {tanggalJam(r.berlakuMulai)} · {r.hargaLama != null ? `harga lama ${rp(r.hargaLama)} · ` : ""}dicatat {tanggalJam(r.dibuatPada)} oleh {r.dibuatOlehNama ?? "—"}</div>
-                {r.sumber?.teks && <div className="stok-t2" data-testid="sumber-riwayat-harga">Sumber: {r.sumber.teks}{r.sumber.hargaBeli != null && r.sumber.satuanBeli ? ` (di PO: ${r.sumber.hargaBeli.toLocaleString("id-ID")} / ${r.sumber.satuanBeli}${r.sumber.faktor ? `, 1 ${r.sumber.satuanBeli} = ${r.sumber.faktor} ${r.satuan}` : ""})` : ""}</div>}
-                <div className="stok-t2">Alasan: {r.alasan}{r.catatanBukti ? ` · bukti: ${r.catatanBukti}` : ""}</div>
-                {d.bolehUbah && r.status !== "DIGANTI_KOREKSI" && <button type="button" className="mt-1 min-h-6 text-[11.5px] font-medium text-accent hover:underline max-sm:min-h-11" onClick={() => setModal({ jenis: "koreksi", baris: r })} data-testid="koreksi-baris">Koreksi salah input historis (tindakan khusus)</button>}
+              <li key={r.id} data-testid="baris-riwayat">
+                <div className="gud-riwayat-atas"><b className="gud-angka">{rp(r.harga)}</b><span className="gud-redup">/ {r.satuan}</span>
+                  {r.jenis === "KOREKSI" && <span className="gud-pill" data-warna="orange">Koreksi</span>}<span className="gud-pill" data-warna={st.varian}>{st.teks}</span><span className="gud-pill" data-warna={varianBukti(r.labelBukti)}>{r.teksLabelBukti}</span></div>
+                <div className="gud-sekunder">Mulai {tanggalJam(r.berlakuMulai)} · {r.hargaLama != null ? `harga lama ${rp(r.hargaLama)} · ` : ""}dicatat {tanggalJam(r.dibuatPada)} oleh {r.dibuatOlehNama ?? "—"}</div>
+                {r.sumber?.teks && <div className="gud-sekunder" data-testid="sumber-riwayat-harga">Sumber: {r.sumber.teks}{r.sumber.hargaBeli != null && r.sumber.satuanBeli ? ` (di PO: ${r.sumber.hargaBeli.toLocaleString("id-ID")} / ${r.sumber.satuanBeli}${r.sumber.faktor ? `, 1 ${r.sumber.satuanBeli} = ${r.sumber.faktor} ${r.satuan}` : ""})` : ""}</div>}
+                <div className="gud-sekunder">Alasan: {r.alasan}{r.catatanBukti ? ` · bukti: ${r.catatanBukti}` : ""}</div>
+                {d.bolehUbah && r.status !== "DIGANTI_KOREKSI" && <button type="button" className="gud-tautan" onClick={() => setModal({ jenis: "koreksi", baris: r })} data-testid="koreksi-baris">Koreksi salah input historis (tindakan khusus)</button>}
               </li>
             );
           })}
         </ul>
       )}
 
-      <div className="mt-3">
+      <div className="gud-bahan-lipatan">
         {adaFinance && (
           <Lipat judul="Nilai Finance dan harga pembanding" testid="lipat-finance">
-            <p className="m-0 mb-1.5 text-[11.5px] leading-relaxed stok-t2" data-testid="beda-angka">{TEKS_DRAWER.bedaAngka}</p>
+            <p className="gud-petunjuk" data-testid="beda-angka">{TEKS_DRAWER.bedaAngka}</p>
             {d.nilaiPersediaanFinance && (
-              <p className="m-0 mb-1.5 text-[11.5px] leading-relaxed stok-t2" data-testid="nilai-persediaan-finance">
-                <b className="stok-t2">{d.nilaiPersediaanFinance.nama}:</b>{" "}
+              <p className="gud-petunjuk" data-testid="nilai-persediaan-finance">
+                <b>{d.nilaiPersediaanFinance.nama}:</b>{" "}
                 {d.nilaiPersediaanFinance.tersedia ? <>{rpNilai(d.nilaiPersediaanFinance.nilai)} ({d.nilaiPersediaanFinance.qty} {String(d.nilaiPersediaanFinance.satuan ?? "").toLowerCase()} × {rp(d.nilaiPersediaanFinance.biayaSatuan)}, {d.nilaiPersediaanFinance.nomor}). {d.nilaiPersediaanFinance.teks}</> : d.nilaiPersediaanFinance.teks}
               </p>
             )}
             {(d.pembanding.biayaPerolehanGRTerakhir || d.pembanding.referensiAgustus) && (
-              <p className="m-0 text-[11.5px] stok-t2" data-testid="pembanding">Pembanding (bukan sumber harga):{d.pembanding.biayaPerolehanGRTerakhir ? ` biaya perolehan GR terakhir ${rp(d.pembanding.biayaPerolehanGRTerakhir.harga)}` : ""}{d.pembanding.referensiAgustus ? ` · referensi ${d.pembanding.referensiAgustus.bulan} ${rp(d.pembanding.referensiAgustus.harga)}` : ""}.</p>
+              <p className="gud-petunjuk" data-testid="pembanding">Pembanding (bukan sumber harga):{d.pembanding.biayaPerolehanGRTerakhir ? ` biaya perolehan GR terakhir ${rp(d.pembanding.biayaPerolehanGRTerakhir.harga)}` : ""}{d.pembanding.referensiAgustus ? ` · referensi ${d.pembanding.referensiAgustus.bulan} ${rp(d.pembanding.referensiAgustus.harga)}` : ""}.</p>
             )}
           </Lipat>
         )}
         <Lipat judul="Pemakaian terdampak" ringkas={dampak.length ? `${dampak.length} rincian` : "tidak ada"} testid="lipat-dampak">
           {dampak.length === 0
-            ? <p className="m-0 text-[12px] stok-t2" data-testid="dampak-kosong">{TEKS_DRAWER.dampakKosong}</p>
+            ? <p className="gud-petunjuk" data-testid="dampak-kosong">{TEKS_DRAWER.dampakKosong}</p>
             : (
-              <dl className="m-0 grid grid-cols-1 gap-1 text-[12px] stok-t2" data-testid="dampak-ringkas">
-                {dampak.map((x) => <div key={x.k} className="flex justify-between gap-3"><dt>{x.label}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid={x.k === "order" ? "jumlah-order-terdampak" : undefined}>{x.nilai}</dd></div>)}
+              <dl className="gud-dl" data-testid="dampak-ringkas">
+                {dampak.map((x) => <div key={x.k} className="gud-dl-baris"><dt>{x.label}</dt><dd data-testid={x.k === "order" ? "jumlah-order-terdampak" : undefined}>{x.nilai}</dd></div>)}
               </dl>
             )}
         </Lipat>

@@ -65,25 +65,25 @@ test("pemasangan halaman: layanan dan parameter URL TIDAK berubah; daftar langsu
   for (const a of ["api.getStokLokasi()", "api.getStock()", "api.getRingkasanDaftarHargaBerlaku()"]) assert.ok(p.includes(a), a);
   const panggilan = [...p.matchAll(/api\.([A-Za-z]+)\(/g)].map((m) => m[1]); assert.deepEqual([...new Set(panggilan)].sort(), ["getRingkasanDaftarHargaBerlaku", "getStock", "getStokLokasi"], "tidak ada layanan baru");
   assert.ok(!/daftarTampil\(/.test(p), "daftar tidak lagi menunggu pemilihan kelompok");
-  for (const k of ["<PanelSaringan", "<DaftarBahan", "<KelompokBahanNav", 'data-testid="chip-saringan"', 'data-testid="cari-bahan"', "halamanDaftar(", "saringStok("]) assert.ok(p.includes(k), k);
+  for (const k of ["<DaftarBahan", "<KelompokBahanNav", 'data-testid="chip-saringan"', 'data-testid="cari-bahan"', "halamanDaftar(", "saringStok("]) assert.ok(p.includes(k), k); // Nov 2026: saringan berupa toolbar PilihGud (PanelSaringan tidak lagi dipasang)
   assert.ok(!/\b(harga|hargaF)\b[^;\n]*=\s*0\b/.test(p.replace(/^\s*\/\/.*$/gm, "")), "tanpa fallback harga ke 0");
 });
 
 test("kontrol: tombol ≥44px di HP, tombol Filter keyboard (aria-expanded/Esc), baris daftar = tombol sungguhan, chip bisa dihapus", () => {
-  const f = baca("features", "warehouse", "stok", "PanelSaringan.jsx");
-  for (const k of ["aria-expanded={buka}", "aria-controls={id}", 'e.key === "Escape"', "tombol.current?.focus()", "max-sm:fixed", "max-sm:rounded-t-3xl", "h-11", 'data-testid="selesai-saringan"', 'data-testid="atur-ulang-saringan"']) assert.ok(f.includes(k), k);
+  const f = baca("pages", "warehouse", "WarehouseInventory.jsx"); // Nov 2026: toolbar saringan di halaman (PilihGud = Radix dropdown, keyboard/Esc bawaan)
+  for (const k of ["PilihGud", 'data-testid="atur-ulang-saringan"', 'data-testid="chip-saringan"', "aria-label=\"Saring harga berlaku\""]) assert.ok(f.includes(k), k);
   const d = baca("features", "warehouse", "stok", "DaftarBahan.jsx");
-  for (const k of ['type="button"', "aria-label={`Buka detail ${r.nama}`}", "max-sm:min-h-11", 'data-testid="baris-stok"', "teksTersedia(", "statusRingkas(", "hargaBaris(", 'aria-label="Halaman sebelumnya"', "h-11 w-11"]) assert.ok(d.includes(k), k);
+  for (const k of ['type="button"', "aria-label={`Buka rincian ${r.nama}`}", 'data-testid="baris-stok"', "teksTersedia(", "statusRingkas(", "hargaBaris(", 'aria-label="Halaman sebelumnya"', "gud-tombol-ikon", "gud-stok-baris"]) assert.ok(d.includes(k), k);
   assert.ok(!/<table|<TableWrap/i.test(d), "tidak ada tabel lebar yang memaksa gulir horizontal");
-  const n = baca("features", "warehouse", "stok", "KelompokBahanNav.jsx"); assert.match(n, /aria-pressed/); assert.match(n, /overflow-x-auto/); assert.match(n, /sm:flex-wrap/);
+  const n = baca("features", "warehouse", "stok", "KelompokBahanNav.jsx"); assert.match(n, /aria-pressed/); assert.match(n, /gud-kelompok/); assert.match(baca("styles", "sanss-gudang.css"), /\.gud-tab-lipat/);
 });
 
 test("drawer: nama/stok/harga jadi fokus; Koreksi saldo dan Ubah harga dipertahankan; lembar bawah di HP; tidak menyentuh CSS global", () => {
   const d = baca("features", "warehouse", "components", "ItemDetailDrawer.jsx");
-  for (const k of ['data-testid="drawer-nama"', 'data-testid="header-harga"', "<KoreksiSaldoPanel", "<HargaBerlakuPanel", "max-sm:h-[92dvh]", "max-sm:rounded-t-3xl", "max-sm:slide-in-from-bottom", "max-sm:h-11 max-sm:w-11", "tampilHargaDaftar(hargaPeta, materialId)"]) assert.ok(d.includes(k), k);
+  for (const k of ['data-testid="drawer-nama"', 'data-testid="header-harga"', "<KoreksiSaldoPanel", "<HargaBerlakuPanel", "tempel", "tampilHargaDaftar(hargaPeta, materialId)"]) assert.ok(d.includes(k), k); // Nov 2026: FokusOverlay tempel (panel kanan di desktop, layar penuh di HP)
   assert.match(d, /Belum diketahui|teksAngkaStok\(item\.available, keadaan,/);
   const kp = baca("features", "warehouse", "stok", "KoreksiSaldoPanel.jsx"); assert.match(kp, /d\.izin\.bolehMengajukan &&/); assert.match(kp, /disabled=\{!!aktif\}/);
-  const hp = baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"); assert.match(hp, /d\.bolehUbah && <Button/);
+  const hp = baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"); assert.match(hp, /d\.bolehUbah && <button/);
   const pe = (name) => baca("features", "warehouse", "stok", name); assert.ok(pe("IkonBahan.jsx").includes("bukan foto") || /Ikon KELOMPOK/.test(pe("IkonBahan.jsx")), "ikon kelompok, bukan foto");
 });
 
@@ -120,7 +120,7 @@ test("kontras teks sekunder: kelas milik layar (bukan token global); terang dan 
   assert.ok(rasio(campur(P, 0.66, [28, 28, 30]), [28, 28, 30]) >= 4.5, "gelap: placeholder");
   assert.ok(rasio(campur(T, 0.4, [255, 255, 255]), [255, 255, 255]) < 4.5, "token tersier lama memang di bawah AA (alasan perubahan)");
   const d = baca("features", "warehouse", "stok", "DaftarBahan.jsx");
-  for (const k of ['data-testid="kode-bahan"', 'data-testid="kepala-kolom"']) assert.ok(new RegExp(`stok-t2[^\n]*${k}|${k}[^\n]*stok-t2|stok-t2[^\n]*\n[^\n]*${k}`).test(d) || d.split("\n").some((l) => l.includes(k) && l.includes("stok-t2")), k);
+  for (const k of ['data-testid="kode-bahan"', 'data-testid="kepala-kolom"']) assert.ok(d.split("\n").some((l) => l.includes(k) && (l.includes("gud-stok-kode") || l.includes("gud-stok-kepala"))), k); // Nov 2026: kelas milik layar gudang
   assert.ok(!/text-ink3/.test(d) && !/text-ink3/.test(baca("pages", "warehouse", "WarehouseInventory.jsx")), "tidak ada teks sekunder pucat tersisa di daftar dan halaman");
-  assert.match(baca("pages", "warehouse", "WarehouseInventory.jsx"), /stok-ph/); assert.match(baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"), /italic[^"]*stok-t2|stok-t2[^"]*italic|belum-ada-harga/);
+  assert.match(baca("features", "warehouse", "stok", "HargaBerlakuPanel.jsx"), /belum-ada-harga/); assert.match(baca("styles", "sanss-gudang-stok.css"), /\.gud-redup/);
 });

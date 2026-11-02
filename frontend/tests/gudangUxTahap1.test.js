@@ -158,7 +158,7 @@ test("Tata letak sempit: target sentuh min-h-11, kartu/daftar bergantian dengan 
   for (const f of ["pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseInventory.jsx", "features/warehouse/aksi/AksiDokumen.jsx", "features/warehouse/penerimaan/TabelPerItem.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
   assert.match(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /md:hidden/);
   // Redesain Stok & Lokasi (Okt 2026): satu susunan responsif (grid md:) menggantikan dua DOM tabel/kartu bergantian.
-  assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /md:grid-cols-\[/); assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /max-sm:min-h-11/);
+  assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /gud-stok-baris/); assert.match(fs.readFileSync(path.join(dir, "../src/styles/sanss-gudang-stok.css"), "utf8"), /@container gud-daftar \(max-width: ?640px\)/); // Nov 2026: tata letak lewat container query
 });
 
 test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebagai riwayat penerimaan (bukan lokasi stok saat ini)", () => {

@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { History, Loader2, Scale, TriangleAlert } from "lucide-react";
+import { IkAwas, IkOpname, IkRiwayat } from "@/components/gudangIcons.jsx";
 import { api } from "@/api.js";
-import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import KoreksiSaldoModal from "./KoreksiSaldoModal.jsx";
 import { STATUS_KOREKSI, KEADAAN_SALDO_UI, fmt, tanda } from "./koreksiSaldoLogic.js";
@@ -21,25 +19,25 @@ export default function KoreksiSaldoPanel({ materialId, onChanged, onKeadaan = n
   useEffect(() => { setD(null); setBukaRiwayat(false); muat(); }, [materialId, muat]);
   useEffect(() => { onKeadaan?.(d?.keadaanSaldo ?? null); }, [d?.keadaanSaldo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (galat && !d) return <p role="alert" className="mt-3 rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" data-testid="galat-panel-koreksi">{galat}</p>;
-  if (!d) return <p className="mt-3 flex items-center gap-1.5 text-[12px] stok-t2"><Loader2 size={12} className="animate-spin" /> Memuat keadaan saldo…</p>;
+  if (galat && !d) return <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-panel-koreksi">{galat}</p>;
+  if (!d) return <p className="gud-petunjuk" role="status">Memuat keadaan saldo…</p>;
   const k = KEADAAN_SALDO_UI[d.keadaanSaldo]; const aktif = d.riwayat.find((r) => ["DRAFT", "WAITING_APPROVAL", "APPROVED"].includes(r.status));
   const satuan = String(d.bahan.satuan ?? "").toLowerCase();
   const peringatan = peringatanStok({ keadaan: d.keadaanSaldo, aktif });
   const infoNol = d.keadaanSaldo === "NOL_MENURUT_PERGERAKAN" || d.keadaanSaldo === "NOL_TERVERIFIKASI";
 
   return (
-    <div className="mt-3 border-t border-line pt-3" aria-label="Koreksi saldo bahan" data-testid="panel-koreksi-saldo" data-keadaan={d.keadaanSaldo}>
-      {infoNol && <div className="mb-2"><Badge variant={k?.varian ?? "neutral"} data-testid="keadaan-saldo" data-keadaan={d.keadaanSaldo}>{k?.singkat ?? d.keadaanSaldo}</Badge></div>}
+    <div className="gud-koreksi" aria-label="Koreksi saldo bahan" data-testid="panel-koreksi-saldo" data-keadaan={d.keadaanSaldo}>
+      {infoNol && <div><span className="gud-pill" data-warna={k?.varian ?? "neutral"} data-testid="keadaan-saldo" data-keadaan={d.keadaanSaldo}>{k?.singkat ?? d.keadaanSaldo}</span></div>}
       {peringatan.map((p) => (
-        <p key={p.kode} role="status" data-testid={`peringatan-${p.kode.toLowerCase().replace(/_/g, "-")}`} className={`mb-2 flex items-start gap-2 rounded-btn px-2.5 py-1.5 text-[12px] ${p.nada === "red" ? "bg-redbg text-red" : "bg-orangebg text-ink"}`}>
-          <TriangleAlert size={13} className={`mt-0.5 shrink-0 ${p.nada === "red" ? "text-red" : "text-orange"}`} aria-hidden />
-          <span>{p.kode === "KOREKSI_MENUNGGU" ? <>Koreksi saldo <Link to={`/warehouse/adjustments/stock/${p.id}`} className="font-semibold text-accent hover:underline" data-testid="koreksi-aktif-tautan">{p.nomor}</Link> {String(aktif?.statusTeks ?? "").toLowerCase()}.{p.tambahan && <b className="text-red"> {p.tambahan}</b>}</> : p.teks}</span>
+        <p key={p.kode} role="status" data-testid={`peringatan-${p.kode.toLowerCase().replace(/_/g, "-")}`} className="gud-info" data-nada={p.nada === "red" ? "galat" : "awas"}>
+          <IkAwas size={16} aria-hidden />
+          <span>{p.kode === "KOREKSI_MENUNGGU" ? <>Koreksi saldo <Link to={`/warehouse/adjustments/stock/${p.id}`} className="gud-tautan-nomor" data-testid="koreksi-aktif-tautan">{p.nomor}</Link> {String(aktif?.statusTeks ?? "").toLowerCase()}.{p.tambahan && <b className="gud-merah-teks"> {p.tambahan}</b>}</> : p.teks}</span>
         </p>
       ))}
-      <div className="flex flex-wrap items-center gap-2">
-        {d.izin.bolehMengajukan && <Button size="sm" onClick={() => setModal(true)} disabled={!!aktif} title={aktif ? "Selesaikan atau batalkan koreksi yang berjalan dulu" : undefined} className="h-11 w-full rounded-xl" data-testid="tombol-koreksi-saldo"><Scale size={13} /> Koreksi saldo</Button>}
-        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="h-11 rounded-xl" data-testid="tombol-riwayat-koreksi"><History size={13} /> Riwayat ({d.riwayat.length})</Button>
+      <div className="gud-aksi-baris gud-bahan-tombol">
+        {d.izin.bolehMengajukan && <button type="button" onClick={() => setModal(true)} disabled={!!aktif} title={aktif ? "Selesaikan atau batalkan koreksi yang berjalan dulu" : undefined} className="gud-tombol" data-testid="tombol-koreksi-saldo"><IkOpname size={16} /> Koreksi saldo</button>}
+        <button type="button" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="gud-tombol" data-testid="tombol-riwayat-koreksi"><IkRiwayat size={16} /> Riwayat ({d.riwayat.length})</button>
         <InfoToggleButton info={info} label="aturan koreksi saldo" />
       </div>
       <InfoToggleIsi info={info}>
@@ -48,18 +46,18 @@ export default function KoreksiSaldoPanel({ materialId, onChanged, onKeadaan = n
         <p className="m-0" data-testid="izin-koreksi">{d.izin.teks}</p>
       </InfoToggleIsi>
       {bukaRiwayat && (
-        <ul className="mt-3 divide-y divide-line" data-testid="riwayat-koreksi">
-          {d.riwayat.length === 0 && <li className="py-2 text-[12px] stok-t2">Belum ada koreksi saldo untuk bahan ini.</li>}
+        <ul className="gud-riwayat" data-testid="riwayat-koreksi">
+          {d.riwayat.length === 0 && <li className="gud-petunjuk">Belum ada koreksi saldo untuk bahan ini.</li>}
           {d.riwayat.map((r) => {
             const st = STATUS_KOREKSI[r.status] ?? { teks: r.statusTeks, varian: "neutral" };
             return (
-              <li key={r.id} className="py-2 text-[12px]" data-testid="baris-riwayat-koreksi">
-                <div className="flex flex-wrap items-center gap-1.5"><Link to={`/warehouse/adjustments/stock/${r.id}`} className="font-semibold text-accent hover:underline">{r.nomor}</Link><Badge variant={st.varian}>{r.statusTeks}</Badge>{r.kedaluwarsa && <Badge variant="red" data-testid="badge-kedaluwarsa">Kedaluwarsa</Badge>}</div>
-                <div className="mt-0.5 stok-t2">Fisik {fmt(r.jumlahFisik)} {satuan} · saldo dilihat {fmt(r.saldoDilihat)} · selisih <b className={r.selisih > 0 ? "text-green" : "text-red"}>{tanda(r.selisih)}</b></div>
-                <div className="stok-t2">Alasan: {r.alasan}</div>
-                <div className="stok-t2">Diajukan {tanggalJam(r.diajukanPada)} oleh {r.diajukanOleh ?? "—"}{r.disetujuiOleh ? ` · disetujui ${r.disetujuiOleh}` : ""}{r.dipostingOleh ? ` · diposting ${r.dipostingOleh} (${tanggalJam(r.dipostingPada)})` : ""}</div>
-                {r.pergerakan && <div className="stok-t2">Pergerakan stok tercipta: {tanda(r.pergerakan.qty)} {satuan}</div>}
-                {r.kedaluwarsa && <div className="mt-0.5 flex items-start gap-1 text-red"><TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden />{r.kedaluwarsaTeks}</div>}
+              <li key={r.id} data-testid="baris-riwayat-koreksi">
+                <div className="gud-riwayat-atas"><Link to={`/warehouse/adjustments/stock/${r.id}`} className="gud-tautan-nomor">{r.nomor}</Link><span className="gud-pill" data-warna={st.varian}>{r.statusTeks}</span>{r.kedaluwarsa && <span className="gud-pill" data-warna="red" data-testid="badge-kedaluwarsa">Kedaluwarsa</span>}</div>
+                <div className="gud-sekunder">Fisik {fmt(r.jumlahFisik)} {satuan} · saldo dilihat {fmt(r.saldoDilihat)} · selisih <b className={r.selisih > 0 ? "gud-plus" : "gud-minus"}>{tanda(r.selisih)}</b></div>
+                <div className="gud-sekunder">Alasan: {r.alasan}</div>
+                <div className="gud-sekunder">Diajukan {tanggalJam(r.diajukanPada)} oleh {r.diajukanOleh ?? "—"}{r.disetujuiOleh ? ` · disetujui ${r.disetujuiOleh}` : ""}{r.dipostingOleh ? ` · diposting ${r.dipostingOleh} (${tanggalJam(r.dipostingPada)})` : ""}</div>
+                {r.pergerakan && <div className="gud-sekunder">Pergerakan stok tercipta: {tanda(r.pergerakan.qty)} {satuan}</div>}
+                {r.kedaluwarsa && <div className="gud-sekunder gud-merah-teks"><IkAwas size={14} aria-hidden /> {r.kedaluwarsaTeks}</div>}
               </li>
             );
           })}

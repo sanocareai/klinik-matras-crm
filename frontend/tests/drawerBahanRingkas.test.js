@@ -65,7 +65,7 @@ test("panel koreksi saldo: tombol Koreksi saldo hanya bila berizin; Riwayat; lay
 
 test("panel harga berlaku: harga atau 'Belum diisi', label bukti, Ubah harga hanya bila d.bolehUbah, nilai Finance + terdampak terlipat, tanpa Rp0 untuk belum ada harga; modal memuat ketentuan", () => {
   const p = src("features", "warehouse", "stok", "HargaBerlakuPanel.jsx");
-  for (const k of ["d.bolehUbah && <Button", 'data-testid="tombol-ubah-harga"', 'data-testid="tombol-riwayat-harga"', 'testid="lipat-finance"', 'testid="lipat-dampak"', "barisDampakBermakna(", "peringatanHarga(", "ringkasHarga(", "TEKS_DRAWER.bedaAngka", 'data-testid="nilai-persediaan-finance"', 'data-testid="pemisah-angka"', "api.getHargaBerlaku(materialId)", "e.status === 403"]) assert.ok(p.includes(k), k);
+  for (const k of ["d.bolehUbah && <button", 'data-testid="tombol-ubah-harga"', 'data-testid="tombol-riwayat-harga"', 'testid="lipat-finance"', 'testid="lipat-dampak"', "barisDampakBermakna(", "peringatanHarga(", "ringkasHarga(", "TEKS_DRAWER.bedaAngka", 'data-testid="nilai-persediaan-finance"', 'data-testid="pemisah-angka"', "api.getHargaBerlaku(materialId)", "e.status === 403"]) assert.ok(p.includes(k), k);
   assert.ok(!/\|\| ?0\b/.test(p.replace(/^\s*\/\/.*$/gm, "")), "tidak ada fallback ke 0");
   const m = src("features", "warehouse", "stok", "UbahHargaModal.jsx"); for (const k of ["TEKS.bukan", "TEKS.finance", "TEKS.aturanTanpaMundur", 'data-testid="belum-ada-harga-modal"', "hashPratinjau: pra.hash", "api.pratinjauHargaBerlaku(masukan)"]) assert.ok(m.includes(k), k);
   assert.match(m, /bukan Rp0/);
@@ -75,7 +75,7 @@ test("ikon info: tombol sungguhan (keyboard), aria-expanded/aria-controls, targe
   const t = src("components", "ui", "info-toggle.jsx");
   for (const k of ['type="button"', "aria-expanded={info.buka}", "aria-controls={info.id}", "aria-label={`Penjelasan: ${label}`}", "max-sm:h-11 max-sm:w-11", 'role="note"', "useId()"]) assert.ok(t.includes(k), k);
   assert.ok(!t.includes("createPortal") && !t.includes("onMouseEnter"), "tidak bergantung hover dan tidak di-portal");
-  const l = src("features", "warehouse", "stok", "Lipat.jsx"); assert.match(l, /<details/); assert.match(l, /<summary/); assert.match(l, /sm:min-h-9/); assert.match(l, /min-h-11/);
+  const l = src("features", "warehouse", "stok", "Lipat.jsx"); assert.match(l, /<details/); assert.match(l, /<summary/); assert.match(l, /gud-lipat/); assert.match(src("styles", "sanss-gudang.css"), /.gud-lipat > summary[^}]*min-height: ?4[48]px/); // Nov 2026: target sentuh 44px lewat CSS gudang
 });
 
 test("label status stok: 'Ada stok' (bukan 'Aman'); stok belum diketahui, nol, minus, menipis, semua dipesan tetap dibedakan", async () => {

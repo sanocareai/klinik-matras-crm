@@ -2,6 +2,7 @@ import React, { useId, useMemo, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn } from "@/lib/utils.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
+import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { IkBawah, IkCari, IkCentang } from "@/components/gudangIcons.jsx";
 
 // KIT KONTROL FORMULIR GUDANG (redesain Gudang, 3 Nov 2026) — pengganti <select>, <input type="date">, dan kolom angka bawaan peramban di alur Penerimaan/Retur.
@@ -35,12 +36,13 @@ export function opsiDariChildren(children) {
  * Pemilih dropdown aplikasi (menggantikan <select>). `children` boleh <option> (API lama) atau `opsi` array. Lebih dari `ambangCari` pilihan → kolom cari muncul di dalam daftar.
  * Keyboard: Enter/Spasi/↓ membuka, ↑/↓ memindah, Enter memilih, Esc menutup, huruf = lompat (tanpa kolom cari). `kosong` = teks bila nilai belum dipilih.
  */
-export function PilihGud({ value, onChange, children, opsi, placeholder = "Pilih…", disabled = false, invalid = false, ambangCari = 8, id, className, "aria-label": ariaLabel, "data-testid": testId, kosongLabel = "Tidak ada pilihan" }) {
+export function PilihGud({ value, onChange, children, opsi, placeholder = "Pilih…", disabled = false, invalid = false, kosongNormal = false, ambangCari = 8, id, className, "aria-label": ariaLabel, "data-testid": testId, kosongLabel = "Tidak ada pilihan" }) {
   const daftar = useMemo(() => opsi ?? opsiDariChildren(children), [opsi, children]);
   const [buka, setBuka] = useState(false); const [cari, setCari] = useState("");
   const kolomCari = useRef(null); const pertama = useRef(null);
   const nilai = value == null ? "" : String(value);
-  const terpilih = daftar.find((o) => o.nilai === nilai && o.nilai !== "") ?? null;
+  // kosongNormal: pilihan bernilai "" (mis. "Semua satuan") adalah pilihan SAH yang labelnya ditampilkan biasa (saringan); selain itu "" = belum memilih (teks petunjuk redup).
+  const terpilih = daftar.find((o) => o.nilai === nilai && (o.nilai !== "" || kosongNormal)) ?? null;
   const bisaCari = daftar.length > ambangCari;
   const tampil = useMemo(() => { const k = cari.trim().toLowerCase(); return bisaCari && k ? daftar.filter((o) => `${o.label} ${o.hint ?? ""}`.toLowerCase().includes(k)) : daftar; }, [daftar, cari, bisaCari]);
   const wadah = typeof document !== "undefined" ? document.querySelector(".app-shell") ?? undefined : undefined;
@@ -48,7 +50,7 @@ export function PilihGud({ value, onChange, children, opsi, placeholder = "Pilih
   return (
     <DropdownMenu.Root open={buka} onOpenChange={ubahBuka}>
       <DropdownMenu.Trigger asChild>
-        <button type="button" id={id} disabled={disabled} aria-label={ariaLabel} aria-invalid={invalid || undefined} data-testid={testId} data-kosong={terpilih ? undefined : "ya"}
+        <button type="button" id={id} disabled={disabled} aria-label={ariaLabel} aria-invalid={invalid || undefined} data-testid={testId} data-kosong={terpilih ? undefined : "ya"} data-saring={kosongNormal ? "ya" : undefined}
           className={cn("gud-f-pilih", className)}>
           <span className="gud-f-pilih-teks">{terpilih ? terpilih.label : placeholder}</span>
           <IkBawah size={16} className="gud-f-pilih-panah" aria-hidden />
@@ -99,5 +101,14 @@ export function AngkaGud({ value, onChange, satuan, invalid = false, disabled = 
         onChange={(e) => onChange?.(e.target.value.replace(",", "."))} />
       {satuan && <span className="gud-f-satuan" aria-hidden="true">{satuan}</span>}
     </span>
+  );
+}
+
+/** Kolom tanggal + jam (24 jam, WIB) memakai pemilih APLIKASI (components/ui/date-time-picker.jsx). Nilai "YYYY-MM-DDTHH:mm" ("" = kosong), sama dengan kontrak input datetime-local lama. Aturan lampau/masa depan tetap di pemanggil. */
+export function WaktuGud({ value, onChange, placeholder = "Pilih tanggal & jam", allowFuture = true, invalid = false, id, "data-testid": testId, className }) {
+  return (
+    <div className={cn("gud-f-waktu", className)} id={id} data-testid={testId} data-invalid={invalid ? "ya" : undefined}>
+      <DateTimePicker value={value || ""} onChange={onChange} placeholder={placeholder} allowFuture={allowFuture} />
+    </div>
   );
 }

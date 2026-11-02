@@ -1,16 +1,13 @@
 import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import { Input } from "@/components/ui/input.jsx";
-import { Field } from "@/components/ui/field.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import { AngkaGud, GudField } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkAwas, IkCentang, IkMuatUlang } from "@/components/gudangIcons.jsx";
 import { TEKS, STATUS_KOREKSI, KEADAAN_SALDO_UI, bacaJumlah, periksaAlasan, fmt, tanda, teksSaldoSebelum, niatKoreksi } from "./koreksiSaldoLogic.js";
 
-// KOREKSI SALDO PER BAHAN: isi JUMLAH FISIK yang benar + alasan -> PRATINJAU dari server (saldo sebelum/sesudah, selisih, dampak, izin) -> ajukan ke Penyesuaian Stok resmi.
-// Stok TIDAK berubah di sini: baru berubah setelah disetujui orang lain dan diposting. Satu Idempotency-Key per "niat" (bahan+jumlah+alasan): klik ganda = satu pengajuan.
+// KOREKSI SALDO PER BAHAN (redesain Gudang, 3 Nov 2026): isi JUMLAH FISIK yang benar + alasan -> PRATINJAU dari server (saldo sebelum/sesudah, selisih, dampak, izin) -> ajukan ke Penyesuaian Stok resmi.
+// Stok TIDAK berubah di sini: baru berubah setelah disetujui orang lain dan diposting. Satu Idempotency-Key per "niat" (bahan+jumlah+alasan): klik ganda = satu pengajuan (kunci sinkron lewat ref).
 // Saldo yang dilihat di pratinjau dikirim ulang; bila saldo sudah bergeser, server menolak (SALDO_BERGESER) dan pratinjau dimuat ulang — pengguna harus mengonfirmasi lagi.
 export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) {
   const [jumlah, setJumlah] = useState(""); const [alasan, setAlasan] = useState("");
@@ -22,7 +19,7 @@ export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) 
     if (kunci.current.niat !== niat) kunci.current = { niat, nilai: `koreksi-saldo-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}` };
     return kunci.current.nilai;
   };
-  const ubah = (set) => (e) => { set(e.target.value); setPra(null); setInfo(""); };
+  const ubah = (set) => (v) => { set(typeof v === "string" ? v : v.target.value); setPra(null); setInfo(""); };
 
   const periksa = () => {
     const e = {}; const j = bacaJumlah(jumlah); if (j.galat) e.jumlah = j.galat;
@@ -54,51 +51,51 @@ export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) 
   if (hasil) {
     const st = STATUS_KOREKSI[hasil.status] ?? { teks: hasil.statusTeks, varian: "neutral" };
     return (
-      <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo diajukan" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px]"
-        footer={<><Link to={`/warehouse/adjustments/stock/${hasil.id}`} className="inline-flex h-9 items-center rounded-btn px-3 text-[13px] font-medium text-accent hover:bg-hovertint max-sm:min-h-11" data-testid="buka-penyesuaian">Buka {hasil.nomor}</Link><Button size="sm" onClick={onClose} data-testid="tutup-hasil">Selesai</Button></>}>
-        <div className="space-y-3" data-testid="hasil-koreksi">
-          <p className="flex items-start gap-2 rounded-btn bg-greenbg px-3 py-2.5 text-[13px] text-green"><CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden />{hasil.ulang ? "Pengajuan ini sudah tercatat sebelumnya (klik ganda tidak membuat dua)." : "Pengajuan tercatat."}</p>
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12.5px]">
-            <dt className="text-ink3">Nomor</dt><dd className="text-right font-semibold text-ink" data-testid="hasil-nomor">{hasil.nomor}</dd>
-            <dt className="text-ink3">Status</dt><dd className="text-right"><Badge variant={st.varian} data-testid="hasil-status">{hasil.statusTeks ?? st.teks}</Badge></dd>
-            <dt className="text-ink3">Jumlah fisik</dt><dd className="text-right font-semibold text-ink">{fmt(hasil.jumlahFisik)} {String(hasil.satuan ?? "").toLowerCase()}</dd>
-            <dt className="text-ink3">Selisih terhadap saldo {fmt(hasil.saldoDilihat)}</dt><dd className="text-right font-semibold text-ink">{tanda(hasil.selisih)}</dd>
+      <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo diajukan" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px] gud-modal"
+        footer={<><Link to={`/warehouse/adjustments/stock/${hasil.id}`} className="gud-tombol" data-testid="buka-penyesuaian">Buka {hasil.nomor}</Link><button type="button" className="gud-tombol gud-tombol-utama" onClick={onClose} data-testid="tutup-hasil">Selesai</button></>}>
+        <div className="gud-form" data-testid="hasil-koreksi">
+          <p className="gud-info" data-nada="ok"><IkCentang size={16} aria-hidden /> {hasil.ulang ? "Pengajuan ini sudah tercatat sebelumnya (klik ganda tidak membuat dua)." : "Pengajuan tercatat."}</p>
+          <dl className="gud-dl">
+            <div className="gud-dl-baris"><dt>Nomor</dt><dd data-testid="hasil-nomor">{hasil.nomor}</dd></div>
+            <div className="gud-dl-baris"><dt>Status</dt><dd><span className="gud-pill" data-warna={st.varian} data-testid="hasil-status">{hasil.statusTeks ?? st.teks}</span></dd></div>
+            <div className="gud-dl-baris"><dt>Jumlah fisik</dt><dd>{fmt(hasil.jumlahFisik)} {String(hasil.satuan ?? "").toLowerCase()}</dd></div>
+            <div className="gud-dl-baris"><dt>Selisih terhadap saldo {fmt(hasil.saldoDilihat)}</dt><dd>{tanda(hasil.selisih)}</dd></div>
           </dl>
-          <p className="rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="hasil-stok-belum-berubah"><b>Stok belum berubah.</b> Owner atau Finance (orang lain, bukan pengaju) perlu menyetujui di Penyesuaian Stok, lalu Gudang memposting. Bila saldo bergeser sebelum itu, sistem menolak dan koreksi perlu diajukan ulang.</p>
+          <p className="gud-info" data-testid="hasil-stok-belum-berubah"><b>Stok belum berubah.</b> Owner atau Finance (orang lain, bukan pengaju) perlu menyetujui di Penyesuaian Stok, lalu Gudang memposting. Bila saldo bergeser sebelum itu, sistem menolak dan koreksi perlu diajukan ulang.</p>
         </div>
       </Modal>
     );
   }
 
   return (
-    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px]"
+    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px] gud-modal"
       footer={pra ? (
         <>
-          <Button variant="neutral" size="sm" onClick={() => setPra(null)} disabled={sibuk} className="max-sm:min-h-11">Ubah isian</Button>
-          <Button size="sm" onClick={ajukan} disabled={sibuk || !pra.dapatDiajukan} className="max-sm:min-h-11" data-testid="ajukan-koreksi">{sibuk && <Loader2 size={14} className="animate-spin" />}Ajukan koreksi</Button>
+          <button type="button" className="gud-tombol" onClick={() => setPra(null)} disabled={sibuk}>Ubah isian</button>
+          <button type="button" className="gud-tombol gud-tombol-utama" onClick={ajukan} disabled={sibuk || !pra.dapatDiajukan} data-testid="ajukan-koreksi">{sibuk && <IkMuatUlang size={14} className="animate-spin" />}Ajukan koreksi</button>
         </>
       ) : (
         <>
-          <Button variant="neutral" size="sm" onClick={onClose} className="max-sm:min-h-11">Batal</Button>
-          <Button size="sm" onClick={() => lihatPratinjau()} disabled={sibuk} className="max-sm:min-h-11" data-testid="lihat-pratinjau-koreksi">{sibuk && <Loader2 size={14} className="animate-spin" />}Lihat pratinjau</Button>
+          <button type="button" className="gud-tombol" onClick={onClose}>Batal</button>
+          <button type="button" className="gud-tombol gud-tombol-utama" onClick={() => lihatPratinjau()} disabled={sibuk} data-testid="lihat-pratinjau-koreksi">{sibuk && <IkMuatUlang size={14} className="animate-spin" />}Lihat pratinjau</button>
         </>
       )}>
-      <div className="space-y-3" data-testid="modal-koreksi-saldo">
-        <div className="space-y-1 rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="catatan-jalur"><p className="m-0">{TEKS.jalur}</p><p className="m-0" data-testid="catatan-tidak-disentuh">{TEKS.tidakDisentuh}</p></div>
-        {info && <p role="status" className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2" data-testid="info-bergeser"><TriangleAlert size={13} className="mt-0.5 shrink-0 text-orange" aria-hidden />{info}</p>}
+      <form className="gud-form" data-testid="modal-koreksi-saldo" noValidate onSubmit={(e) => { e.preventDefault(); if (!pra) lihatPratinjau(); }}>
+        <div className="gud-info" data-testid="catatan-jalur"><p className="m-0">{TEKS.jalur}</p><p className="m-0" data-testid="catatan-tidak-disentuh">{TEKS.tidakDisentuh}</p></div>
+        {info && <p role="status" className="gud-info" data-nada="awas" data-testid="info-bergeser"><IkAwas size={16} aria-hidden /> <span>{info}</span></p>}
         {!pra && (
           <>
-            <Field label={`Jumlah fisik yang benar (${String(bahan.satuan ?? "").toLowerCase()})`} htmlFor="ks-jumlah" required error={galatKolom.jumlah} hint={TEKS.fisikBantuan}>
-              <Input id="ks-jumlah" inputMode="decimal" autoComplete="off" value={jumlah} onChange={ubah(setJumlah)} error={!!galatKolom.jumlah} placeholder="mis. 7 atau 0" data-testid="input-jumlah-fisik" />
-            </Field>
-            <Field label="Alasan" htmlFor="ks-alasan" required error={galatKolom.alasan} hint="Wajib; tercatat bersama pelaku, mis. “Hitung fisik 26 Okt: sisa 7 kg”.">
-              <textarea id="ks-alasan" rows={2} value={alasan} onChange={ubah(setAlasan)} maxLength={500} className="w-full rounded-lg bg-surface px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40" data-testid="input-alasan-koreksi" />
-            </Field>
+            <GudField label={`Jumlah fisik yang benar (${String(bahan.satuan ?? "").toLowerCase()})`} htmlFor="ks-jumlah" wajib galat={galatKolom.jumlah} hint={TEKS.fisikBantuan}>
+              <AngkaGud id="ks-jumlah" value={jumlah} onChange={ubah(setJumlah)} invalid={!!galatKolom.jumlah} placeholder="mis. 7 atau 0" satuan={String(bahan.satuan ?? "").toLowerCase()} data-testid="input-jumlah-fisik" autoFocus />
+            </GudField>
+            <GudField label="Alasan" htmlFor="ks-alasan" wajib galat={galatKolom.alasan} hint="Wajib; tercatat bersama pelaku, mis. “Hitung fisik 26 Okt: sisa 7 kg”.">
+              <textarea id="ks-alasan" rows={3} value={alasan} onChange={ubah(setAlasan)} maxLength={500} aria-invalid={!!galatKolom.alasan || undefined} className="gud-f-teks gud-f-area" data-testid="input-alasan-koreksi" />
+            </GudField>
           </>
         )}
         {pra && <Pratinjau pra={pra} bahan={bahan} alasan={alasan} />}
-        {galat && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" data-testid="galat-koreksi">{galat}</p>}
-      </div>
+        {galat && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-koreksi">{galat}</p>}
+      </form>
     </Modal>
   );
 }
@@ -114,10 +111,10 @@ function Pratinjau({ pra, bahan, alasan }) {
         <dt className="font-semibold text-ink2">Selisih</dt><dd className={`text-right text-[14px] font-extrabold tabular-nums ${warna}`} data-testid="pra-selisih" data-arah={pra.arah}>{pra.arah === "TANPA_SELISIH" ? "tidak ada selisih" : `${tanda(pra.selisih)} ${u}`}</dd>
         <dt className="text-ink3">Tersedia (setelah dikurangi pesanan)</dt><dd className="text-right tabular-nums text-ink2" data-testid="pra-tersedia">{fmt(pra.dampakStok.tersedia.sebelum)} → {fmt(pra.dampakStok.tersedia.sesudah)}</dd>
         {pra.dampakStok.dipesan > 0 && <><dt className="text-ink3">Sudah dipesan</dt><dd className="text-right tabular-nums text-ink2">{fmt(pra.dampakStok.dipesan)} {u}</dd></>}
-        <dt className="text-ink3">Keadaan sekarang</dt><dd className="text-right"><Badge variant={kb?.varian ?? "neutral"} className="h-auto whitespace-normal text-left leading-tight" data-testid="pra-keadaan">{kb?.singkat ?? pra.keadaanSaldo}</Badge></dd>
+        <dt className="text-ink3">Keadaan sekarang</dt><dd className="text-right"><span className="gud-pill" data-warna={kb?.varian ?? "neutral"} className="h-auto whitespace-normal text-left leading-tight" data-testid="pra-keadaan">{kb?.singkat ?? pra.keadaanSaldo}</span></dd>
       </dl>
       <p className="text-[11.5px] leading-relaxed text-ink3" data-testid="pra-catatan">{pra.dampakStok.catatan} Alasan: “{String(alasan).trim()}”.</p>
-      {pra.peringatan.map((w, i) => <div key={i} className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2" data-testid="pra-peringatan"><TriangleAlert size={13} className="mt-0.5 shrink-0 text-orange" aria-hidden />{w}</div>)}
+      {pra.peringatan.map((w, i) => <div key={i} className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2" data-testid="pra-peringatan"><IkAwas size={16} aria-hidden />{w}</div>)}
       {pra.pengajuanAktif && <p className="rounded-btn bg-orangebg px-3 py-2 text-[12px] text-orange" data-testid="pra-aktif">Sudah ada koreksi saldo {pra.pengajuanAktif.nomor} ({pra.pengajuanAktif.statusTeks}). Selesaikan atau batalkan dulu.</p>}
       {!pra.dapatDiajukan && !pra.pengajuanAktif && pra.alasanTidakDapat && <p className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="pra-tidak-dapat">{pra.alasanTidakDapat}.</p>}
       <details className="text-[11.5px] text-ink2" data-testid="pra-dampak-data">

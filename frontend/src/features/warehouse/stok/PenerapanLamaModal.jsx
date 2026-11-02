@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
-import { Button } from "@/components/ui/button.jsx";
+import { GudField } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkMuatUlang } from "@/components/gudangIcons.jsx";
 import { TEKS, rp, rpNilai, tanggalJam, KELOMPOK_PENERAPAN_TEKS, GAP_TEKS } from "./hargaBerlakuLogic.js";
 
 // TINDAKAN KHUSUS: memberi/menyelaraskan harga berlaku pada pemakaian LAMA (sudah diposting). Tidak otomatis, tidak menyentuh stok/ISSUE/jurnal/GL/valuasi Finance.
@@ -11,7 +11,7 @@ const SEMUA = ["BELUM_DIBEKUKAN", "TANPA_HARGA_BERLAKU", "SELARAS_ULANG"];
 
 export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bolehSetujui, onSelesai }) {
   const [grup, setGrup] = useState(["BELUM_DIBEKUKAN", "TANPA_HARGA_BERLAKU"]); const [pra, setPra] = useState(null); const [terpilih, setTerpilih] = useState(new Set());
-  const [alasan, setAlasan] = useState(""); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(""); const [antre, setAntre] = useState([]);
+  const [alasan, setAlasan] = useState(""); const [tolakId, setTolakId] = useState(null); const [tolakCatatan, setTolakCatatan] = useState(""); const kunciAksi = useRef(false); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(""); const [antre, setAntre] = useState([]);
   const kunci = useRef(`penerapan-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`);
 
   const muatAntre = useCallback(() => api.daftarPenerapanHarga(bahan.id, "DIAJUKAN").then((r) => setAntre(r.penerapan ?? [])).catch(() => setAntre([])), [bahan.id]);
@@ -37,8 +37,8 @@ export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bo
   const aksi = async (fn) => { setSibuk(true); setGalat(""); try { await fn(); await muatAntre(); onSelesai?.(); } catch (e) { setGalat(e.message); } finally { setSibuk(false); } };
 
   return (
-    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Beri harga ke pemakaian lama" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[640px]"
-      footer={<Button variant="neutral" size="sm" onClick={onClose}>Tutup</Button>}>
+    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Beri harga ke pemakaian lama" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[640px] gud-modal"
+      footer={<button type="button" className="gud-tombol" onClick={onClose}>Tutup</button>}>
       <div className="space-y-3" data-testid="modal-penerapan">
         <p className="rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2">{pra?.aturan ?? "Tindakan khusus berpersetujuan: tidak otomatis untuk semua order lama; tidak mengubah stok, ISSUE, jurnal, GL, atau valuasi Finance."} <b>{TEKS.bukan}</b></p>
         {galat && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red" data-testid="galat-penerapan">{galat}</p>}
@@ -51,12 +51,18 @@ export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bo
                 <div><b className="text-ink">{a.pratinjau.transaksi} pemakaian</b> · {rpNilai(a.pratinjau.nilai)} · diajukan {tanggalJam(a.diajukanPada)}{a.milikSaya ? " · oleh Anda" : ""}</div>
                 <div className="text-ink3">Alasan: {a.alasan}</div>
                 <div className="mt-1.5 flex flex-wrap gap-2">
-                  {a.milikSaya && bolehUbah && <Button size="sm" variant="neutral" disabled={sibuk} onClick={() => aksi(() => api.batalkanPenerapanHarga(a.id))}>Batalkan pengajuan</Button>}
+                  {a.milikSaya && bolehUbah && <button type="button" className="gud-tombol" disabled={sibuk} onClick={() => aksi(() => api.batalkanPenerapanHarga(a.id))}>Batalkan pengajuan</button>}
                   {!a.milikSaya && bolehSetujui && <>
-                    <Button size="sm" disabled={sibuk} onClick={() => aksi(() => api.setujuiPenerapanHarga(a.id, { hashPratinjau: a.pratinjau.hash }))} data-testid="setujui-penerapan">Setujui</Button>
-                    <Button size="sm" variant="neutral" disabled={sibuk} onClick={() => { const c = window.prompt("Alasan menolak (min 5 karakter)"); if (c) aksi(() => api.tolakPenerapanHarga(a.id, { catatan: c })); }}>Tolak</Button></>}
-                  {a.milikSaya && <span className="text-[11.5px] text-ink3">Penyetuju harus orang lain.</span>}
+                    <button type="button" className="gud-tombol gud-tombol-utama" disabled={sibuk} onClick={() => aksi(() => api.setujuiPenerapanHarga(a.id, { hashPratinjau: a.pratinjau.hash }))} data-testid="setujui-penerapan">Setujui</button>
+                    <button type="button" className="gud-tombol" disabled={sibuk} onClick={() => { setTolakId(tolakId === a.id ? null : a.id); setTolakCatatan(""); }} data-testid="tolak-penerapan">Tolak</button></>}
+                  {a.milikSaya && <span className="gud-petunjuk">Penyetuju harus orang lain.</span>}
                 </div>
+                {tolakId === a.id && (
+                  <form className="gud-form" noValidate onSubmit={(e) => { e.preventDefault(); if (tolakCatatan.trim().length >= 5 && !kunciAksi.current) { kunciAksi.current = true; aksi(() => api.tolakPenerapanHarga(a.id, { catatan: tolakCatatan.trim() })).finally(() => { kunciAksi.current = false; setTolakId(null); }); } }} data-testid="form-tolak">
+                    <GudField label="Alasan menolak" htmlFor={`pn-tolak-${a.id}`} wajib hint="Minimal 5 karakter." galat={tolakCatatan && tolakCatatan.trim().length < 5 ? "Minimal 5 karakter" : ""}><textarea id={`pn-tolak-${a.id}`} rows={2} value={tolakCatatan} onChange={(e) => setTolakCatatan(e.target.value)} className="gud-f-teks gud-f-area" data-testid="alasan-tolak" /></GudField>
+                    <div className="gud-form-aksi"><button type="button" className="gud-tombol" onClick={() => setTolakId(null)}>Batal</button><button type="submit" className="gud-tombol gud-tombol-utama" disabled={sibuk || tolakCatatan.trim().length < 5} data-testid="kirim-tolak">Kirim penolakan</button></div>
+                  </form>
+                )}
               </div>
             ))}
           </section>
@@ -67,11 +73,11 @@ export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bo
             <h4 className="m-0 text-[12px] font-bold text-ink">Ajukan penerapan baru</h4>
             <div className="space-y-1">
               {SEMUA.map((k) => (
-                <label key={k} className="flex items-start gap-2 text-[12.5px] text-ink2"><input type="checkbox" checked={grup.includes(k)} onChange={() => tukarGrup(k)} className="mt-0.5" data-testid={`grup-${k}`} />
+                <label key={k} className="gud-pilih-baris"><input type="checkbox" checked={grup.includes(k)} onChange={() => tukarGrup(k)} className="mt-0.5" data-testid={`grup-${k}`} />
                   <span>{KELOMPOK_PENERAPAN_TEKS[k]}{pra ? <span className="ml-1 text-ink3">({pra.tersedia[k]} tersedia)</span> : null}</span></label>
               ))}
             </div>
-            <Button size="sm" variant="secondary" onClick={lihat} disabled={sibuk || grup.length === 0} data-testid="lihat-penerapan">{sibuk && <Loader2 size={14} className="animate-spin" />}Lihat pratinjau</Button>
+            <button type="button" className="gud-tombol" onClick={lihat} disabled={sibuk || grup.length === 0} data-testid="lihat-penerapan">{sibuk && <IkMuatUlang size={14} className="animate-spin" />}Lihat pratinjau</button>
 
             {pra && (
               <div className="space-y-2" data-testid="pratinjau-penerapan">
@@ -89,7 +95,7 @@ export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bo
                 {pra.perOrder?.length > 0 && <div className="text-[11.5px] text-ink3" data-testid="dampak-per-order">Dampak per order: {pra.perOrder.slice(0, 6).map((o) => `${o.order}: ${rpNilai(o.hppOperasionalSebelum)} → ${rpNilai(o.hppOperasionalSesudah)}${o.sisaTanpaHargaOperasional ? ` (masih ${o.sisaTanpaHargaOperasional} tanpa harga)` : ""}`).join(" · ")}{pra.perOrder.length > 6 ? ` · +${pra.perOrder.length - 6} order` : ""}</div>}
                 {pra.gap.jumlah > 0 && <div className="rounded-btn bg-orangebg px-3 py-2 text-[11.5px] text-ink2" data-testid="gap-penerapan">{pra.gap.catatan} {[...new Set(pra.gap.baris.map((g) => g.gap))].map((g) => GAP_TEKS[g] ?? g).join(" · ")}</div>}
                 <label className="block text-[12px] font-medium text-ink2">Alasan (wajib)<textarea rows={2} value={alasan} onChange={(e) => setAlasan(e.target.value)} className="mt-1 w-full rounded-lg bg-surface px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40" data-testid="alasan-penerapan" /></label>
-                <Button size="sm" onClick={ajukan} disabled={sibuk || terpilih.size === 0 || alasan.trim().length < 5} data-testid="ajukan-penerapan">{sibuk && <Loader2 size={14} className="animate-spin" />}Ajukan ({terpilih.size}) — perlu persetujuan orang lain</Button>
+                <button type="button" className="gud-tombol gud-tombol-utama" onClick={ajukan} disabled={sibuk || terpilih.size === 0 || alasan.trim().length < 5} data-testid="ajukan-penerapan">{sibuk && <IkMuatUlang size={14} className="animate-spin" />}Ajukan ({terpilih.size}) — perlu persetujuan orang lain</button>
               </div>
             )}
           </section>

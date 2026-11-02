@@ -115,3 +115,16 @@ export const IkKoreksi = (p) => (<Ikon {...p}><path d="M13.6 3.6H7.4a2 2 0 0 0-2
 export const IkFoto = (p) => (<Ikon {...p}><path d="M4 8.4A2.4 2.4 0 0 1 6.4 6h1.2l1.3-2h6.2l1.3 2h1.2A2.4 2.4 0 0 1 20 8.4v8.2A2.4 2.4 0 0 1 17.6 19H6.4A2.4 2.4 0 0 1 4 16.6z" /><circle cx="12" cy="12.6" r="3.3" /></Ikon>);
 export const IkSampah = (p) => (<Ikon {...p}><path d="M5 7h14M10 7V5h4v2M7 7l.8 12a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L17 7M10 11v5M14 11v5" /></Ikon>);
 export const IkKunci = (p) => (<Ikon {...p}><rect x="5" y="10.4" width="14" height="9.6" rx="2.6" /><path d="M8.4 10.4V8a3.6 3.6 0 0 1 7.2 0v2.4" /></Ikon>);
+
+// Ikon kelompok bahan (Stok & Lokasi) — keluarga garis yang sama; kelompok dari server (tabel eksplisit), ikon tidak menebak dari nama.
+export const IkLapis = (p) => (<Ikon {...p}><path d="m12 4 8 4.2-8 4.2L4 8.2z" /><path d="m4 12.2 8 4.2 8-4.2M4 16.2l8 4.2 8-4.2" /></Ikon>);
+export const IkGunting = (p) => (<Ikon {...p}><circle cx="6.6" cy="7" r="2.4" /><circle cx="6.6" cy="17" r="2.4" /><path d="m8.5 8.5 11 8M8.5 15.5l11-8" /></Ikon>);
+export const IkBenang = (p) => (<Ikon {...p}><circle cx="12" cy="12" r="8" /><path d="M7 8.6c3 .8 7 .8 10 0M6.2 12.4c3.6 1 7.8 1 11.6 0M7 16.2c3 .8 7 .8 10 0" /></Ikon>);
+export const IkPegas = (p) => (<Ikon {...p}><path d="M7 4h10M7 20h10M8 4c6 1.2 6 3 0 4.2s-6 3 0 4.2 6 3 0 4.2" /></Ikon>);
+export const IkKayu = (p) => (<Ikon {...p}><path d="M12 3.4 7 10h3l-4 6h4.4V20h3.2v-4H18l-4-6h3z" /></Ikon>);
+export const IkTetes = (p) => (<Ikon {...p}><path d="M12 3.6c3.6 4 6 6.8 6 10a6 6 0 0 1-12 0c0-3.2 2.4-6 6-10z" /><path d="M9.4 14.4a2.8 2.8 0 0 0 2.4 2.4" /></Ikon>);
+export const IkPerkakas = (p) => (<Ikon {...p}><path d="M14.4 5.4a4 4 0 0 0-5 5L4 16l4 4 5.6-5.4a4 4 0 0 0 5-5l-2.6 2.6-2.6-.6-.6-2.6z" /></Ikon>);
+export const IkTanya = (p) => (<Ikon {...p}><circle cx="12" cy="12" r="8.4" /><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.8c0 1.6-2.4 2-2.4 3.4" /><circle cx="12" cy="16.6" r=".5" fill="currentColor" /></Ikon>);
+export const IkLokasi = (p) => (<Ikon {...p}><path d="M12 20.4s6-5.2 6-10.2a6 6 0 0 0-12 0c0 5 6 10.2 6 10.2z" /><circle cx="12" cy="10.2" r="2.2" /></Ikon>);
+export const IkHarga = (p) => (<Ikon {...p}><path d="M4 12.4V5.2A1.2 1.2 0 0 1 5.2 4h7.2l7.4 7.4a1.6 1.6 0 0 1 0 2.2l-6.2 6.2a1.6 1.6 0 0 1-2.2 0z" /><circle cx="8.6" cy="8.6" r="1.2" /></Ikon>);
+export const IkTimbang = IkOpname;
