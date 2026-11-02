@@ -110,3 +110,37 @@ export const CARA_AKSI = Object.freeze({
 });
 export const aksiRelevan = (tampilan, dukungan = Object.keys(CARA_AKSI)) => (tampilan?.aksi ?? []).filter((a) => dukungan.includes(a.kode));
 export const aksiUtama = (tampilan) => (tampilan?.aksi ?? []).find((a) => a.jenis === "maju") ?? null;
+
+// ── Redesain Gudang (3 Nov 2026): tab, saringan, dan penanda jadwal daftar Penerimaan. Murni tampilan: status/tahap tetap dari server; tab tidak mengubah apa pun selain baris mana yang terlihat.
+/** Tab daftar. `tindakan` memakai definisi `perluTindakan` yang sama dengan penanda pipeline; `menunggu` = sudah dijadwalkan, barang belum dicatat tiba. */
+export const TAB_PENERIMAAN = Object.freeze([
+  { key: "tindakan", label: "Perlu tindakan", cocok: (r) => perluTindakan(r), tahap: ["DRAF", "TIBA", "PERIKSA", "SIAP"] },
+  { key: "menunggu", label: "Menunggu kedatangan", cocok: (r) => r.status === "SCHEDULED", tahap: ["TERJADWAL"] },
+  { key: "semua", label: "Semua", cocok: () => true, tahap: null },
+  { key: "selesai", label: "Selesai", cocok: (r) => ["COMPLETED", "REJECTED"].includes(r.status), tahap: ["STOK", "DITUTUP"] },
+]);
+export const KUNCI_TAB = TAB_PENERIMAAN.map((t) => t.key);
+/** Tab yang aktif: pilihan eksplisit bila sah; tanpa pilihan → "Semua" bila ada saringan tahap (tautan lama tetap menampilkan hasilnya), selain itu "Perlu tindakan". */
+export const tabAktif = (tab, tahap) => (KUNCI_TAB.includes(tab) ? tab : tahap ? "semua" : "tindakan");
+export const filterTab = (rows, tab) => { const t = TAB_PENERIMAAN.find((x) => x.key === tab) ?? TAB_PENERIMAAN[2]; return rows.filter(t.cocok); };
+export const hitungPerTab = (rows) => Object.fromEntries(TAB_PENERIMAAN.map((t) => [t.key, rows.filter(t.cocok).length]));
+/** Pilihan "Tahap" menyesuaikan tab (hanya tahap yang mungkin ada di tab itu). */
+export const tahapUntukTab = (tab) => { const t = TAB_PENERIMAAN.find((x) => x.key === tab); const kunci = t?.tahap; const semua = [...TAHAP_PIPELINE, TAHAP_TUTUP]; return kunci ? semua.filter((x) => kunci.includes(x.key)) : semua; };
+
+export const SARINGAN_JADWAL = Object.freeze([
+  { key: "", label: "Semua jadwal" }, { key: "lewat", label: "Lewat jadwal" }, { key: "hari-ini", label: "Hari ini" }, { key: "pekan", label: "7 hari ke depan" },
+]);
+/** Tanggal lokal hari ini "YYYY-MM-DD". */
+export const hariIni = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** Jadwal lewat: dokumen yang barangnya belum dicatat tiba (draf / terjadwal) padahal tanggal jadwal sudah lewat. */
+export const lewatJadwal = (r, hari = hariIni()) => ["DRAFT", "SCHEDULED"].includes(r?.status) && !!tgl(r?.expectedDate) && tgl(r.expectedDate) < hari;
+export function cocokJadwal(r, kunci, hari = hariIni()) {
+  if (!kunci) return true;
+  const j = tgl(r.expectedDate); if (!j) return false;
+  if (kunci === "lewat") return lewatJadwal(r, hari);
+  if (kunci === "hari-ini") return j === hari;
+  if (kunci === "pekan") { const batas = new Date(`${hari}T00:00:00`); batas.setDate(batas.getDate() + 7); return j >= hari && j <= hariIni(batas); }
+  return true;
+}
+/** Daftar supplier unik (terurut) untuk saringan. */
+export const daftarSupplier = (rows) => [...new Set((rows ?? []).map((r) => (r.supplier ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id"));

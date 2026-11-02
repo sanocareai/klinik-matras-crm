@@ -12,9 +12,23 @@ import { POPOVER_SURFACE } from "./surface.jsx";
 //    di belakang panel tidak dibongkar (hanya disembunyikan), jadi isian yang belum disimpan tidak hilang.
 //  • Esc menutup panel lebih dulu, baru jendela. Overlay hanya tampil di tab yang sedang aktif (tab latar belakang tidak memunculkan jendela).
 export const LapisanTunggalCtx = createContext(null);
+/** true bila detail sedang MENEMPEL di samping daftar (panel sempit) — isi dokumen boleh memakai tata letak ringkas (kartu per item). */
+export const TempelCtx = createContext(false);
 
-export function FokusOverlay({ open, onClose, title, subtitle, header, footer, children, testid = "fokus-overlay", className }) {
-  const tabAktif = useTabVisibility();
+// Mode TEMPEL (redesain Gudang, 3 Nov 2026): di layar lebar (>= `tempelMin` px) detail tampil sebagai PANEL KANAN yang menempel di samping daftar (tanpa lapisan gelap, tanpa Dialog) — daftar tetap
+// bisa diklik. Di bawah lebar itu perilaku jendela fokus (Dialog) TIDAK berubah. Mekanisme satu-lapisan (formulir tampil sebagai panel di dalam jendela) sama di kedua mode.
+function useLebarMin(px) {
+  const [ya, setYa] = useState(() => (px && typeof window !== "undefined" && window.matchMedia ? window.matchMedia(`(min-width: ${px}px)`).matches : false));
+  React.useEffect(() => {
+    if (!px || typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia(`(min-width: ${px}px)`); const f = () => setYa(mq.matches); f();
+    mq.addEventListener?.("change", f); return () => mq.removeEventListener?.("change", f);
+  }, [px]);
+  return ya;
+}
+
+export function FokusOverlay({ open, onClose, title, subtitle, header, footer, children, testid = "fokus-overlay", className, tempel = false, tempelMin = 1200 }) {
+  const tabAktif = useTabVisibility(); const lebar = useLebarMin(tempel ? tempelMin : 0);
   const [slot, setSlot] = useState(null); const [jumlahPanel, setJumlahPanel] = useState(0); const tutupPanel = useRef([]);
   const masuk = useCallback((fn) => { tutupPanel.current.push(fn); setJumlahPanel((n) => n + 1); return () => { tutupPanel.current = tutupPanel.current.filter((x) => x !== fn); setJumlahPanel((n) => Math.max(0, n - 1)); }; }, []);
   const ctx = useMemo(() => ({ slot, masuk }), [slot, masuk]);
@@ -22,6 +36,32 @@ export function FokusOverlay({ open, onClose, title, subtitle, header, footer, c
   const container = typeof document !== "undefined" ? document.querySelector(".app-shell") ?? undefined : undefined;
   const adaPanel = jumlahPanel > 0;
   const tutupPaling = () => { const f = tutupPanel.current[tutupPanel.current.length - 1]; if (f) f(); else onClose(); };
+  if (tempel && lebar) {
+    return (
+      <aside data-testid={testid} aria-label={typeof title === "string" ? title : "Detail dokumen"} data-tempel="ya"
+        onKeyDown={(e) => { if (e.key === "Escape" && adaPanel) { e.stopPropagation(); tutupPaling(); } }}
+        className={cn("kpi-glass-guard fokus-tempel flex min-h-0 flex-col overflow-hidden", className)}>
+        <div className="shrink-0 border-b border-line px-5 pb-3 pt-4" data-testid="fokus-header">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="t-card-title m-0 [overflow-wrap:anywhere]" data-testid="fokus-judul">{title}</h2>
+              {subtitle && <div className="mt-0.5 text-[12.5px] text-ink2" data-testid="fokus-subjudul">{subtitle}</div>}
+            </div>
+            <button type="button" onClick={onClose} aria-label="Tutup" data-testid="fokus-tutup"
+              className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-hovertint hover:text-ink"><X size={16} /></button>
+          </div>
+          {header && <div className="mt-3" hidden={adaPanel}>{header}</div>}
+        </div>
+        <LapisanTunggalCtx.Provider value={ctx}>
+          <TempelCtx.Provider value>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" hidden={adaPanel} data-testid="fokus-isi">{children}</div>
+            <div ref={setSlot} className="min-h-0 flex-1 overflow-y-auto" hidden={!adaPanel} data-testid="fokus-panel" />
+          </TempelCtx.Provider>
+        </LapisanTunggalCtx.Provider>
+        {footer && <div className="max-h-[46%] shrink-0 overflow-y-auto border-t border-line bg-surface/90 px-5 py-3" hidden={adaPanel} data-testid="fokus-aksi">{footer}</div>}
+      </aside>
+    );
+  }
   return (
     <Dialog.Root open onOpenChange={(v) => { if (!v) tutupPaling(); }}>
       <Dialog.Portal container={container}>

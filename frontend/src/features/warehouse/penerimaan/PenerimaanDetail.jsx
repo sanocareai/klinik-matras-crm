@@ -4,7 +4,6 @@ import { ArrowLeft, Loader2, Info, AlertTriangle } from "lucide-react";
 import { api } from "@/api.js";
 import { FokusOverlay } from "@/components/ui/fokus-overlay.jsx";
 import { Card } from "@/components/ui/card.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import SumberPO from "@/features/warehouse/components/SumberPO.jsx";
 import JejakPemakaianPenerimaan from "@/features/warehouse/components/JejakPemakaianPenerimaan.jsx";
@@ -24,7 +23,6 @@ import { UNIT_LABEL } from "../inventoryReal.js";
 // Sesudah masuk stok tidak ada Undo/Hapus: satu aksi "Koreksi" yang menjelaskan dampak (Koreksi Kedatangan resmi untuk PO; koreksi bertaut untuk non-PO).
 // Satuan tampil: label Indonesia bila ada, selain itu kode huruf kecil.
 const satuanTampil = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
-const BADGE = { neutral: "neutral", accent: "accent", orange: "orange", green: "green", red: "red" };
 
 // Aksi → isian kecil di tempat (tanpa modal).
 const SPEC = {
@@ -42,7 +40,7 @@ const SPEC = {
 /**
  * Jendela fokus (rute /warehouse/goods-receipt/:id) di atas daftar Penerimaan. `onTutup` menutup jendela (Back/Esc); `onBerubah` memberi tahu daftar agar memuat ulang; `saringan` = query daftar yang ikut dibawa ke tautan dokumen lain.
  */
-export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, saringan = "" }) {
+export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, saringan = "", tempel = false }) {
   const params = useParams(); const id = idProp ?? params.id; const navigate = useNavigate(); const [picu, setPicu] = useState(null);
   const [r, setR] = useState(null); const [semua, setSemua] = useState([]); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
   const [isian, setIsian] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState("");
@@ -100,8 +98,8 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
 
   const keluar = onTutup ?? (() => navigate("/warehouse/goods-receipt"));
   const tautan = (x) => `/warehouse/goods-receipt/${x}${saringan}`;
-  if (memuat && !r) return <FokusOverlay open onClose={keluar} title="Penerimaan Barang" subtitle="Memuat dokumen…"><p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3"><Loader2 size={14} className="animate-spin" /> Memuat penerimaan…</p></FokusOverlay>;
-  if (galat && !r) return <FokusOverlay open onClose={keluar} title="Penerimaan Barang"><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{galat}</p><button type="button" onClick={keluar} className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent max-sm:min-h-11"><ArrowLeft size={13} /> Kembali ke daftar</button></FokusOverlay>;
+  if (memuat && !r) return <FokusOverlay open onClose={keluar} tempel={tempel} title="Penerimaan Barang" subtitle="Memuat dokumen…"><p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3"><Loader2 size={14} className="animate-spin" /> Memuat penerimaan…</p></FokusOverlay>;
+  if (galat && !r) return <FokusOverlay open onClose={keluar} tempel={tempel} title="Penerimaan Barang"><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{galat}</p><button type="button" onClick={keluar} className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent max-sm:min-h-11"><ArrowLeft size={13} /> Kembali ke daftar</button></FokusOverlay>;
   if (!r) return null;
   const koreksiRelevan = r.status === "COMPLETED";
   const bolehUbah = r.izin?.tulis !== false;
@@ -121,9 +119,9 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
 
   return (
     <FokusOverlay
-      open onClose={keluar} testid="fokus-penerimaan"
+      open onClose={keluar} tempel={tempel} testid="fokus-penerimaan"
       title={r.receiptNumber}
-      subtitle={<span data-testid="identitas-ringkas">{ident.nomorPO ? <>PO <strong>{ident.nomorPO}</strong> · </> : "Tanpa PO · "}{ident.supplier ?? "supplier belum diisi"} · <Badge variant={BADGE[t.warna] ?? "neutral"} data-testid="status-penerimaan" data-kode={t.kode} className="align-middle">{t.label}</Badge></span>}
+      subtitle={<span data-testid="identitas-ringkas"><span className="block">{ident.supplier ?? "supplier belum diisi"}</span><span className="gud-subjudul-po">{ident.nomorPO ? <><span>{/^PO/i.test(ident.nomorPO) ? "" : "PO "}<strong>{ident.nomorPO}</strong></span></> : <span>Tanpa PO</span>}<span className="gud-pill" data-warna={t.warna ?? "neutral"} data-testid="status-penerimaan" data-kode={t.kode}>{t.label}</span></span></span>}
       header={<PipelineStatus tampilan={t} bolehUbah={bolehUbah} sibuk={sibuk} onPilih={(kode) => setPicu({ kode, n: Date.now() })} />}
       footer={kartuAksi}
     >
@@ -143,13 +141,13 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
         <Card className="space-y-3 p-4" data-testid="kartu-identitas">
           <div className="flex flex-wrap items-center gap-2"><SumberPO receipt={r} /></div>
           <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px] sm:grid-cols-4">
-            <div><dt className="text-ink3">No. penerimaan</dt><dd className="m-0 font-semibold text-ink" data-testid="id-nomor">{ident.nomor}</dd></div>
-            <div><dt className="text-ink3">No. PO</dt><dd className="m-0 font-semibold text-ink" data-testid="id-po">{ident.nomorPO ?? "—"}</dd></div>
-            <div><dt className="text-ink3">Supplier</dt><dd className="m-0 font-medium text-ink">{ident.supplier ?? "—"}</dd></div>
+            <div data-dup="1"><dt className="text-ink3">No. penerimaan</dt><dd className="m-0 font-semibold text-ink" data-testid="id-nomor">{ident.nomor}</dd></div>
+            <div data-dup="1"><dt className="text-ink3">No. PO</dt><dd className="m-0 font-semibold text-ink" data-testid="id-po">{ident.nomorPO ?? "—"}</dd></div>
+            <div data-dup="1"><dt className="text-ink3">Supplier</dt><dd className="m-0 font-medium text-ink">{ident.supplier ?? "—"}</dd></div>
             <div><dt className="text-ink3">Jadwal kedatangan</dt><dd className="m-0 font-medium text-ink" data-testid="id-jadwal">{tanggalPendek(ident.jadwal)}</dd></div>
             <div><dt className="text-ink3">Dibuat oleh</dt><dd className="m-0 font-medium text-ink" data-testid="id-pembuat">{ident.pembuat ?? "—"}</dd></div>
             <div><dt className="text-ink3">Dibuat pada</dt><dd className="m-0 font-medium text-ink">{ident.dibuat ?? "—"}</dd></div>
-            <div><dt className="text-ink3">Jumlah item</dt><dd className="m-0 font-medium text-ink">{ident.jumlahItem}</dd></div>
+            <div data-dup="1"><dt className="text-ink3">Jumlah item</dt><dd className="m-0 font-medium text-ink">{ident.jumlahItem}</dd></div>
             <div><dt className="text-ink3">Tanggal diterima</dt><dd className="m-0 font-medium text-ink">{r.receivedDate ? tanggalPendek(r.receivedDate) : "—"}</dd></div>
           </dl>
           <p className={`m-0 flex items-start gap-1.5 rounded-btn px-3 py-2 text-[12.5px] leading-snug ${t.pengaruhStok === "SUDAH" ? "bg-greenbg text-green" : "bg-inset text-ink2"}`} data-testid="penjelasan-status"><Info size={14} className="mt-0.5 shrink-0" aria-hidden /><span>{t.penjelasan}</span></p>
@@ -178,11 +176,14 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
             <div className="col-span-2"><dt className="text-ink3">Catatan kedatangan</dt><dd className="m-0 font-medium text-ink">{r.arrivalNote}</dd></div>
           </dl>
         )}
+        <details className="gud-lipat" data-testid="catatan-terkait">
+          <summary><span>Catatan &amp; dokumen terkait</span><span className="gud-lipat-info">{r.purchaseOrderId ? "Dari PO" : "Tanpa PO"}</span></summary>
         {r.purchaseOrderId ? (
           <p className="m-0 rounded-btn bg-accentbg px-3 py-2 text-[12px] text-accent" data-testid="sumber-po">Dari <strong>{r.purchaseOrder?.poNumber}</strong>. Supplier dan item berasal dari PO (milik Finance). Jumlah baik tidak boleh melebihi sisa PO; kelebihan ditangani Finance lewat revisi jumlah PO. Pembayaran PO tidak bergantung pada barang tiba.</p>
         ) : (
           <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="sumber-tanpa-po">Penerimaan ini <strong>tanpa PO</strong>: tidak ada pencocokan jumlah dan harga terhadap pesanan.</p>
         )}
+        </details>
 
         {r.pemeriksaanSebelumnya && (
           <div className="space-y-2 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5 text-[12.5px] text-ink2" data-testid="pemeriksaan-sebelumnya" role="note">
@@ -218,8 +219,8 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
           <Card className="p-4"><h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Progres bahan ini</h3><JejakPemakaianPenerimaan receiptId={id} status={r.status} /></Card>
         )}
         {r.jejak?.length > 0 && (
-          <Card className="p-4" data-testid="jejak-dokumen">
-            <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat status dan dokumen</h3>
+          <details className="gud-lipat" data-testid="jejak-dokumen">
+            <summary><span>Riwayat</span><span className="gud-lipat-info">{r.jejak.length} catatan</span></summary>
             <ol className="m-0 list-none space-y-1.5 p-0 text-[12.5px]">
               {r.jejak.map((j) => (
                 <li key={j.id} data-testid="jejak-baris" data-aksi={j.aksi}>
@@ -232,7 +233,7 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
                 </li>
               ))}
             </ol>
-          </Card>
+          </details>
         )}
         {galat && <p role="alert" className="text-[12px] text-red">{galat}</p>}
         <Button variant="ghost" size="sm" onClick={() => muat()} disabled={memuat} className="self-start max-sm:min-h-11" data-testid="muat-ulang">{memuat ? <Loader2 size={14} className="animate-spin" /> : null} Muat ulang</Button>

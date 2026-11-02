@@ -1,15 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { Inbox, RefreshCw, Search } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import { IkCari, IkMuatUlang, IkPanah, IkTruk } from "@/components/gudangIcons.jsx";
 import { api } from "@/api.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { Card } from "@/components/ui/card.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import { PageContainer } from "@/components/ui/page.jsx";
 import { useFilterDaftar, querySaringan } from "@/features/warehouse/dokumen/useFilterDaftar.js";
-import { Input } from "@/components/ui/input.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import DetailPO from "@/features/kedatangan/DetailPOFokus.jsx";
 import { STATUS_AKAN_DATANG, TAB_AKAN_DATANG, jumlahTeks, tanggalTeks, ringkasKuantitas } from "@/features/kedatangan/kedatanganLogic.js";
@@ -17,7 +11,7 @@ import { STATUS_AKAN_DATANG, TAB_AKAN_DATANG, jumlahTeks, tanggalTeks, ringkasKu
 // BARANG AKAN DATANG (Gudang) — PO bahan baku yang sama dengan Finance, TANPA harga, total, utang, atau pembayaran.
 // Gudang melihat apa yang dipesan, kapan diperkirakan datang, apa yang sudah datang, dan mencatat barang tiba. Memeriksa baik/ditolak dan Simpan ke Stok tetap di Penerimaan Barang.
 // Angka dan status dihitung server (satu sumber); halaman ini hanya menampilkan.
-const BadgeStatus = ({ kode, label, className }) => <Badge variant={STATUS_AKAN_DATANG[kode]?.variant || "neutral"} className={className}>{label ?? STATUS_AKAN_DATANG[kode]?.label ?? kode}</Badge>;
+const BadgeStatus = ({ kode, label }) => <span className="gud-pill" data-warna={STATUS_AKAN_DATANG[kode]?.variant || "neutral"}>{label ?? STATUS_AKAN_DATANG[kode]?.label ?? kode}</span>;
 
 const PATH = "/warehouse/barang-akan-datang";
 const KUNCI = ["tab", "q"];
@@ -44,80 +38,90 @@ export default function WarehouseBarangAkanDatang() {
   const kosong = !loading && data && rows.length === 0;
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Barang Akan Datang"
-        subtitle="PO bahan baku dari Finance: yang ditunggu, yang sudah tiba, dan yang siap disimpan. Tanpa harga atau nilai."
-        actions={<Button variant="ghost" size="sm" onClick={muat} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>}
-      />
-      <PageBody>
-        <div role="tablist" aria-label="Saring status barang akan datang" className="flex flex-wrap gap-1 border-b border-line pb-2">
-          {TAB_AKAN_DATANG.map((t) => {
-            const jml = t.key ? data?.hitungan?.[t.key] : null;
-            return (
-              <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} data-testid={`tab-${t.key || "semua"}`}
-                className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium max-sm:min-h-11", tab === t.key ? "bg-accentbg text-accent" : "text-ink2 hover:bg-hovertint")}>
-                {t.label}{jml != null && <span className="rounded-full bg-inset px-1.5 text-[11px] tabular-nums text-ink2" data-testid={`hitung-${t.key}`}>{jml}</span>}
-              </button>
-            );
-          })}
-        </div>
-        <div className="relative max-w-md">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nomor PO, supplier, atau nama barang" aria-label="Cari PO" className="pl-9" />
-        </div>
-        {error && <p role="alert" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
+    <PageContainer fluid className="gud-halaman">
+      <div className={cn("gud-split", bukaId && "gud-split-buka")} data-testid="ruang-akan-datang">
+        <section className="gud-panel gud-daftar" aria-label="Daftar barang akan datang">
+          <header className="gud-kepala">
+            <div className="gud-judul">
+              <h1 className="page-title">Barang akan datang</h1>
+              <p className="page-subtitle">PO bahan baku dari Finance: yang ditunggu, yang sudah tiba, dan yang siap disimpan. Tanpa harga atau nilai.</p>
+            </div>
+            <div className="gud-aksi-kepala">
+              <button type="button" className="gud-tombol-ikon" onClick={muat} disabled={loading} aria-label="Muat ulang daftar" title="Muat ulang"><IkMuatUlang size={18} className={loading ? "animate-spin" : ""} /></button>
+            </div>
+          </header>
 
-        {kosong ? (
-          <Card><EmptyState icon={Inbox} title="Belum ada barang yang akan datang" description={tab ? "Tidak ada PO pada status ini." : "PO yang disetujui Finance akan muncul di sini."} /></Card>
-        ) : (
-          <>
-            <TableWrap className="hidden md:block">
-              <Table>
-                <THead><TR><TH>PO</TH><TH>Supplier</TH><TH>Estimasi tiba</TH><TH>Progres</TH><TH>Status</TH><TH>Pengiriman</TH></TR></THead>
-                <TBody>
-                  {loading && !data && <TableSkeletonRows rows={6} cols={6} />}
-                  {rows.map((po) => {
-                    const r = ringkasKuantitas(po);
-                    return (
-                      <TR key={po.id} clickable onClick={() => setBukaId(po.id)} data-testid="baris-po" data-po={po.poNumber}>
-                        <TD className="font-semibold text-ink">{po.poNumber}</TD>
-                        <TD>{po.supplier?.name}</TD>
-                        <TD>{tanggalTeks(po.expectedDate)}{po.hariTerlambat > 0 && <span className="ml-1.5 text-[11.5px] font-semibold text-red">lewat {po.hariTerlambat} hari</span>}</TD>
-                        <TD><div className="text-[12.5px] tabular-nums text-ink2">{r.teks}</div></TD>
-                        <TD>
-                          <div className="flex flex-wrap gap-1" data-testid="status-po">
-                            <BadgeStatus kode={po.statusAkanDatang.kode} label={po.statusAkanDatang.label} />
-                            {po.bendera.filter((b) => b.kode !== po.statusAkanDatang.kode).map((b) => <BadgeStatus key={b.kode} kode={b.kode} label={b.label} />)}
-                          </div>
-                        </TD>
-                        <TD className="tabular-nums">{po.penerimaan.length}</TD>
-                      </TR>
-                    );
-                  })}
-                </TBody>
-              </Table>
-            </TableWrap>
-            <ul className="list-none space-y-2 p-0 md:hidden">
-              {rows.map((po) => {
-                const r = ringkasKuantitas(po);
-                return (
-                  <li key={po.id}>
-                    <button type="button" onClick={() => setBukaId(po.id)} className="w-full rounded-lg border border-line bg-surface p-3 text-left hover:bg-hovertint" data-testid="baris-po" data-po={po.poNumber}>
-                      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[13.5px] font-semibold text-ink">{po.poNumber}</span><BadgeStatus kode={po.statusAkanDatang.kode} label={po.statusAkanDatang.label} /></div>
-                      <div className="mt-0.5 text-[12.5px] text-ink2">{po.supplier?.name}</div>
-                      <div className="mt-1 text-[12px] text-ink2">Estimasi tiba {tanggalTeks(po.expectedDate)}{po.hariTerlambat > 0 && <span className="ml-1 font-semibold text-red">· lewat {po.hariTerlambat} hari</span>}</div>
-                      <div className="mt-0.5 text-[12px] tabular-nums text-ink2">{r.teks}</div>
-                      <div className="mt-1 flex flex-wrap gap-1">{po.bendera.filter((b) => b.kode !== po.statusAkanDatang.kode).map((b) => <BadgeStatus key={b.kode} kode={b.kode} label={b.label} />)}</div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </>
-        )}
-      </PageBody>
-      {bukaId && <DetailPO id={bukaId} onClose={tutup} onChanged={muat} />}
+          <div className="gud-cari">
+            <IkCari size={16} aria-hidden />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nomor PO, supplier, atau nama barang..." aria-label="Cari PO" />
+          </div>
+          <div role="tablist" aria-label="Saring status barang akan datang" className="gud-tab gud-tab-lipat">
+            {TAB_AKAN_DATANG.map((t) => {
+              const jml = t.key ? data?.hitungan?.[t.key] : null;
+              return (
+                <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} data-testid={`tab-${t.key || "semua"}`} className="max-sm:min-h-11">
+                  {t.label}{jml != null && <span className="gud-tab-jumlah" data-testid={`hitung-${t.key}`}>{jml}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {error && <p role="alert" className="gud-galat">{error}</p>}
+
+          {kosong ? (
+            <div className="gud-kosong">
+              <IkTruk size={28} aria-hidden />
+              <h2>Belum ada barang yang akan datang</h2>
+              <p>{tab ? "Tidak ada PO pada status ini." : "PO yang disetujui Finance akan muncul di sini."}</p>
+            </div>
+          ) : (
+            <>
+              <div className="gud-tabel-bungkus hidden md:block">
+                <table className="gud-tabel">
+                  <thead><tr><th scope="col">PO &amp; supplier</th><th scope="col">Estimasi tiba</th><th scope="col" className="gud-kol-lebar">Progres</th><th scope="col">Status</th><th scope="col" className="gud-kol-lebar">Pengiriman</th><th scope="col" aria-label="Buka" /></tr></thead>
+                  <tbody>
+                    {loading && !data && Array.from({ length: 5 }, (_, n) => <tr key={n} className="gud-rangka"><td colSpan={6}><span /></td></tr>)}
+                    {rows.map((po) => {
+                      const r = ringkasKuantitas(po);
+                      return (
+                        <tr key={po.id} onClick={() => setBukaId(po.id)} data-aktif={po.id === bukaId ? "ya" : undefined} data-testid="baris-po" data-po={po.poNumber}>
+                          <td><span className="gud-nomor">{po.poNumber}</span><span className="gud-sekunder">{po.supplier?.name}</span></td>
+                          <td className="gud-jadwal">{tanggalTeks(po.expectedDate)}{po.hariTerlambat > 0 && <span className="gud-petunjuk gud-petunjuk-awas">lewat {po.hariTerlambat} hari</span>}</td>
+                          <td className="gud-kol-lebar"><span className="gud-sekunder gud-angka">{r.teks}</span></td>
+                          <td>
+                            <div className="gud-pil-baris" data-testid="status-po">
+                              <BadgeStatus kode={po.statusAkanDatang.kode} label={po.statusAkanDatang.label} />
+                              {po.bendera.filter((b) => b.kode !== po.statusAkanDatang.kode).map((b) => <BadgeStatus key={b.kode} kode={b.kode} label={b.label} />)}
+                            </div>
+                          </td>
+                          <td className="gud-angka gud-kol-lebar">{po.penerimaan.length}</td>
+                          <td className="gud-buka"><IkPanah size={16} aria-hidden /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <ul className="gud-kartu-daftar md:hidden">
+                {rows.map((po) => {
+                  const r = ringkasKuantitas(po);
+                  return (
+                    <li key={po.id}>
+                      <button type="button" onClick={() => setBukaId(po.id)} className="gud-kartu max-sm:min-h-11" data-testid="baris-po" data-po={po.poNumber}>
+                        <span className="gud-kartu-atas"><span className="gud-nomor">{po.poNumber}</span><span className="gud-kartu-status"><BadgeStatus kode={po.statusAkanDatang.kode} label={po.statusAkanDatang.label} /></span></span>
+                        <span className="gud-sekunder">{po.supplier?.name}</span>
+                        <span className="gud-sekunder">Estimasi tiba {tanggalTeks(po.expectedDate)}{po.hariTerlambat > 0 && <span className="gud-petunjuk-awas"> · lewat {po.hariTerlambat} hari</span>}</span>
+                        <span className="gud-sekunder gud-angka">{r.teks}</span>
+                        <span className="gud-pil-baris">{po.bendera.filter((b) => b.kode !== po.statusAkanDatang.kode).map((b) => <BadgeStatus key={b.kode} kode={b.kode} label={b.label} />)}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </section>
+        {bukaId && <DetailPO id={bukaId} onClose={tutup} onChanged={muat} tempel />}
+      </div>
     </PageContainer>
   );
 }

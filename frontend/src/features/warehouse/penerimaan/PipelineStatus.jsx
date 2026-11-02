@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Check, ChevronDown, ArrowRight, Undo2, XCircle } from "lucide-react";
+import { ChevronDown, ArrowRight, Undo2, XCircle } from "lucide-react";
+import { IkCentang } from "@/components/gudangIcons.jsx";
 import { cn } from "@/lib/utils.js";
 
 /**
@@ -17,15 +18,13 @@ export default function PipelineStatus({ tampilan, onPilih, bolehUbah = true, si
   const IKON = { maju: ArrowRight, mundur: Undo2, tutup: XCircle };
   return (
     <div className={className} data-testid="pipeline-status" data-indeks={p.indeks ?? "berhenti"}>
-      <ol className="m-0 flex list-none items-center gap-1 overflow-x-auto p-0 pb-1" aria-label="Tahap penerimaan">
+      <ol className="gud-stepper" aria-label="Tahap penerimaan">
         {p.tahap.map((t, i) => {
           const selesai = !berhenti && i < p.indeks; const kini = !berhenti && i === p.indeks;
           return (
-            <li key={t.kode} className="flex shrink-0 items-center gap-1" aria-current={kini ? "step" : undefined} data-testid={`pipeline-${t.kode}`} data-status={selesai ? "selesai" : kini ? "kini" : "belum"}>
-              <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-chip px-2.5 py-1 text-[12px] font-semibold", selesai ? "bg-greenbg text-green" : kini ? "bg-accent text-white" : "bg-inset text-ink3")}>
-                {selesai ? <Check size={12} aria-hidden /> : <span className="tabular-nums" aria-hidden>{i + 1}</span>}{t.label}
-              </span>
-              {i < p.tahap.length - 1 && <span className="text-ink3" aria-hidden>›</span>}
+            <li key={t.kode} aria-current={kini ? "step" : undefined} data-testid={`pipeline-${t.kode}`} data-status={selesai ? "selesai" : kini ? "kini" : "belum"}>
+              <span className="gud-langkah" aria-hidden>{selesai ? <IkCentang size={14} /> : kini ? <span className="gud-langkah-titik" /> : null}</span>
+              <span className="gud-langkah-label">{t.label}</span>
             </li>
           );
         })}

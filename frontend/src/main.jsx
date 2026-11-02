@@ -96,6 +96,8 @@ import "./styles/sanss-finance-biaya.css";
 import "./styles/sanss-finance-invoice.css";
 // Workspace Produksi (redesain 2 Nov 2026) — kerangka/kontrol/modal; terkunci ke .crm-skin.prod-skin.
 import "./styles/sanss-produksi.css";
+// Workspace Gudang (redesain 3 Nov 2026) — komponen .gud-* + kerangka terkunci ke .crm-skin.gud-skin.
+import "./styles/sanss-gudang.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

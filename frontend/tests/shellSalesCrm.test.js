@@ -22,8 +22,8 @@ test("Ikon: setiap menu Sales CRM punya ikon SVG di peta; pemetaan hanya untuk d
   const rute = [...growth.matchAll(/\{ to: "([^"]+)"/g)].map((m) => m[1]);
   assert.ok(rute.length >= 15, "daftar menu growth terbaca");
   for (const r of rute) assert.ok(ikon.includes(`"${r}":`), `ikon untuk ${r}`);
-  assert.ok(layout.includes("const sectionsVisible = crmShell ? denganIkonSales(sectionsBase) : sectionsBase;"));
-  assert.ok(layout.includes('const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel") && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
+  assert.ok(layout.includes("const sectionsVisible = crmShell ? (divisionKey === \"warehouse\" ? denganIkonGudang(sectionsBase) : denganIkonSales(sectionsBase)) : sectionsBase;"));
+  assert.ok(layout.includes('const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse") && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
   assert.ok(layout.includes('crmShell && "crm-skin"'));
 });
 

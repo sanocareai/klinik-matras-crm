@@ -39,6 +39,7 @@ import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { IKON_NAV_SALES } from "./sanssIcons.jsx";
 import { IKON_NAV_FINANCE } from "./financeIcons.jsx";
 import { IKON_NAV_PRODUKSI } from "./produksiIcons.jsx";
+import { IKON_NAV_GUDANG, IKON_GRUP_GUDANG } from "./gudangIcons.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { FINANCE_HUBS, hubAktif, badgeHub, hubTerlihat } from "@/lib/financeHubs.js";
@@ -657,6 +658,10 @@ function denganIkonSales(sections) {
     return Ikon ? { ...it, Icon: Ikon } : it;
   }) }));
 }
+// Redesain Gudang (3 Nov 2026): keluarga ikon garis tunggal (components/gudangIcons.jsx) untuk menu DAN kelompok sidebar Gudang; dipetakan per rute/nama kelompok, data menu tidak tersentuh.
+function denganIkonGudang(sections) {
+  return sections.map((s) => ({ ...s, Icon: IKON_GRUP_GUDANG[s.section] || s.Icon, items: s.items.map((it) => (IKON_NAV_GUDANG[it.to] ? { ...it, Icon: IKON_NAV_GUDANG[it.to] } : it)) }));
+}
 // Lapisan visual Sales CRM (styles/sanss-crm.css, 31 Okt 2026) — aktif default;
 // localStorage "sanss-crm-skin" = "off" mematikannya untuk banding saat review.
 const CRM_SKIN_OFF = (() => { try { return localStorage.getItem("sanss-crm-skin") === "off"; } catch { return false; } })();
@@ -948,7 +953,7 @@ export default function Layout({ user, onLogout }) {
   // legacy role=ADMIN.
   const isAdmin = isAdminUser(user);
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
-  const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
   // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
   // Finance: sidebar hanya memuat hub, jadi pencarian memakai semua halaman hub yang boleh dilihat peran ini (sumber & penyaringan sama dengan sidebar/hub).
   const halamanCari = crmShell
@@ -1063,7 +1068,7 @@ export default function Layout({ user, onLogout }) {
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
     <div
-      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin", crmShell && divisionKey === "bengkel" && "prod-skin")}
+      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin", crmShell && divisionKey === "bengkel" && "prod-skin", crmShell && divisionKey === "warehouse" && "gud-skin")}
       data-division={divisionKey || "hub"}
       // data-driver-app (9 September 2026) — pagar retheme tipografi APK
       // Driver (styles/driver-app-theme.css). Sama disiplin dgn IS_DRIVER_APP
@@ -1215,7 +1220,7 @@ export default function Layout({ user, onLogout }) {
           <LayoutGroup>
           {(() => {
             const sectionsBase = visibleSections(onHub ? HUB_SECTIONS : (divisionKey === "finance" ? denganBadgeFinance(division.sections, antreanFinance) : division.sections), isAdmin);
-            const sectionsVisible = crmShell ? denganIkonSales(sectionsBase) : sectionsBase;
+            const sectionsVisible = crmShell ? (divisionKey === "warehouse" ? denganIkonGudang(sectionsBase) : denganIkonSales(sectionsBase)) : sectionsBase;
             // P8.2 (UI Polish) — seluruh item yang TAMPIL saat ini (lintas
             // section), dipakai lib/sidebarActive.js untuk mendeteksi
             // "saudara" berquery yang lebih spesifik berbagi pathname sama

@@ -1,48 +1,52 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronRight, Inbox, Plus, RefreshCw, Search } from "lucide-react";
 import { api } from "@/api.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { Card } from "@/components/ui/card.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
-import { Input } from "@/components/ui/input.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
+import { PageContainer } from "@/components/ui/page.jsx";
 import { cn } from "@/lib/utils.js";
+import { IkCari, IkKotak, IkMuatUlang, IkPanah, IkTambah, IkTutup } from "@/components/gudangIcons.jsx";
 import { useFilterDaftar, querySaringan } from "@/features/warehouse/dokumen/useFilterDaftar.js";
 import GoodsReceiptFormModal from "@/features/warehouse/components/GoodsReceiptFormModal.jsx";
 import SumberPO from "@/features/warehouse/components/SumberPO.jsx";
 import PenerimaanDetail from "@/features/warehouse/penerimaan/PenerimaanDetail.jsx";
-import { TAHAP_FILTER, TAHAP_PIPELINE, TAHAP_TUTUP, cocokCari, filterTahap, hitungPerTahap, identitasPenerimaan, perluTindakan, tanggalPendek } from "@/features/warehouse/penerimaan/penerimaanLogic.js";
+import {
+  SARINGAN_JADWAL, TAB_PENERIMAAN, TAHAP_FILTER, cocokCari, cocokJadwal, daftarSupplier, filterTab, filterTahap, hitungPerTab, identitasPenerimaan, lewatJadwal, perluTindakan, tabAktif, tahapUntukTab, tanggalPendek,
+} from "@/features/warehouse/penerimaan/penerimaanLogic.js";
 
-// PENERIMAAN BARANG — pipeline dokumen penerimaan: Draf → Terjadwal → Barang tiba → Pemeriksaan → Siap masuk stok → Sudah masuk stok. Setiap baris menampilkan identitas lengkap (nomor penerimaan, nomor PO,
-// supplier, pembuat, tanggal) dan TINDAKAN BERIKUTNYA (dari server) supaya dua dokumen untuk bahan yang sama tidak tertukar. Detail dibuka sebagai JENDELA FOKUS berbasis rute (/warehouse/goods-receipt/:id):
-// daftar tetap terpasang di belakangnya, jadi saringan, pencarian, dan posisi gulir kembali persis seperti sebelumnya saat jendela ditutup (Esc / Back / tombol Tutup).
+// PENERIMAAN BARANG (redesain Gudang, 3 Nov 2026) — ruang pemeriksaan: daftar di kiri, detail dokumen di kanan (layar lebar) sehingga konteks tidak hilang saat memeriksa barang.
+// Tab: Perlu tindakan (bawaan) · Menunggu kedatangan · Semua · Selesai — riwayat tetap mudah dibuka. Saringan Tahap/Supplier/Jadwal + pencarian tersimpan di URL (bertahan saat muat ulang).
+// Status, tahap, dan tindakan berikutnya SELALU dari server (`tampilan`); halaman ini tidak menghitung sendiri. Detail dibuka lewat rute (/warehouse/goods-receipt/:id): ≥1200px menempel di kanan,
+// lebih sempit menjadi jendela fokus (tanpa mengubah perilaku Back/Esc/Tutup). Tidak ada perubahan data, izin, atau endpoint.
 const PATH = "/warehouse/goods-receipt";
-const KUNCI = ["tahap", "q"];
-const BADGE = { neutral: "neutral", accent: "accent", orange: "orange", green: "green", red: "red" };
+const KUNCI = ["tab", "tahap", "q", "supplier", "jadwal"];
 
 function StatusPenerimaan({ r }) {
   const t = r.tampilan;
   return (
-    <div className="space-y-0.5">
-      <Badge variant={BADGE[t?.warna] ?? "neutral"} data-testid="status-baris" className="h-auto whitespace-normal text-left leading-tight">{t?.label ?? r.status}</Badge>
-      {t?.pengaruhStok === "BELUM" && ["DRAFT", "SCHEDULED"].includes(r.status) && <div className="text-[10.5px] text-ink3">Belum memengaruhi stok</div>}
+    <div className="gud-status">
+      <span className="gud-pill" data-warna={t?.warna ?? "neutral"} data-testid="status-baris" title={t?.label}>{labelTahap(t) ?? r.status}</span>
+      {t?.pengaruhStok === "BELUM" && ["DRAFT", "SCHEDULED"].includes(r.status) && <span className="gud-petunjuk">Belum memengaruhi stok</span>}
     </div>
   );
 }
-const Berikutnya = ({ r }) => <span className={cn("text-[12px]", perluTindakan(r) ? "font-semibold text-ink" : "text-ink3")} data-testid="tindakan-berikutnya">{r.tampilan?.berikutnya ?? "—"}</span>;
+// Pil memakai nama tahap pendek dari alur server (mis. "Pemeriksaan"); kalimat panjang server ("Barang tiba — perlu diperiksa") tetap jadi tooltip dan ada di detail. Dokumen berhenti (dibatalkan/ditolak) memakai labelnya.
+const labelTahap = (t) => { const p = t?.pipeline; return p && p.indeks !== null && p.indeks !== undefined ? p.tahap[p.indeks]?.label ?? t.label : t?.label; };
+const Berikutnya = ({ r }) => <span className={cn("gud-berikutnya", perluTindakan(r) && "gud-berikutnya-utama")} data-testid="tindakan-berikutnya">{r.tampilan?.berikutnya ?? "—"}</span>;
+const Jadwal = ({ r }) => (
+  <>
+    <span>{r.expectedDate ? tanggalPendek(r.expectedDate) : "—"}</span>
+    {lewatJadwal(r) && <span className="gud-petunjuk gud-petunjuk-awas" data-testid="lewat-jadwal">Lewat jadwal</span>}
+  </>
+);
 
 export default function WarehouseGoodsReceipt() {
   const navigate = useNavigate(); const { id } = useParams(); const { search } = useLocation();
   const [sp] = useSearchParams();
-  const [f, ubahF] = useFilterDaftar(PATH, KUNCI); const tahap = f.tahap; const cari = f.q;
+  const [f, ubahF, ubahBanyak] = useFilterDaftar(PATH, KUNCI); const cari = f.q; const tahap = f.tahap; const tab = tabAktif(f.tab, tahap);
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
-  const jarak = useRef(0); // berapa langkah riwayat dari daftar ke jendela (agar menutup kembali ke daftar, bukan ke dokumen sebelumnya)
+  const jarak = useRef(0); // berapa langkah riwayat dari daftar ke detail (agar menutup kembali ke daftar, bukan ke dokumen sebelumnya)
 
-  // Tautan lama "?buka=<id>" (mis. dari Barang Akan Datang) → jendela detail.
+  // Tautan lama "?buka=<id>" (mis. dari Barang Akan Datang) → detail.
   useEffect(() => { const b = sp.get("buka"); if (b) navigate(`${PATH}/${b}`, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
 
   const load = useCallback((tenang = false) => {
@@ -51,95 +55,130 @@ export default function WarehouseGoodsReceipt() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const hitung = useMemo(() => (rows ? hitungPerTahap(rows) : {}), [rows]);
-  const terfilter = useMemo(() => (rows ? filterTahap(rows, tahap).filter((r) => cocokCari(r, cari)) : null), [rows, tahap, cari]);
+  const hitung = useMemo(() => (rows ? hitungPerTab(rows) : {}), [rows]);
+  const supplier = useMemo(() => daftarSupplier(rows), [rows]);
+  const terfilter = useMemo(
+    () => (rows ? filterTahap(filterTab(rows, tab), tahap).filter((r) => cocokCari(r, cari) && (!f.supplier || (r.supplier ?? "").trim() === f.supplier) && cocokJadwal(r, f.jadwal)) : null),
+    [rows, tab, tahap, cari, f.supplier, f.jadwal],
+  );
   const kosong = !loading && terfilter && terfilter.length === 0;
   const saringan = querySaringan(f, KUNCI);
   const buka = (rid) => { jarak.current = 1; navigate(`${PATH}/${rid}${saringan}`); };
   const tutup = () => { if (jarak.current > 0) { const n = jarak.current; jarak.current = 0; navigate(-n); } else navigate(`${PATH}${saringan}`, { replace: true }); };
   const memantik = (e, rid) => { if (e.type === "keydown" && !["Enter", " "].includes(e.key)) return; e.preventDefault(); buka(rid); };
-  const perluDitindak = useMemo(() => (rows ?? []).filter(perluTindakan).length, [rows]);
+  const perluDitindak = hitung.tindakan ?? 0;
+
+  const tahapLama = TAHAP_FILTER.find((t) => t.key === tahap);
+  const pilihanTahap = tahapUntukTab(tab);
+  const tahapDiluarPilihan = tahap && !pilihanTahap.some((t) => t.key === tahap) ? tahapLama : null; // tautan lama (mis. "belum-masuk-stok") tetap tampil sebagai pilihan aktif
+  const chip = [
+    tahap && { k: "tahap", label: `Tahap: ${tahapLama?.label ?? tahap}` },
+    f.supplier && { k: "supplier", label: `Supplier: ${f.supplier}` },
+    f.jadwal && { k: "jadwal", label: SARINGAN_JADWAL.find((j) => j.key === f.jadwal)?.label ?? f.jadwal },
+    cari && { k: "q", label: `Kata kunci: ${cari}` },
+  ].filter(Boolean);
+  const gantiTab = (k) => ubahBanyak({ tab: k === "tindakan" ? "" : k, tahap: "" });
+  const reset = () => ubahBanyak({ tahap: "", supplier: "", jadwal: "", q: "" });
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Penerimaan Barang"
-        subtitle="Dokumen penerimaan dari PO, supplier, produksi, atau retur — dari jadwal kedatangan sampai masuk stok."
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={() => load()} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
-            <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Penerimaan Baru</Button>
-          </>
-        }
-      />
-      <PageBody>
-        <p className="m-0 text-[12px] text-ink2" data-testid="alur-ringkas"><Link to="/warehouse/barang-akan-datang" className="font-semibold text-accent">PO yang ditunggu ada di Barang Akan Datang</Link>; di sini Anda memeriksa barang dan memasukkannya ke stok.{rows && perluDitindak > 0 && <> <strong className="text-ink">{perluDitindak} dokumen menunggu tindakan Anda.</strong></>}</p>
+    <PageContainer fluid className="gud-halaman">
+      <div className={cn("gud-split", id && "gud-split-buka")} data-testid="ruang-penerimaan">
+        <section className="gud-panel gud-daftar" aria-label="Daftar penerimaan barang">
+          <header className="gud-kepala">
+            <div className="gud-judul">
+              <h1 className="page-title">Penerimaan barang</h1>
+              <p className="page-subtitle">Periksa barang yang tiba, lalu simpan ke stok.</p>
+            </div>
+            <div className="gud-aksi-kepala">
+              <button type="button" className="gud-tombol-ikon" onClick={() => load()} disabled={loading} aria-label="Muat ulang daftar" title="Muat ulang"><IkMuatUlang size={18} className={loading ? "animate-spin" : ""} /></button>
+              <button type="button" className="gud-tombol gud-tombol-utama" onClick={() => setFormOpen(true)}><IkTambah size={16} /> Penerimaan baru</button>
+            </div>
+          </header>
 
-        <div role="tablist" aria-label="Pipeline penerimaan" className="flex items-stretch gap-1 overflow-x-auto pb-1" data-testid="pipeline-daftar">
-          <button role="tab" aria-selected={tahap === ""} onClick={() => ubahF("tahap", "")} data-testid="tahap-semua"
-            className={cn("flex shrink-0 flex-col items-start rounded-btn px-3 py-1.5 text-left transition-colors max-sm:min-h-11", tahap === "" ? "bg-accentbg text-accent" : "bg-inset text-ink2 hover:bg-hovertint")}>
-            <span className="text-[16px] font-bold tabular-nums leading-tight">{rows ? hitung[""] ?? 0 : "–"}</span><span className="text-[11.5px] font-semibold">Semua</span>
-          </button>
-          {TAHAP_PIPELINE.map((t, i) => (
-            <React.Fragment key={t.key}>
-              <ChevronRight size={14} className="mt-3 shrink-0 text-ink3 max-sm:hidden" aria-hidden />
-              <button role="tab" aria-selected={tahap === t.key} onClick={() => ubahF("tahap", tahap === t.key ? "" : t.key)} data-testid={`tahap-${t.key}`}
-                className={cn("flex shrink-0 flex-col items-start rounded-btn px-3 py-1.5 text-left transition-colors max-sm:min-h-11", tahap === t.key ? "bg-accentbg text-accent" : "bg-inset text-ink2 hover:bg-hovertint")}>
-                <span className="flex items-center gap-1 text-[16px] font-bold tabular-nums leading-tight">{rows ? hitung[t.key] ?? 0 : "–"}{rows && (hitung[t.key] ?? 0) > 0 && ["DRAF", "TIBA", "PERIKSA", "SIAP"].includes(t.key) && <span className="h-1.5 w-1.5 rounded-full bg-orange" title="Menunggu tindakan Gudang" aria-label="menunggu tindakan" />}</span>
-                <span className="whitespace-nowrap text-[11.5px] font-semibold">{i + 1}. {t.label}</span>
+          <p className="gud-alur" data-testid="alur-ringkas"><Link to="/warehouse/barang-akan-datang">PO yang ditunggu ada di Barang Akan Datang</Link>; di sini Anda memeriksa barang dan memasukkannya ke stok.{rows && perluDitindak > 0 && <> <strong>{perluDitindak} dokumen menunggu tindakan Anda.</strong></>}</p>
+
+          <div className="gud-cari">
+            <IkCari size={16} aria-hidden />
+            <input value={cari} onChange={(e) => ubahF("q", e.target.value)} placeholder="Cari GR, PO, supplier, atau bahan..." aria-label="Cari penerimaan" />
+          </div>
+
+          <div role="tablist" aria-label="Kelompok penerimaan" className="gud-tab" data-testid="pipeline-daftar">
+            {TAB_PENERIMAAN.map((t) => (
+              <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => gantiTab(t.key)} data-testid={`tab-${t.key}`} className="max-sm:min-h-11">
+                {t.label}<span className="gud-tab-jumlah">{rows ? hitung[t.key] ?? 0 : "–"}</span>
               </button>
-            </React.Fragment>
-          ))}
-          <button role="tab" aria-selected={tahap === TAHAP_TUTUP.key} onClick={() => ubahF("tahap", tahap === TAHAP_TUTUP.key ? "" : TAHAP_TUTUP.key)} data-testid={`tahap-${TAHAP_TUTUP.key}`}
-            className={cn("ml-2 flex shrink-0 flex-col items-start rounded-btn px-3 py-1.5 text-left transition-colors max-sm:min-h-11", tahap === TAHAP_TUTUP.key ? "bg-redbg text-red" : "bg-inset text-ink3 hover:bg-hovertint")}>
-            <span className="text-[16px] font-bold tabular-nums leading-tight">{rows ? hitung[TAHAP_TUTUP.key] ?? 0 : "–"}</span><span className="whitespace-nowrap text-[11.5px] font-semibold">{TAHAP_TUTUP.label}</span>
-          </button>
-        </div>
-        {TAHAP_FILTER.find((t) => t.key === tahap)?.lama && <p className="m-0 text-[11.5px] text-ink3" data-testid="saringan-lama">Saringan dari tautan lama: {TAHAP_FILTER.find((t) => t.key === tahap).label}. Pilih tahap pipeline di atas untuk menyaring lebih rinci.</p>}
+            ))}
+          </div>
 
-        <div className="relative max-w-md">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
-          <Input value={cari} onChange={(e) => ubahF("q", e.target.value)} placeholder="Cari no. GR, no. PO, supplier, bahan" aria-label="Cari penerimaan" className="pl-9" />
-        </div>
-        {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
+          <div className="gud-saring">
+            <label className="gud-pilih"><span className="gud-sr">Tahap</span>
+              <select value={tahap} onChange={(e) => ubahF("tahap", e.target.value)} aria-label="Saring menurut tahap" data-testid="saring-tahap">
+                <option value="">Semua tahap</option>
+                {tahapDiluarPilihan && <option value={tahapDiluarPilihan.key}>{tahapDiluarPilihan.label}</option>}
+                {pilihanTahap.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </label>
+            <label className="gud-pilih"><span className="gud-sr">Supplier</span>
+              <select value={f.supplier} onChange={(e) => ubahF("supplier", e.target.value)} aria-label="Saring menurut supplier" data-testid="saring-supplier">
+                <option value="">Semua supplier</option>
+                {f.supplier && !supplier.includes(f.supplier) && <option value={f.supplier}>{f.supplier}</option>}
+                {supplier.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="gud-pilih"><span className="gud-sr">Jadwal</span>
+              <select value={f.jadwal} onChange={(e) => ubahF("jadwal", e.target.value)} aria-label="Saring menurut jadwal" data-testid="saring-jadwal">
+                {SARINGAN_JADWAL.map((j) => <option key={j.key} value={j.key}>{j.label}</option>)}
+              </select>
+            </label>
+          </div>
+          {chip.length > 0 && (
+            <div className="gud-chip-baris" data-testid="saringan-aktif">
+              {chip.map((c) => <span key={c.k} className="gud-chip">{c.label}<button type="button" onClick={() => ubahF(c.k, "")} aria-label={`Hapus saringan ${c.label}`}><IkTutup size={12} /></button></span>)}
+              <button type="button" className="gud-tautan" onClick={reset} data-testid="saringan-reset">Reset</button>
+            </div>
+          )}
+          {tahapLama?.lama && <p className="gud-petunjuk m-0" data-testid="saringan-lama">Saringan dari tautan lama: {tahapLama.label}. Pilih tahap di atas untuk menyaring lebih rinci.</p>}
+          {error && <div role="alert" className="gud-galat">{error}</div>}
 
-        <Card className="overflow-hidden p-0">
           {kosong ? (
-            <EmptyState icon={Inbox} title={cari || tahap ? "Tidak ada penerimaan yang cocok" : "Belum ada Penerimaan Barang"} description={cari || tahap ? "Ubah pencarian atau tahap." : "Penerimaan dari PO, supplier, atau retur akan tampil di sini."} action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Penerimaan Baru</Button>} />
+            <div className="gud-kosong" data-testid="daftar-kosong">
+              <IkKotak size={28} aria-hidden />
+              <h2>{cari || tahap || f.supplier || f.jadwal ? "Tidak ada penerimaan yang cocok" : tab === "tindakan" ? "Tidak ada penerimaan yang perlu ditindak" : "Belum ada penerimaan di sini"}</h2>
+              <p>{cari || tahap || f.supplier || f.jadwal ? "Ubah pencarian atau saringan." : tab === "tindakan" ? "Dokumen yang menunggu pemeriksaan atau penyimpanan akan muncul di sini. Riwayat ada di tab Semua dan Selesai." : "Penerimaan dari PO, supplier, atau retur akan tampil di sini."}</p>
+              {chip.length > 0 ? <button type="button" className="gud-tombol" onClick={reset}>Reset saringan</button> : <button type="button" className="gud-tombol gud-tombol-utama" onClick={() => setFormOpen(true)}><IkTambah size={16} /> Penerimaan baru</button>}
+            </div>
           ) : (
             <>
-              <TableWrap className="hidden md:block">
-                <Table>
-                  <THead><TR><TH>Penerimaan</TH><TH>No. PO</TH><TH>Supplier</TH><TH>Jadwal</TH><TH numeric>Item</TH><TH>Tahap</TH><TH>Tindakan berikutnya</TH></TR></THead>
-                  <TBody>
-                    {loading && <TableSkeletonRows rows={6} cols={7} />}
+              <div className="gud-tabel-bungkus hidden md:block">
+                <table className="gud-tabel">
+                  <thead><tr><th scope="col">Dokumen &amp; supplier</th><th scope="col" className="gud-kol-lebar">No. PO</th><th scope="col">Jadwal</th><th scope="col">Tahap</th><th scope="col" aria-label="Buka" /></tr></thead>
+                  <tbody>
+                    {loading && Array.from({ length: 5 }, (_, n) => <tr key={n} className="gud-rangka"><td colSpan={5}><span /></td></tr>)}
                     {!loading && terfilter?.map((r) => {
                       const i = identitasPenerimaan(r);
                       return (
-                        <TR key={r.id} clickable onClick={() => buka(r.id)} data-testid="baris-penerimaan" data-nomor={r.receiptNumber} data-status={r.status}>
-                          <TD className="whitespace-nowrap"><a href={`${PATH}/${r.id}`} onClick={(e) => memantik(e, r.id)} className="font-semibold text-ink no-underline hover:underline">{r.receiptNumber}</a><div className="text-[11px] text-ink3">dibuat {i.pembuat ?? "—"} · {tanggalPendek(r.createdAt)}</div></TD>
-                          <TD className="whitespace-nowrap"><span className="font-medium text-ink2">{i.nomorPO ?? "—"}</span> <SumberPO receipt={r} className="ml-1" /></TD>
-                          <TD truncate>{r.supplier || "—"}</TD>
-                          <TD className="whitespace-nowrap text-ink2">{r.expectedDate ? tanggalPendek(r.expectedDate) : "—"}</TD>
-                          <TD numeric>{r.lines.length}</TD>
-                          <TD className="min-w-[150px]"><StatusPenerimaan r={r} /></TD>
-                          <TD className="min-w-[170px]"><Berikutnya r={r} /></TD>
-                        </TR>
+                        <tr key={r.id} onClick={() => buka(r.id)} data-aktif={r.id === id ? "ya" : undefined} aria-selected={r.id === id} data-testid="baris-penerimaan" data-nomor={r.receiptNumber} data-status={r.status}>
+                          <td><a href={`${PATH}/${r.id}`} onClick={(e) => memantik(e, r.id)} className="gud-nomor">{r.receiptNumber}</a><span className="gud-sekunder">{r.supplier || "supplier belum diisi"}</span>{i.nomorPO && <span className="gud-sekunder gud-kol-sempit">{i.nomorPO}</span>}</td>
+                          <td className="gud-kol-lebar"><span className="gud-nomor-po">{i.nomorPO ?? "—"}</span> <SumberPO receipt={r} className="gud-sumber" /></td>
+                          <td className="gud-jadwal"><Jadwal r={r} /></td>
+                          <td><StatusPenerimaan r={r} /><Berikutnya r={r} /></td>
+                          <td className="gud-buka"><IkPanah size={16} aria-hidden /></td>
+                        </tr>
                       );
                     })}
-                  </TBody>
-                </Table>
-              </TableWrap>
-              <ul className="m-0 list-none divide-y divide-line p-0 md:hidden">
+                  </tbody>
+                </table>
+              </div>
+              <ul className="gud-kartu-daftar md:hidden">
                 {!loading && terfilter?.map((r) => {
                   const i = identitasPenerimaan(r);
                   return (
                     <li key={r.id}>
-                      <button type="button" onClick={() => buka(r.id)} className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-sm:min-h-11" data-testid="baris-penerimaan" data-nomor={r.receiptNumber} data-status={r.status}>
-                        <div className="flex items-center gap-2"><span className="text-[13px] font-semibold text-ink">{r.receiptNumber}</span><SumberPO receipt={r} /><span className="ml-auto shrink-0"><StatusPenerimaan r={r} /></span></div>
-                        <div className="mt-0.5 text-[12.5px] text-ink">{i.nomorPO ? <>PO <strong>{i.nomorPO}</strong> · </> : null}{r.supplier || "—"}</div>
-                        <div className="mt-0.5 text-[11px] text-ink2">{r.lines.length} item · jadwal {r.expectedDate ? tanggalPendek(r.expectedDate) : "—"} · dibuat {i.pembuat ?? "—"} {tanggalPendek(r.createdAt)}</div>
-                        <div className="mt-1 flex items-center gap-1 text-[11.5px] text-ink3">Berikutnya: <Berikutnya r={r} /></div>
+                      <button type="button" onClick={() => buka(r.id)} className="gud-kartu max-sm:min-h-11" data-testid="baris-penerimaan" data-nomor={r.receiptNumber} data-status={r.status}>
+                        <span className="gud-kartu-atas"><span className="gud-nomor">{r.receiptNumber}</span><SumberPO receipt={r} /><span className="gud-kartu-status"><StatusPenerimaan r={r} /></span></span>
+                        <span className="gud-sekunder">{i.nomorPO ? <>{/^PO/i.test(i.nomorPO) ? i.nomorPO : `PO ${i.nomorPO}`} · </> : null}{r.supplier || "—"}</span>
+                        <span className="gud-sekunder">{r.lines.length} item · jadwal <Jadwal r={r} /></span>
+                        <span className="gud-sekunder">Berikutnya: <Berikutnya r={r} /></span>
                       </button>
                     </li>
                   );
@@ -147,9 +186,9 @@ export default function WarehouseGoodsReceipt() {
               </ul>
             </>
           )}
-        </Card>
-      </PageBody>
-      {id && <PenerimaanDetail key="fokus" id={id} onTutup={tutup} onBerubah={() => load(true)} saringan={saringan} />}
+        </section>
+        {id && <PenerimaanDetail key="fokus" id={id} onTutup={tutup} onBerubah={() => load(true)} saringan={saringan} tempel />}
+      </div>
       <GoodsReceiptFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(g) => { load(); if (g?.id) buka(g.id); }} />
     </PageContainer>
   );

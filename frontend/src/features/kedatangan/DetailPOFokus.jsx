@@ -9,7 +9,7 @@ import { STATUS_AKAN_DATANG, tanggalTeks } from "@/features/kedatangan/kedatanga
 // DETAIL PO (Gudang) sebagai JENDELA FOKUS — dipakai halaman Barang Akan Datang (rute /warehouse/barang-akan-datang/:id) dan Beranda Gudang (rute /warehouse/dashboard/po/:id). Tanpa harga/utang.
 const BadgeStatus = ({ kode, label, className }) => <Badge variant={STATUS_AKAN_DATANG[kode]?.variant || "neutral"} className={className}>{label ?? STATUS_AKAN_DATANG[kode]?.label ?? kode}</Badge>;
 
-export default function DetailPO({ id, onClose, onChanged }) {
+export default function DetailPO({ id, onClose, onChanged, tempel = false }) {
   const [po, setPo] = useState(null);
   const [galat, setGalat] = useState("");
   const muat = useCallback(async () => {
@@ -19,6 +19,7 @@ export default function DetailPO({ id, onClose, onChanged }) {
   const perluTindakan = (po?.penerimaan ?? []).filter((r) => ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"].includes(r.status));
   return (
     <FokusOverlay
+      tempel={tempel}
       open onClose={onClose} testid="fokus-po"
       title={po ? po.poNumber : "Memuat PO…"}
       subtitle={po ? `${po.supplier?.name} · tanggal PO ${tanggalTeks(po.orderDate)}${po.expectedDate ? ` · estimasi tiba ${tanggalTeks(po.expectedDate)}` : ""}` : undefined}
