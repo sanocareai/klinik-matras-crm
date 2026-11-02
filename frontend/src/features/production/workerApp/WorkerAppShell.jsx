@@ -5,6 +5,7 @@ import ThemeToggle from "@/components/ThemeToggle.jsx";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { NAV_TABS } from "./workerAppModel.js";
 import "./worker-app.css";
+import "@/styles/sanss-produksi-app.css";
 
 // Kerangka aplikasi lantai (mobile-first): header ringkas + bottom navigation (maks. 4). TANPA sidebar desktop. Halaman tetap memakai sesi & tema aplikasi.
 // P12D: kerangka yang SAMA dipakai Aplikasi Dokumentasi lewat prop `tabs` (default = tab Meja/Corner; perilaku Meja/Corner tidak berubah).
@@ -15,7 +16,7 @@ const ICONS = { Briefcase, Package, Activity, User, Layers, Camera, CloudUpload,
 export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, tabs = NAV_TABS, onRefresh, refreshing = false, onBack = null, exitTo = null, onLeave = null, children, hideNav = false, actionPad = false }) {
   const online = useOnline();
   return (
-    <div className="wa" data-testid="worker-app">
+    <div className="wa prod-app" data-testid="worker-app">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="mx-auto flex max-w-[1200px] items-center gap-2 px-3 py-2 md:px-6">
           {onBack ? (
@@ -24,7 +25,7 @@ export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {
             <Link to={exitTo} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} aria-label="Kembali ke SANSS (desktop)" title="Kembali ke SANSS (desktop)" data-testid="worker-exit"
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><ArrowLeft size={20} aria-hidden /></Link>
           ) : (
-            <span aria-hidden className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[#0B2454] text-[15px] font-extrabold text-white">S</span>
+            <span aria-hidden className="prod-app-logo"><img src="/logo-small.png" alt="" /></span>
           )}
           <div className="min-w-0 flex-1">
             <p className="m-0 truncate text-[16px] font-bold leading-tight text-ink">{title}</p>

@@ -543,3 +543,14 @@
 :root .app-shell.crm-skin.prod-skin [data-testid="daftar-cari"] { padding-left: 40px; }
 :root .app-shell.crm-skin.prod-skin [data-testid="filter-cepat"] > button[aria-pressed="true"] span { color: #FFFFFF !important; }
 :root .app-shell.crm-skin.prod-skin .prod-toolbar.prod-cari-baris { flex-direction: row; align-items: center; }
+
+/* ── 19. HALAMAN PRODUKSI LAIN DI DALAM KERANGKA (KPI & Laporan, Biaya, Komplain & Revisi, Pengaturan, QC desktop) ─────── */
+:root .app-shell.crm-skin.prod-skin .page-container { max-width: none; padding-inline: 24px; padding-bottom: 24px; }
+:root .app-shell.crm-skin.prod-skin .page-container .page-title { font-size: 30px; font-weight: 500; line-height: 1.15; letter-spacing: -0.02em; }
+:root .app-shell.crm-skin.prod-skin .page-container .page-subtitle { margin-top: 4px; font-size: 14px; color: var(--text-secondary); }
+@media (max-width: 767px) { :root .app-shell.crm-skin.prod-skin .page-container { padding-inline: 16px; } :root .app-shell.crm-skin.prod-skin .page-container .page-title { font-size: 24px; } }
+:root .app-shell.crm-skin.prod-skin .page-container .flex-col.gap-6 { gap: 16px; }
+:root .app-shell.crm-skin.prod-skin .rounded-card { border-radius: 20px; }
+:root .app-shell.crm-skin.prod-skin .rounded-card.bg-inset { background: var(--bg-inset); }
+:root .app-shell.crm-skin.prod-skin .shadow-card { box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin.prod-skin [class*="border-line"][class*="rounded-card"] { border-color: transparent; box-shadow: var(--crm-shadow); }
