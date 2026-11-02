@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
+import { AngkaGud, PilihGud, TanggalGud } from "@/features/warehouse/form/GudKontrol.jsx";
 import { adaPerubahan, bodyPerubahan, formKoreksiAwal, galatForm, JENIS_OPERASI, kalimatDampak, LABEL_BIDANG, mengubahStok } from "./koreksiLogic.js";
 
 const kunciBaru = () => `koreksi-gr-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`;
@@ -83,17 +84,18 @@ export default function KoreksiPenerimaanModal({ receiptId, onClose, onDone }) {
     if (!adaPerubahan(perubahan)) return; setMemuat(true); setGalat("");
     try { const h = await api.pratinjauKoreksiGR(receiptId, perubahan); setDampak(h); setBodyDampak(bodyKini); } catch (e) { setGalat(e.message); } finally { setMemuat(false); }
   }
+  const kunciAjukan = useRef(false);
   async function ajukan() {
-    if (galatDini || !dampakBerlaku?.boleh) return; setMemuat(true); setGalat("");
+    if (galatDini || !dampakBerlaku?.boleh || kunciAjukan.current) return; kunciAjukan.current = true; setMemuat(true); setGalat("");
     try { setHasil(await api.ajukanKoreksiGR(receiptId, { perubahan, alasan: form.alasan.trim() }, kunci.current)); }
-    catch (e) { setGalat(e.message); kunci.current = kunciBaru(); } finally { setMemuat(false); }
+    catch (e) { setGalat(e.message); kunci.current = kunciBaru(); } finally { kunciAjukan.current = false; setMemuat(false); }
   }
 
   const judul = keadaan ? `Koreksi Penerimaan — ${keadaan.penerimaan.nomor}` : "Koreksi Penerimaan";
   if (hasil) {
     const menunggu = hasil.status === "PENDING_APPROVAL";
     return (
-      <Modal open onOpenChange={(v) => !v && (onDone(hasil), onClose())} title={judul} className="w-[560px]" footer={<div className="flex w-full justify-end"><Button onClick={() => { onDone(hasil); onClose(); }} data-testid="tutup-hasil">Selesai</Button></div>}>
+      <Modal open onOpenChange={(v) => !v && (onDone(hasil), onClose())} title={judul} className="w-[560px] gud-modal" footer={<div className="flex w-full justify-end"><Button onClick={() => { onDone(hasil); onClose(); }} data-testid="tutup-hasil">Selesai</Button></div>}>
         <div className="space-y-2 text-[12.5px]" data-testid="hasil-koreksi">
           <p className="m-0 font-semibold text-ink">{menunggu ? `Koreksi ${hasil.nomor} diajukan dan menunggu persetujuan orang lain.` : `Koreksi ${hasil.nomor} sudah dicatat.`}</p>
           <p className="m-0 text-ink2">{menunggu ? "Stok belum berubah. Penyetuju (Owner/Finance yang berbeda dari pemohon) menyetujui di Barang Rusak, Retur & Penyesuaian → Koreksi Dokumen. Anda dapat membatalkannya selama menunggu." : "Catatan asal tetap terlihat; perubahan tercatat sebelum–sesudah."}</p>
@@ -105,7 +107,7 @@ export default function KoreksiPenerimaanModal({ receiptId, onClose, onDone }) {
 
   return (
     <Modal
-      open onOpenChange={(v) => !v && onClose()} title={judul} className="w-[720px]"
+      open onOpenChange={(v) => !v && onClose()} title={judul} className="w-[720px] gud-modal"
       description="Catatan asal TIDAK diubah atau dihapus. Koreksi data langsung tercatat; koreksi jumlah, bahan, atau lokasi mengubah stok sehingga memerlukan persetujuan orang lain. Lihat dampaknya dulu."
       footer={
         <div className="flex w-full flex-col gap-2">
@@ -130,7 +132,9 @@ export default function KoreksiPenerimaanModal({ receiptId, onClose, onDone }) {
             <div className="grid gap-2 sm:grid-cols-2">
               {keadaan.bidangMetadata.map((k) => (
                 <Field key={k} label={LABEL_BIDANG[k] ?? k}>
-                  <Input type={k === "receivedDate" ? "date" : "text"} value={form.metadata[k]} onChange={(e) => setMeta(k, e.target.value)} aria-label={`Koreksi ${LABEL_BIDANG[k] ?? k}`} data-testid={`meta-${k}`} />
+                  {k === "receivedDate"
+                    ? <TanggalGud value={form.metadata[k]} onChange={(v) => setMeta(k, v)} tanpaMasaDepan aria-label={`Koreksi ${LABEL_BIDANG[k] ?? k}`} data-testid={`meta-${k}`} />
+                    : <Input type="text" value={form.metadata[k]} onChange={(e) => setMeta(k, e.target.value)} aria-label={`Koreksi ${LABEL_BIDANG[k] ?? k}`} data-testid={`meta-${k}`} />}
                 </Field>
               ))}
             </div>
@@ -141,14 +145,12 @@ export default function KoreksiPenerimaanModal({ receiptId, onClose, onDone }) {
               <div key={b.barisId} className="rounded-lg border border-line p-2" data-testid="baris-koreksi">
                 <div className="flex flex-wrap items-center gap-2 text-[12.5px]"><span className="font-semibold text-ink">{b.kode}</span><span className="text-ink2">{b.nama}</span><Badge variant="neutral">{b.satuan}</Badge>{!b.bisaUbahStok && <span className="text-[11px] text-ink3">Stok baris ini tidak bisa dikoreksi di sini</span>}</div>
                 <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
-                  {b.bisaUbahStok && <Field label="Jumlah baik"><Input type="number" inputMode="decimal" min="0" step="any" value={b.jumlahBaik} onChange={(e) => setBaris(i, { jumlahBaik: e.target.value })} aria-label={`Koreksi jumlah baik ${b.kode}`} data-testid={`jumlah-${b.kode}`} /></Field>}
+                  {b.bisaUbahStok && <Field label="Jumlah baik"><AngkaGud value={b.jumlahBaik} onChange={(v) => setBaris(i, { jumlahBaik: v })} satuan={b.satuan} aria-label={`Koreksi jumlah baik ${b.kode}`} data-testid={`jumlah-${b.kode}`} /></Field>}
                   {b.bisaUbahStok && <Field label="Lokasi"><Input value={b.lokasi} onChange={(e) => setBaris(i, { lokasi: e.target.value })} aria-label={`Koreksi lokasi ${b.kode}`} /></Field>}
                   {b.bisaUbahStok && (
                     <Field label="Bahan (sesatuan)">
-                      <select value={b.bahanId} onChange={(e) => setBaris(i, { bahanId: e.target.value })} aria-label={`Ganti bahan ${b.kode}`} className="h-9 w-full rounded-lg bg-surface px-2 text-sm text-ink outline-none" data-testid={`bahan-${b.kode}`}>
-                        <option value={keadaan.baris[i].bahanId}>{b.kode} (tetap)</option>
-                        {bahan.filter((m) => m.unit === b.satuan && m.id !== keadaan.baris[i].bahanId).map((m) => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
-                      </select>
+                      <PilihGud value={b.bahanId} onChange={(v) => setBaris(i, { bahanId: v })} aria-label={`Ganti bahan ${b.kode}`} data-testid={`bahan-${b.kode}`}
+                        opsi={[{ nilai: keadaan.baris[i].bahanId, label: `${b.kode} (tetap)` }, ...bahan.filter((m) => m.unit === b.satuan && m.id !== keadaan.baris[i].bahanId).map((m) => ({ nilai: m.id, label: `${m.code} — ${m.name}` }))]} />
                     </Field>
                   )}
                   <Field label="Kondisi"><Input value={b.kondisi} onChange={(e) => setBaris(i, { kondisi: e.target.value })} aria-label={`Koreksi kondisi ${b.kode}`} /></Field>

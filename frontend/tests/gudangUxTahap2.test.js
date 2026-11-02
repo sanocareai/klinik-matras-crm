@@ -161,7 +161,7 @@ test("Restok: tautan penerimaan hanya menawarkan penerimaan yang memuat bahan pe
 
 test("AksiDokumen: muat ulang dokumen menutup panel tetapi tidak menghapus pesan galat konflik (pesan harus terlihat pengguna)", () => {
   const s = baca("features/warehouse/aksi/AksiDokumen.jsx");
-  assert.match(s, /useEffect\(\(\) => \{ setBuka\(null\); setSentuh\(false\); \}, \[ikutiVersi\]\)/); assert.doesNotMatch(s, /setBuka\(null\); setGalat\(""\)/);
+  assert.match(s, /useEffect\(\(\) => \{ setBuka\(null\); setSentuh\(false\); setTanya\(null\); \}, \[ikutiVersi\]\)/); assert.doesNotMatch(s, /setBuka\(null\); setGalat\(""\)/);
 });
 
 test("konflik di MI/ST: banner halaman yang stabil (kartu aksi berpindah posisi saat status berubah) — pesan tidak hilang; AksiDokumen tidak menggandakan pesan", () => {

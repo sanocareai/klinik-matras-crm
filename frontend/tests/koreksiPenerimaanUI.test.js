@@ -41,7 +41,7 @@ test("riwayat: baik, ditolak, kaitan pengganti, dan jalur pembalik+pengganti ter
 
 test("dialog koreksi: tombol Simpan hanya aktif setelah 'Lihat Dampak' untuk isian yang SAMA dan hasilnya boleh; pratinjau tanpa Idempotency-Key; penerapan membawa kunci", () => {
   assert.match(panel, /data-testid="lihat-dampak"/);
-  assert.match(panel, /disabled=\{!!galatDini \|\| !dampakBerlaku\?\.boleh\}[^>]*data-testid="simpan-koreksi"/);
+  assert.match(panel, /disabled=\{!!galatDini \|\| !dampakBerlaku\?\.boleh( \|\| kunciSimpan)?\}[^>]*data-testid="simpan-koreksi"/);
   assert.match(panel, /dampak\.kunciBody === bodyKini/, "isian berubah → pratinjau lama tidak berlaku");
   assert.match(panel, /api\.pratinjauKoreksiKedatanganFinance\(receipt\.id, body\)/);
   assert.match(panel, /api\.pratinjauKoreksiKedatanganGudang\(receipt\.id, body\)/);

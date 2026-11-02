@@ -2,6 +2,7 @@ import React, { useContext, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { TempelCtx } from "@/components/ui/fokus-overlay.jsx";
+import { AngkaGud } from "@/features/warehouse/form/GudKontrol.jsx";
 import { catatanBaris, kalimatBaris, teksAngka } from "./penerimaanLogic.js";
 
 const KOLOM = [
@@ -26,9 +27,16 @@ export default function TabelPerItem({ rows: semua, editable = null, nilai = {},
   const rows = useMemo(() => { const k = cari.trim().toLowerCase(); return !banyak || !k ? semua : semua.filter((b) => `${b.kode} ${b.nama}`.toLowerCase().includes(k)); }, [semua, cari, banyak]);
   const adaCatatan = banyak ? semua.filter((b) => catatanBaris(b).length > 0).length : 0;
   const isi = (b, f, awal) => (nilai[b.id] && f in nilai[b.id] ? nilai[b.id][f] : awal ?? "");
+  // Kolom angka aplikasi (AngkaGud): desimal, satuan di dalam kolom. Galat hidup per baris: baik + ditolak tidak boleh melebihi jumlah tiba (server tetap penentu).
+  const angka = (b, f) => { const v = isi(b, f, b[f === "acceptedQty" ? "baik" : f === "rejectedQty" ? "ditolak" : "tiba"]); const n = Number(v); return v === "" || v === null || v === undefined ? null : n; };
+  const galatBaris = (b) => {
+    const baik = angka(b, "acceptedQty"); const tolak = angka(b, "rejectedQty"); const tibaN = nilai[b.id] && "receivedQty" in nilai[b.id] ? Number(nilai[b.id].receivedQty) : b.tiba;
+    if ((baik !== null && (!Number.isFinite(baik) || baik < 0)) || (tolak !== null && (!Number.isFinite(tolak) || tolak < 0))) return "Jumlah harus angka 0 atau lebih";
+    if (tibaN !== null && Number.isFinite(tibaN) && (baik ?? 0) + (tolak ?? 0) > tibaN + 1e-9) return "Baik + ditolak melebihi jumlah tiba";
+    return "";
+  };
   const input = (b, f, awal, aria, ro = false) => (
-    <input type="number" inputMode="decimal" min="0" step="any" value={isi(b, f, awal)} disabled={ro} onChange={(e) => onUbah(b.id, f, e.target.value)} aria-label={`${aria} ${b.kode}`} data-testid={`isian-${f}-${b.kode}`}
-      className="w-20 rounded-btn border border-border bg-surface px-1.5 py-1 text-right text-[12px] tabular-nums text-ink outline-none focus:border-accent disabled:opacity-60 max-sm:min-h-11 max-sm:w-24" />
+    <AngkaGud value={isi(b, f, awal)} disabled={ro} onChange={(v) => onUbah(b.id, f, v)} aria-label={`${aria} ${b.kode}`} data-testid={`isian-${f}-${b.kode}`} invalid={f !== "receivedQty" && !!galatBaris(b)} satuan={b.satuan} />
   );
   return (
     <div className={className} data-testid="tabel-per-item">
@@ -52,7 +60,8 @@ export default function TabelPerItem({ rows: semua, editable = null, nilai = {},
             {rows.map((b) => (
               <tr key={b.id} className="border-b border-line align-top" data-testid="baris-item" data-kode={b.kode}>
                 <td className="py-2 pr-2"><div className="font-semibold text-ink">{b.kode}</div><div className="text-[11px] text-ink2">{b.nama}</div><div className="text-[10.5px] text-ink3">{b.satuan}</div>
-                  {catatanBaris(b).map((c) => <div key={c} className="text-[11px] font-medium text-orange" data-testid="catatan-baris">{c}</div>)}</td>
+                  {catatanBaris(b).map((c) => <div key={c} className="text-[11px] font-medium text-orange" data-testid="catatan-baris">{c}</div>)}
+                  {editable && galatBaris(b) && <div className="text-[11px] font-medium text-red" role="alert" data-testid="galat-baris">{galatBaris(b)}</div>}</td>
                 {KOLOM.map((c) => {
                   let sel;
                   if (editable && c.k === "baik") sel = input(b, "acceptedQty", b.baik, "Diterima baik");
@@ -76,6 +85,7 @@ export default function TabelPerItem({ rows: semua, editable = null, nilai = {},
               <label><span>Ditolak</span>{editable ? input(b, "rejectedQty", b.ditolak, "Ditolak") : <strong>{teksAngka(b.ditolak)}</strong>}</label>
             </div>
             <div className="gud-item-kalimat">{kalimatBaris(b)}</div>
+            {editable && galatBaris(b) && <div className="gud-item-catatan" role="alert" data-testid="galat-baris">{galatBaris(b)}</div>}
             {catatanBaris(b).map((c) => <div key={c} className="gud-item-catatan">{c}</div>)}
           </li>
         ))}

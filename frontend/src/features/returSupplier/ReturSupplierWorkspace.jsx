@@ -12,6 +12,8 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TombolAksi, Pilihan } from "@/features/finance/shared.jsx";
 import { UnggahBukti } from "@/features/kedatangan/PanelKedatangan.jsx";
 import { cn } from "@/lib/utils.js";
+import { AngkaGud, GudField, PilihGud, TanggalGud } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkCentang, IkMuatUlang, IkPanah, IkRetur, IkTambah } from "@/components/gudangIcons.jsx";
 import { adalahAdminKeuangan, ALASAN_ADMIN } from "@/features/finance/matriksAksi.js";
 import {
   ALASAN_RETUR, STATUS_RETUR, STATUS_DEBIT_NOTE, TEKS_KEPUTUSAN, jumlahTeks, rupiahTeks, tanggalTeks,
@@ -63,6 +65,57 @@ export default function ReturSupplierWorkspace({ workspace, bukaIdRute, bukaRute
     { key: "retur", label: "Retur", Icon: PackageMinus, jml: daftar.length },
     ...(finance ? [{ key: "dn", label: "Debit Note", Icon: ScrollText, jml: menunggu }, { key: "kredit", label: "Saldo Kredit", Icon: Wallet, jml: kredit.length }] : []),
   ];
+
+  // Gudang (redesain 3 Nov 2026): tata letak Gudang (panel, tabel/kartu, keadaan kosong). Finance TIDAK melewati cabang ini — tampilan dan perilakunya tidak berubah.
+  if (workspace === "GUDANG") {
+    return (
+      <PageContainer fluid className="gud-halaman">
+        <div className="gud-split" data-testid="ruang-retur">
+          <section className="gud-panel gud-daftar" aria-label="Daftar retur supplier">
+            <header className="gud-kepala">
+              <div className="gud-judul">
+                <h1 className="page-title">Retur supplier</h1>
+                <p className="page-subtitle">Barang bermasalah yang dikembalikan ke supplier untuk kredit: catat kondisi dan konfirmasi barang keluar. Tanpa nilai rupiah.</p>
+              </div>
+              <div className="gud-aksi-kepala">
+                <button type="button" className="gud-tombol-ikon" onClick={muat} disabled={loading} aria-label="Muat ulang daftar" title="Muat ulang"><IkMuatUlang size={18} className={loading ? "animate-spin" : ""} /></button>
+                <button type="button" className="gud-tombol gud-tombol-utama" onClick={() => setBuat(true)} data-testid="buat-retur"><IkTambah size={16} /> Retur baru</button>
+              </div>
+            </header>
+            <div className="gud-info" data-testid="dua-keputusan">
+              <p className="m-0"><strong>Dua keputusan untuk barang bermasalah.</strong></p>
+              <ul className="m-0 mt-1 list-disc space-y-1 pl-5"><li>{TEKS_KEPUTUSAN.pengganti}</li><li>{TEKS_KEPUTUSAN.kredit}</li></ul>
+            </div>
+            {galat && <p role="alert" className="gud-galat">{galat}</p>}
+            {daftar.length === 0 && !loading ? (
+              <div className="gud-kosong" data-testid="retur-kosong">
+                <IkRetur size={28} aria-hidden />
+                <h2>Belum ada retur supplier</h2>
+                <p>Retur untuk kredit dibuat dari barang yang sudah masuk stok.</p>
+                <button type="button" className="gud-tombol gud-tombol-utama" onClick={() => setBuat(true)}><IkTambah size={16} /> Retur baru</button>
+              </div>
+            ) : (
+              <ul className="gud-kartu-daftar gud-kartu-daftar-tetap" data-testid="daftar-retur">
+                {loading && daftar.length === 0 && Array.from({ length: 3 }, (_, n) => <li key={n} className="gud-rangka"><span style={{ display: "block", height: 84, borderRadius: 16 }} /></li>)}
+                {daftar.map((r) => (
+                  <li key={r.id}>
+                    <button type="button" onClick={() => setBukaId(r.id)} data-testid="kartu-retur" data-nomor={r.nomor} className="gud-kartu max-sm:min-h-11" data-aktif={r.id === bukaId ? "ya" : undefined}>
+                      <span className="gud-kartu-atas"><span className="gud-nomor">{r.nomor}</span><span className="gud-kartu-status"><span className="gud-pill" data-warna={STATUS_RETUR[r.status]?.variant || "neutral"}>{STATUS_RETUR[r.status]?.label ?? r.status}</span></span></span>
+                      <span className="gud-sekunder">{r.supplier?.name} · PO {r.po?.poNumber} · {r.alasanLabel}</span>
+                      <span className="gud-sekunder">{r.lines.map((l) => `${l.kode} ${jumlahTeks(l.qty)} ${l.satuan}`).join(" · ")}</span>
+                      <span className="gud-sekunder"><span className="gud-berikutnya-utama" data-testid="tahap-retur">{r.tahap}</span></span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+        {buat && <DialogBuatRetur A={A} finance={finance} workspace={workspace} onClose={() => setBuat(false)} onDone={async (id) => { setBuat(false); await muat(); setBukaId(id); }} />}
+        {bukaId && <DetailRetur A={A} finance={finance} workspace={workspace} id={bukaId} onClose={() => setBukaId(null)} onChanged={muat} onBukaDebitNote={() => {}} />}
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
@@ -125,6 +178,8 @@ export default function ReturSupplierWorkspace({ workspace, bukaIdRute, bukaRute
 
 // ── Dialog: Retur Baru ───────────────────────────────────────────────────
 function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
+  const gud = workspace === "GUDANG"; const Pil = gud ? PilihGud : Pilihan; // Gudang: pemilih aplikasi; Finance tidak berubah
+  const [kunciKirim, setKunciKirim] = useState(false); const kunciRef = useRef(false);
   const [f, setF] = useState(formReturAwal);
   const [poList, setPoList] = useState([]);
   const [kandidat, setKandidat] = useState([]);
@@ -148,14 +203,15 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
     try { setPratinjau(await A.pratinjau(bodyRetur(f))); } catch (e) { setGalat(e.message || "Gagal membuat pratinjau"); }
   }
   async function simpan() {
+    if (kunciRef.current) return; kunciRef.current = true; setKunciKirim(true); // klik ganda: satu permintaan (kunci sinkron)
     setGalat("");
     try { const r = await A.buat(bodyRetur(f), kunci.current); await onDone(r.returnId); }
-    catch (e) { setGalat(e.message || "Gagal membuat retur"); kunci.current = kunciAksi("retur"); }
+    catch (e) { setGalat(e.message || "Gagal membuat retur"); kunci.current = kunciAksi("retur"); } finally { kunciRef.current = false; setKunciKirim(false); }
   }
   const boleh = !dini && pratinjau?.boleh === true;
   return (
     <Modal
-      open onOpenChange={(v) => !v && onClose()} title="Retur Baru — retur untuk kredit" className="w-[820px]"
+      open onOpenChange={(v) => !v && onClose()} title="Retur Baru — retur untuk kredit" className={gud ? "w-[820px] gud-modal" : "w-[820px]"}
       description={TEKS_KEPUTUSAN.kredit}
       footer={
         <div className="flex w-full flex-col gap-2">
@@ -163,7 +219,7 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
             <Button variant="neutral" disabled={!!dini} onClick={lihat} data-testid="pratinjau-retur" className="max-sm:min-h-11">Pratinjau dampak</Button>
-            <TombolAksi disabled={!boleh} onClick={simpan} data-testid="simpan-retur">Buat Draf Retur</TombolAksi>
+            <TombolAksi disabled={!boleh || kunciKirim} onClick={simpan} data-testid="simpan-retur">Buat Draf Retur</TombolAksi>
           </div>
         </div>
       }
@@ -171,10 +227,10 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
       <div className="space-y-3">
         <p className="m-0 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2">Ingin minta <strong className="text-ink">pengganti</strong>, bukan kredit? Jangan buat retur: tolak barangnya saat pemeriksaan lalu catat pengiriman pengganti di <strong className="text-ink">Barang Akan Datang</strong>.</p>
         <Field label="PO" required>
-          <Pilihan value={f.poId} onChange={(v) => set("poId", v)} aria-label="PO yang diretur">
+          <Pil value={f.poId} onChange={(v) => set("poId", v)} aria-label="PO yang diretur" data-testid="pilih-po-retur">
             <option value="">— pilih PO —</option>
             {poList.map((p) => <option key={p.id} value={p.id}>{p.poNumber} — {p.supplier?.name}</option>)}
-          </Pilihan>
+          </Pil>
         </Field>
         {f.poId && (
           <div className="space-y-2" data-testid="kandidat-retur">
@@ -191,9 +247,9 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
                 {k.bolehDiretur > 0 && (
                   <div className="mt-2 max-w-[220px]">
                     <Field label={`Jumlah diretur (${k.satuan})`}>
-                      <input type="number" inputMode="decimal" min="0" step="any" value={f.jumlah[k.goodsReceiptLineId] ?? ""} aria-label={`Jumlah retur ${k.kode} ${k.nomorPenerimaan}`}
+                      {gud ? <AngkaGud value={f.jumlah[k.goodsReceiptLineId] ?? ""} onChange={(v) => set("jumlah", { ...f.jumlah, [k.goodsReceiptLineId]: v })} satuan={k.satuan} aria-label={`Jumlah retur ${k.kode} ${k.nomorPenerimaan}`} /> : <input type="number" inputMode="decimal" min="0" step="any" value={f.jumlah[k.goodsReceiptLineId] ?? ""} aria-label={`Jumlah retur ${k.kode} ${k.nomorPenerimaan}`}
                         onChange={(e) => set("jumlah", { ...f.jumlah, [k.goodsReceiptLineId]: e.target.value })}
-                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />}
                     </Field>
                   </div>
                 )}
@@ -203,9 +259,9 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
         )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Alasan retur" required>
-            <Pilihan value={f.reasonCode} onChange={(v) => set("reasonCode", v)} aria-label="Alasan retur">
+            <Pil value={f.reasonCode} onChange={(v) => set("reasonCode", v)} aria-label="Alasan retur" data-testid="pilih-alasan-retur">
               {ALASAN_RETUR.map((a) => <option key={a.kode} value={a.kode}>{a.label}</option>)}
-            </Pilihan>
+            </Pil>
           </Field>
           <Field label="Penjelasan" required hint="Minimal 5 karakter."><Input value={f.reason} onChange={(e) => set("reason", e.target.value)} placeholder="mis. busa pecah-pecah saat dibongkar" /></Field>
         </div>
@@ -235,6 +291,8 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
 
 // ── Detail retur (+ konfirmasi barang keluar oleh Gudang) ───────────────
 function DetailRetur({ A, finance, workspace, id, onClose, onChanged, onBukaDebitNote }) {
+  const gud = workspace === "GUDANG";
+  const kunciKirim = useRef(false);
   const [r, setR] = useState(null);
   const [galat, setGalat] = useState("");
   const [mode, setMode] = useState(null); // "keluar" | "batal"
@@ -247,16 +305,17 @@ function DetailRetur({ A, finance, workspace, id, onClose, onChanged, onBukaDebi
   const bolehBatal = r && (r.status === "DRAFT" || (!finance && r.status === "KELUAR"));
 
   async function kirim() {
+    if (kunciKirim.current) return; kunciKirim.current = true; // klik ganda: barang keluar dikonfirmasi SEKALI
     setGalat("");
     try {
       if (mode === "keluar") await api.keluarkanReturGudang(id, { pic: f.pic.trim(), note: f.note.trim() || undefined, proofUrls: f.proofUrls, date: f.tanggal }, kunci.current);
       else await A.batal(id, { reason: f.alasan.trim() }, kunci.current);
       setMode(null); kunci.current = kunciAksi("aksi");
       await muat(); await onChanged?.();
-    } catch (e) { setGalat(e.message || "Aksi gagal"); kunci.current = kunciAksi("aksi"); }
+    } catch (e) { setGalat(e.message || "Aksi gagal"); kunci.current = kunciAksi("aksi"); } finally { kunciKirim.current = false; }
   }
   return (
-    <Modal open onOpenChange={(v) => !v && onClose()} className="w-[820px]" title={r ? r.nomor : "Memuat retur…"}
+    <Modal open onOpenChange={(v) => !v && onClose()} className={gud ? "w-[820px] gud-modal" : "w-[820px]"} title={r ? r.nomor : "Memuat retur…"}
       description={r ? `${r.supplier?.name} · PO ${r.po?.poNumber} · ${r.keputusanLabel}` : undefined}>
       {galat && <p role="alert" data-testid="galat-detail-retur" className="mb-2 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{galat}</p>}
       {!r ? (galat ? null : <p className="py-6 text-[13px] text-ink3">Memuat…</p>) : (
@@ -290,7 +349,7 @@ function DetailRetur({ A, finance, workspace, id, onClose, onChanged, onBukaDebi
                   <p className="m-0 text-[12px] text-ink2">Konfirmasi hanya setelah barang <strong className="text-ink">benar-benar keluar</strong> dari gudang. Stok berkurang dan jurnal dibuat saat ini.</p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Field label="PIC yang menyerahkan" required><Input value={f.pic} onChange={(e) => setF({ ...f, pic: e.target.value })} placeholder="mis. Budi (Gudang)" aria-label="PIC yang menyerahkan" /></Field>
-                    <Field label="Tanggal barang keluar" required><Input type="date" value={f.tanggal} onChange={(e) => setF({ ...f, tanggal: e.target.value })} aria-label="Tanggal barang keluar" /></Field>
+                    <Field label="Tanggal barang keluar" required>{gud ? <TanggalGud value={f.tanggal} onChange={(v) => setF({ ...f, tanggal: v })} tanpaMasaDepan aria-label="Tanggal barang keluar" data-testid="tanggal-keluar" /> : <Input type="date" value={f.tanggal} onChange={(e) => setF({ ...f, tanggal: e.target.value })} aria-label="Tanggal barang keluar" />}</Field>
                   </div>
                   <Field label="Catatan penyerahan (opsional)"><Input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
                   <UnggahBukti workspace={workspace} value={f.proofUrls} onChange={(v) => setF({ ...f, proofUrls: v })} unggah={A.unggah} />

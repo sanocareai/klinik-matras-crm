@@ -100,3 +100,38 @@ test("Menu Gudang: setiap rute menu punya ikon; urutan dan izin menu tidak disen
   const ik = baca("src/components/gudangIcons.jsx");
   for (const x of rute) assert.ok(ik.includes(`"${x}":`), `ikon untuk ${x}`);
 });
+
+// ── Formulir & tindakan (Fase 1 lanjutan): kit kontrol aplikasi, kunci klik ganda sinkron, Retur opt-in (Finance tidak berubah)
+test("Kit kontrol Gudang: pemilih/kalender/angka aplikasi, galat per kolom, tanpa <select>/<input type=date> bawaan di formulir alur Penerimaan", () => {
+  const kit = baca("src/features/warehouse/form/GudKontrol.jsx");
+  for (const k of ["export function GudField", "export function PilihGud", "export function TanggalGud", "export function AngkaGud", "aria-invalid"]) assert.ok(kit.includes(k), k);
+  assert.match(kit, /lapisanTetap/, "kalender di panel/jendela memakai posisi layar");
+  for (const f of ["src/features/warehouse/components/GoodsReceiptFormModal.jsx", "src/features/warehouse/aksi/AksiDokumen.jsx", "src/features/warehouse/koreksi/KoreksiPenerimaanModal.jsx"]) {
+    const s = baca(f).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    assert.doesNotMatch(s, /<select\b/, `${f}: <select> bawaan`); assert.doesNotMatch(s, /type="date"|type=\{[^}]*"date"/, `${f}: input date bawaan`); assert.doesNotMatch(s, /window\.confirm/, `${f}: confirm bawaan`);
+  }
+  assert.match(baca("src/components/ui/date-picker.jsx"), /lapisanTetap = false/, "DatePicker: opt-in, perilaku halaman lain tidak berubah");
+});
+
+test("Klik ganda: kunci SINKRON (ref) pada semua tindakan penulisan alur Penerimaan/Retur — satu permintaan", () => {
+  for (const [f, pola] of [["src/features/warehouse/aksi/AksiDokumen.jsx", /kunciJalan\.current/], ["src/features/warehouse/components/GoodsReceiptFormModal.jsx", /kunci\.current/], ["src/features/kedatangan/PanelKedatangan.jsx", /kunciRef\.current/], ["src/features/warehouse/koreksi/KoreksiPenerimaanModal.jsx", /kunciAjukan\.current/], ["src/features/returSupplier/ReturSupplierWorkspace.jsx", /kunciRef\.current/]]) assert.match(baca(f), pola, f);
+});
+
+test("Retur Supplier: tata letak Gudang HANYA untuk workspace GUDANG; Finance memakai komponen lama (Pilihan/Input date) tanpa perubahan", () => {
+  const r = baca("src/features/returSupplier/ReturSupplierWorkspace.jsx");
+  assert.match(r, /if \(workspace === "GUDANG"\) \{\s*\n\s*return \(\s*\n\s*<PageContainer fluid className="gud-halaman">/);
+  assert.match(r, /const Pil = gud \? PilihGud : Pilihan;/);
+  assert.match(r, /gud \? <TanggalGud[^]*?: <Input type="date"/, "Finance tetap memakai Input date lama");
+  const pk = baca("src/features/kedatangan/PanelKedatangan.jsx");
+  assert.match(pk, /const gud = workspace === "GUDANG"; const Pil = gud \? PilihGud : Pilihan;/);
+  assert.match(pk, /gud \? <TanggalGud[^]*?: <Input type="date"/);
+  assert.match(pk, /function JumlahIsian\(\{ gud/);
+});
+
+test("Alur penerimaan tidak menambah pemanggilan penulisan baru: daftar endpoint yang dipakai formulir sama dengan sebelumnya", () => {
+  const f = baca("src/features/warehouse/components/GoodsReceiptFormModal.jsx");
+  const dipakai = [...f.matchAll(/api\.(\w+)\(/g)].map((m) => m[1]).sort();
+  assert.deepEqual([...new Set(dipakai)], ["createGoodsReceipt", "getGudangPurchaseOrders", "getMaterials"]);
+  const a = baca("src/features/warehouse/aksi/AksiDokumen.jsx");
+  assert.doesNotMatch(a, /api\./, "AksiDokumen hanya memanggil onJalankan milik halaman (kontrak lama)");
+});

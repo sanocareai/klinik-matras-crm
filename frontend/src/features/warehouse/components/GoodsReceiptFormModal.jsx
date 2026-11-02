@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { IkTambah, IkTutup } from "@/components/gudangIcons.jsx";
+import { AngkaGud, GudField, PilihGud, TanggalGud } from "@/features/warehouse/form/GudKontrol.jsx";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
-import { Button } from "@/components/ui/button.jsx";
 import { RECEIPT_SOURCE_REAL } from "../inventoryReal.js";
 import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
 
@@ -30,6 +31,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
   const [lines, setLines] = useState([{ ...BARIS_KOSONG }]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const kunci = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -76,7 +78,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
     setErr("");
     let body;
     if (mode === MODE.PO) {
-      if (galatPO) { setErr(galatPO); return; }
+      if (galatPO) return; // galat tampil di kolomnya (lihat `coba`)
       body = {
         purchaseOrderId: po.id, expectedDate: expectedDate || undefined, notes: notes || undefined,
         lines: po.lines.filter((l) => pilihan[l.id]?.dipilih).map((l) => ({ purchaseOrderLineId: l.id, orderedQty: Number(pilihan[l.id].qty) })),
@@ -90,6 +92,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
         lines: valid.map((l) => ({ materialId: l.materialId, orderedQty: l.orderedQty || undefined })),
       };
     }
+    if (kunci.current) return; kunci.current = true; // klik ganda: satu permintaan saja
     setBusy(true);
     try {
       const dibuat = await api.createGoodsReceipt(body);
@@ -98,148 +101,123 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
     } catch (e2) {
       setErr(e2.message);
     } finally {
-      setBusy(false);
+      kunci.current = false; setBusy(false);
     }
   }
 
-  const kolom = "w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent";
   const adaPO = (pos || []).length > 0;
+  const [coba, setCoba] = useState(false); // sudah menekan simpan sekali → galat kolom wajib ditampilkan
+  useEffect(() => { if (open) setCoba(false); }, [open]);
+  const galatQty = (l) => {
+    const p = pilihan[l.id]; if (!p?.dipilih) return "";
+    const q = Number(p.qty);
+    if (p.qty === "" || !(q > 0)) return "Jumlah harus lebih dari 0";
+    if (q > l.progres.belumDatang + 1e-9) return `Melebihi yang belum datang (${teksJumlah(l.progres.belumDatang)} ${l.satuan})`;
+    return "";
+  };
+  const opsiPO = useMemo(() => (pos || []).map((p) => ({ nilai: p.id, label: `${p.poNumber} — ${p.supplier.name}${p.status === "DITERIMA_SEBAGIAN" ? " (diterima sebagian)" : ""}` })), [pos]);
+  const opsiSumber = useMemo(() => Object.entries(RECEIPT_SOURCE_REAL).map(([k, x]) => ({ nilai: k, label: x.labelId || x.label })), []);
+  const opsiBahan = useMemo(() => materials.map((m) => ({ nilai: m.id, label: `${m.code} — ${m.name}` })), [materials]);
+  const submit = (e) => { setCoba(true); simpan(e); };
 
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title="Penerimaan Baru" className="w-[600px]">
-      <form onSubmit={simpan} className="space-y-3">
-        <div role="radiogroup" aria-label="Sumber penerimaan" className="flex flex-wrap gap-1.5">
-          <button type="button" role="radio" aria-checked={mode === MODE.PO} disabled={!adaPO} onClick={() => setMode(MODE.PO)}
-            className={`rounded-chip px-3 py-1.5 text-[12.5px] font-semibold ${mode === MODE.PO ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint"} disabled:opacity-40`}>
-            Dari Purchase Order
-          </button>
-          <button type="button" role="radio" aria-checked={mode === MODE.MANUAL} onClick={() => setMode(MODE.MANUAL)}
-            className={`rounded-chip px-3 py-1.5 text-[12.5px] font-semibold ${mode === MODE.MANUAL ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint"}`}>
-            Tanpa PO
-          </button>
+    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title="Penerimaan baru" description="Buat draf penerimaan. Stok baru bertambah setelah barang diperiksa dan disimpan ke stok." className="w-[640px] gud-modal">
+      <form onSubmit={submit} className="gud-form" noValidate data-testid="form-penerimaan-baru">
+        <div role="radiogroup" aria-label="Sumber penerimaan" className="gud-segmen">
+          <button type="button" role="radio" aria-checked={mode === MODE.PO} disabled={!adaPO} onClick={() => setMode(MODE.PO)} data-testid="mode-po">Dari Purchase Order</button>
+          <button type="button" role="radio" aria-checked={mode === MODE.MANUAL} onClick={() => setMode(MODE.MANUAL)} data-testid="mode-manual">Tanpa PO</button>
         </div>
 
         {mode === MODE.PO ? (
           <>
             {pos === null ? (
-              <p className="flex items-center gap-1.5 text-[12.5px] text-ink3"><Loader2 size={14} className="animate-spin" /> Memuat Purchase Order…</p>
+              <p className="gud-info" role="status"><Loader2 size={14} className="inline animate-spin" /> Memuat Purchase Order…</p>
             ) : (
-              <div>
-                <label htmlFor="gr-po" className="mb-1 block text-[11.5px] font-semibold text-ink2">Purchase Order *</label>
-                <select id="gr-po" value={poId} onChange={(e) => pilihPO(e.target.value)} className={kolom}>
-                  <option value="">— pilih PO yang disetujui —</option>
-                  {pos.map((p) => <option key={p.id} value={p.id}>{p.poNumber} — {p.supplier.name}{p.status === "DITERIMA_SEBAGIAN" ? " (diterima sebagian)" : ""}</option>)}
-                </select>
-                <p className="mt-1 text-[11px] text-ink3">Hanya PO yang sudah disetujui Finance dan belum selesai diterima.</p>
-              </div>
+              <GudField label="Purchase Order" htmlFor="gr-po" wajib hint="Hanya PO yang sudah disetujui Finance dan belum selesai diterima." galat={coba && !po ? "Pilih Purchase Order" : ""}>
+                <PilihGud id="gr-po" value={poId} onChange={pilihPO} opsi={opsiPO} placeholder="Pilih PO yang disetujui…" invalid={coba && !po} data-testid="pilih-po" />
+              </GudField>
             )}
 
             {po && (
               <>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-btn bg-inset px-3 py-2 text-[12px]">
-                  <div><dt className="text-ink3">Supplier</dt><dd className="ml-0 font-medium text-ink">{po.supplier.name}</dd></div>
-                  <div><dt className="text-ink3">Referensi</dt><dd className="ml-0 font-medium text-ink">{po.poNumber}</dd></div>
+                <dl className="gud-ringkas-po">
+                  <div><dt>Supplier</dt><dd>{po.supplier.name}</dd></div>
+                  <div><dt>Referensi</dt><dd>{po.poNumber}</dd></div>
                 </dl>
-                <div>
-                  <label className="mb-1 block text-[11.5px] font-semibold text-ink2">Item yang dijadwalkan datang *</label>
-                  <div className="space-y-2">
-                    {po.lines.map((l) => {
-                      const p = pilihan[l.id] || { dipilih: false, qty: "" };
-                      const penuh = l.progres.belumDatang <= 0;
-                      return (
-                        <div key={l.id} className="rounded-btn border border-border p-2.5" data-testid="baris-po-gudang">
-                          <label className="flex items-start gap-2 text-[12.5px]">
-                            <input type="checkbox" checked={!!p.dipilih && !penuh} disabled={penuh} onChange={(e) => setPil(l.id, { dipilih: e.target.checked })} className="mt-0.5" />
-                            <span className="min-w-0 flex-1">
-                              <span className="font-semibold text-ink">{l.kode}</span> <span className="text-ink2">{l.nama}</span>
-                              <span className="mt-0.5 block text-[11.5px] text-ink3">
-                                Dipesan {teksJumlah(l.dipesan)} {l.satuan} · masuk stok {teksJumlah(l.progres.masukStok)} · <strong className="text-ink2">belum datang {teksJumlah(l.progres.belumDatang)}</strong>{penuh ? " — sudah terpenuhi" : ""}
-                              </span>
-                            </span>
-                          </label>
-                          {p.dipilih && !penuh && (
-                            <div className="mt-2 flex items-center gap-2 pl-6">
-                              <label htmlFor={`gr-qty-${l.id}`} className="text-[11.5px] text-ink2">Jumlah dijadwalkan</label>
-                              <input
-                                id={`gr-qty-${l.id}`} type="number" step="any" min="0" value={p.qty} onChange={(e) => setPil(l.id, { qty: e.target.value })}
-                                className="w-28 rounded-btn border border-border bg-surface px-2 py-1 text-right text-[12px] tabular-nums text-ink outline-none focus:border-accent"
-                              />
-                              <span className="text-[11.5px] text-ink3">{l.satuan}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <fieldset className="gud-form gud-set">
+                  <legend className="gud-form-seksi">Item yang dijadwalkan datang <span className="gud-f-wajib" aria-hidden="true">*</span></legend>
+                  {po.lines.map((l) => {
+                    const p = pilihan[l.id] || { dipilih: false, qty: "" };
+                    const penuh = l.progres.belumDatang <= 0;
+                    const galat = galatQty(l);
+                    return (
+                      <div key={l.id} className="gud-kartu-isian" data-aktif={p.dipilih && !penuh ? "ya" : "tidak"} data-testid="baris-po-gudang">
+                        <label className="gud-pilih-baris" data-nonaktif={penuh ? "ya" : undefined}>
+                          <input type="checkbox" checked={!!p.dipilih && !penuh} disabled={penuh} onChange={(e) => setPil(l.id, { dipilih: e.target.checked })} aria-label={`Jadwalkan ${l.kode}`} />
+                          <span className="gud-item-badan">
+                            <span className="gud-item-nama">{l.nama} <span className="gud-item-kode">{l.kode}</span></span>
+                            <span className="gud-item-kalimat">Dipesan {teksJumlah(l.dipesan)} {l.satuan} · masuk stok {teksJumlah(l.progres.masukStok)} · <strong>belum datang {teksJumlah(l.progres.belumDatang)}</strong>{penuh ? " — sudah terpenuhi" : ""}</span>
+                          </span>
+                        </label>
+                        {p.dipilih && !penuh && (
+                          <GudField label="Jumlah dijadwalkan" htmlFor={`gr-qty-${l.id}`} galat={galat}>
+                            <AngkaGud id={`gr-qty-${l.id}`} value={p.qty} onChange={(v) => setPil(l.id, { qty: v })} satuan={l.satuan} invalid={!!galat} aria-label={`Jumlah dijadwalkan ${l.kode}`} />
+                          </GudField>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {coba && galatPO && po && !po.lines.some((l) => pilihan[l.id]?.dipilih) && <p className="gud-f-galat" role="alert">{galatPO}</p>}
+                </fieldset>
               </>
             )}
           </>
         ) : (
           <>
-            <p className="rounded-btn bg-orangebg px-3 py-2 text-[12px] text-orange" data-testid="peringatan-tanpa-po">
+            <p className="gud-info" data-nada="awas" data-testid="peringatan-tanpa-po">
               Penerimaan ini <strong>tanpa PO</strong>: tidak ada pencocokan jumlah dan harga terhadap pesanan. Gunakan hanya untuk kiriman yang memang tidak punya PO.
             </p>
-            <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-              <div>
-                <label htmlFor="gr-source" className="mb-1 block text-[11.5px] font-semibold text-ink2">Jenis sumber *</label>
-                <select id="gr-source" value={sourceType} onChange={(e) => setSourceType(e.target.value)} className={kolom}>
-                  {Object.entries(RECEIPT_SOURCE_REAL).map(([k, s]) => <option key={k} value={k}>{s.labelId || s.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="gr-ref" className="mb-1 block text-[11.5px] font-semibold text-ink2">Referensi</label>
-                <input id="gr-ref" value={sourceReference} onChange={(e) => setSourceReference(e.target.value)} placeholder="No. PO lama / referensi internal" className={`${kolom} placeholder:text-ink3`} />
-              </div>
+            <div className="gud-form-baris">
+              <GudField label="Jenis sumber" htmlFor="gr-source" wajib>
+                <PilihGud id="gr-source" value={sourceType} onChange={setSourceType} opsi={opsiSumber} data-testid="pilih-sumber" />
+              </GudField>
+              <GudField label="Referensi" htmlFor="gr-ref">
+                <input id="gr-ref" className="gud-f-teks" value={sourceReference} onChange={(e) => setSourceReference(e.target.value)} placeholder="No. PO lama / referensi internal" />
+              </GudField>
             </div>
-            <div>
-              <label htmlFor="gr-supplier" className="mb-1 block text-[11.5px] font-semibold text-ink2">Supplier / Pengirim</label>
-              <input id="gr-supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Nama supplier atau pengirim" className={`${kolom} placeholder:text-ink3`} />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-[11.5px] font-semibold text-ink2">Baris item *</label>
-                <button type="button" onClick={tambahBaris} className="flex items-center gap-1 text-[11.5px] font-semibold text-accent"><Plus size={12} /> Tambah baris</button>
-              </div>
-              <div className="space-y-2">
-                {lines.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <select aria-label={`Item baris ${i + 1}`} value={l.materialId} onChange={(e) => setLine(i, { materialId: e.target.value })} className="min-w-0 flex-1 rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-accent">
-                      <option value="">Pilih item…</option>
-                      {materials.map((m) => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
-                    </select>
-                    <input
-                      aria-label={`Jumlah baris ${i + 1}`} type="number" step="any" min="0" value={l.orderedQty} onChange={(e) => setLine(i, { orderedQty: e.target.value })} placeholder="Jumlah"
-                      className="w-20 shrink-0 rounded-btn border border-border bg-surface px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                    />
-                    <button type="button" onClick={() => hapusBaris(i)} disabled={lines.length === 1} className="shrink-0 rounded-btn p-1.5 text-ink3 hover:bg-redbg hover:text-red disabled:opacity-30" aria-label="Hapus baris"><Trash2 size={14} /></button>
+            <GudField label="Supplier / pengirim" htmlFor="gr-supplier">
+              <input id="gr-supplier" className="gud-f-teks" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Nama supplier atau pengirim" />
+            </GudField>
+            <fieldset className="gud-form gud-set">
+              <legend className="gud-form-seksi">Baris item <span className="gud-f-wajib" aria-hidden="true">*</span></legend>
+              {lines.map((l, i) => (
+                <div key={i} className="gud-baris-bahan">
+                  <div className="gud-baris-bahan-pilih">
+                    <PilihGud value={l.materialId} onChange={(v) => setLine(i, { materialId: v })} opsi={opsiBahan} placeholder="Pilih item…" aria-label={`Item baris ${i + 1}`} invalid={coba && i === 0 && !lines.some((x) => x.materialId)} data-testid={`pilih-bahan-${i}`} kosongLabel="Belum ada item aktif di katalog" />
                   </div>
-                ))}
-              </div>
-              {materials.length === 0 && <p className="mt-1.5 text-[10.5px] text-ink3">Belum ada item aktif di katalog — tambahkan lewat Stock &amp; Material dulu.</p>}
-            </div>
+                  <div className="gud-baris-bahan-qty"><AngkaGud value={l.orderedQty} onChange={(v) => setLine(i, { orderedQty: v })} placeholder="Jumlah" aria-label={`Jumlah baris ${i + 1}`} /></div>
+                  <button type="button" onClick={() => hapusBaris(i)} disabled={lines.length === 1} className="gud-tombol-ikon" aria-label={`Hapus baris ${i + 1}`}><IkTutup size={16} /></button>
+                </div>
+              ))}
+              {coba && !lines.some((x) => x.materialId) && <p className="gud-f-galat" role="alert">Minimal satu item wajib dipilih</p>}
+              <button type="button" onClick={tambahBaris} className="gud-tombol gud-tombol-kecil"><IkTambah size={15} /> Tambah baris</button>
+              {materials.length === 0 && <p className="gud-f-hint">Belum ada item aktif di katalog — tambahkan lewat Stok &amp; Lokasi dulu.</p>}
+            </fieldset>
           </>
         )}
 
-        <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-          <div>
-            <label htmlFor="gr-date" className="mb-1 block text-[11.5px] font-semibold text-ink2">Perkiraan tiba</label>
-            <input id="gr-date" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} className={kolom} />
-          </div>
-          <div>
-            <label htmlFor="gr-notes" className="mb-1 block text-[11.5px] font-semibold text-ink2">Catatan</label>
-            <input id="gr-notes" value={notes} onChange={(e) => setNotes(e.target.value)} className={kolom} />
-          </div>
+        <div className="gud-form-baris">
+          <GudField label="Perkiraan tiba" htmlFor="gr-date"><TanggalGud id="gr-date" value={expectedDate} onChange={setExpectedDate} placeholder="Pilih tanggal" data-testid="tanggal-perkiraan" /></GudField>
+          <GudField label="Catatan" htmlFor="gr-notes"><input id="gr-notes" className="gud-f-teks" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opsional" /></GudField>
         </div>
 
-        {err && <p role="alert" data-testid="galat-penerimaan" className="text-[12px] text-red">{err}</p>}
-        {mode === MODE.PO && po && galatPO && !err && <p className="text-[12px] text-orange">{galatPO}</p>}
+        {err && <p role="alert" data-testid="galat-penerimaan" className="gud-info" data-nada="galat">{err}</p>}
 
-        <div className="flex justify-end gap-2 border-t border-line pt-3">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Batal</Button>
-          <Button type="submit" size="sm" disabled={busy || (mode === MODE.PO && !!galatPO)}>
-            {busy && <Loader2 size={14} className="animate-spin" />} Buat Draf Penerimaan
-          </Button>
+        <div className="gud-form-aksi">
+          <button type="button" className="gud-tombol" onClick={onClose}>Batal</button>
+          <button type="submit" className="gud-tombol gud-tombol-utama" disabled={busy} data-testid="buat-draf">
+            {busy && <Loader2 size={14} className="animate-spin" />} Buat draf penerimaan
+          </button>
         </div>
       </form>
     </Modal>

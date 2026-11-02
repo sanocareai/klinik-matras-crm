@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { TombolAksi, Pilihan } from "@/features/finance/shared.jsx";
 import { api } from "@/api.js";
+import { AngkaGud, PilihGud, TanggalGud } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkFoto, IkSampah } from "@/components/gudangIcons.jsx";
 import { compressImage } from "@/utils/compressImage.js";
 import {
   labelPenerimaan, varianPenerimaan, penerimaanBelumTiba, LABEL_WORKSPACE, jumlahTeks, tanggalTeks, waktuTeks, teksPendampingAktual,
@@ -118,6 +120,13 @@ function PendampingSel({ l }) {
   );
 }
 
+// Isian jumlah: di Gudang memakai kolom angka aplikasi (AngkaGud, desimal, satuan di dalam kolom); Finance TETAP memakai kolom angka lama persis seperti sebelumnya.
+function JumlahIsian({ gud, onChange, satuan, ...p }) {
+  if (gud) return <AngkaGud value={p.value} onChange={onChange} satuan={satuan} aria-label={p["aria-label"]} data-testid={p["data-testid"]} disabled={p.disabled} />;
+  return <input type="number" inputMode="decimal" min="0" step="any" value={p.value} aria-label={p["aria-label"]} data-testid={p["data-testid"]} disabled={p.disabled} onChange={(e) => onChange(e.target.value)}
+    className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60 max-sm:h-11" />;
+}
+
 // ── Unggah bukti (opsional) ──────────────────────────────────────────────
 export function UnggahBukti({ workspace, value, onChange, unggah = null }) {
   const ref = useRef(null);
@@ -141,11 +150,11 @@ export function UnggahBukti({ workspace, value, onChange, unggah = null }) {
         {value.map((u) => (
           <span key={u} className="relative">
             <a href={u} target="_blank" rel="noreferrer"><img src={u} alt="Bukti kedatangan" className="h-14 w-14 rounded-lg object-cover" /></a>
-            <button type="button" aria-label="Hapus bukti" onClick={() => onChange(value.filter((x) => x !== u))} className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-1 text-red shadow"><Trash2 size={11} /></button>
+            <button type="button" aria-label="Hapus bukti" onClick={() => onChange(value.filter((x) => x !== u))} className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-1 text-red shadow">{workspace === "GUDANG" ? <IkSampah size={12} /> : <Trash2 size={11} />}</button>
           </span>
         ))}
         {value.length < 5 && (
-          <Button type="button" variant="neutral" size="sm" disabled={sibuk} onClick={() => ref.current?.click()} className="max-sm:min-h-11"><Camera size={14} /> {sibuk ? "Mengunggah…" : "Tambah foto"}</Button>
+          <Button type="button" variant="neutral" size="sm" disabled={sibuk} onClick={() => ref.current?.click()} className="max-sm:min-h-11">{workspace === "GUDANG" ? <IkFoto size={15} /> : <Camera size={14} />} {sibuk ? "Mengunggah…" : "Tambah foto"}</Button>
         )}
         <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={pilih} aria-label="Pilih foto bukti" />
       </div>
@@ -156,6 +165,8 @@ export function UnggahBukti({ workspace, value, onChange, unggah = null }) {
 
 // ── Modal: Catat Barang Tiba ─────────────────────────────────────────────
 export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, workspace, onClose, onDone }) {
+  const gud = workspace === "GUDANG"; const Pil = gud ? PilihGud : Pilihan; // Gudang: pemilih/kalender aplikasi; Finance tidak berubah
+  const [kunciSimpan, setKunciSimpan] = useState(false); const kunciRef = useRef(false); // kunci SINKRON: klik ganda sebelum render ulang tetap satu permintaan
   const [f, setF] = useState(() => formKedatanganAwal(po, receipt));
   const [galat, setGalat] = useState("");
   const kunci = useRef(`tiba-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`);
@@ -164,16 +175,17 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
   const galatDini = galatKedatangan(f, { tanggalPO: po.orderDate });
   const kurang = kekuranganIsian(f);
   async function simpan() {
+    if (kunciRef.current) return; kunciRef.current = true; setKunciSimpan(true); // klik ganda: satu permintaan
     setGalat("");
     try {
       const body = bodyKedatangan(f, receipt?.id ?? receiptId ?? null);
       const hasil = workspace === "FINANCE" ? await api.catatKedatanganFinance(po.id, body, kunci.current) : await api.catatKedatanganGudang(po.id, body, kunci.current);
       await onDone(hasil);
-    } catch (e) { setGalat(e.message || "Gagal mencatat kedatangan"); kunci.current = `tiba-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+    } catch (e) { setGalat(e.message || "Gagal mencatat kedatangan"); kunci.current = `tiba-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; } finally { kunciRef.current = false; setKunciSimpan(false); }
   }
   return (
     <Modal
-      open onOpenChange={(v) => !v && onClose()} title={`Catat Barang Tiba — ${po.poNumber}`} className="w-[720px]"
+      open onOpenChange={(v) => !v && onClose()} title={`Catat Barang Tiba — ${po.poNumber}`} className={gud ? "w-[720px] gud-modal" : "w-[720px]"}
       description="Satu pengiriman = satu penerimaan. Mencatat kedatangan tidak mengubah stok; stok bertambah saat Gudang menekan Simpan ke Stok setelah pemeriksaan."
       footer={
         <div className="flex w-full flex-col gap-2">
@@ -181,7 +193,7 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
           {!galatDini && kurang.length > 0 && <p data-testid="kekurangan-isian" className="text-[12px] text-ink2">Boleh disimpan dulu — akan ditandai: {kurang.join("; ")}.</p>}
           <div className="flex justify-end gap-2">
             <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-            <TombolAksi disabled={!!galatDini} onClick={simpan} data-testid="simpan-kedatangan"><PackageCheck size={14} /> Catat Barang Tiba</TombolAksi>
+            <TombolAksi disabled={!!galatDini || kunciSimpan} onClick={simpan} data-testid="simpan-kedatangan"><PackageCheck size={14} /> Catat Barang Tiba</TombolAksi>
           </div>
         </div>
       }
@@ -189,7 +201,7 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
       <div className="space-y-3">
         <p className="m-0 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="info-aktor">Dicatat otomatis atas nama akun Anda — peran dan workspace ({LABEL_WORKSPACE[workspace]}) diambil dari sesi, bukan dipilih di sini.</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal barang tiba" required hint="Menjadi dasar jatuh tempo faktur (termin)."><Input type="date" max={new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)} value={f.tanggalTiba} onChange={(e) => set("tanggalTiba", e.target.value)} /></Field>
+          <Field label="Tanggal barang tiba" required hint="Menjadi dasar jatuh tempo faktur (termin).">{gud ? <TanggalGud value={f.tanggalTiba} onChange={(v) => set("tanggalTiba", v)} tanpaMasaDepan data-testid="tanggal-tiba-isian" aria-label="Tanggal barang tiba" /> : <Input type="date" max={new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)} value={f.tanggalTiba} onChange={(e) => set("tanggalTiba", e.target.value)} />}</Field>
           <Field label="PIC / penerima barang" required><Input value={f.penerima} onChange={(e) => set("penerima", e.target.value)} placeholder="mis. Budi (Gudang)" /></Field>
           <Field label="Nomor surat jalan" hint="Opsional — bila kosong tampil sebagai “Belum dilampirkan”."><Input value={f.suratJalan} onChange={(e) => set("suratJalan", e.target.value)} /></Field>
           <Field label="Catatan kedatangan" required><Input value={f.catatan} onChange={(e) => set("catatan", e.target.value)} placeholder="mis. dus utuh, dikirim ekspedisi" /></Field>
@@ -209,13 +221,11 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Field label={`Jumlah datang (${l.satuan})`}>
-                    <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahDatang} aria-label={`Jumlah datang ${l.kode}`} onChange={(e) => setBaris(i, { jumlahDatang: e.target.value })}
-                      className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                    <JumlahIsian gud={gud} value={l.jumlahDatang} aria-label={`Jumlah datang ${l.kode}`} satuan={l.satuan} onChange={(v) => setBaris(i, { jumlahDatang: v })} />
                   </Field>
                   {l.pendamping?.mode === "AKTUAL" && (
                     <Field label={`Jumlah ${String(l.pendamping.satuan).toLowerCase()} aktual`} hint="Hitung fisiknya; bukan konversi dari berat.">
-                      <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahPendamping} aria-label={`Jumlah pendamping ${l.kode}`} onChange={(e) => setBaris(i, { jumlahPendamping: e.target.value })}
-                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                      <JumlahIsian gud={gud} value={l.jumlahPendamping} aria-label={`Jumlah pendamping ${l.kode}`} satuan={String(l.pendamping?.satuan ?? "").toLowerCase()} onChange={(v) => setBaris(i, { jumlahPendamping: v })} />
                     </Field>
                   )}
                   {l.pendamping?.mode === "TETAP" && (
@@ -234,9 +244,9 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
                   <div className="mt-2 space-y-1.5 rounded-lg border border-line p-2.5" data-testid="pilih-asal-pengganti">
                     {l.asalPengganti.length > 1 ? (
                       <Field label="Pengganti untuk penolakan di penerimaan" hint="Pilih penolakan yang digantikan oleh pengiriman ini.">
-                        <Pilihan value={l.asalId} onChange={(v) => setBaris(i, { asalId: v })} aria-label={`Penolakan asal ${l.kode}`}>
+                        <Pil value={l.asalId} onChange={(v) => setBaris(i, { asalId: v })} aria-label={`Penolakan asal ${l.kode}`}>
                           {l.asalPengganti.map((a) => <option key={a.lineId} value={a.lineId}>{a.receiptNumber} — menunggu pengganti {jumlahTeks(a.sisa)} {l.satuan}</option>)}
-                        </Pilihan>
+                        </Pil>
                       </Field>
                     ) : (
                       <p className="m-0 text-[12.5px] text-ink2">Pengganti untuk penolakan di <strong className="text-ink">{l.asalPengganti[0]?.receiptNumber ?? "—"}</strong>.</p>
@@ -256,6 +266,8 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
 
 // ── Modal: Koreksi Kedatangan ────────────────────────────────────────────
 export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone }) {
+  const gud = workspace === "GUDANG"; const Pil = gud ? PilihGud : Pilihan;
+  const [kunciSimpan, setKunciSimpan] = useState(false); const kunciRef = useRef(false); // kunci SINKRON: klik ganda sebelum render ulang tetap satu permintaan
   const [f, setF] = useState(() => formKoreksiAwal(receipt));
   const [galat, setGalat] = useState("");
   const [dampak, setDampak] = useState(null); // { kunciBody, hasil } — pratinjau SERVER untuk isian saat ini
@@ -283,16 +295,17 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
     } catch (e) { setGalat(e.message || "Gagal memuat pratinjau dampak"); } finally { setMemuat(false); }
   }
   async function simpan() {
+    if (kunciRef.current) return; kunciRef.current = true; setKunciSimpan(true);
     setGalat("");
     try {
       const body = bodyKoreksi(f, receipt);
       const hasil = workspace === "FINANCE" ? await api.koreksiKedatanganFinance(receipt.id, body, kunci.current) : await api.koreksiKedatanganGudang(receipt.id, body, kunci.current);
       await onDone(hasil);
-    } catch (e) { setGalat(e.message || "Gagal mengoreksi kedatangan"); kunci.current = `koreksi-tiba-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+    } catch (e) { setGalat(e.message || "Gagal mengoreksi kedatangan"); kunci.current = `koreksi-tiba-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; } finally { kunciRef.current = false; setKunciSimpan(false); }
   }
   return (
     <Modal
-      open onOpenChange={(v) => !v && onClose()} title={`Koreksi Kedatangan — ${receipt.nomor}`} className="w-[680px]"
+      open onOpenChange={(v) => !v && onClose()} title={`Koreksi Kedatangan — ${receipt.nomor}`} className={gud ? "w-[680px] gud-modal" : "w-[680px]"}
       description="Setiap koreksi wajib beralasan dan tercatat sebelum–sesudah (siapa, kapan, dari workspace mana). Lihat dampaknya dulu: progres PO, jadwal termin, stok, dan jurnal dihitung server — sesudah Simpan ke Stok, koreksi jumlah baik memakai pembalik + pengganti dan hanya bila terbukti aman."
       footer={
         <div className="flex w-full flex-col gap-2">
@@ -300,14 +313,14 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
           <div className="flex justify-end gap-2">
             <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
             <Button variant="neutral" disabled={!!galatDini || memuat} onClick={lihatDampak} data-testid="lihat-dampak" className="max-sm:min-h-11">{memuat ? "Menghitung…" : "Lihat Dampak"}</Button>
-            <TombolAksi disabled={!!galatDini || !dampakBerlaku?.boleh} onClick={simpan} data-testid="simpan-koreksi"><Pencil size={14} /> Simpan Koreksi</TombolAksi>
+            <TombolAksi disabled={!!galatDini || !dampakBerlaku?.boleh || kunciSimpan} onClick={simpan} data-testid="simpan-koreksi"><Pencil size={14} /> Simpan Koreksi</TombolAksi>
           </div>
         </div>
       }
     >
       <div className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal barang tiba" required hint="Mengubah tanggal menggeser jatuh tempo faktur."><Input type="date" value={f.tanggalTiba} onChange={(e) => set("tanggalTiba", e.target.value)} /></Field>
+          <Field label="Tanggal barang tiba" required hint="Mengubah tanggal menggeser jatuh tempo faktur.">{gud ? <TanggalGud value={f.tanggalTiba} onChange={(v) => set("tanggalTiba", v)} tanpaMasaDepan aria-label="Tanggal barang tiba" /> : <Input type="date" value={f.tanggalTiba} onChange={(e) => set("tanggalTiba", e.target.value)} />}</Field>
           <Field label="PIC / penerima barang" required><Input value={f.penerima} onChange={(e) => set("penerima", e.target.value)} /></Field>
           <Field label="Nomor surat jalan"><Input value={f.suratJalan} onChange={(e) => set("suratJalan", e.target.value)} /></Field>
           <Field label="Catatan kedatangan" required><Input value={f.catatan} onChange={(e) => set("catatan", e.target.value)} /></Field>
@@ -322,33 +335,29 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
             {f.lines.map((l, i) => (
               <div key={l.purchaseOrderLineId} className="grid grid-cols-1 gap-2 rounded-lg border border-line p-2.5 sm:grid-cols-2">
                 <Field label={`${l.kode} — jumlah datang (${l.satuan})`} hint={f.bolehUbahJumlah ? undefined : "Penerimaan ini tidak bisa dikoreksi jumlahnya."}>
-                  <input type="number" inputMode="decimal" min="0" step="any" disabled={!f.bolehUbahJumlah} value={l.jumlahDatang} aria-label={`Koreksi jumlah datang ${l.kode}`} onChange={(e) => setBaris(i, { jumlahDatang: e.target.value })}
-                    className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60 max-sm:h-11" />
+                  <JumlahIsian gud={gud} value={l.jumlahDatang} aria-label={`Koreksi jumlah datang ${l.kode}`} disabled={!f.bolehUbahJumlah} satuan={l.satuan} onChange={(v) => setBaris(i, { jumlahDatang: v })} />
                 </Field>
                 {f.bolehUbahPeriksa && (
                   <>
                     <Field label={`${l.kode} — jumlah baik (${l.satuan})`} hint={f.sudahStok ? "Sudah masuk stok: lewat pembalik + pengganti bila aman." : undefined}>
-                      <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahBaik} aria-label={`Koreksi jumlah baik ${l.kode}`} data-testid={`koreksi-baik-${l.kode}`} onChange={(e) => setBaris(i, { jumlahBaik: e.target.value })}
-                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                      <JumlahIsian gud={gud} value={l.jumlahBaik} aria-label={`Koreksi jumlah baik ${l.kode}`} data-testid={`koreksi-baik-${l.kode}`} satuan={l.satuan} onChange={(v) => setBaris(i, { jumlahBaik: v })} />
                     </Field>
                     <Field label={`${l.kode} — jumlah ditolak (${l.satuan})`}>
-                      <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahDitolak} aria-label={`Koreksi jumlah ditolak ${l.kode}`} onChange={(e) => setBaris(i, { jumlahDitolak: e.target.value })}
-                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                      <JumlahIsian gud={gud} value={l.jumlahDitolak} aria-label={`Koreksi jumlah ditolak ${l.kode}`} satuan={l.satuan} onChange={(v) => setBaris(i, { jumlahDitolak: v })} />
                     </Field>
                   </>
                 )}
                 {(l.asliPenggantiDariId || optAsal(l).length > 0) && (
                   <Field label={`${l.kode} — kaitan pengganti`} hint="Pilih penolakan yang digantikan, atau kosongkan bila ini pengiriman asli.">
-                    <Pilihan value={l.penggantiDariId} onChange={(v) => setBaris(i, { penggantiDariId: v })} aria-label={`Koreksi kaitan pengganti ${l.kode}`}>
+                    <Pil value={l.penggantiDariId} onChange={(v) => setBaris(i, { penggantiDariId: v })} aria-label={`Koreksi kaitan pengganti ${l.kode}`}>
                       <option value="">— pengiriman asli (bukan pengganti) —</option>
                       {optAsal(l).map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
-                    </Pilihan>
+                    </Pil>
                   </Field>
                 )}
                 {l.pendamping?.mode === "AKTUAL" && (
                   <Field label={`Jumlah ${String(l.pendamping.satuan).toLowerCase()} aktual`}>
-                    <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahPendamping} aria-label={`Koreksi jumlah pendamping ${l.kode}`} onChange={(e) => setBaris(i, { jumlahPendamping: e.target.value })}
-                      className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                    <JumlahIsian gud={gud} value={l.jumlahPendamping} aria-label={`Koreksi jumlah pendamping ${l.kode}`} satuan={String(l.pendamping?.satuan ?? "").toLowerCase()} onChange={(v) => setBaris(i, { jumlahPendamping: v })} />
                   </Field>
                 )}
               </div>

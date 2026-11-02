@@ -105,3 +105,13 @@ export const IKON_GRUP_GUDANG = {
   Kontrol: IkKontrol,
   Laporan: IkLaporan,
 };
+
+// Ikon aksi dokumen (panel tindakan Gudang).
+export const IkEdit = (p) => (<Ikon {...p}><path d="M4 20h4.2L19 9.2a2.2 2.2 0 0 0 0-3.1l-1.1-1.1a2.2 2.2 0 0 0-3.1 0L4 15.8z" /><path d="m13.2 6.6 4.2 4.2" /></Ikon>);
+export const IkBatal = (p) => (<Ikon {...p}><circle cx="12" cy="12" r="8.4" /><path d="m6.2 6.2 11.6 11.6" /></Ikon>);
+export const IkKembali = (p) => (<Ikon {...p}><path d="M9 6 4.6 10.4 9 14.8" /><path d="M5 10.4h8.4a5.6 5.6 0 0 1 0 11.2H10" /></Ikon>);
+export const IkSimpan = (p) => (<Ikon {...p}><path d="M5 4h11l3 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" /><path d="M8 4v5h7V4M8 20v-6h8v6" /></Ikon>);
+export const IkKoreksi = (p) => (<Ikon {...p}><path d="M13.6 3.6H7.4a2 2 0 0 0-2 2v12.8a2 2 0 0 0 2 2h9.2a2 2 0 0 0 2-2V8.6z" /><path d="M13.4 3.8v4.6a.6.6 0 0 0 .6.6h4.4" /><path d="m9 15 2 2 4-4.4" /></Ikon>);
+export const IkFoto = (p) => (<Ikon {...p}><path d="M4 8.4A2.4 2.4 0 0 1 6.4 6h1.2l1.3-2h6.2l1.3 2h1.2A2.4 2.4 0 0 1 20 8.4v8.2A2.4 2.4 0 0 1 17.6 19H6.4A2.4 2.4 0 0 1 4 16.6z" /><circle cx="12" cy="12.6" r="3.3" /></Ikon>);
+export const IkSampah = (p) => (<Ikon {...p}><path d="M5 7h14M10 7V5h4v2M7 7l.8 12a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L17 7M10 11v5M14 11v5" /></Ikon>);
+export const IkKunci = (p) => (<Ikon {...p}><rect x="5" y="10.4" width="14" height="9.6" rx="2.6" /><path d="M8.4 10.4V8a3.6 3.6 0 0 1 7.2 0v2.4" /></Ikon>);

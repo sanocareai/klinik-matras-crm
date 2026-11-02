@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Loader2, Pencil, Undo2, Route, Lock, CheckCircle2, History } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { IkCentang, IkEdit, IkKembali, IkKunci, IkRiwayat, IkTransfer } from "@/components/gudangIcons.jsx";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { JALUR_TAMPIL, STATUS_KOREKSI, JENIS_KOREKSI } from "./koreksiLogic.js";
 
-const IKON = { edit: Pencil, koreksi: Undo2, alur: Route, blokir: Lock, final: CheckCircle2 };
+const IKON = { edit: IkEdit, koreksi: IkKembali, alur: IkTransfer, blokir: IkKunci, final: IkCentang };
 
 /**
  * Kartu "Koreksi kesalahan input" pada detail dokumen Gudang. Jalur (EDIT_DRAF | KOREKSI_UI | ALUR_RESMI | DIBLOKIR | FINAL) dan langkah dihitung SERVER (satu sumber);
@@ -28,12 +29,12 @@ export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {}, ringkas 
   if (galat) return <p className="mt-3 text-[11.5px] text-ink3" data-testid="jalur-galat">Jalur koreksi tidak bisa dimuat: {galat}</p>;
   if (!data) return <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-ink3"><Loader2 size={12} className="animate-spin" /> Memuat jalur koreksi…</p>;
   if (ringkas && (data.jalur === "EDIT_DRAF" || data.jalur === "FINAL")) return null;
-  const t = JALUR_TAMPIL[data.jalur] ?? JALUR_TAMPIL.DIBLOKIR; const Ikon = IKON[t.ikon] ?? Route;
+  const t = JALUR_TAMPIL[data.jalur] ?? JALUR_TAMPIL.DIBLOKIR; const Ikon = IKON[t.ikon] ?? IkTransfer;
   const tombol = (data.tindakan ?? []).filter((x) => typeof aksi[x.kode] === "function");
   return (
-    <section className="mb-3 rounded-btn border border-border bg-inset px-3 py-2.5" data-testid="kartu-jalur-koreksi" data-jalur={data.jalur} aria-label="Koreksi kesalahan input">
+    <section className="gud-jalur mb-3 rounded-btn border border-border bg-inset px-3 py-2.5" data-testid="kartu-jalur-koreksi" data-jalur={data.jalur} aria-label="Koreksi kesalahan input">
       <div className="flex flex-wrap items-center gap-2">
-        <Ikon size={14} className="text-ink3" />
+        <Ikon size={18} className="text-ink3" />
         <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Koreksi kesalahan input</h4>
         <Badge variant={t.warna} data-testid="jalur-label">{t.label}</Badge>
         {ringkas && <button type="button" onClick={() => setTerbuka((v) => !v)} aria-expanded={terbuka} className="ml-auto text-[12px] font-semibold text-accent max-sm:min-h-11" data-testid="jalur-toggle">{terbuka ? "Tutup" : "Perlu memperbaiki? Lihat caranya"}</button>}
@@ -54,12 +55,12 @@ export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {}, ringkas 
       </div>
       {tombol.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {tombol.map((x) => <Button key={x.kode} size="sm" variant="secondary" onClick={() => aksi[x.kode]()} data-testid={`aksi-${x.kode}`}><Pencil size={13} /> {x.label}</Button>)}
+          {tombol.map((x) => <Button key={x.kode} size="sm" variant="secondary" onClick={() => aksi[x.kode]()} data-testid={`aksi-${x.kode}`}><IkEdit size={15} /> {x.label}</Button>)}
         </div>
       )}
       {data.riwayatKoreksi?.length > 0 && (
         <div className="mt-2.5 border-t border-line pt-2" data-testid="riwayat-koreksi">
-          <h5 className="mb-1 flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-ink3"><History size={12} /> Riwayat koreksi (catatan asal tidak diubah)</h5>
+          <h5 className="mb-1 flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-ink3"><IkRiwayat size={14} /> Riwayat koreksi (catatan asal tidak diubah)</h5>
           <ul className="m-0 list-none space-y-1 p-0">
             {data.riwayatKoreksi.map((k) => (
               <li key={k.id} className="text-[11.5px] text-ink2" data-testid="riwayat-koreksi-baris">

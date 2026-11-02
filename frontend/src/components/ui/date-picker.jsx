@@ -51,7 +51,7 @@ const DELAY_MS = 150;
 // block / clearLabel (19 Sep 2026, form Finance): mode FIELD FORM — pemicu selebar
 // kolom & setinggi input (h-9), bukan pill filter kecil; clearLabel mengganti
 // "Hapus filter" (salah kata untuk field form).
-export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true, block = false, clearLabel = "Hapus filter", minDate, disabled = false, triggerProps = {}, triggerClassName }) {
+export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true, block = false, clearLabel = "Hapus filter", minDate, disabled = false, lapisanTetap = false, triggerProps = {}, triggerClassName }) {
   const [open, setOpen] = useState(false);
   // Posisi popover saat pemicu ada DI DALAM dialog/modal. Body modal
   // overflow-y-auto akan memotong popover `absolute` (kalender terpotong di
@@ -81,7 +81,14 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
   useEffect(() => {
     if (!open) return;
     const dlg = rootRef.current?.closest('[role="dialog"]');
-    if (!dlg) { setPos(null); return; }
+    if (!dlg) {
+      // Opt-in (Gudang, 3 Nov 2026): di panel/jendela yang menggulir (bukan Dialog) kalender tidak boleh terpotong — pakai koordinat layar (fixed) dan tutup saat halaman digulir. Default tidak berubah.
+      if (!lapisanTetap) { setPos(null); return; }
+      const r0 = rootRef.current.getBoundingClientRect(); const T0 = 330, L0 = 264;
+      const naik0 = r0.bottom + 4 + T0 > window.innerHeight && r0.top - T0 - 4 > 0;
+      setPos({ top: naik0 ? r0.top - T0 - 4 : r0.bottom + 4, left: Math.max(4, Math.min(r0.left, window.innerWidth - L0 - 4)) });
+      return;
+    }
     const r = rootRef.current.getBoundingClientRect();
     const d = dlg.getBoundingClientRect();
     const TINGGI = 330, LEBAR = 264;
@@ -98,9 +105,12 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
     const onDown = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
+    const onScroll = (e) => { if (lapisanTetap && rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
+    if (lapisanTetap) window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDown);
+      if (lapisanTetap) window.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
