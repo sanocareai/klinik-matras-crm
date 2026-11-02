@@ -57,14 +57,16 @@ test("Kolom di <colgroup> sama dengan kolom yang dirender (urutan & jumlah) di t
   }
 });
 
-test("Halaman memakai colgroup + sel berbatas potong dengan title; tanpa TABLE_VIEW_CLASS lama", () => {
+test("Halaman: tabel Pembayaran tetap memakai colgroup + sel berbatas potong; daftar Tagihan memakai grid container-query (bukan tier JS), tanpa TABLE_VIEW_CLASS lama", () => {
   const s = baca("pages/finance/FinanceSuppliers.jsx");
-  assert.match(s, /<ColGroup widths=\{lebarKolom\(tier, AKSI_COL_WIDTH\)\}/);
-  assert.match(s, /useContainerTier\(tierTagihan\)/);
-  assert.match(s, /block min-w-0 truncate overflow-hidden whitespace-nowrap" title=\{b\.billNumber\}/);
-  assert.match(s, /block min-w-0 truncate overflow-hidden whitespace-nowrap" title=\{p\.paymentNumber\}/);
-  assert.doesNotMatch(s, /TABLE_VIEW_CLASS|CARD_VIEW_CLASS/);
-  assert.doesNotMatch(s, /<TH sticky width=\{124\}>/);
+  assert.ok(s.includes('block min-w-0 truncate overflow-hidden whitespace-nowrap" title={p.paymentNumber}'));
+  assert.doesNotMatch(s, /TABLE_VIEW_CLASS|CARD_VIEW_CLASS|useContainerTier/);
+  const css = fs.readFileSync(path.join(__dirname, "..", "src", "styles", "sanss-finance-tagihan.css"), "utf8");
+  assert.ok(css.includes("container: tgp / inline-size"));
+  assert.ok(css.includes("@container tgp (min-width: 760px)"));
+  assert.ok(css.includes("@container tgp (min-width: 1100px)"));
+  const d = baca("features/finance/tagihan/DaftarTagihan.jsx");
+  assert.ok(d.includes("title={b.supplier?.name}") && d.includes("title={nomor}"));
 });
 
 test("Kolom sticky tetap menyinkronkan latar & hover (CSS tidak diubah)", () => {

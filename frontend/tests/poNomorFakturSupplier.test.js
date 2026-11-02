@@ -98,5 +98,5 @@ test("pemasangan: Rincian PO memakai bagian faktur baru, ModalFaktur menjelaskan
   assert.match(r, /<PeringatanDuplikatNomor/);
   const s = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.doesNotMatch(s, /"Ref Supplier"/);
-  assert.match(s, /label: "Nomor faktur supplier", value: b\.supplierRef/);
+  assert.match(s, /\{ kunci: "supplierRef", label: "Nomor faktur supplier" \}/);
 });

@@ -74,8 +74,8 @@ test("pemasangan: api, PO (tombol Bayar Uang Muka, dua kelompok, tooltip, pering
   const po = sumberPO();
   assert.match(po, /data-testid="bayar-uang-muka"/); assert.match(po, /<RincianPerhitunganPO po=\{po\} \/>/); assert.match(po, /<PeringatanUangMukaPO po=\{po\} \/>/); assert.match(po, /<DaftarUangMukaPO/); assert.match(po, /data-testid="terapkan-uang-muka"/); assert.match(po, /<ModalBayarUangMuka/); assert.match(po, /<ModalTerapkanUangMuka/);
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
-  assert.match(sup, /Uang Muka Supplier Belum Diterapkan/); assert.match(sup, /<TabelUangMukaSupplier/); assert.match(sup, /modul="uang-muka-supplier"/); assert.match(sup, /label: "Terapkan Uang Muka"/); assert.match(sup, /<ModalTerapkanUangMuka/);
-  assert.match(sup, /Sisa utang faktur yang sudah DISETUJUI/, "kartu Utang Aktif hanya faktur disetujui");
+  assert.match(baca("../src/features/finance/tagihan/DaftarTagihan.jsx"), /Uang muka belum dialokasikan/); assert.match(sup, /<TabelUangMukaSupplier/); assert.match(sup, /modul="uang-muka-supplier"/); assert.match(sup, /label: "Terapkan Uang Muka"/); assert.match(sup, /<ModalTerapkanUangMuka/);
+  assert.match(sup, /sisa faktur yang sudah DISETUJUI/, "Sisa utang hanya faktur disetujui");
 });
 
 test("empat status PO: urutan tetap (barang, faktur, utang, pembayaran), varian per kode, tautan dalam ke Supplier & Utang/Pembelian, kalimat petunjuk Simpan ke Stok", () => {

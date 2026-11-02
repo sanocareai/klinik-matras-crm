@@ -582,3 +582,5 @@
 :root .app-shell.crm-skin .fin-po-modal a { text-decoration: none; }
 :root .app-shell.crm-skin .fin-po-modal a:hover { text-decoration: underline; text-underline-offset: 3px; }
 :root .app-shell.crm-skin .fin-po-modal a:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 2px; border-radius: 4px; }
+
+:root .app-shell.crm-skin .fin-tgl-pemicu:disabled { opacity: 0.55; cursor: not-allowed; }
