@@ -19,7 +19,7 @@ const LIB_REH = "scripts/lib/rehearsal-produksi-filter.mjs", LIB_SMOKE = "script
 const GENERATOR = "scripts/gen-release-produksi-filter.cjs";
 const { terapkanKunci } = require("./lib/gen-kunci-produksi-filter.cjs");
 const LIB_KUNCI = "scripts/lib/gen-kunci-produksi-filter.cjs";
-const TPL_FILES = ["header", "rollback", "kunci", "uji-pra-switch", "fase0-kunci", "cek-ulang-kunci", "rehearsal-pra-switch", "fitur-css"].map((n) => `${TPL_DIR}/${n}.txt`);
+const TPL_FILES = ["header", "rollback", "kunci", "uji-pra-switch", "fase0-kunci", "cek-ulang-kunci", "rehearsal-pra-switch", "fitur-css", "bandingkan-kode"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, LIB_KUNCI, ...TPL_FILES];
 const CAND_BRANCH = "feat/produksi-ringkasan-filter-on-8aca40ac";
 // Teks ASCII di bundel web (esbuild menulis karakter non-ASCII sebagai \uXXXX, jadi hanya teks ASCII yang dicari).
@@ -83,6 +83,9 @@ function bangkitkan({ baseScript, blok, berkasList, rehNode, smokeNode }) {
   gantiBaris('COUNT_SQL="', `COUNT_SQL="${COUNT_SQL}"`);
   r("hitung baris jadwal/Run/stok/pemakaian/harga/jurnal", "hitung baris stok/biaya beku/harga/Material Issue/jurnal/unit/order/job/pernyataan/run/jadwal/custody/status kerja");
   gantiBaris('say "CATATAN:', 'say "CATATAN: Rilis ini membawa filter Order Produksi lengkap (posisi unit, PIC, target selesai; disaring di server atas seluruh hasil) + Ringkasan (warna KPI, susunan panel) + penguncian deploy bersama. TANPA migrasi, TANPA data baru. Tidak ada transaksi uji di produksi."');
+  // Perbandingan kode container vs folder: image live dibangun SEBELUM dua berkas tes pemeriksa kontrak metrik ada; hanya dua jalur persis itu yang boleh berbeda (lihat templat bandingkan-kode)
+  { const CMP = 'cmp -s "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt"'; must(s.split(CMP).length === 2, "perbandingan container-vs-folder pada gerbang kode live"); s = s.replace(CMP, () => 'bandingkan_kode "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt"');
+    const FN = "gerbang_kode_live() {"; must(s.split(FN).length === 2, "definisi gerbang_kode_live"); s = s.replace(FN, () => lf(blok["bandingkan-kode"]).trimEnd() + "\n" + FN); }
   s = terapkanKunci(s, blok);
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
   const sisa = s.split("\n").map((l, i) => [i + 1, l]).filter(([, l]) => !l.startsWith("#") && /penjadwalan|jadwal-batch|\bpjl\b|reh-pjl/i.test(l) && !/jadwal\/Run|production_unit_schedule/.test(l)).map(([i]) => i);

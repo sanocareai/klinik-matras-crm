@@ -26,7 +26,8 @@ test("allowlist EKSPLISIT: hanya berkas rilis ini; TANPA prisma/migrasi/dependen
 });
 
 test("gerbang wajib hadir: identitas kode live, kunci deploy bersama, rehearsal pada restore, smoke baca-saja, rollback, tanpa pembersihan", () => {
-  for (const s of ["gerbang_kode_live", "KUNCI-DEPLOY", "--rehearsal-only", "--preflight-only", "rehearsal_pof_", "rollback-pre-pof-", "smoke test lulus (filter Order Produksi", "release-deploy-bersama.lock", "tidak_ada_deploy_lain_lagi"]) assert.ok(skrip.includes(s), s);
+  for (const s of ["gerbang_kode_live", "KUNCI-DEPLOY", "--rehearsal-only", "--preflight-only", "rehearsal_pof_", "rollback-pre-pof-", "smoke test lulus (filter Order Produksi", "release-deploy-bersama.lock", "tidak_ada_deploy_lain_lagi", "bandingkan_kode()"]) assert.ok(skrip.includes(s), s);
+  assert.ok(skrip.includes("tests/(financeKontrakMetrik\\.test\\.js|helpers/pemeriksaMetrikUi\\.js)$") && !skrip.includes('cmp -s "$BK_DIR/container-sha'), "container vs folder: hanya dua jalur tes metrik yang boleh berbeda");
   assert.ok(/docker tag \$\{ROLLBACK_TAG/.test(skrip), "instruksi rollback");
   // penghapusan HANYA: pulihkan_jejak() (mode --rehearsal-only; hanya artefak yang dibuat skrip ini: image baru, tag rollback, folder release baru) dan direktori sementara uji/rehearsal
   const aktif = skrip.split("\n").filter((l) => !/^\s*#/.test(l));
