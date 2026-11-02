@@ -53,7 +53,7 @@ function Metrik({ tile }) {
   return tile.to ? <Link to={tile.to} className="prod-metrik" data-testid="kpi-tile" data-kpi={tile.key}>{isi}</Link> : <div className="prod-metrik" data-testid="kpi-tile" data-kpi={tile.key}>{isi}</div>;
 }
 
-function BarisTindakLanjut({ t, testid }) {
+function BarisTindakLanjut({ t, "data-testid": testid }) {
   return (
     <li data-testid={testid} className={`prod-tl ${t.tingkat}`}>
       <span className="prod-tl-ikon"><IkAwas size={22} /></span>
@@ -155,7 +155,7 @@ export default function ProductionRingkasan() {
                   ) : (
                     <ul className="flex flex-col gap-2">
                       {v1Blocked.slice(0, 4).map((u) => (
-                        <BarisTindakLanjut key={`v1-${u.id}`} testid="v1-attention" t={{ tingkat: "kritis", judul: DELAY_TITLE, unitCode: u.unitCode, orderNumber: u.order?.orderNumber || null, pelanggan: null, pemilik: "Tim produksi", rincian: "Pekerjaan tertunda — perlu dilanjutkan", to: unitDetailPath(u.id) }} />
+                        <BarisTindakLanjut key={`v1-${u.id}`} data-testid="v1-attention" t={{ tingkat: "kritis", judul: DELAY_TITLE, unitCode: u.unitCode, orderNumber: u.order?.orderNumber || null, pelanggan: null, pemilik: "Tim produksi", rincian: "Pekerjaan tertunda — perlu dilanjutkan", to: unitDetailPath(u.id) }} />
                       ))}
                       {tindak.slice(0, 8).map((t, i) => <BarisTindakLanjut key={`${t.judul}-${t.unitCode}-${i}`} t={t} />)}
                     </ul>
