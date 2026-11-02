@@ -400,3 +400,9 @@
 :root .app-shell.crm-skin.prod-skin [data-testid="ruang-kerja-unit"] details { border: 0; background: var(--bg-inset); }
 :root .app-shell.crm-skin.prod-skin [data-testid="ruang-kerja-unit"] details > summary { font-size: 15px; font-weight: 500; }
 :root .app-shell.crm-skin.prod-skin .prod-tab-unit[role="tablist"] { background: var(--crm-soft); }
+
+/* Tombol tutup modal: area sentuh 44px, ikon terbaca, fokus rounded (bukan cincin lonjong). */
+:root .app-shell.crm-skin.prod-skin [role="dialog"] button[aria-label="Tutup"] { width: 44px; height: 44px; margin: -6px -8px 0 8px; border-radius: 14px; background: var(--crm-soft); color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin.prod-skin [role="dialog"] button[aria-label="Tutup"]:hover { background: var(--crm-soft-2); }
+:root .app-shell.crm-skin.prod-skin [role="dialog"] button[aria-label="Tutup"] svg { width: 20px; height: 20px; }
+:root .app-shell.crm-skin.prod-skin [role="dialog"] button[aria-label="Tutup"]:focus-visible { box-shadow: 0 0 0 3px var(--crm-panel), 0 0 0 5px var(--crm-primary); }
