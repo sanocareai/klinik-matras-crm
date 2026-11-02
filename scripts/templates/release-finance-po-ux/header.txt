@@ -1,0 +1,22 @@
+# RILIS FRONTEND-SAJA "Finance — UX editor & rincian Pesanan Pembelian (PO): kalender Indonesia, combobox supplier, ringkasan termin, validasi bertahap, bantuan faktur" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data.
+# Isi (penyajian saja; payload, endpoint /finance/purchase-orders, validasi server, izin, Harga Berlaku, stok, dan jurnal tidak berubah): kalender khusus PO (Senin pertama, navigasi bulan/tahun, keyboard, Esc mengembalikan fokus, lembar bawah di HP, tanggal WIB tanpa konversi UTC);
+# pemilih supplier (combobox pencarian); ringkasan termin (Ubah hanya admin keuangan, alasan wajib seperti validasi lama, PO tanpa dueDate); select bergaya aplikasi untuk satuan beli/mode pendamping; galat baru tampil setelah interaksi atau percobaan simpan (fokus ke field bermasalah, tanpa request);
+# Rincian baris dekat identitas bahan; satu kalimat Harga Berlaku + Lihat dampak; bantuan "Sudah menerima faktur supplier?" (tidak membuat faktur/jurnal, tidak menyetujui PO, tidak menaruh nomor di Catatan); rincian PO: uraian panjang di accordion, petunjuk Catat faktur supplier, tautan tanpa garis bawah permanen.
+# ALLOWLIST EKSPLISIT: generator menolak bila himpunan berkas aplikasi di diff berbeda dari sebelas berkas yang disetujui. Berkas bersama yang disentuh hanya components/financeIconsPO.jsx (dua ikon) dan sanss-finance-po.css; main.jsx, Layout.jsx, components/ui/*, financeHubs.js TIDAK berubah.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif 9b753faf (spo2, di atas Kas & Bank a04976b8). backend/ harus IDENTIK dengan release aktif (dua berkas tes pemeriksa kontrak metrik dikecualikan HANYA pada perbandingan container-vs-folder, jalur persis); image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-finance-po-ux.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/spo3.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo3.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo3.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo3.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spo3.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-finance-po-ux.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-finance-po-ux/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)

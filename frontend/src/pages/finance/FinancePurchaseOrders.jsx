@@ -32,6 +32,7 @@ export default function FinancePurchaseOrders() {
   const [pesan, setPesan] = useState(null);
   const [form, setForm] = useState(null); // { kunci, po? } — kunci baru tiap dibuka = isian bersih
   const [detailId, setDetailId] = useState(null);
+  const [petunjukFaktur, setPetunjukFaktur] = useState(null); // id PO yang ditandai "sudah menerima faktur supplier" di editor (bantuan alur saja)
   const [sp] = useSearchParams();
   const izin = useMemo(() => izinPO(penggunaSaatIni()), []);
   useEffect(() => { const id = sp.get("buka"); if (id) setDetailId(id); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam (dari panel lain) cukup dibaca sekali
@@ -87,7 +88,7 @@ export default function FinancePurchaseOrders() {
           po={form.po}
           izin={izin}
           onClose={() => setForm(null)}
-          onSaved={async (id, info) => { setForm(null); await muat({ diam: true }); setDetailId(id); if (info) setPesan({ teks: info, jenis: "info" }); }}
+          onSaved={async (id, info, opsi) => { setForm(null); setPetunjukFaktur(opsi?.fakturDiterima ? id : null); await muat({ diam: true }); setDetailId(id); if (info) setPesan({ teks: info, jenis: "info" }); }}
         />
       )}
       {detailId && (
@@ -95,6 +96,8 @@ export default function FinancePurchaseOrders() {
           key={detailId}
           id={detailId}
           izin={izin}
+          petunjukFaktur={petunjukFaktur === detailId}
+          onTutupPetunjuk={() => setPetunjukFaktur(null)}
           onClose={() => setDetailId(null)}
           onChanged={() => muat({ diam: true })}
           onUbah={(po) => { setDetailId(null); setForm({ kunci: idKunci(), po }); }}
