@@ -251,7 +251,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Teks/CSS yang HANYA ada di redesain Produksi (tidak ada di dist aktif); teks & CSS fitur live (Finance, PO, Laporan, Order, dst) yang HARUS ada di KEDUANYA.
-for s0 in "Perlu ditindaklanjuti" "Pekerjaan hari ini" "Jadwal hari ini" "Lihat semua tahap" "Rework pelanggan" "Pilih tanggal target" "Konfirmasi & kurangi stok"; do
+for s0 in "Pekerjaan hari ini" "Jadwal hari ini" "Lihat semua tahap" "Rework pelanggan" "Pilih tanggal target" "Ringkas tahap" "Kosongkan target" "Penyaring daftar order produksi"; do
   [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks fitur baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat fitur baru: ${s0}"
 done
