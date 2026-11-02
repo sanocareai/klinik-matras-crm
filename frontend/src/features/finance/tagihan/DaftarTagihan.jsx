@@ -8,7 +8,7 @@ import { RowActions } from "@/features/finance/RowActions.jsx";
 import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
 import {
-  TAB_TAGIHAN, LABEL_TEMPO, tampilSisa, statusTempo, asalTagihan, nomorFakturTampil, hitungTab, ringkasKpi, BATAS_DAFTAR_TAGIHAN,
+  TAB_TAGIHAN, LABEL_TEMPO, tampilSisa, formatUangTepat, sisaKurangSatuRupiah, KET_SISA_SEN, statusTempo, asalTagihan, nomorFakturTampil, hitungTab, ringkasKpi, BATAS_DAFTAR_TAGIHAN,
 } from "./tagihanLogika.js";
 
 // Daftar Tagihan supplier: KPI utama + info pendukung + satu panel (tab status, pencarian, filter, jumlah hasil, baris).
@@ -49,8 +49,8 @@ export function RingkasanTagihan({ aging, bills, uangMuka, unbilled, onTab, onLi
   return (
     <section className="fin-tg-kpi-wadah" aria-label="Ringkasan utang supplier" data-testid="kartu-supplier-utang">
       <div className="fin-tg-kpi-utama">
-        <KartuKpi Ikon={IkDokumen} label="Sisa utang" nilai={formatUang(k.sisaUtang.nilai)} ket={`${k.sisaUtang.jumlah} tagihan terbuka · utang resmi, sudah disetujui`} onClick={() => onTab("belum")} testid="kpi-sisa-utang" />
-        <KartuKpi Ikon={IkTermin} label="Lewat jatuh tempo" nilai={formatUang(k.lewatTempo.nilai)} chip={k.lewatTempo.jumlah > 0 ? `${k.lewatTempo.jumlah} tagihan` : undefined} nada={k.lewatTempo.jumlah > 0 ? "peringatan" : "biasa"} ket={k.lewatTempo.jumlah === 0 ? "Tidak ada" : undefined} onClick={() => onTab("proses")} testid="kpi-lewat-tempo" />
+        <KartuKpi Ikon={IkDokumen} label="Sisa utang" nilai={formatUangTepat(k.sisaUtang.nilai)} ket={`${k.sisaUtang.jumlah} tagihan terbuka · utang resmi, sudah disetujui`} onClick={() => onTab("belum")} testid="kpi-sisa-utang" />
+        <KartuKpi Ikon={IkTermin} label="Lewat jatuh tempo" nilai={formatUangTepat(k.lewatTempo.nilai)} chip={k.lewatTempo.jumlah > 0 ? `${k.lewatTempo.jumlah} tagihan` : undefined} nada={k.lewatTempo.jumlah > 0 ? "peringatan" : "biasa"} ket={k.lewatTempo.jumlah === 0 ? "Tidak ada" : undefined} onClick={() => onTab("proses")} testid="kpi-lewat-tempo" />
         <KartuKpi Ikon={IkPersetujuan} label="Menunggu persetujuan" nilai={`${k.menunggu.jumlah} tagihan`} ket={k.menunggu.terpotong ? "Dihitung dari 300 tagihan yang dimuat" : "Belum menjadi utang sampai disetujui"} nada={k.menunggu.jumlah > 0 ? "peringatan" : "biasa"} onClick={() => onTab("proses")} testid="kpi-menunggu" />
       </div>
       <div className="fin-tg-kpi-pendukung">
@@ -95,11 +95,11 @@ function BarisTagihan({ b, hariIni, aksi, onBuka }) {
         <span className="fin-tg-label-kecil">Jatuh tempo</span>
         <span className={cn(tempo === "lewat" && "fin-tg-merah")}>{b.dueDate ? tanggalPendek(String(b.dueDate).slice(0, 10)) : "—"}</span>
       </div>
-      <div className="fin-tg-sel fin-tg-angka" role="cell" data-label="Nilai"><span className="fin-tg-label-kecil">Nilai</span>{formatUang(b.amount)}</div>
-      <div className="fin-tg-sel fin-tg-angka" role="cell" data-label="Terbayar"><span className="fin-tg-label-kecil">Terbayar</span>{Number(b.terbayar) > 0 ? formatUang(b.terbayar) : "—"}</div>
+      <div className="fin-tg-sel fin-tg-angka" role="cell" data-label="Nilai"><span className="fin-tg-label-kecil">Nilai</span>{formatUangTepat(b.amount)}</div>
+      <div className="fin-tg-sel fin-tg-angka" role="cell" data-label="Terbayar"><span className="fin-tg-label-kecil">Terbayar</span>{Number(b.terbayar) > 0 ? formatUangTepat(b.terbayar) : "—"}</div>
       <div className="fin-tg-sel fin-tg-angka fin-tg-sisa" role="cell" data-label="Sisa utang">
         <span className="fin-tg-label-kecil">Sisa utang</span>
-        {sisa.tampil ? <strong>{formatUang(sisa.nilai)}</strong> : <span className="fin-tg-strip" title={sisa.alasan} aria-label={sisa.alasan}>—</span>}
+        {sisa.tampil ? <strong title={sisaKurangSatuRupiah(b) ? KET_SISA_SEN : undefined}>{formatUangTepat(sisa.nilai)}</strong> : <span className="fin-tg-strip" title={sisa.alasan} aria-label={sisa.alasan}>—</span>}
       </div>
       <div className="fin-tg-sel fin-tg-st" role="cell" data-label="Status"><span className="fin-tg-label-kecil">Status</span><ChipStatusTagihan status={b.status} tempo={tempo} /></div>
       <div className="fin-tg-sel fin-tg-aksi" role="cell" data-tanpa-detail>

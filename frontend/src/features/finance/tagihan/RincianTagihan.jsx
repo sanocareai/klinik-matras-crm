@@ -9,7 +9,7 @@ import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { tautanKeuangan } from "@/features/finance/uangMukaLogic.js";
 import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
 import { ChipStatusTagihan } from "./DaftarTagihan.jsx";
-import { tampilSisa, statusTempo, asalTagihan, nomorFakturTampil, penjagaPermintaan } from "./tagihanLogika.js";
+import { tampilSisa, statusTempo, asalTagihan, nomorFakturTampil, penjagaPermintaan, formatUangTepat, sisaKurangSatuRupiah, KET_SISA_SEN } from "./tagihanLogika.js";
 
 // Rincian tagihan (panel samping, layar penuh di HP): supplier & faktur, dokumen asal, nilai/terbayar/sisa/status, item atau penerimaan bila server menyediakan,
 // pembayaran, riwayat, dan tindakan yang memang tersedia. "Semua rincian dokumen" mempertahankan akses ke seluruh bidang yang dulu tampil di panel lama.
@@ -91,13 +91,14 @@ export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat }) {
 
           <div className="fin-tg-r-badan">
             <div className="fin-tg-r-angka" data-testid="angka-tagihan">
-              <div><span>Nilai</span><strong>{formatUang(b.amount)}</strong></div>
-              <div><span>Terbayar</span><strong>{Number(b.terbayar) > 0 ? formatUang(b.terbayar) : "—"}</strong></div>
-              <div><span>Sisa utang</span>{sisa.tampil ? <strong>{formatUang(sisa.nilai)}</strong> : <strong className="fin-tg-strip">—</strong>}</div>
+              <div><span>Nilai</span><strong>{formatUangTepat(b.amount)}</strong></div>
+              <div><span>Terbayar</span><strong>{Number(b.terbayar) > 0 ? formatUangTepat(b.terbayar) : "—"}</strong></div>
+              <div><span>Sisa utang</span>{sisa.tampil ? <strong>{formatUangTepat(sisa.nilai)}</strong> : <strong className="fin-tg-strip">—</strong>}</div>
               <div><span>Jatuh tempo</span><strong className={cn(tempo === "lewat" && "fin-tg-merah")}>{tgl(b.dueDate)}</strong></div>
             </div>
-            {!sisa.tampil && <p className="fin-tg-r-ket" data-testid="alasan-tanpa-sisa">{sisa.alasan} Nilai dokumen {formatUang(b.amount)}.</p>}
-            {Number(b.kredit) > 0 && <p className="fin-tg-r-ket">Sudah dikurangi retur/kredit supplier {formatUang(b.kredit)}.</p>}
+            {!sisa.tampil && <p className="fin-tg-r-ket" data-testid="alasan-tanpa-sisa">{sisa.alasan} Nilai dokumen {formatUangTepat(b.amount)}.</p>}
+            {sisaKurangSatuRupiah(b) && <p className="fin-tg-r-ket" data-testid="ket-sisa-sen">{KET_SISA_SEN}</p>}
+            {Number(b.kredit) > 0 && <p className="fin-tg-r-ket">Sudah dikurangi retur/kredit supplier {formatUangTepat(b.kredit)}.</p>}
 
             <section className="fin-tg-r-bagian">
               <h3>Supplier dan faktur</h3>
@@ -133,7 +134,7 @@ export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat }) {
                   {alokasi.map((x, i) => (
                     <li key={x.payment?.id || i}>
                       <Link onClick={onClose} className="fin-tg-tautan" to={tautanKeuangan("pembayaran", x.payment?.paymentNumber)}>{x.payment?.paymentNumber}<ChevronRight size={14} aria-hidden="true" /></Link>
-                      <span className="fin-tg-r-bayar-tgl">{tgl(x.payment?.date)}</span><strong>{formatUang(x.amount)}</strong>
+                      <span className="fin-tg-r-bayar-tgl">{tgl(x.payment?.date)}</span><strong>{formatUangTepat(x.amount)}</strong>
                     </li>
                   ))}
                 </ul>

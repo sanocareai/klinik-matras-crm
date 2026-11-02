@@ -246,3 +246,41 @@
 :root .app-shell.crm-skin .fin-tg-r-bagian dl.fin-tg-r-item-dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; padding: 0; background: transparent; border-radius: 0; }
 
 @media (max-width: 767px) { :root .app-shell.crm-skin .fin-tg-seg { flex-wrap: wrap; border-radius: 22px; overflow: visible; width: 100%; } :root .app-shell.crm-skin .fin-tg-tab-halaman { flex-wrap: wrap; border-radius: 22px; width: 100%; } }
+
+/* Jalan pendukung di bawah header (Pembayaran, Daftar supplier, kembali) — bukan baris tab kedua. */
+:root .app-shell.crm-skin .fin-tg-pendukung { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root .app-shell.crm-skin :is(.fin-tg-pendukung-tombol, .fin-tg-kembali) { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--crm-line, var(--border)); background: var(--crm-panel); color: var(--text-secondary); font: 500 13px/1 Manrope, system-ui, sans-serif; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+:root .app-shell.crm-skin .fin-tg-kembali { border-color: transparent; background: transparent; color: var(--crm-primary-ink); padding-left: 6px; }
+:root .app-shell.crm-skin :is(.fin-tg-pendukung-tombol, .fin-tg-kembali):hover { background: var(--crm-soft, rgba(57, 101, 250, .08)); color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin :is(.fin-tg-pendukung-tombol, .fin-tg-kembali):focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 1px; }
+@media (max-width: 767px) { :root .app-shell.crm-skin :is(.fin-tg-pendukung-tombol, .fin-tg-kembali) { min-height: 44px; } }
+:root .app-shell.crm-skin .fin-tg-bayar-isi { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+:root .app-shell.crm-skin .fin-tg-lunasi { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--crm-primary); background: transparent; color: var(--crm-primary-ink); font: 500 12px/1 Manrope, system-ui, sans-serif; cursor: pointer; }
+:root .app-shell.crm-skin .fin-tg-lunasi:hover { background: var(--crm-soft, rgba(57, 101, 250, .08)); }
+:root .app-shell.crm-skin .fin-tg-lunasi:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 1px; }
+
+/* Ubah tagihan (pintu tunggal), dialog alasan/setujui, ringkasan perubahan */
+:root .app-shell.crm-skin .fin-tg-ubah-ringkas, :root .app-shell.crm-skin .fin-tg-dlg-ringkas { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--crm-soft-bg, rgba(57, 101, 250, .05)); }
+:root .app-shell.crm-skin :is(.fin-tg-ubah-ringkas, .fin-tg-dlg-ringkas) dt { font: 400 12px/1.3 Manrope, system-ui, sans-serif; color: var(--text-secondary); }
+:root .app-shell.crm-skin :is(.fin-tg-ubah-ringkas, .fin-tg-dlg-ringkas) dd { margin: 2px 0 0; font: 500 14px/1.35 Manrope, system-ui, sans-serif; color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-tg-ubah-kartu, :root .app-shell.crm-skin .fin-tg-ubah-bayar, :root .app-shell.crm-skin .fin-tg-ubah-terkunci, :root .app-shell.crm-skin .fin-tg-ubah-beda { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--crm-line, var(--border)); border-radius: 16px; background: var(--crm-panel); }
+:root .app-shell.crm-skin .fin-tg-ubah-kartu[data-tersedia="0"] { background: transparent; }
+:root .app-shell.crm-skin .fin-tg-ubah-kepala { display: flex; align-items: center; gap: 8px; color: var(--crm-primary-ink); }
+:root .app-shell.crm-skin :is(.fin-tg-ubah-kepala h3, .fin-tg-ubah-bayar h3, .fin-tg-ubah-terkunci h3, .fin-tg-ubah-beda h4) { margin: 0; font: 600 14px/1.3 Manrope, system-ui, sans-serif; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+:root .app-shell.crm-skin .fin-tg-ubah-ket { margin: 0; font: 400 13px/1.55 Manrope, system-ui, sans-serif; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-tg-ubah-bidang { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+:root .app-shell.crm-skin .fin-tg-ubah-bidang li { padding: 3px 10px; border-radius: 999px; background: var(--crm-soft-bg, rgba(57, 101, 250, .07)); color: var(--crm-primary-ink); font: 500 12px/1.4 Manrope, system-ui, sans-serif; }
+:root .app-shell.crm-skin .fin-tg-ubah-kunci { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root .app-shell.crm-skin .fin-tg-ubah-alasan { display: flex; align-items: flex-start; gap: 6px; flex: 1 1 100%; margin: 0; font: 400 13px/1.5 Manrope, system-ui, sans-serif; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-tg-ubah-alasan svg { flex: none; margin-top: 3px; }
+:root .app-shell.crm-skin .fin-tg-ubah-terkunci ul { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+:root .app-shell.crm-skin .fin-tg-ubah-terkunci li { display: flex; flex-direction: column; gap: 2px; font: 400 13px/1.5 Manrope, system-ui, sans-serif; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-tg-ubah-terkunci li strong { font-weight: 500; color: var(--text-primary); }
+:root .app-shell.crm-skin .fin-tg-ubah-beda ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+:root .app-shell.crm-skin .fin-tg-ubah-beda li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font: 400 13px/1.5 Manrope, system-ui, sans-serif; }
+:root .app-shell.crm-skin .fin-tg-ubah-beda li span { flex: 0 0 120px; color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-tg-ubah-beda li s { color: var(--text-secondary); }
+:root .app-shell.crm-skin .fin-tg-ubah-beda li strong { font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+:root .app-shell.crm-skin .fin-tg-dlg-galat { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--crm-merah-bg, rgba(220, 38, 38, .08)); color: var(--crm-merah, #b42318); font: 500 13px/1.5 Manrope, system-ui, sans-serif; }
+:root .app-shell.crm-skin .fin-tg-dlg-galat:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 2px; }
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-tg-ubah-beda li span { flex-basis: 100%; } }

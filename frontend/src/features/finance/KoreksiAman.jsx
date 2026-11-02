@@ -7,7 +7,10 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
-import { Pilihan, InputUang, TombolAksi, formatUang, tanggalPendek, tanggalJam } from "@/features/finance/shared.jsx";
+import { Pilihan, InputUang, TombolAksi, formatUang as formatUangBulat, tanggalPendek, tanggalJam } from "@/features/finance/shared.jsx";
+
+// Pratinjau koreksi harus jujur terhadap sen: nominal berpecahan (mis. 7.993.820,37) tidak boleh tampil seperti rupiah bulat. Nominal bulat tampil persis seperti sebelumnya.
+const formatUang = (n, opsi) => { const v = Number(n) || 0; return Math.abs(v - Math.round(v)) >= 0.005 ? formatUangBulat(v, { ...opsi, sen: true }) : formatUangBulat(v, opsi); };
 
 // EDIT & KOREKSI TRANSAKSI AMAN — potongan bersama.
 //
@@ -526,7 +529,7 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
               </p>
               {kolom.map((k) => (
                 <Field key={k.kunci} label={k.label} required={k.wajib}>
-                  {k.tipe === "uang" ? <InputUang value={f[k.kunci]} onChange={(v) => set(k.kunci, v)} />
+                  {k.tipe === "uang" ? <InputUang value={f[k.kunci]} onChange={(v) => set(k.kunci, v)} step="0.01" aria-label={k.label} />
                     : k.tipe === "tanggal" ? <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f[k.kunci]} onChange={(v) => set(k.kunci, v)} />
                     : k.tipe === "pilih" ? (
                       <Pilihan value={f[k.kunci]} onChange={(v) => set(k.kunci, v)}>

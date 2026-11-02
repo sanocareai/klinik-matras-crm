@@ -53,9 +53,9 @@ test("izin cermin klien: hanya peran pencatat Finance yang boleh mengatur jadwal
   for (const r of ["WAREHOUSE", "PRODUCTION_LEAD", "SALES", "APPROVER"]) assert.equal(bolehMencatatFinance({ roles: [r] }), false);
 });
 
-test("pemasangan: tab Jadwal & Aging di Supplier & Utang, export aging-utang, pembayaran supplier membawa Idempotency-Key, tiga status terpisah, form memakai termin server", () => {
+test("pemasangan: tab Jadwal pembayaran di Tagihan supplier, export aging-utang, pembayaran supplier membawa Idempotency-Key, tiga status terpisah, form memakai termin server", () => {
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
-  assert.match(sup, /key: "aging", label: "Jadwal & Aging"/);
+  assert.match(sup, /key: "aging", label: "Jadwal pembayaran"/);
   assert.match(sup, /<JadwalAgingUtang /);
   assert.match(baca("../src/features/finance/tagihan/CatatTagihan.jsx"), /<TerminFaktur /);
   assert.match(sup, /createFinanceSupplierPayment\(d, kunci\)/);

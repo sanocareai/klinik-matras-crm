@@ -122,7 +122,7 @@ test("Pemasangan: Catat tagihan = tiga asal ke kontrak yang ada; payload form la
   const h = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.ok(h.includes("disabled={tab === \"tagihan\" && !bolehCatat}"), "izin mencatat");
   assert.ok(h.includes("<CatatTagihan") && !h.includes("ModalTagihanIsi"), "form Tagihan Baru lama dihapus");
-  assert.ok(h.includes('title={tab === "tagihan" ? "Tagihan supplier" : "Supplier & Utang"}'));
+  assert.ok(h.includes("title={JUDUL_TAB[tab]}") && h.includes('tagihan: "Tagihan supplier", aging: "Jadwal pembayaran", pembayaran: "Pembayaran supplier", supplier: "Daftar supplier"'));
   assert.ok(h.includes("api.createFinanceSupplierPayment(d, kunci)"), "pembayaran tetap");
   const d = baca("../src/features/finance/tagihan/DaftarTagihan.jsx");
   assert.ok(d.includes("tampilSisa(b)") && d.includes("fin-tg-strip"), "kolom Sisa utang memakai aturan sisa jujur");

@@ -5,12 +5,15 @@ import "@/styles/sanss-finance-tagihan.css";
 import "@/styles/sanss-finance-po.css";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock, Wallet } from "lucide-react";
+import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock, Wallet, ArrowLeft, ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import DaftarTagihan, { RingkasanTagihan } from "@/features/finance/tagihan/DaftarTagihan.jsx";
 import RincianTagihan from "@/features/finance/tagihan/RincianTagihan.jsx";
 import CatatTagihan from "@/features/finance/tagihan/CatatTagihan.jsx";
-import { masukTab, statusTempo, teksCari, hitungTab, LABEL_TEMPO } from "@/features/finance/tagihan/tagihanLogika.js";
+import UbahTagihan from "@/features/finance/tagihan/UbahTagihan.jsx";
+import { DialogAlasan, DialogSetujui, Galat } from "@/features/finance/tagihan/DialogTagihan.jsx";
+import { ModalFaktur } from "@/features/finance/po/RincianPO.jsx";
+import { masukTab, statusTempo, teksCari, hitungTab, formatUangTepat, LABEL_TEMPO } from "@/features/finance/tagihan/tagihanLogika.js";
 import { hariIniWIB } from "@/features/finance/po/poKontrol.js";
 import { PemilihSupplier, TanggalPO } from "@/features/finance/po/KontrolPO.jsx";
 import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
@@ -49,36 +52,27 @@ import { ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { daftarPilihanTermin, payloadTerminSupplier, bodyTermin, galatTermin, TERMIN_AWAL, bolehMencatatFinance } from "@/features/finance/terminLogic.js";
 
-// Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
-// Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
-function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setUangMukaUntuk, supplierAdaUangMuka }) {
-  // Isi menu dari matriks aksi (features/finance/matriksAksi.js): tindakan yang tidak tersedia tetap tampil dengan alasannya.
+// Tagihan: SATU pintu "Ubah tagihan" (dialog kemampuan per status; lihat tagihan/UbahTagihan.jsx + kemampuanUbah). Edit/Edit Informasi/Koreksi tidak lagi menjadi tiga menu terpisah.
+// Tolak, Batalkan, dan Setujui memakai dialog aplikasi (bukan window.prompt/confirm); aturan alasan wajib dan endpoint-nya sama seperti sebelumnya.
+function aksiTagihan(b, { setUbahUntuk, setVersiUntuk, setAlasanUntuk, setSetujuiUntuk, setUangMukaUntuk, supplierAdaUangMuka }) {
+  const lepas = new Set(["edit", "info", "koreksi"]);
   const items = bentukItemMenu(matriksTagihan(b, { admin: adminSaatIni() }), {
-    edit: () => setEditUntuk(b),
-    info: () => setInfoUntuk(b),
-    koreksi: () => setKoreksiUntuk(b),
     versi: () => setVersiUntuk(b),
-    tolak: () => {
-      const alasan = window.prompt("Alasan penolakan tagihan:");
-      if (alasan?.trim()) return aksi(() => api.rejectFinanceBill(b.id, alasan.trim()));
-    },
-    batalkan: () => {
-      const alasan = window.prompt(`Alasan membatalkan tagihan ${b.billNumber}? Jurnal utangnya akan dibalik, lalu catat ulang tagihan dengan data yang benar:`);
-      if (alasan?.trim()) return aksi(() => api.cancelFinanceBill(b.id, alasan.trim()));
-    },
-  });
+    tolak: () => setAlasanUntuk({ jenis: "tolak", b }),
+    batalkan: () => setAlasanUntuk({ jenis: "batalkan", b }),
+  }).filter((it) => !lepas.has(it.key));
   // Uang muka supplier: tawarkan penerapan bila supplier punya saldo uang muka & faktur masih bersisa. Tetap dikonfirmasi Finance di dialog.
   if (["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(b.status) && supplierAdaUangMuka?.has(b.supplierId) && b.sisa > 0) {
     items.unshift({ key: "uang-muka", label: "Terapkan Uang Muka", icon: Wallet, hint: "Kurangi sisa utang faktur dengan uang muka supplier yang belum diterapkan.", onClick: () => setUangMukaUntuk(b) });
   }
+  items.unshift({ key: "ubah", label: "Ubah tagihan", icon: Pencil, hint: "Lihat apa yang bisa diubah menurut status tagihan.", onClick: () => setUbahUntuk(b) });
   if (["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
     return {
       primary: {
         label: "Setujui", variant: "secondary",
         disabled: !b.billType,
-        title: !b.billType ? "Pilih Jenis Tagihan dulu lewat Edit (mis. Bahan Baku untuk kain/busa) supaya tidak salah tercatat sebagai beban" : undefined,
-        confirmText: `Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)} (${b.jenisTagihan?.label || "tanpa jenis"})? Utang akan masuk buku besar.`,
-        onClick: () => aksi(() => api.approveFinanceBill(b.id)),
+        title: !b.billType ? "Pilih Jenis Tagihan dulu lewat Ubah tagihan (mis. Bahan Baku untuk kain/busa) supaya tidak salah tercatat sebagai beban" : undefined,
+        onClick: () => setSetujuiUntuk(b),
       },
       items,
     };
@@ -113,10 +107,19 @@ const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]
 
 const TAB = [
   { key: "tagihan", label: "Tagihan supplier", Icon: FileText, penjelasan: "Tagihan yang datang dari supplier — begitu disetujui, jadi utang resmi di buku besar." },
-  { key: "aging", label: "Jadwal & Aging", Icon: CalendarClock, penjelasan: "Utang supplier menurut tanggal jatuh tempo — status barang, faktur, dan pembayaran dipisahkan. Barang boleh sudah dipakai Produksi walau faktur belum dibayar." },
+  { key: "aging", label: "Jadwal pembayaran", Icon: CalendarClock, penjelasan: "Utang supplier menurut tanggal jatuh tempo — status barang, faktur, dan pembayaran dipisahkan. Barang boleh sudah dipakai Produksi walau faktur belum dibayar." },
   { key: "pembayaran", label: "Pembayaran", Icon: Banknote, penjelasan: "Riwayat uang yang sudah dikeluarkan untuk melunasi tagihan supplier." },
   { key: "supplier", label: "Master Supplier", Icon: Building2, penjelasan: "Data lengkap para supplier — kontak, termin pembayaran, dan rekening tujuan transfer." },
 ];
+
+// Judul halaman mengikuti bagian yang terbuka; menu hub (Tagihan supplier · Jadwal pembayaran) tetap satu-satunya navigasi utama.
+const JUDUL_TAB = { tagihan: "Tagihan supplier", aging: "Jadwal pembayaran", pembayaran: "Pembayaran supplier", supplier: "Daftar supplier" };
+const SUBJUDUL_TAB = {
+  tagihan: "Periksa tagihan, jatuh tempo, dan pembayaran supplier.",
+  aging: "Utang supplier menurut jatuh tempo, dan jadwal pembayarannya.",
+  pembayaran: "Riwayat pembayaran ke supplier dan tagihan yang dilunasinya.",
+  supplier: "Data supplier, termin, rekening, dan sisa utang per supplier.",
+};
 
 export default function FinanceSuppliers() {
   const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
@@ -124,6 +127,10 @@ export default function FinanceSuppliers() {
   const [suppliers, setSuppliers] = useState([]);
   const [bills, setBills] = useState([]);
   const [editUntuk, setEditUntuk] = useState(null);
+  const [ubahUntuk, setUbahUntuk] = useState(null); // dialog "Ubah tagihan" (pintu tunggal)
+  const [fakturPOUntuk, setFakturPOUntuk] = useState(null);
+  const [alasanUntuk, setAlasanUntuk] = useState(null); // { jenis: "tolak" | "batalkan", b }
+  const [setujuiUntuk, setSetujuiUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
   const [infoUntuk, setInfoUntuk] = useState(null);
   const [koreksiUntuk, setKoreksiUntuk] = useState(null);
@@ -206,6 +213,9 @@ export default function FinanceSuppliers() {
       setPesan(e.message);
     }
   }
+  // Menu baris & menu rincian memakai satu pembangun; membuka dialog apa pun menutup panel rincian lebih dulu.
+  const dariBaris = (setter) => (x) => { setRincianTagihan(null); setter(x); };
+  const aksiBaris = (b) => aksiTagihan(b, { setUbahUntuk: dariBaris(setUbahUntuk), setVersiUntuk: dariBaris(setVersiUntuk), setAlasanUntuk: dariBaris(setAlasanUntuk), setSetujuiUntuk: dariBaris(setSetujuiUntuk), setUangMukaUntuk: dariBaris(setUangMukaUntuk), supplierAdaUangMuka });
   const suppliersAktif = useMemo(() => supplierBisaDipilih(suppliers), [suppliers]);
   const bolehCatat = useMemo(() => { try { return bolehMencatatFinance(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } }, []);
   // Edit supplier: galat server DITAMPILKAN di dalam dialog (dialog tidak boleh tertutup/terkunci saat gagal) → fungsi ini melempar ulang ke dialog.
@@ -244,8 +254,8 @@ export default function FinanceSuppliers() {
 
   return (
     <HalamanFinance
-      title={tab === "tagihan" ? "Tagihan supplier" : "Supplier & Utang"}
-      subtitle={tab === "tagihan" ? "Periksa tagihan, jatuh tempo, dan pembayaran supplier." : "Tagihan masuk dari supplier, pembayarannya, dan sisa utang per supplier."}
+      title={JUDUL_TAB[tab]}
+      subtitle={SUBJUDUL_TAB[tab]}
       loading={loading}
       error={error}
       onRetry={muat}
@@ -291,33 +301,38 @@ export default function FinanceSuppliers() {
         </Card>
       )}
 
-      <RingkasanTagihan
-        aging={aging} bills={bills} uangMuka={uangMuka} unbilled={unbilled}
-        onTab={(k) => { setTab("tagihan"); setTabB(k); }}
-        onLihatUangMuka={() => setTab("supplier")}
-        onLihatPenerimaan={() => setModal("tagihan-penerimaan")}
-      />
+      {tab === "tagihan" && (
+        <>
+        <RingkasanTagihan
+          aging={aging} bills={bills} uangMuka={uangMuka} unbilled={unbilled}
+          onTab={(k) => { setTab("tagihan"); setTabB(k); }}
+          onLihatUangMuka={() => setTab("supplier")}
+          onLihatPenerimaan={() => setModal("tagihan-penerimaan")}
+        />
 
-      <div className="fin-tg-tentang" data-testid="tentang-angka">
-        <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id="tentang-angka-isi" className="fin-tg-tentang-tombol">Tentang angka dan pencatatan</Pembuka>
-        {tentang && (
-          <div id="tentang-angka-isi" className="fin-tg-tentang-isi">
-            <p><strong>Sisa utang</strong>: sisa faktur yang sudah DISETUJUI dan belum lunas (setelah uang muka diterapkan), dihitung server. Sisa PO yang belum ditagih bukan utang. <strong>Uang muka</strong> adalah aset, bukan stok dan bukan biaya; tidak mengurangi sisa utang sampai diterapkan ke faktur.</p>
-            <Penjelasan>
-              Tagihan yang menaut dokumen penerimaan barang <strong>tidak menyentuh stok sama sekali</strong> — kuantitasnya sudah dicatat Gudang saat putaway. Yang dikerjakan di sini murni sisi rupiah: menutup “Utang Barang Belum Ditagih” dan melahirkan Utang Usaha. Selisih antara tagihan supplier dan nilai penerimaan masuk akun Selisih Harga Pembelian, bukan mengubah nilai persediaan yang sudah tercatat.
-            </Penjelasan>
-            <KenapaBeda metrik={["utang_supplier","pembelian_aktif","komitmen_belum_dibayar","uang_keluar_kas","persediaan_nilai"]} />
-          </div>
-        )}
-      </div>
+        <div className="fin-tg-tentang" data-testid="tentang-angka">
+          <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id="tentang-angka-isi" className="fin-tg-tentang-tombol">Tentang angka dan pencatatan</Pembuka>
+          {tentang && (
+            <div id="tentang-angka-isi" className="fin-tg-tentang-isi">
+              <p><strong>Sisa utang</strong>: sisa faktur yang sudah DISETUJUI dan belum lunas (setelah uang muka diterapkan), dihitung server. Sisa PO yang belum ditagih bukan utang. <strong>Uang muka</strong> adalah aset, bukan stok dan bukan biaya; tidak mengurangi sisa utang sampai diterapkan ke faktur.</p>
+              <Penjelasan>
+                Tagihan yang menaut dokumen penerimaan barang <strong>tidak menyentuh stok sama sekali</strong> — kuantitasnya sudah dicatat Gudang saat putaway. Yang dikerjakan di sini murni sisi rupiah: menutup “Utang Barang Belum Ditagih” dan melahirkan Utang Usaha. Selisih antara tagihan supplier dan nilai penerimaan masuk akun Selisih Harga Pembelian, bukan mengubah nilai persediaan yang sudah tercatat.
+              </Penjelasan>
+              <KenapaBeda metrik={["utang_supplier","pembelian_aktif","komitmen_belum_dibayar","uang_keluar_kas","persediaan_nilai"]} />
+            </div>
+          )}
+        </div>
+        </>
+      )}
 
-      <div className="fin-tg-tab-halaman" role="tablist" aria-label="Bagian Supplier & Utang">
-        {TAB.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className="fin-tg-seg-item" data-aktif={tab === t.key ? "1" : "0"} onClick={() => setTab(t.key)} data-testid={`tab-halaman-${t.key}`}>
-            <t.Icon size={15} aria-hidden="true" /> {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Navigasi utama Pembelian & Supplier hanya di menu hub; di sini cuma jalan pendukung (bukan baris tab kedua). */}
+      {(tab === "tagihan" || tab === "pembayaran" || tab === "supplier") && (
+        <nav className="fin-tg-pendukung" aria-label="Terkait tagihan supplier" data-testid="nav-pendukung">
+          {tab !== "tagihan" && <button type="button" className="fin-tg-kembali" onClick={() => setTab("tagihan")} data-testid="kembali-tagihan"><ArrowLeft size={15} aria-hidden="true" /> Tagihan supplier</button>}
+          {tab !== "pembayaran" && <button type="button" className="fin-tg-pendukung-tombol" onClick={() => setTab("pembayaran")} data-testid="buka-pembayaran"><Banknote size={15} aria-hidden="true" /> Pembayaran</button>}
+          {tab !== "supplier" && <button type="button" className="fin-tg-pendukung-tombol" onClick={() => setTab("supplier")} data-testid="buka-supplier"><Building2 size={15} aria-hidden="true" /> Daftar supplier</button>}
+        </nav>
+      )}
       {tab !== "tagihan" && <p className="text-[13px] leading-relaxed text-ink3">{TAB.find((t) => t.key === tab)?.penjelasan}</p>}
 
       {tab === "aging" && (
@@ -329,7 +344,7 @@ export default function FinanceSuppliers() {
           bills={bills} billsTampil={billsTampil} tab={tabAktifB} onTab={setTabB} hariIni={hariIni}
           q={qB} onQ={setQB} fSup={fSupB} onFSup={setFSupB} fTempo={fTempo} onFTempo={setFTempo}
           onReset={() => { setQB(""); setFSupB(""); setFTempo(""); }}
-          aksi={(b) => aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setUangMukaUntuk, supplierAdaUangMuka })}
+          aksi={aksiBaris}
           onBuka={setRincianTagihan} onCatat={() => setModal("tagihan")}
         />
       )}
@@ -483,14 +498,57 @@ export default function FinanceSuppliers() {
       {rincianTagihan && (
         <RincianTagihan
           b={bills.find((x) => x.id === rincianTagihan.id) || rincianTagihan} spec={specOtomatis(bills.find((x) => x.id === rincianTagihan.id) || rincianTagihan)}
-          aksi={(b) => aksiTagihan(b, { aksi: async (fn) => { setRincianTagihan(null); await aksi(fn); }, setEditUntuk: (x) => { setRincianTagihan(null); setEditUntuk(x); }, setVersiUntuk, setInfoUntuk: (x) => { setRincianTagihan(null); setInfoUntuk(x); }, setKoreksiUntuk: (x) => { setRincianTagihan(null); setKoreksiUntuk(x); }, setUangMukaUntuk: (x) => { setRincianTagihan(null); setUangMukaUntuk(x); }, supplierAdaUangMuka })}
+          aksi={aksiBaris}
           onClose={() => setRincianTagihan(null)} onRiwayat={(x) => { setRincianTagihan(null); setVersiUntuk(x); }}
         />
+      )}
+      {ubahUntuk && (() => {
+        const bk = bills.find((x) => x.id === ubahUntuk.id) || ubahUntuk;
+        return (
+          <UbahTagihan
+            b={bk} admin={adminSaatIni()} bolehPost={bolehCatat} onClose={() => setUbahUntuk(null)}
+            onPilih={(kunci) => {
+              if (kunci === "pembayaran") { setUbahUntuk(null); setQP(bk.billNumber); setTab("pembayaran"); return; }
+              if (kunci === "versi-baru") { const baru = bills.find((x) => x.billNumber === bk.replacedBy?.billNumber); setUbahUntuk(null); if (baru) setRincianTagihan(baru); else setVersiUntuk(bk); return; }
+              setUbahUntuk(null);
+              if (kunci === "faktur-po") setFakturPOUntuk(bk);
+              else if (kunci === "isi") setEditUntuk(bk);
+              else if (kunci === "info") setInfoUntuk(bk);
+              else if (kunci === "koreksi") setKoreksiUntuk(bk);
+              else if (kunci === "batalkan") setAlasanUntuk({ jenis: "batalkan", b: bk });
+              else setVersiUntuk(bk);
+            }}
+          />
+        );
+      })()}
+      {fakturPOUntuk && (
+        <ModalFaktur
+          key={fakturPOUntuk.id} editBillId={fakturPOUntuk.id}
+          po={{ id: fakturPOUntuk.purchaseOrderId, poNumber: fakturPOUntuk.purchaseOrder?.poNumber || "", supplier: { id: fakturPOUntuk.supplierId, name: fakturPOUntuk.supplier?.name || "" } }}
+          onClose={() => setFakturPOUntuk(null)} onSaved={async () => { setFakturPOUntuk(null); await muat(); }}
+        />
+      )}
+      {alasanUntuk && (
+        <DialogAlasan
+          destruktif
+          judul={alasanUntuk.jenis === "tolak" ? `Tolak ${alasanUntuk.b.billNumber}` : `Batalkan ${alasanUntuk.b.billNumber}`}
+          deskripsi={alasanUntuk.jenis === "tolak" ? "Tagihan yang ditolak tidak menjadi utang dan tidak bisa diaktifkan kembali. Catat tagihan baru bila perlu." : "Jurnal utangnya dibalik, lalu catat ulang tagihan dengan data yang benar. Diblokir server bila masih ada pembayaran aktif."}
+          label={alasanUntuk.jenis === "tolak" ? "Alasan penolakan" : "Alasan pembatalan"} tombol={alasanUntuk.jenis === "tolak" ? "Tolak tagihan" : "Batalkan tagihan"}
+          contoh={alasanUntuk.jenis === "tolak" ? "mis. nomor faktur tidak sesuai" : "mis. salah supplier"}
+          onClose={() => setAlasanUntuk(null)}
+          onSubmit={async (alasan) => {
+            if (alasanUntuk.jenis === "tolak") await api.rejectFinanceBill(alasanUntuk.b.id, alasan); else await api.cancelFinanceBill(alasanUntuk.b.id, alasan);
+            setAlasanUntuk(null); await muat();
+          }}
+        />
+      )}
+      {setujuiUntuk && (
+        <DialogSetujui b={setujuiUntuk} onClose={() => setSetujuiUntuk(null)} onSubmit={async () => { await api.approveFinanceBill(setujuiUntuk.id); setSetujuiUntuk(null); await muat(); }} />
       )}
       {editUntuk && (
         <ModalEditTagihan
           bill={editUntuk} suppliers={supplierBisaDipilih(suppliers, { tetapSertakanId: editUntuk.supplierId })} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo} unbilled={unbilled} onClose={() => setEditUntuk(null)}
-          onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
+          onSubmit={async (d) => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); await muat(); }}
         />
       )}
       {infoUntuk && (
@@ -647,7 +705,7 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
         <Field label="Supplier" required>
           <Pilihan value={f.supplierId} onChange={(v) => { set("supplierId", v); setAlokasi({}); }}>
             <option value="">— pilih —</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name} · sisa {formatUang(s.sisaUtang)}</option>)}
+            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name} · sisa {formatUangTepat(s.sisaUtang)}</option>)}
           </Pilihan>
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -669,22 +727,26 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
             ) : (
               <div className="space-y-2">
                 {tagihanTerbuka.map((b) => (
-                  <div key={b.id} className="grid grid-cols-[1fr_140px] items-center gap-2">
+                  <div key={b.id} className="grid grid-cols-[1fr_190px] items-center gap-2">
                     <div className="min-w-0 text-[13px]">
                       <span className="block truncate font-medium">{b.billNumber} · {b.description}</span>
                       <span className="text-[11px] text-ink3">
-                        sisa {formatUang(b.sisa)}{b.dueDate ? ` · jatuh tempo ${tanggalPendek(b.dueDate)}` : " · jatuh tempo belum diisi"}
+                        sisa {formatUangTepat(b.sisa)}{b.dueDate ? ` · jatuh tempo ${tanggalPendek(b.dueDate)}` : " · jatuh tempo belum diisi"}
                       </span>
                     </div>
-                    <InputUang
-                      value={alokasi[b.id] ?? ""}
-                      onChange={(v) => setAlokasi((s) => ({ ...s, [b.id]: v }))}
-                      max={b.sisa}
-                    />
+                    <div className="fin-tg-bayar-isi">
+                      <InputUang
+                        value={alokasi[b.id] ?? ""}
+                        onChange={(v) => setAlokasi((s) => ({ ...s, [b.id]: v }))}
+                        max={b.sisa} step="0.01"
+                        aria-label={`Nominal untuk ${b.billNumber}`}
+                      />
+                      <button type="button" className="fin-tg-lunasi" data-testid={`lunasi-${b.billNumber}`} onClick={() => setAlokasi((s) => ({ ...s, [b.id]: String(Number(b.sisa)) }))}>Lunasi</button>
+                    </div>
                   </div>
                 ))}
                 <div className="rounded-lg bg-inset px-3 py-2 text-[13px]">
-                  Total dibayar: <strong>{formatUang(total)}</strong>
+                  Total dibayar: <strong>{formatUangTepat(total)}</strong>
                 </div>
               </div>
             )}
@@ -708,7 +770,20 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, metodeInfo 
   };
   const [f, setF] = useState(asli);
   const [alasan, setAlasan] = useState("");
+  const [galat, setGalat] = useState("");
+  const [catatanLepas, setCatatanLepas] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  // Ganti supplier: pilihan yang hanya berlaku untuk supplier lama (penerimaan tertaut) dilepas dengan pemberitahuan — tidak dipindahkan diam-diam.
+  function gantiSupplier(v) {
+    if (v === f.supplierId) return;
+    if (f.goodsReceiptId) { setF((x) => ({ ...x, supplierId: v, goodsReceiptId: "" })); setCatatanLepas("Penerimaan yang tertaut dilepas karena supplier diganti. Pilih penerimaan milik supplier baru bila tagihan ini memang dari penerimaan barang."); }
+    else set("supplierId", v);
+  }
+  async function simpan() {
+    setGalat("");
+    try { await onSubmit({ ...beda, reason: alasan.trim() }); }
+    catch (e) { setGalat(e?.message || "Gagal menyimpan perubahan. Isian Anda tetap ada; coba lagi."); }
+  }
   const grTertaut = bill.goodsReceipt ? { ...bill.goodsReceipt, nilaiTerima: bill.goodsReceipt.nilaiTerima ?? null } : null;
   const KUNCI_JENIS = ["billType", "goodsReceiptId", "expenseCategoryId", "purchaseCategoryId"];
 
@@ -721,27 +796,38 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, metodeInfo 
   // Jenis & akun tujuan dikirim sebagai satu kesatuan bila salah satunya berubah (server memvalidasi ulang kombinasinya).
   const jenisBerubah = KUNCI_JENIS.some((k) => (f[k] || "") !== (asli[k] || ""));
   if (jenisBerubah) Object.assign(beda, bodyJenis(f));
+  const namaSup = (id) => (id === bill.supplierId ? bill.supplier?.name : suppliers.find((x) => x.id === id)?.name) || "—";
+  const ringkasanBeda = Object.entries(beda).flatMap(([k, v]) => {
+    if (k === "supplierId") return [{ label: "Supplier", lama: namaSup(asli.supplierId), baru: namaSup(v) }];
+    if (k === "amount") return [{ label: "Nominal", lama: formatUangTepat(asli.amount), baru: formatUangTepat(v) }];
+    if (k === "billDate") return [{ label: "Tanggal tagihan", lama: asli.billDate ? tanggalPendek(asli.billDate) : "—", baru: v ? tanggalPendek(v) : "—" }];
+    if (k === "dueDate") return [{ label: "Jatuh tempo", lama: asli.dueDate ? tanggalPendek(asli.dueDate) : "—", baru: v ? tanggalPendek(v) : "—" }];
+    if (k === "supplierRef") return [{ label: "Nomor faktur", lama: asli.supplierRef || "—", baru: v || "—" }];
+    if (k === "description") return [{ label: "Keterangan", lama: asli.description || "—", baru: v || "—" }];
+    return [];
+  }).concat(jenisBerubah ? [{ label: "Jenis / dokumen asal", lama: bill.jenisTagihan?.label || "—", baru: "diubah" }] : []);
   const valid = Object.keys(beda).length > 0 && alasan.trim() && f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f, metodeInfo);
 
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title={`Edit ${bill.billNumber}`}
-      description={`${formatUang(bill.amount)} · ${bill.supplier?.name || ""}`}
+      title={`Ubah isi ${bill.billNumber}`}
+      description={`${formatUangTepat(bill.amount)} · ${bill.supplier?.name || ""}`}
       className="fin-tg-modal w-[640px] max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
-      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit({ ...beda, reason: alasan.trim() })} disabled={!valid}>Simpan Perubahan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={simpan} disabled={!valid} data-testid="simpan-ubah-isi">Simpan perubahan</TombolAksi></>}
     >
       <div className="space-y-3">
         <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-          Tagihan ini belum disetujui, jadi belum ada jurnal — semua isian boleh diubah. Setelah disetujui, cara mengoreksinya adalah Batalkan lalu catat ulang.
+          Tagihan ini belum disetujui, jadi belum ada jurnal — semua isian boleh diubah. Setelah disetujui, perubahan lewat Informasi dokumen atau Koreksi transaksi (Ubah tagihan).
         </p>
         <Field label="Supplier" required>
-          <PemilihSupplier suppliers={suppliers} value={f.supplierId} namaCadangan={bill.supplier?.name} memuat={false} onPilih={(v) => set("supplierId", v)} />
+          <PemilihSupplier suppliers={suppliers} value={f.supplierId} namaCadangan={bill.supplier?.name} memuat={false} onPilih={gantiSupplier} />
         </Field>
+        {catatanLepas && <p className="fin-tg-info" data-nada="jingga" role="status" data-testid="catatan-lepas-penerimaan">{catatanLepas}</p>}
         <Field label="Keterangan" required><Input value={f.description} onChange={(e) => set("description", e.target.value)} /></Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Nomor faktur supplier"><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} /></Field>
-          <Field label="Nominal tagihan" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+          <Field label="Nominal tagihan" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} step="0.01" aria-label="Nominal tagihan" /></Field>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal tagihan"><TanggalPO value={f.billDate} onChange={(v) => set("billDate", v)} bolehKosong ariaLabel="Tanggal tagihan" /></Field>
@@ -759,6 +845,13 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, metodeInfo 
         <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
           <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. salah ketik nominal" />
         </Field>
+        {ringkasanBeda.length > 0 && (
+          <section className="fin-tg-ubah-beda" data-testid="ringkasan-perubahan" aria-label="Ringkasan perubahan">
+            <h4>Yang akan berubah</h4>
+            <ul>{ringkasanBeda.map((r) => <li key={r.label}><span>{r.label}</span><s>{r.lama}</s><ArrowRight size={12} aria-hidden="true" /><strong>{r.baru}</strong></li>)}</ul>
+          </section>
+        )}
+        <Galat pesan={galat} testid="galat-ubah-isi" />
       </div>
     </Modal>
   );

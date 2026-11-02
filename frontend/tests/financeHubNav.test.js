@@ -123,7 +123,7 @@ test("judul tab & breadcrumb Finance berbahasa Indonesia dari definisi hub (buka
   assert.equal(titleFromPath("/finance/cash?tab=mutasi"), "Rekening");
   assert.equal(titleFromPath("/finance/cash?tab=transfer"), "Transfer antar-rekening");
   assert.equal(titleFromPath("/finance/cash?tab=pemasukan"), "Pemasukan lain");
-  assert.equal(titleFromPath("/finance/suppliers?tab=aging"), "Jadwal & Aging");
+  assert.equal(titleFromPath("/finance/suppliers?tab=aging"), "Jadwal pembayaran");
   const ENGLISH = ["Receivables", "Payments", "Invoices", "Cash", "Expenses", "Purchases", "Suppliers", "Journal", "Ledger", "Reconciliation", "Reports", "Accounts", "Settings", "Dashboard"];
   for (const r of petaRuteLama().map((x) => x.rute)) {
     const t = titleFromPath(r);

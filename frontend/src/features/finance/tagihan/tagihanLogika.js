@@ -143,3 +143,75 @@ export function penjagaPermintaan() {
   let n = 0;
   return { mulai: () => ++n, sahkan: (id) => id === n, batalkan: () => { n += 1; } };
 }
+
+// ── Uang yang jujur terhadap sen ─────────────────────────────────────────────
+// Nominal server berpresisi 2 desimal (Decimal(18,2)); qty × harga faktur bisa menghasilkan sen. Tampilan rupiah bulat menyembunyikan sen itu
+// ("Rp0" padahal sisa Rp0,37) — di area Tagihan supplier sen DITAMPILKAN bila ada, dan tidak ditampilkan bila bulat. formatUang bersama tidak diubah.
+const SEN_MIN = 0.005;
+export function adaSen(n) { const v = Number(n) || 0; return Math.abs(v - Math.round(v)) >= SEN_MIN; }
+export function formatUangTepat(n, { kurung = true } = {}) {
+  const v = Number(n) || 0;
+  const sen = adaSen(v);
+  const teks = Math.abs(v).toLocaleString("id-ID", { minimumFractionDigits: sen ? 2 : 0, maximumFractionDigits: sen ? 2 : 0 });
+  if (v >= 0 || Math.abs(v) < SEN_MIN) return `Rp${teks}`;
+  return kurung ? `(Rp${teks})` : `-Rp${teks}`;
+}
+/** Sisa utang positif tetapi kurang dari Rp1: hampir pasti selisih sen dari pembulatan nominal, bukan utang nyata berukuran rupiah. */
+export const sisaKurangSatuRupiah = (b) => STATUS_TERBUKA.includes(b?.status) && Number(b.sisa) > 0 && Number(b.sisa) < 1;
+export const KET_SISA_SEN = "Sisa kurang dari Rp1: selisih sen dari nominal faktur yang tidak bulat. Tagihan baru lunas bila dibayar tepat sisa ini (Catat Pembayaran → Lunasi).";
+
+// ── Matriks kemampuan "Ubah tagihan" ─────────────────────────────────────────
+// Mengikuti kontrak server yang SUDAH ADA (tidak ada jalur transaksi kedua):
+//   belum disetujui, bukan faktur PO : PATCH /finance/bills/:id        (finance:post, pembuat atau admin, alasan wajib; supplier/jenis/penerimaan/nominal/tanggal/termin/keterangan)
+//   belum disetujui, faktur atas PO  : PATCH /finance/purchase-orders/faktur/:billId (editor faktur PO: nomor, tanggal, termin, baris/jumlah/harga, penerimaan)
+//   sudah disetujui, informasi       : POST  /finance/bills/:id/info   (finance:post; nomor faktur supplier, jatuh tempo; tanpa jurnal; alasan wajib)
+//   sudah disetujui, koreksi         : POST  /finance/bills/:id/koreksi (finance:admin; supplier/tanggal/nominal/keterangan/kategori; jurnal dibalik + versi pengganti;
+//                                      diblokir server bila faktur PO, ada pembayaran aktif, sudah direkonsiliasi, atau periode tutup — alasan datang dari `b.koreksi`)
+//   ditolak/dibatalkan               : tidak ada edit; riwayat saja
+export const ALASAN_TANPA_IZIN_POST = "Akun Anda tidak punya izin mengubah tagihan (Finance/Akuntan).";
+export const ALASAN_TANPA_IZIN_ADMIN = "Koreksi transaksi hanya untuk admin keuangan.";
+
+export function kemampuanUbah(b, { admin = false, bolehPost = true } = {}) {
+  const s = b?.status;
+  const po = !!(b?.purchaseOrderId);
+  if (STATUS_NONAKTIF.includes(s)) {
+    return {
+      mode: "NONAKTIF", bagian: [],
+      pesan: s === "DIBATALKAN" && b.replacedBy?.billNumber
+        ? `Tagihan ini sudah dikoreksi dan digantikan ${b.replacedBy.billNumber}. Ubah versi terbarunya; dokumen ini tidak bisa diaktifkan kembali.`
+        : s === "DITOLAK" ? "Tagihan yang ditolak tidak bisa diubah atau diaktifkan kembali. Catat tagihan baru bila perlu." : "Tagihan yang dibatalkan tidak bisa diubah atau diaktifkan kembali. Catat tagihan baru bila perlu.",
+      jalan: b.replacedBy?.billNumber ? [{ kunci: "versi-baru", label: `Buka ${b.replacedBy.billNumber}`, nomor: b.replacedBy.billNumber }] : [{ kunci: "riwayat", label: "Lihat riwayat" }],
+    };
+  }
+  if (STATUS_BELUM_UTANG.includes(s)) {
+    return {
+      mode: "BELUM_DISETUJUI",
+      pesan: "Belum disetujui, jadi belum ada jurnal: isinya boleh diubah. Setiap perubahan butuh alasan dan tercatat di riwayat.",
+      bagian: [po
+        ? { kunci: "faktur-po", judul: "Ubah faktur atas PO", ket: "Nomor dan tanggal faktur, termin, serta jumlah dan harga per baris dicocokkan ulang dengan PO.", bidang: ["Nomor faktur", "Tanggal faktur", "Termin / jatuh tempo", "Jumlah dan harga per baris", "Penerimaan yang ditagih"], tersedia: bolehPost, alasan: bolehPost ? null : ALASAN_TANPA_IZIN_POST, aksi: "faktur-po", label: "Ubah faktur PO" }
+        : { kunci: "isi", judul: "Ubah isi tagihan", ket: "Semua isian boleh diubah sebelum disetujui; server memeriksa ulang jenis dan aturan persediaan.", bidang: ["Supplier", "Nomor dan tanggal faktur", "Keterangan", "Nominal", "Termin / jatuh tempo", "Jenis tagihan dan dokumen asal"], tersedia: bolehPost, alasan: bolehPost ? null : ALASAN_TANPA_IZIN_POST, aksi: "isi", label: "Ubah tagihan" }],
+      terkunci: po ? [{ judul: "Supplier dan PO asal", alasan: "Faktur ini melekat ke PO. Untuk mengganti supplier atau PO, tolak faktur ini lalu catat ulang lewat Catat tagihan › Dari PO." }] : [],
+      bayar: false,
+    };
+  }
+  // sudah disetujui / dibayar sebagian / lunas
+  const bayar = Number(b?.terbayar) > 0 || ["DIBAYAR_SEBAGIAN", "LUNAS"].includes(s);
+  const k = b?.koreksi;
+  let koreksiAlasan = null; let jalan = [];
+  if (!admin) koreksiAlasan = ALASAN_TANPA_IZIN_ADMIN;
+  else if (k && k.aktif === false) {
+    koreksiAlasan = [k.alasan, k.arah].filter(Boolean).join(" ") || "Tidak bisa dikoreksi saat ini.";
+    if (k.kode === "ADA_PEMBAYARAN") jalan = [{ kunci: "pembayaran", label: "Lihat pembayaran terkait" }];
+    else if (k.kode === "FAKTUR_ATAS_PO") jalan = [{ kunci: "batalkan", label: "Batalkan & catat ulang" }];
+  } else if (admin && bayar && !k) { koreksiAlasan = "Memiliki pembayaran aktif — batalkan pembayarannya dulu di Pembayaran, lalu koreksi."; jalan = [{ kunci: "pembayaran", label: "Lihat pembayaran terkait" }]; }
+  return {
+    mode: "DISETUJUI",
+    pesan: "Sudah masuk buku besar. Perubahan dibedakan: informasi dokumen (tanpa jurnal) dan koreksi transaksi (jurnal dibalik, versi pengganti dibuat).",
+    bagian: [
+      { kunci: "info", judul: "Informasi dokumen", ket: "Perubahan administratif tanpa jurnal; saldo, stok, dan pembayaran tidak berubah.", bidang: ["Nomor faktur supplier", "Jatuh tempo"], tersedia: bolehPost, alasan: bolehPost ? null : ALASAN_TANPA_IZIN_POST, aksi: "info", label: "Ubah informasi" },
+      { kunci: "koreksi", judul: "Koreksi transaksi", ket: "Mengubah nilai atau pembukuan: jurnal lama dibalik, tagihan pengganti dibuat, riwayat tetap tersimpan.", bidang: po ? ["Tidak tersedia untuk faktur atas PO"] : ["Nominal", "Tanggal tagihan", "Supplier", "Keterangan", "Kategori"], tersedia: !koreksiAlasan, alasan: koreksiAlasan, jalan, aksi: "koreksi", label: "Koreksi tagihan" },
+    ],
+    terkunci: [{ judul: "Jenis tagihan dan dokumen asal", alasan: "Menentukan akun jurnal dan klaim penerimaan, jadi tidak bisa diubah di tagihan yang sudah disetujui. Batalkan lalu catat ulang bila memang salah." }],
+    bayar,
+  };
+}
