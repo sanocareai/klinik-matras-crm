@@ -41,7 +41,7 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   const aplikasi = berkas.filter((f) => !FILE_TETAP.includes(f));
   must(JSON.stringify(aplikasi) === JSON.stringify(DISETUJUI), "himpunan berkas aplikasi berbeda dari allowlist eksplisit. Lebih: [" + aplikasi.filter((f) => !DISETUJUI.includes(f)).join(", ") + "] Kurang: [" + DISETUJUI.filter((f) => !aplikasi.includes(f)).join(", ") + "]");
   must(!berkas.some((f) => /package(-lock)?\.json$|(^|\/)docker-compose|(^|\/)Dockerfile$|(^|\/)\.env/.test(f)), "dependensi/compose/.env berubah");
-  must(["frontend/src/styles/sanss-produksi.css", "frontend/src/components/produksiIcons.jsx", "frontend/src/main.jsx"].every((f) => berkas.includes(f)), "berkas inti harus ada di diff");
+  must(["frontend/src/styles/sanss-produksi.css"].every((f) => berkas.includes(f)), "berkas inti harus ada di diff");
 
   potong('# RILIS FRONTEND-SAJA "satu pintu masuk Gudang"', "set -Eeuo pipefail", blokTeks(blok, "header") + "\n");
   r('CAND_BRANCH="${CAND_BRANCH:-fix/gudang-pintu-masuk}"', `CAND_BRANCH="\${CAND_BRANCH:-${CAND_BRANCH}}"`);

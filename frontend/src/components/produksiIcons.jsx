@@ -181,6 +181,9 @@ export const IkMuatUlang = (p) => (<Ikon {...p}><path style={S} d="M20.2 12a8.2 
 /** Panah kanan kecil. */
 export const IkPanahKanan = (p) => (<Ikon {...p}><path {...garis} strokeWidth="2.2" d="m9.4 5.6 6.4 6.4-6.4 6.4" /></Ikon>);
 
+/** Enam titik: handle seret. */
+export const IkGrip = (p) => (<Ikon {...p}><rect style={S} x="6" y="3" width="12" height="18" rx="4" /><circle cx="9.6" cy="7.2" r="1.5" /><circle cx="14.4" cy="7.2" r="1.5" /><circle cx="9.6" cy="12" r="1.5" /><circle cx="14.4" cy="12" r="1.5" /><circle cx="9.6" cy="16.8" r="1.5" /><circle cx="14.4" cy="16.8" r="1.5" /></Ikon>);
+
 /** Ikon sidebar per RUTE (Layout.jsx memetakan saat render; data menu tidak berubah). */
 export const IKON_NAV_PRODUKSI = {
   "/bengkel/ringkasan": IkRingkasanProduksi,

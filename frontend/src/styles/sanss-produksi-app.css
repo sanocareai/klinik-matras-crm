@@ -1,0 +1,74 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS PRODUKSI — TEMA APLIKASI LANTAI (Meja, Corner, Dokumentasi, PIC QC) + ANDON TV (redesain 2 Nov 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Visual saja. Halaman mandiri (di luar sidebar) memakai akar `.wa` (WorkerAppShell) atau `.prod-tv` (Andon). Semua aturan terkunci ke `.prod-app` / `.prod-tv`.
+   Palet sama dengan workspace: #3965FA, #99B7FC, #E9EBFF, #E0FFB7, teks #1B1B39; Manrope (tanpa font-family baru); isi 400, label/nama/angka/tombol 500, judul maks. 600.
+   Mode gelap = tukar token. Area sentuh ≥ 44px; fokus keyboard jelas; tanpa font kecil untuk memaksa muat. */
+
+.prod-app, .prod-tv {
+  --bg-base: #F3F4FF; --bg-surface: #FFFFFF; --bg-inset: #F1F3FF; --bg-subtle: #F4F5FF; --bg-hover: rgba(57, 101, 250, 0.06);
+  --text-primary: #1B1B39; --text-secondary: #45465F; --text-tertiary: #5E6079; --text-muted: #5E6079;
+  --accent: #2F57E0; --accent-hover: #2346C2; --accent-bg: rgba(57, 101, 250, 0.10); --accent-soft: rgba(57, 101, 250, 0.10); --color-primary: #3965FA;
+  --hairline: rgba(27, 27, 57, 0.08);
+  --shadow-card: 0 1px 2px rgba(27, 27, 57, 0.04), 0 14px 34px -22px rgba(57, 101, 250, 0.35);
+  --shadow-popover: 0 18px 40px -16px rgba(57, 101, 250, 0.45);
+  background: var(--bg-base); color: var(--text-primary);
+}
+:root[data-theme="dark"] .prod-app, :root[data-theme="dark"] .prod-tv {
+  --bg-base: #0D0E20; --bg-surface: #17182F; --bg-inset: #20213D; --bg-subtle: #1C1D38; --bg-hover: rgba(153, 183, 252, 0.07);
+  --text-primary: #F2F3FF; --text-secondary: #C6C9E3; --text-tertiary: #A6AACB; --text-muted: #A6AACB;
+  --accent: #8AA4FF; --accent-hover: #A9BCFF; --accent-bg: rgba(110, 142, 255, 0.18); --accent-soft: rgba(110, 142, 255, 0.18); --color-primary: #8AA4FF;
+  --hairline: rgba(153, 183, 252, 0.10);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 16px 36px -22px rgba(0, 0, 0, 0.7);
+  --shadow-popover: 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+}
+
+/* ── bobot teks: tanpa 700/800 ─────────────────────────────────────────── */
+.prod-app :is(.font-bold, .font-extrabold, .font-black, .font-semibold, b, strong, th) { font-weight: 500; }
+.prod-app :is(h1, h2, h3, h4, .wa-h1) { font-weight: 600; }
+.prod-app .wa-h1 { font-size: 28px; letter-spacing: -0.02em; }
+.prod-app .wa-chip, .prod-app .wa-nav-btn, .prod-app .wa-nav-btn[aria-current="page"], .prod-app .wa-primary, .prod-app .wa-badge,
+.prod-app .da-seg-btn, .prod-app .da-seg-sub, .prod-app .da-select, .prod-app .da-secondary { font-weight: 500; }
+.prod-app header p:first-of-type { font-weight: 600; }
+.prod-app .uppercase { text-transform: none; letter-spacing: 0; }
+
+/* ── ukuran teks terbaca ───────────────────────────────────────────────── */
+.prod-app :is([class*="text-[10"], [class*="text-[11"], [class*="text-[12"]) { font-size: 13px; }
+.prod-app [class*="text-[13"] { font-size: 14px; }
+.prod-app .wa-chip { font-size: 13px; padding: 4px 12px; }
+.prod-app .wa-nav-btn { font-size: 13px; min-height: 60px; }
+.prod-app .da-meta, .prod-app .da-seg-sub { font-size: 13px; }
+
+/* ── bentuk & warna ────────────────────────────────────────────────────── */
+.prod-app .wa-card { border-radius: 24px; background: var(--bg-surface); box-shadow: var(--shadow-card); }
+.prod-app > header { background: color-mix(in srgb, var(--bg-surface) 92%, transparent); border-bottom: 0; box-shadow: 0 1px 0 var(--hairline); }
+.prod-app .wa-primary { background: #3965FA; color: #FFFFFF; font-size: 17px; border-radius: 18px; box-shadow: 0 12px 24px -14px rgba(57, 101, 250, 0.9); }
+:root[data-theme="dark"] .prod-app .wa-primary { background: #3965FA; }
+.prod-app .wa-nav { border-top: 0; box-shadow: 0 -10px 30px -18px rgba(57, 101, 250, 0.35); }
+.prod-app .wa-nav-btn[aria-current="page"] { background: var(--accent-bg); color: var(--accent); }
+.prod-app .wa-badge { background: #D70015; }
+.prod-app .da-seg { background: #E9EBFF; border-radius: 20px; }
+:root[data-theme="dark"] .prod-app .da-seg { background: rgba(153, 183, 252, 0.12); }
+.prod-app .da-seg-btn { border-radius: 16px; }
+.prod-app .da-seg-btn[aria-selected="true"] { color: var(--accent); }
+.prod-app .da-secondary, .prod-app .da-select { border-radius: 16px; min-height: 48px; }
+.prod-app .da-thumb { border-radius: 16px; }
+.prod-app :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, textarea) { border: 0; border-radius: 14px; background-color: var(--bg-inset); font-size: 15px; font-weight: 400; }
+.prod-app :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select) { min-height: 48px; }
+.prod-app :is(button, a, [role="tab"], input, select, textarea):focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+.prod-app .wa-photo-empty { background: linear-gradient(135deg, #E9EBFF 0%, #CFD9FF 100%); color: #1B1B39; }
+:root[data-theme="dark"] .prod-app .wa-photo-empty { background: linear-gradient(135deg, #1C2552 0%, #2A3570 100%); color: #C9D6FF; }
+.prod-app .wa-chip-solid { background: rgba(27, 27, 57, 0.78); }
+.prod-app-logo { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 40px; height: 40px; margin-left: 4px; border-radius: 14px; background: #E9EBFF; }
+.prod-app-logo img { width: 24px; height: 24px; object-fit: contain; }
+:root[data-theme="dark"] .prod-app-logo { background: rgba(153, 183, 252, 0.16); }
+
+/* ── Andon TV (kiosk 1920×1080): tinggi baris & ukuran besar dipertahankan; hanya bobot, palet, bentuk ───── */
+.prod-tv :is(.font-bold, .font-extrabold, .font-black, .font-semibold, b) { font-weight: 500; }
+.prod-tv .tv-judul { font-weight: 600; letter-spacing: -0.02em; }
+.prod-tv .tv-jam { font-weight: 500; }
+.prod-tv .tv-kpi { border-radius: 20px; box-shadow: var(--shadow-card); }
+.prod-tv .tv-kolom { border-radius: 28px; background: var(--bg-inset); }
+.prod-tv .tv-kartu { border-radius: 22px; box-shadow: var(--shadow-card); background: var(--bg-surface); }
+.prod-tv .tv-kosong { border-radius: 22px; border-width: 2px; border-style: dashed; }
+.prod-tv footer > span { border-radius: 16px; }

@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, Clock, Maximize2, PackageX } from "lucide-rea
 import { api } from "@/api.js";
 import { BUCKET_STYLE, bucketStyle, formatMinutes, initials, wibDate } from "@/features/production/experience.js";
 import { progressText } from "@/features/production/productionLabels.js";
+import "@/styles/sanss-produksi-app.css";
 
 // Live TV Andon (kiosk 1920×1080, read-only, tetap wajib login). Polling ringan 20 detik HANYA saat tab terlihat — tanpa infra baru.
 const POLL_MS = 20_000;
@@ -19,7 +20,7 @@ function Tile({ item }) {
   const st = bucketStyle(item.bucket);
   const late = item.timer?.late;
   return (
-    <div className={`relative flex h-full min-h-0 flex-col justify-between gap-1.5 overflow-hidden rounded-2xl bg-surface py-3 pl-6 pr-4 shadow-sm ${late ? "ring-4 ring-red" : ""}`}>
+    <div className={`tv-kartu relative flex h-full min-h-0 flex-col justify-between gap-1.5 overflow-hidden rounded-2xl bg-surface py-3 pl-6 pr-4 shadow-sm ${late ? "ring-4 ring-red" : ""}`}>
       <span className={`absolute inset-y-0 left-0 w-2.5 ${st.dot}`} aria-hidden />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -67,17 +68,17 @@ export default function ProductionAndon() {
   const stale = updatedAt && Date.now() - updatedAt.getTime() > POLL_MS * 3;
 
   return (
-    <div className="flex h-[100dvh] min-h-[720px] flex-col overflow-hidden bg-base p-6 text-ink [&_p]:m-0">
+    <div className="prod-tv flex h-[100dvh] min-h-[720px] flex-col overflow-hidden bg-base p-6 text-ink [&_p]:m-0">
       <header className="mb-4 flex items-center gap-5">
         <Link to="/bengkel/production-v2" aria-label="Kembali" className="flex h-12 w-12 items-center justify-center rounded-xl text-ink3 hover:bg-hovertint"><ArrowLeft size={24} aria-hidden /></Link>
         <div className="flex-1">
-          <p className="text-[36px] font-extrabold leading-none">Andon Produksi</p>
+          <p className="tv-judul text-[36px] font-extrabold leading-none">Andon Produksi</p>
           <p className="mt-1 text-[20px] text-ink3">{new Date(`${date}T00:00:00+07:00`).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
         </div>
         {data?.kpi && (
           <div className="flex gap-3">
             {[["Target", data.kpi.target], ["Direncanakan", data.kpi.planned], ["Selesai", data.kpi.completed], ["Tunggu Bahan", data.kpi.waitingMaterial], ["Terlambat", data.kpi.late]].map(([label, value]) => (
-              <div key={label} className={`rounded-xl px-5 py-2 text-center ${label === "Tunggu Bahan" && value ? "bg-red text-white" : label === "Terlambat" && value ? "bg-orange text-white" : "bg-surface"}`}>
+              <div key={label} className={`tv-kpi rounded-xl px-5 py-2 text-center ${label === "Tunggu Bahan" && value ? "bg-red text-white" : label === "Terlambat" && value ? "bg-orange text-white" : "bg-surface"}`}>
                 <p className="text-[32px] font-extrabold leading-none tabular-nums">{value}</p>
                 <p className="text-[15px] opacity-80">{label}</p>
               </div>
@@ -94,7 +95,7 @@ export default function ProductionAndon() {
       {data?.stations?.length > 0 && (
         <div className="grid min-h-0 flex-1 grid-cols-4 gap-5">
           {data.stations.map((s) => (
-            <section key={s.code} className="flex min-h-0 flex-col rounded-2xl bg-inset p-3">
+            <section key={s.code} className="tv-kolom flex min-h-0 flex-col rounded-2xl bg-inset p-3">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[26px] font-extrabold">{s.label}</p>
                 <div className="flex items-center gap-2">
@@ -105,7 +106,7 @@ export default function ProductionAndon() {
               <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateRows: `repeat(${s.capacity}, minmax(0, 1fr))` }}>
                 {Array.from({ length: s.capacity }, (_, i) => s.items[i]
                   ? <Tile key={s.items[i].runId} item={s.items[i]} />
-                  : <div key={`empty-${i}`} className="flex items-center justify-center rounded-2xl border-2 border-dashed border-line text-[20px] text-ink3">Kosong</div>)}
+                  : <div key={`empty-${i}`} className="tv-kosong flex items-center justify-center rounded-2xl border-2 border-dashed border-line text-[20px] text-ink3">Kosong</div>)}
               </div>
             </section>
           ))}
