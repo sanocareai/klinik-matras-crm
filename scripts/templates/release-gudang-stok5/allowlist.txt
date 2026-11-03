@@ -1,0 +1,2 @@
+frontend/src/styles/sanss-gudang-dok.css
+frontend/tests/gudangPenerimaanTataLetak.test.js
