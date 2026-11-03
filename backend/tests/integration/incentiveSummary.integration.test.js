@@ -277,6 +277,35 @@ test("dedup: TIGA job COMPLETED di order+tanggal WIB yang SAMA tetap 1 alamat (b
   assert.equal(baris.totalInsentif, 7000, "1 alamat x tarif, BUKAN 3x walau raw job-nya 3");
 });
 
+test("dedup: 1 pelanggan, 3 ORDER BERBEDA, alamat+tanggal WIB sama = 1 alamat (bug nyata 3 Nov 2026 — dulu dihitung 3)", async () => {
+  const f = await fixtureDasar();
+  const orderA = await buatOrder(f.customer.id);
+  const orderB = await buatOrder(f.customer.id);
+  const orderC = await buatOrder(f.customer.id);
+  await buatJob({ orderId: orderA.id, driverId: f.driver.user.id, completedAt: "2026-09-05T02:00:00.000Z" });
+  await buatJob({ orderId: orderB.id, driverId: f.driver.user.id, completedAt: "2026-09-05T05:00:00.000Z" });
+  await buatJob({ orderId: orderC.id, driverId: f.driver.user.id, completedAt: "2026-09-05T09:00:00.000Z" });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-10");
+  const baris = res.body.orang.find((o) => o.id === f.driver.user.id);
+  assert.equal(baris.totalAlamat, 1, "3 order berbeda, pelanggan+alamat+tanggal sama -> TETAP 1 alamat, bukan 3");
+  assert.equal(baris.totalInsentif, 7000, "1 alamat x tarif, BUKAN 3x walau order-nya 3 berbeda");
+  assert.equal(baris.detail.length, 3, "granularitas detail/penyimpanan TETAP per order+tanggal (anti bayar-ganda tidak diubah)");
+  for (const d of baris.detail) assert.equal(d.satuKelompokDengan, 2, "masing-masing baris detail tahu ada 2 order lain sekelompok");
+});
+
+test("dedup: 1 pelanggan, 2 order, ALAMAT BERBEDA, tanggal sama = 2 alamat (lokasi beda tidak boleh digabung)", async () => {
+  const f = await fixtureDasar();
+  const orderA = await buatOrder(f.customer.id);
+  const orderB = await buatOrder(f.customer.id);
+  await testPrisma.job.create({ data: { type: "DELIVERY", orderId: orderA.id, driverId: f.driver.user.id, status: "COMPLETED", sequence: 1, completedAt: new Date("2026-09-05T02:00:00.000Z"), addressText: "Jl. Mawar No. 1" } });
+  await testPrisma.job.create({ data: { type: "DELIVERY", orderId: orderB.id, driverId: f.driver.user.id, status: "COMPLETED", sequence: 1, completedAt: new Date("2026-09-05T05:00:00.000Z"), addressText: "Jl. Melati No. 9" } });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-10");
+  const baris = res.body.orang.find((o) => o.id === f.driver.user.id);
+  assert.equal(baris.totalAlamat, 2, "pelanggan sama tapi alamat fisik berbeda -> tetap 2 alamat");
+});
+
 test("dedup: user berbeda (driver A vs driver B) di order+tanggal sama masing-masing punya alamat sendiri (tidak tercampur)", async () => {
   const f = await fixtureDasar();
   const orderA = await buatOrder(f.customer.id);
