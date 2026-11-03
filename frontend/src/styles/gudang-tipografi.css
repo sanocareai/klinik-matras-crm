@@ -1,0 +1,43 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TIPOGRAFI WORKSPACE GUDANG — karakter website Apple (Redesain Stok bahan, 3 Nov 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   KHUSUS Gudang. Sales, Finance, Produksi, login, PDF, dan ekspor TIDAK berubah. Memakai mekanisme yang sama dengan produksi-tipografi.css:
+   • SF Pro tidak disalin/dibundel — perangkat Apple memakai font sistemnya lewat -apple-system / BlinkMacSystemFont; Inter Variable (OFL 1.1, @fontsource-variable/inter, dibundel lokal
+     di main.jsx) menjadi alternatif lintas perangkat. Penanda `data-plat` dipasang useWorkspaceFont.js sebelum render pertama.
+   • Cakupan: `.app-shell.crm-skin.gud-skin` (kerangka + halaman + modal/panel yang di-portal ke .app-shell) dan `:root[data-workspace="gudang"]` (portal di <body>); atribut dilepas
+     saat pindah workspace.
+   Skala: judul halaman 28/600 · judul panel 18/600 · nama/butir 15/500 · isi, tabel, filter 14/400 · tombol 14/500 · keterangan 13/400 · angka ringkasan 24/500.
+   Tanpa 700/800, tanpa letter-spacing negatif; angka yang dibandingkan memakai tabular-nums. */
+
+:root {
+  --gud-font-ui: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+  --gud-fw-isi: 400;
+  --gud-fw-sedang: 500;
+  --gud-fw-judul: 600;
+}
+:root[data-plat="apple"] { --gud-font-ui: -apple-system, BlinkMacSystemFont, "Inter Variable", Inter, system-ui, "Segoe UI", sans-serif; }
+
+:root[data-workspace="gudang"],
+:root .app-shell.crm-skin.gud-skin { --font-ui: var(--gud-font-ui); }
+:root .app-shell.crm-skin.gud-skin {
+  font-family: var(--gud-font-ui);
+  font-optical-sizing: auto;
+  font-feature-settings: "calt" 1, "kern" 1;
+  -webkit-font-smoothing: antialiased;
+}
+:root .app-shell.crm-skin.gud-skin :is(button, input, select, textarea) { font-family: inherit; }
+:root .app-shell.crm-skin.gud-skin .font-mono { font-family: var(--gud-font-ui); font-variant-numeric: tabular-nums; }
+
+/* skala */
+:root .app-shell.crm-skin.gud-skin .gud-halaman .page-title { font-size: 28px; font-weight: var(--gud-fw-judul); line-height: 1.2; letter-spacing: 0; }
+:root .app-shell.crm-skin.gud-skin .gud-halaman .page-subtitle { font-size: 14px; font-weight: var(--gud-fw-isi); }
+:root .app-shell.crm-skin.gud-skin :is(.gud-bahan-sub, [role="dialog"] .t-card-title, .gud-f-bagian-judul) { font-size: 16px; font-weight: var(--gud-fw-judul); line-height: 1.3; letter-spacing: 0; }
+:root .app-shell.crm-skin.gud-skin :is(.gud-tombol, .gud-tab button, .gud-chip, .gud-pill) { font-weight: var(--gud-fw-sedang); letter-spacing: 0; }
+:root .app-shell.crm-skin.gud-skin :is(table, [role="table"], .gud-angka, .gud-strip-angka) { font-variant-numeric: tabular-nums; }
+:root .app-shell.crm-skin.gud-skin :is([class*="tracking-tight"], [class*="tracking-tighter"]) { letter-spacing: 0; }
+:root .app-shell.crm-skin.gud-skin :is(.font-extrabold, .font-black, .font-bold) { font-weight: var(--gud-fw-judul); }
+:root .app-shell.crm-skin.gud-skin .sidebar-brand-name { font-weight: var(--gud-fw-judul); letter-spacing: 0; }
+:root .app-shell.crm-skin.gud-skin :is(.role-badge, .sidebar-version) { font-size: 12px; }
+
+/* ikon: satu keluarga garis rounded, bobot seragam */
+:root .app-shell.crm-skin.gud-skin svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }

@@ -65,5 +65,5 @@ test("halaman Stok & Lokasi memasang saringan baru dan menyimpannya di URL", () 
   assert.match(src, /const KUNCI = \[[^\]]*"harga", "lain", "satuan"\]/);
   for (const id of ["saring-harga", "saring-lain", "saring-satuan"]) assert.ok(src.includes(`data-testid="${id}"`), id);
   assert.ok(src.includes('data-testid="atur-ulang-saringan"') && src.includes('tombolTestid="perhatian-harga"'), "atur ulang & pintasan harga belum diisi ada di halaman");
-  assert.match(src, /\{harga && <label className="gud-pilih-isi"><span className="gud-sr">Kelengkapan harga<\/span><PilihGud value=\{hargaF\}/, "saringan harga hanya tampil bila data harga tersedia (izin Finance)");
+  assert.match(src, /\{harga && <label className="gud-filter-kolom"><span className="gud-filter-label">Harga berlaku<\/span><PilihGud value=\{hargaF\}/, "saringan harga hanya tampil bila data harga tersedia (izin Finance)");
 });

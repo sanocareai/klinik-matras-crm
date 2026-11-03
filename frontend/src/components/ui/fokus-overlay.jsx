@@ -27,7 +27,7 @@ function useLebarMin(px) {
   return ya;
 }
 
-export function FokusOverlay({ open, onClose, title, subtitle, header, footer, children, testid = "fokus-overlay", className, tempel = false, tempelMin = 1200 }) {
+export function FokusOverlay({ open, onClose, title, subtitle, header, footer, children, testid = "fokus-overlay", className, tempel = false, tempelMin = 1200, aksiHeader = null }) {
   const tabAktif = useTabVisibility(); const lebar = useLebarMin(tempel ? tempelMin : 0);
   const [slot, setSlot] = useState(null); const [jumlahPanel, setJumlahPanel] = useState(0); const tutupPanel = useRef([]);
   const masuk = useCallback((fn) => { tutupPanel.current.push(fn); setJumlahPanel((n) => n + 1); return () => { tutupPanel.current = tutupPanel.current.filter((x) => x !== fn); setJumlahPanel((n) => Math.max(0, n - 1)); }; }, []);
@@ -47,8 +47,11 @@ export function FokusOverlay({ open, onClose, title, subtitle, header, footer, c
               <h2 className="t-card-title m-0 [overflow-wrap:anywhere]" data-testid="fokus-judul">{title}</h2>
               {subtitle && <div className="mt-0.5 text-[12.5px] text-ink2" data-testid="fokus-subjudul">{subtitle}</div>}
             </div>
-            <button type="button" onClick={onClose} aria-label="Tutup" data-testid="fokus-tutup"
-              className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-hovertint hover:text-ink"><X size={16} /></button>
+            <div className="flex shrink-0 items-center gap-1" data-testid="fokus-aksi-header">
+              {aksiHeader}
+              <button type="button" onClick={onClose} aria-label="Tutup" data-testid="fokus-tutup"
+                className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-hovertint hover:text-ink"><X size={16} /></button>
+            </div>
           </div>
           {header && <div className="mt-3" hidden={adaPanel}>{header}</div>}
         </div>
@@ -83,8 +86,11 @@ export function FokusOverlay({ open, onClose, title, subtitle, header, footer, c
                 <Dialog.Title className="t-card-title m-0 [overflow-wrap:anywhere]" data-testid="fokus-judul">{title}</Dialog.Title>
                 {subtitle && <div className="mt-0.5 text-[12.5px] text-ink2" data-testid="fokus-subjudul">{subtitle}</div>}
               </div>
-              <button type="button" onClick={onClose} aria-label="Tutup" data-testid="fokus-tutup"
-                className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11"><X size={16} /></button>
+              <div className="flex shrink-0 items-center gap-1" data-testid="fokus-aksi-header">
+                {aksiHeader}
+                <button type="button" onClick={onClose} aria-label="Tutup" data-testid="fokus-tutup"
+                  className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11"><X size={16} /></button>
+              </div>
             </div>
             {header && <div className="mt-3" hidden={adaPanel}>{header}</div>}
           </div>

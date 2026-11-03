@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { IkAwas, IkEdit, IkRiwayat } from "@/components/gudangIcons.jsx";
+import { IkAwas, IkEdit } from "@/components/gudangIcons.jsx";
 import { api } from "@/api.js";
-import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import UbahHargaModal from "./UbahHargaModal.jsx";
 import PenerapanLamaModal from "./PenerapanLamaModal.jsx";
-import Lipat from "./Lipat.jsx";
 import { TEKS, rp, rpNilai, tanggalJam, STATUS_RIWAYAT, varianBukti } from "./hargaBerlakuLogic.js";
 import { TEKS_DRAWER, barisDampakBermakna, peringatanHarga, ringkasHarga } from "./drawerBahanLogic.js";
 
@@ -13,40 +11,34 @@ import { TEKS_DRAWER, barisDampakBermakna, peringatanHarga, ringkasHarga } from 
 // nilai persediaan Finance + pembanding dan rincian pemakaian terdampak ada di bagian terlipat. Harga Berlaku operasional TETAP dibedakan dari nilai persediaan Finance, dan "belum ada harga" tidak pernah menjadi Rp0.
 export default function HargaBerlakuPanel({ materialId }) {
   const [d, setD] = useState(null); const [tersembunyi, setTersembunyi] = useState(false); const [galat, setGalat] = useState("");
-  const [riwayat, setRiwayat] = useState(null); const [bukaRiwayat, setBukaRiwayat] = useState(false);
+  const [riwayat, setRiwayat] = useState(null);
   const [modal, setModal] = useState(null); // null | { jenis: "ubah" } | { jenis: "koreksi", baris } | { jenis: "penerapan" }
   const [pesan, setPesan] = useState("");
-  const info = useInfoToggle();
 
   const muat = useCallback(() => {
     setGalat("");
     return api.getHargaBerlaku(materialId).then(setD).catch((e) => { if (e.status === 403) setTersembunyi(true); else setGalat(e.message); });
   }, [materialId]);
-  useEffect(() => { setD(null); setRiwayat(null); setBukaRiwayat(false); setTersembunyi(false); setPesan(""); muat(); }, [materialId, muat]);
+  useEffect(() => { setD(null); setRiwayat(null); setTersembunyi(false); setPesan(""); muat(); }, [materialId, muat]);
   const muatRiwayat = useCallback(() => api.getRiwayatHargaBerlaku(materialId).then((r) => setRiwayat(r.riwayat)).catch((e) => setGalat(e.message)), [materialId]);
-  useEffect(() => { if (bukaRiwayat) muatRiwayat(); }, [bukaRiwayat, muatRiwayat]);
+  useEffect(() => { muatRiwayat(); }, [muatRiwayat]);
 
   if (tersembunyi) return null;
   if (galat && !d) return <p role="alert" className="gud-info" data-nada="galat">{galat}</p>;
   if (!d) return <p className="gud-petunjuk" role="status">Memuat harga berlaku…</p>;
   const h = d.hargaBerlaku; const bahan = d.bahan; const dm = d.dampak;
-  const selesai = () => { setModal(null); setPesan("Tersimpan. Pemakaian yang sudah dibekukan tidak berubah."); muat(); if (bukaRiwayat) muatRiwayat(); };
+  const selesai = () => { setModal(null); setPesan("Tersimpan. Pemakaian yang sudah dibekukan tidak berubah."); muat(); muatRiwayat(); };
   const tampil = ringkasHarga(h, bahan.satuan, rp);
   const peringatan = peringatanHarga({ h, dampak: dm });
   const dampak = barisDampakBermakna(dm, rpNilai);
   const adaPenerapan = (dm.belumDibekukan.pemakaian > 0 || d.penerapanAktif) && (d.bolehUbah || d.bolehSetujui || d.penerapanAktif);
-  const adaFinance = !!d.nilaiPersediaanFinance || !!d.pembanding.biayaPerolehanGRTerakhir || !!d.pembanding.referensiAgustus;
 
   return (
     <section className="gud-bahan-bagian gud-harga" aria-label="Harga berlaku bahan" data-testid="panel-harga-berlaku">
       <div className="gud-bahan-judul-baris">
         <h3 className="gud-bahan-sub">{TEKS.judul}</h3>
-        <InfoToggleButton info={info} label="Harga Berlaku (HPP operasional)" />
       </div>
-      <InfoToggleIsi info={info}>
-        <p className="m-0" data-testid="pemisah-angka"><b>{TEKS.bukan}</b> {TEKS.finance} {TEKS.aturanWaktu}</p>
-        <p className="m-0" data-testid="izin-teks">{d.bolehUbah ? `${d.izinTeks.ubah} ${TEKS.aturanTanpaMundur}` : TEKS.izinLihat}</p>
-      </InfoToggleIsi>
+      <p className="gud-petunjuk" data-testid="pemisah-angka"><b>{TEKS.bukan}</b> {TEKS.finance} {TEKS.aturanWaktu}</p>
 
       <div className="gud-harga-utama">
         {h
@@ -65,13 +57,14 @@ export default function HargaBerlakuPanel({ materialId }) {
 
       {pesan && <p className="gud-info" data-nada="ok" role="status" data-testid="pesan-tersimpan">{pesan}</p>}
       {galat && <p className="gud-f-galat" role="alert">{galat}</p>}
+      <p className="gud-petunjuk" data-testid="izin-teks">{d.bolehUbah ? `${d.izinTeks.ubah} ${TEKS.aturanTanpaMundur}` : TEKS.izinLihat}</p>
       <div className="gud-aksi-baris gud-bahan-tombol">
         {d.bolehUbah && <button type="button" onClick={() => setModal({ jenis: "ubah" })} className="gud-tombol gud-tombol-utama" data-testid="tombol-ubah-harga"><IkEdit size={16} /> Ubah harga</button>}
-        <button type="button" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="gud-tombol" data-testid="tombol-riwayat-harga"><IkRiwayat size={16} /> Riwayat ({d.jumlahRiwayat})</button>
         {adaPenerapan && <button type="button" onClick={() => setModal({ jenis: "penerapan" })} className="gud-tombol" data-testid="tombol-penerapan">Beri harga ke pemakaian lama{d.penerapanAktif ? " · ada pengajuan" : ""}</button>}
       </div>
 
-      {bukaRiwayat && (
+      <h4 className="gud-bahan-sub2" data-testid="tombol-riwayat-harga">Riwayat harga ({d.jumlahRiwayat})</h4>
+      {(
         <ul className="gud-riwayat" data-testid="riwayat-harga">
           {!riwayat && <li className="gud-petunjuk">Memuat riwayat…</li>}
           {riwayat?.length === 0 && <li className="gud-petunjuk">Belum ada riwayat harga.</li>}
@@ -91,30 +84,28 @@ export default function HargaBerlakuPanel({ materialId }) {
         </ul>
       )}
 
-      <div className="gud-bahan-lipatan">
-        {adaFinance && (
-          <Lipat judul="Nilai Finance dan harga pembanding" testid="lipat-finance">
-            <p className="gud-petunjuk" data-testid="beda-angka">{TEKS_DRAWER.bedaAngka}</p>
-            {d.nilaiPersediaanFinance && (
-              <p className="gud-petunjuk" data-testid="nilai-persediaan-finance">
-                <b>{d.nilaiPersediaanFinance.nama}:</b>{" "}
-                {d.nilaiPersediaanFinance.tersedia ? <>{rpNilai(d.nilaiPersediaanFinance.nilai)} ({d.nilaiPersediaanFinance.qty} {String(d.nilaiPersediaanFinance.satuan ?? "").toLowerCase()} × {rp(d.nilaiPersediaanFinance.biayaSatuan)}, {d.nilaiPersediaanFinance.nomor}). {d.nilaiPersediaanFinance.teks}</> : d.nilaiPersediaanFinance.teks}
-              </p>
-            )}
-            {(d.pembanding.biayaPerolehanGRTerakhir || d.pembanding.referensiAgustus) && (
-              <p className="gud-petunjuk" data-testid="pembanding">Pembanding (bukan sumber harga):{d.pembanding.biayaPerolehanGRTerakhir ? ` biaya perolehan GR terakhir ${rp(d.pembanding.biayaPerolehanGRTerakhir.harga)}` : ""}{d.pembanding.referensiAgustus ? ` · referensi ${d.pembanding.referensiAgustus.bulan} ${rp(d.pembanding.referensiAgustus.harga)}` : ""}.</p>
-            )}
-          </Lipat>
+      <div className="gud-bahan-pendukung">
+        <h3 className="gud-bahan-sub">Nilai Finance dan harga pembanding</h3>
+        <p className="gud-petunjuk" data-testid="beda-angka">{TEKS_DRAWER.bedaAngka}</p>
+        {d.nilaiPersediaanFinance && (
+          <p className="gud-petunjuk" data-testid="nilai-persediaan-finance">
+            <b>{d.nilaiPersediaanFinance.nama}:</b>{" "}
+            {d.nilaiPersediaanFinance.tersedia ? <>{rpNilai(d.nilaiPersediaanFinance.nilai)} ({d.nilaiPersediaanFinance.qty} {String(d.nilaiPersediaanFinance.satuan ?? "").toLowerCase()} × {rp(d.nilaiPersediaanFinance.biayaSatuan)}, {d.nilaiPersediaanFinance.nomor}). {d.nilaiPersediaanFinance.teks}</> : d.nilaiPersediaanFinance.teks}
+          </p>
         )}
-        <Lipat judul="Pemakaian terdampak" ringkas={dampak.length ? `${dampak.length} rincian` : "tidak ada"} testid="lipat-dampak">
-          {dampak.length === 0
-            ? <p className="gud-petunjuk" data-testid="dampak-kosong">{TEKS_DRAWER.dampakKosong}</p>
-            : (
-              <dl className="gud-dl" data-testid="dampak-ringkas">
-                {dampak.map((x) => <div key={x.k} className="gud-dl-baris"><dt>{x.label}</dt><dd data-testid={x.k === "order" ? "jumlah-order-terdampak" : undefined}>{x.nilai}</dd></div>)}
-              </dl>
-            )}
-        </Lipat>
+        {(d.pembanding.biayaPerolehanGRTerakhir || d.pembanding.referensiAgustus)
+          ? <p className="gud-petunjuk" data-testid="pembanding">Pembanding (bukan sumber harga):{d.pembanding.biayaPerolehanGRTerakhir ? ` biaya perolehan GR terakhir ${rp(d.pembanding.biayaPerolehanGRTerakhir.harga)}` : ""}{d.pembanding.referensiAgustus ? ` · referensi ${d.pembanding.referensiAgustus.bulan} ${rp(d.pembanding.referensiAgustus.harga)}` : ""}</p>
+          : !d.nilaiPersediaanFinance && <p className="gud-petunjuk">Belum ada pembanding dari Finance untuk bahan ini.</p>}
+      </div>
+      <div className="gud-bahan-pendukung" data-testid="lipat-dampak">
+        <h3 className="gud-bahan-sub">Pemakaian terdampak <span className="gud-redup">{dampak.length ? `${dampak.length} rincian` : "tidak ada"}</span></h3>
+        {dampak.length === 0
+          ? <p className="gud-petunjuk" data-testid="dampak-kosong">{TEKS_DRAWER.dampakKosong}</p>
+          : (
+            <dl className="gud-dl" data-testid="dampak-ringkas">
+              {dampak.map((x) => <div key={x.k} className="gud-dl-baris"><dt>{x.label}</dt><dd data-testid={x.k === "order" ? "jumlah-order-terdampak" : undefined}>{x.nilai}</dd></div>)}
+            </dl>
+          )}
       </div>
 
       {modal?.jenis === "ubah" && <UbahHargaModal open onClose={() => setModal(null)} bahan={bahan} hargaSekarang={h?.harga} onTersimpan={selesai} />}

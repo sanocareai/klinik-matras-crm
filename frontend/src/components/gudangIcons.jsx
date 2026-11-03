@@ -128,3 +128,6 @@ export const IkTanya = (p) => (<Ikon {...p}><circle cx="12" cy="12" r="8.4" /><p
 export const IkLokasi = (p) => (<Ikon {...p}><path d="M12 20.4s6-5.2 6-10.2a6 6 0 0 0-12 0c0 5 6 10.2 6 10.2z" /><circle cx="12" cy="10.2" r="2.2" /></Ikon>);
 export const IkHarga = (p) => (<Ikon {...p}><path d="M4 12.4V5.2A1.2 1.2 0 0 1 5.2 4h7.2l7.4 7.4a1.6 1.6 0 0 1 0 2.2l-6.2 6.2a1.6 1.6 0 0 1-2.2 0z" /><circle cx="8.6" cy="8.6" r="1.2" /></Ikon>);
 export const IkTimbang = IkOpname;
+
+/** Dua kotak bertumpuk: salin kode. */
+export const IkSalin = (p) => (<Ikon {...p}><rect x="8.6" y="8.6" width="11" height="11" rx="2.4" /><path d="M15.4 8.6V6.8a2.2 2.2 0 0 0-2.2-2.2H6.8a2.2 2.2 0 0 0-2.2 2.2v6.4a2.2 2.2 0 0 0 2.2 2.2h1.8" /></Ikon>);

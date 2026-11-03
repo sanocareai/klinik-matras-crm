@@ -158,7 +158,7 @@ test("Tata letak sempit: target sentuh min-h-11, kartu/daftar bergantian dengan 
   for (const f of ["pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseInventory.jsx", "features/warehouse/aksi/AksiDokumen.jsx", "features/warehouse/penerimaan/TabelPerItem.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
   assert.match(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /md:hidden/);
   // Redesain Stok & Lokasi (Okt 2026): satu susunan responsif (grid md:) menggantikan dua DOM tabel/kartu bergantian.
-  assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /gud-stok-baris/); assert.match(fs.readFileSync(path.join(dir, "../src/styles/sanss-gudang-stok.css"), "utf8"), /@container gud-daftar \(max-width: ?640px\)/); // Nov 2026: tata letak lewat container query
+  assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /gud-stok-baris/); assert.match(fs.readFileSync(path.join(dir, "../src/styles/sanss-gudang-stok.css"), "utf8"), /@container gud-daftar \(max-width: ?560px\)/); // Nov 2026: tata letak lewat container query
 });
 
 test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebagai riwayat penerimaan (bukan lokasi stok saat ini)", () => {
@@ -172,7 +172,7 @@ test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebaga
   const s = baca("pages/warehouse/WarehouseInventory.jsx");
   // Redesain (Okt 2026): riwayat penerimaan pindah dari kolom daftar ke drawer (Detail bahan); tetap diberi label "Riwayat penerimaan" dan "bukan lokasi stok saat ini".
   const dr = baca("features/warehouse/components/ItemDetailDrawer.jsx");
-  assert.match(dr, /Riwayat penerimaan/); assert.match(dr, /bukan lokasi stok saat ini/); assert.doesNotMatch(s + dr, />Lokasi terakhir</); assert.doesNotMatch(s + dr, />Lokasi</);
+  assert.match(dr, /riwayat penerimaan/i); assert.match(dr, /bukan lokasi stok saat ini/); assert.doesNotMatch(s + dr, />Lokasi terakhir</); assert.doesNotMatch(s + dr, />Lokasi</);
   assert.match(dr, /drawer-riwayat-penerimaan/); assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /data-jenis=/);
 });
 

@@ -51,7 +51,7 @@ export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) 
   if (hasil) {
     const st = STATUS_KOREKSI[hasil.status] ?? { teks: hasil.statusTeks, varian: "neutral" };
     return (
-      <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo diajukan" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px] gud-modal"
+      <Modal portalToBody dialogBilaTempel open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo diajukan" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[760px] gud-modal"
         footer={<><Link to={`/warehouse/adjustments/stock/${hasil.id}`} className="gud-tombol" data-testid="buka-penyesuaian">Buka {hasil.nomor}</Link><button type="button" className="gud-tombol gud-tombol-utama" onClick={onClose} data-testid="tutup-hasil">Selesai</button></>}>
         <div className="gud-form" data-testid="hasil-koreksi">
           <p className="gud-info" data-nada="ok"><IkCentang size={16} aria-hidden /> {hasil.ulang ? "Pengajuan ini sudah tercatat sebelumnya (klik ganda tidak membuat dua)." : "Pengajuan tercatat."}</p>
@@ -68,7 +68,7 @@ export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) 
   }
 
   return (
-    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px] gud-modal"
+    <Modal portalToBody dialogBilaTempel open={open} onOpenChange={(o) => (o ? null : onClose())} title="Koreksi saldo" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[760px] gud-modal"
       footer={pra ? (
         <>
           <button type="button" className="gud-tombol" onClick={() => setPra(null)} disabled={sibuk}>Ubah isian</button>
@@ -84,14 +84,18 @@ export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) 
         <div className="gud-info" data-testid="catatan-jalur"><p className="m-0">{TEKS.jalur}</p><p className="m-0" data-testid="catatan-tidak-disentuh">{TEKS.tidakDisentuh}</p></div>
         {info && <p role="status" className="gud-info" data-nada="awas" data-testid="info-bergeser"><IkAwas size={16} aria-hidden /> <span>{info}</span></p>}
         {!pra && (
-          <>
+          <div className="gud-form-dua">
+            <div className="gud-f-seksi"><h3 className="gud-f-bagian-judul">1. Hitungan fisik</h3>
             <GudField label={`Jumlah fisik yang benar (${String(bahan.satuan ?? "").toLowerCase()})`} htmlFor="ks-jumlah" wajib galat={galatKolom.jumlah} hint={TEKS.fisikBantuan}>
               <AngkaGud id="ks-jumlah" value={jumlah} onChange={ubah(setJumlah)} invalid={!!galatKolom.jumlah} placeholder="mis. 7 atau 0" satuan={String(bahan.satuan ?? "").toLowerCase()} data-testid="input-jumlah-fisik" autoFocus />
             </GudField>
+            </div>
+            <div className="gud-f-seksi"><h3 className="gud-f-bagian-judul">2. Alasan</h3>
             <GudField label="Alasan" htmlFor="ks-alasan" wajib galat={galatKolom.alasan} hint="Wajib; tercatat bersama pelaku, mis. “Hitung fisik 26 Okt: sisa 7 kg”.">
               <textarea id="ks-alasan" rows={3} value={alasan} onChange={ubah(setAlasan)} maxLength={500} aria-invalid={!!galatKolom.alasan || undefined} className="gud-f-teks gud-f-area" data-testid="input-alasan-koreksi" />
             </GudField>
-          </>
+            </div>
+          </div>
         )}
         {pra && <Pratinjau pra={pra} bahan={bahan} alasan={alasan} />}
         {galat && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-koreksi">{galat}</p>}

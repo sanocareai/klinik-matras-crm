@@ -18,7 +18,7 @@
 @media (max-width: 767px) { :root .gud-halaman { padding: 16px; } }
 .gud-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
 @media (min-width: 1200px) {
-  .gud-split.gud-split-buka { grid-template-columns: minmax(0, 1fr) minmax(440px, 38%); }
+  .gud-split.gud-split-buka { grid-template-columns: minmax(0, 1fr) minmax(480px, 40%); }
 }
 .gud-panel, .fokus-tempel {
   background: var(--crm-panel, var(--bg-surface, #fff)); border-radius: var(--crm-radius-shell, 24px);

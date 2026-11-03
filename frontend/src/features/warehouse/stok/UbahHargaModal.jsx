@@ -34,8 +34,8 @@ export default function UbahHargaModal({ open, onClose, bahan, hargaSekarang, ko
   const ubahIsian = (set) => (e) => { set(typeof e === "string" ? e : e.target.value); setPra(null); };
 
   return (
-    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title={koreksi ? "Koreksi salah input historis (tindakan khusus)" : "Ubah harga berlaku"}
-      description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[520px] gud-modal"
+    <Modal portalToBody dialogBilaTempel open={open} onOpenChange={(o) => (o ? null : onClose())} title={koreksi ? "Koreksi salah input historis (tindakan khusus)" : "Ubah harga berlaku"}
+      description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[760px] gud-modal"
       footer={pra ? (
         <>
           <button type="button" className="gud-tombol" onClick={() => setPra(null)} disabled={sibuk}>Ubah isian</button>
@@ -52,7 +52,8 @@ export default function UbahHargaModal({ open, onClose, bahan, hargaSekarang, ko
         {koreksi ? <p className="gud-info" data-nada="awas" data-testid="catatan-koreksi">Tindakan khusus: memperbaiki baris harga {rp(koreksi.harga)} (mulai {tanggalJam(koreksi.berlakuMulai)}). Baris lama tidak dihapus (riwayat tetap). Pemakaian yang sudah dibekukan TIDAK diubah diam-diam; semua pemakaian terdampak ditampilkan di pratinjau dan harus Anda konfirmasi.</p>
           : <p className="gud-info" data-testid="catatan-tanpa-mundur">{TEKS.aturanTanpaMundur}</p>}
         {!pra && (
-          <>
+          <div className="gud-form-dua">
+            <div className="gud-f-seksi"><h3 className="gud-f-bagian-judul">1. Harga dan waktu berlaku</h3>
             <GudField label={`Harga baru per ${bahan.satuan}`} htmlFor="hb-harga" wajib galat={galatKolom.harga} hint={`Hanya satuan stok (${bahan.satuan}). Harga per satuan lain (pak/roll) harus dikonversi dulu.`}>
               <span className="gud-f-angka" data-invalid={galatKolom.harga ? "ya" : undefined}>
                 <span className="gud-f-awalan" aria-hidden="true">Rp</span>
@@ -74,16 +75,19 @@ export default function UbahHargaModal({ open, onClose, bahan, hargaSekarang, ko
                 {mode === "JADWAL" && <GudField label="Tanggal & jam (harus di masa depan)" htmlFor="hb-mulai" wajib galat={galatKolom.mulai}><WaktuGud id="hb-mulai" value={mulai} onChange={ubahIsian(setMulai)} invalid={!!galatKolom.mulai} data-testid="input-mulai" /></GudField>}
               </fieldset>
             )}
+            {hargaSekarang != null
+              ? <p className="gud-petunjuk">Harga berlaku sekarang: <b>{rp(hargaSekarang)}</b> / {bahan.satuan}</p>
+              : <p className="gud-petunjuk" data-testid="belum-ada-harga-modal">Belum ada harga berlaku (belum diisi, bukan Rp0). Pemakaian yang diposting sebelum harga ini berlaku tetap tanpa harga operasional.</p>}
+            </div>
+            <div className="gud-f-seksi"><h3 className="gud-f-bagian-judul">2. Alasan dan bukti</h3>
             <GudField label="Alasan" htmlFor="hb-alasan" wajib galat={galatKolom.alasan} hint={koreksi ? "Wajib, minimal 10 karakter; tercatat bersama pelaku." : "Wajib; tercatat bersama pelaku."}>
               <textarea id="hb-alasan" rows={3} value={alasan} onChange={ubahIsian(setAlasan)} aria-invalid={!!galatKolom.alasan || undefined} className="gud-f-teks gud-f-area" data-testid="input-alasan" />
             </GudField>
             <GudField label="Catatan / bukti (opsional)" htmlFor="hb-bukti" hint="Mis. nomor nota atau nama supplier. Boleh kosong — harga tetap tersimpan dengan label “Belum didukung bukti”.">
               <textarea id="hb-bukti" rows={2} value={bukti} onChange={ubahIsian(setBukti)} className="gud-f-teks gud-f-area" data-testid="input-bukti" />
             </GudField>
-            {hargaSekarang != null
-              ? <p className="gud-petunjuk">Harga berlaku sekarang: <b>{rp(hargaSekarang)}</b> / {bahan.satuan}</p>
-              : <p className="gud-petunjuk" data-testid="belum-ada-harga-modal">Belum ada harga berlaku (belum diisi, bukan Rp0). Pemakaian yang diposting sebelum harga ini berlaku tetap tanpa harga operasional.</p>}
-          </>
+            </div>
+          </div>
         )}
         {pra && <Pratinjau pra={pra} />}
         {pra?.dampakKoreksi && <label className="gud-pilih-baris gud-info" data-nada="awas" data-testid="konfirmasi-dampak"><input type="checkbox" checked={paham} onChange={(e) => setPaham(e.target.checked)} data-testid="centang-dampak" /> <span>Saya sudah membaca {pra.dampakKoreksi.jumlah} pemakaian terdampak di atas. Nilai beku lama tidak berubah; perbaikannya lewat penerapan khusus dua orang.</span></label>}

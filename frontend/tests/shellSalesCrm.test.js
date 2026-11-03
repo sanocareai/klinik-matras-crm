@@ -106,7 +106,7 @@ test("Judul tab dari URL memakai nama menu Sales CRM (bukan slug Inggris); divis
   assert.equal(titleFromPath("/orders"), "Order");
   assert.equal(titleFromPath("/komplain"), "Kasus Komplain");
   assert.equal(titleFromPath("/armada/orders"), "Delivery · Orders");
-  assert.equal(titleFromPath("/warehouse/inventory"), "Stok & Lokasi");
+  assert.equal(titleFromPath("/warehouse/inventory"), "Stok bahan");
 });
 
 test("Breadcrumb: rute Sales CRM yang dulu jatuh ke slug mentah kini berlabel", () => {

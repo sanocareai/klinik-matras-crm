@@ -102,6 +102,8 @@ import "./styles/produksi-tipografi.css";
 import "./styles/sanss-gudang.css";
 // Stok & Lokasi (redesain Gudang Fase 2, 3 Nov 2026).
 import "./styles/sanss-gudang-stok.css";
+// Tipografi KHUSUS Gudang (3 Nov 2026): stack Apple/Inter; terkunci ke .gud-skin / :root[data-workspace="gudang"].
+import "./styles/gudang-tipografi.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

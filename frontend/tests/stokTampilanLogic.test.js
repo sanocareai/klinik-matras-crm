@@ -73,7 +73,7 @@ test("kontrol: tombol ≥44px di HP, tombol Filter keyboard (aria-expanded/Esc),
   const f = baca("pages", "warehouse", "WarehouseInventory.jsx"); // Nov 2026: toolbar saringan di halaman (PilihGud = Radix dropdown, keyboard/Esc bawaan)
   for (const k of ["PilihGud", 'data-testid="atur-ulang-saringan"', 'data-testid="chip-saringan"', "aria-label=\"Saring harga berlaku\""]) assert.ok(f.includes(k), k);
   const d = baca("features", "warehouse", "stok", "DaftarBahan.jsx");
-  for (const k of ['type="button"', "aria-label={`Buka rincian ${r.nama}`}", 'data-testid="baris-stok"', "teksTersedia(", "statusRingkas(", "hargaBaris(", 'aria-label="Halaman sebelumnya"', "gud-tombol-ikon", "gud-stok-baris"]) assert.ok(d.includes(k), k);
+  for (const k of ['type="button"', "aria-label={`Buka rincian ${r.nama}`}", 'data-testid="baris-stok"', "teksTersedia(", "statusRingkas(", 'aria-label="Halaman sebelumnya"', "gud-tombol-ikon", "gud-stok-baris"]) assert.ok(d.includes(k), k);
   assert.ok(!/<table|<TableWrap/i.test(d), "tidak ada tabel lebar yang memaksa gulir horizontal");
   const n = baca("features", "warehouse", "stok", "KelompokBahanNav.jsx"); assert.match(n, /aria-pressed/); assert.match(n, /gud-kelompok/); assert.match(baca("styles", "sanss-gudang.css"), /\.gud-tab-lipat/);
 });

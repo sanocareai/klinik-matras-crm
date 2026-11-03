@@ -45,7 +45,7 @@ export default function PenyesuaianDetail({ id, onTutup, onBerubah }) {
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur penyesuaian stok" catatan={r.notes} />
       {r.koreksiSaldo && (
         <div className="rounded-btn border border-line p-3 text-[12.5px]" data-testid="kartu-koreksi-saldo">
-          <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Koreksi saldo per bahan (dari Stok &amp; Lokasi)</h4>
+          <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Koreksi saldo per bahan (dari Stok bahan)</h4>
           <dl className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
             <dt className="text-ink3">Jumlah fisik yang dinyatakan pengaju</dt><dd className="text-right font-semibold tabular-nums text-ink" data-testid="ks-fisik">{teksJumlah(r.koreksiSaldo.jumlahFisik)} {u}</dd>
             <dt className="text-ink3">Saldo yang dilihat pengaju</dt><dd className="text-right tabular-nums text-ink2" data-testid="ks-dilihat">{teksJumlah(r.koreksiSaldo.saldoDilihat)} {u}</dd>

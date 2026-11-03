@@ -1,4 +1,4 @@
-// Skenario B — Stok & Lokasi: form & tindakan yang MENULIS (tambah/ubah/nonaktifkan bahan, koreksi saldo, ubah harga) di atas backend + DB sandbox ASLI. Bukti dari /qa/state (DB).
+// Skenario B — Stok bahan (tahap 2): form & tindakan yang MENULIS (tambah/ubah/nonaktifkan bahan, koreksi saldo, ubah harga) di atas backend + DB sandbox ASLI. Bukti dari /qa/state (DB).
 //   BASE=http://127.0.0.1:5480 API=http://127.0.0.1:4479 OUT=C:/tmp/gud-qa/stok node frontend/qa-harness/gudang-stok-skenarioB.cjs
 const U = require("./gudang-qa-util.cjs");
 const { puppeteer, CHROME, ID, tidur, ok, api, buka, tampak, tunggu, klik, klikTeks, isi, teksDari, foto, tanpaGulirSamping, API } = U;
@@ -48,6 +48,7 @@ const hargaDb = (s, kode) => s.harga.filter((h) => h.materialId === s.stok[kode]
     await p.evaluate(() => { const b = document.querySelector('[data-testid="simpan-bahan"]'); b.click(); b.click(); }); await tidur(2000);
     const pat = tulis(p, /\/inventory\/materials\/[0-9a-f-]{36}$/, "PATCH");
     ok("B2 klik ganda Simpan → TEPAT satu PATCH; payload TANPA code/unit", pat.length === 1 && !("code" in pat[0].b) && !("unit" in pat[0].b) && pat[0].b.name === "Busa HR Foam N44 (nama diubah)" && Number(pat[0].b.reorderPoint) === 25, JSON.stringify(pat[0]?.b));
+    ok("B2 ruang kerja tetap terbuka setelah Simpan dan langsung menampilkan nama baru (tanpa membuka ulang)", await tampak(p, '[data-testid="drawer-bahan"]') && (await teksDari(p, '[data-testid="drawer-nama"]')) === "Busa HR Foam N44 (nama diubah)");
     const s2 = await state();
     ok("B2 DB: nama & batas minimum berubah; saldo, pergerakan, harga, jurnal TIDAK berubah (tidak mengubah dokumen lama)", s2.stok[K("HR-N44")].nama === "Busa HR Foam N44 (nama diubah)" && s2.stok[K("HR-N44")].reorderPoint === 25 && s2.stok[K("HR-N44")].saldo === sebelum2.stok[K("HR-N44")].saldo && s2.stok[K("HR-N44")].gerakan === sebelum2.stok[K("HR-N44")].gerakan && JSON.stringify(hargaDb(s2, K("HR-N44"))) === JSON.stringify(hargaDb(sebelum2, K("HR-N44"))) && s2.jurnal === sebelum2.jurnal && s2.gerakanTotal === sebelum2.gerakanTotal);
     await cariBuka(p, "HR-N44"); await klik(p, '[data-testid="edit-bahan"]'); await tunggu(p, '[data-testid="form-bahan"]'); await isi(p, '[data-testid="input-batas-minimum"]', ""); await klik(p, '[data-testid="simpan-bahan"]'); await tidur(1500);
@@ -57,14 +58,14 @@ const hargaDb = (s, kode) => s.harga.filter((h) => h.materialId === s.stok[kode]
     // ── B3. Nonaktifkan / aktifkan: konfirmasi di dalam aplikasi, riwayat tetap
     p = await buka(browser, "gudang", "/warehouse/inventory"); await tunggu(p, '[data-testid="baris-stok"]');
     const sebelum3 = await state();
-    await cariBuka(p, "KAYU"); await klik(p, '[data-testid="ubah-aktif"]'); await tunggu(p, '[data-testid="konfirmasi-aktif"]');
+    await cariBuka(p, "KAYU"); await klik(p, '[data-testid="tab-info"]'); await klik(p, '[data-testid="ubah-aktif"]'); await tunggu(p, '[data-testid="konfirmasi-aktif"]');
     ok("B3 konfirmasi nonaktif tampil di dalam aplikasi (bukan dialog bawaan peramban), dengan dampaknya", /tidak bisa dipakai untuk dokumen baru/.test(await teksDari(p, '[data-testid="konfirmasi-aktif"]')));
     await klikTeks(p, '[data-testid="konfirmasi-aktif"] button', "Batal"); await tidur(300);
     ok("B3 Batal tidak menulis apa pun", p.permintaan.length === 0 && (await state()).stok[K("RACUK-3X5")].aktif === true);
     await klik(p, '[data-testid="ubah-aktif"]'); await klik(p, '[data-testid="ya-ubah-aktif"]'); await tidur(1800);
     const s3 = await state();
     ok("B3 nonaktif: DB aktif=false, saldo & pergerakan utuh, panel tertutup, bahan hilang dari daftar aktif", s3.stok[K("RACUK-3X5")].aktif === false && s3.stok[K("RACUK-3X5")].saldo === 60 && s3.gerakanTotal === sebelum3.gerakanTotal && !(await tampak(p, '[data-testid="drawer-bahan"]')));
-    await klik(p, '[data-testid="tampilkan-nonaktif"]'); await cariBuka(p, "RACUK");
+    await klik(p, '[data-testid="buka-filter"]'); await klik(p, '[data-testid="tampilkan-nonaktif"]'); await klik(p, '[data-testid="selesai-filter"]'); await tidur(300); await cariBuka(p, "RACUK"); await klik(p, '[data-testid="tab-info"]');
     await klik(p, '[data-testid="ubah-aktif"]'); await klik(p, '[data-testid="ya-ubah-aktif"]'); await tidur(1800);
     ok("B3 aktifkan kembali: DB aktif=true", (await state()).stok[K("RACUK-3X5")].aktif === true);
     await p.close();
@@ -73,6 +74,7 @@ const hargaDb = (s, kode) => s.harga.filter((h) => h.materialId === s.stok[kode]
     p = await buka(browser, "gudang", "/warehouse/inventory"); await tunggu(p, '[data-testid="baris-stok"]');
     const sebelum4 = await state(); const kulit = sebelum4.stok[K("HR-KULIT")];
     await cariBuka(p, "HR-KULIT"); await klik(p, '[data-testid="tombol-koreksi-saldo"]'); await tunggu(p, '[data-testid="modal-koreksi-saldo"]');
+    ok("B4 form koreksi = dialog lebar (≥ 700px) dengan dua bagian sejajar, bukan panel sempit di dalam panel", await p.evaluate(() => { const e = document.querySelector('[data-testid="modal-koreksi-saldo"]'); const d = e.closest('[role="dialog"]'); return !!d && d.getBoundingClientRect().width >= 700 && !!e.querySelector(".gud-form-dua") && !document.querySelector('[data-testid="panel-satu-lapisan"]'); }));
     await klik(p, '[data-testid="lihat-pratinjau-koreksi"]'); await tidur(300);
     ok("B4 pratinjau tanpa isian → galat di kolom jumlah & alasan, tanpa permintaan", await tampak(p, '#ks-jumlah[aria-invalid="true"]') && await tampak(p, '#ks-alasan[aria-invalid="true"]') && p.permintaan.length === 0, await teksDari(p, ".gud-f-galat"));
     await isi(p, "#ks-jumlah", "20"); await isi(p, "#ks-alasan", "Hitung fisik 3 Nov: sisa 20 kg");
@@ -109,6 +111,7 @@ const hargaDb = (s, kode) => s.harga.filter((h) => h.materialId === s.stok[kode]
     p = await buka(browser, "finance", "/warehouse/inventory"); await tunggu(p, '[data-testid="baris-stok"]');
     const sebelum5 = await state();
     await cariBuka(p, "SOFT-D23"); await klik(p, '[data-testid="tab-harga"]'); await klik(p, '[data-testid="tombol-ubah-harga"]'); await tunggu(p, '[data-testid="modal-ubah-harga"]');
+    ok("B5 form harga = dialog lebar (≥ 700px), dua bagian: harga & waktu berlaku | alasan & bukti", await p.evaluate(() => { const e = document.querySelector('[data-testid="modal-ubah-harga"]'); const d = e.closest('[role="dialog"]'); return !!d && d.getBoundingClientRect().width >= 700 && e.querySelectorAll(".gud-f-seksi").length === 2; }));
     ok("B5 pemisah angka jelas di form: Harga Berlaku bukan nilai persediaan Finance", /bukan/i.test(await teksDari(p, '[data-testid="catatan-pemisah"]')));
     await klik(p, '[data-testid="lihat-pratinjau"]'); await tidur(300);
     ok("B5 pratinjau kosong → galat harga & alasan (kolom ditandai), tanpa permintaan", await tampak(p, '#hb-harga[aria-invalid="true"]') && await tampak(p, '#hb-alasan[aria-invalid="true"]') && p.permintaan.length === 0, await teksDari(p, ".gud-f-galat"));
@@ -132,7 +135,7 @@ const hargaDb = (s, kode) => s.harga.filter((h) => h.materialId === s.stok[kode]
     await klik(p, '[data-testid="simpan-harga"]'); await tidur(2500);
     const s5b = await state();
     ok("B5 DB: baris harga lama N44 UTUH + baris baru (2 baris); saldo tak berubah", hargaDb(s5b, K("HR-N44")).length === hargaDb(s5, K("HR-N44")).length + 1 && hargaDb(s5b, K("HR-N44")).some((h) => h.unitPrice === 36000) && hargaDb(s5b, K("HR-N44")).some((h) => h.unitPrice === 38000) && s5b.stok[K("HR-N44")].saldo === 50);
-    await klik(p, '[data-testid="tombol-riwayat-harga"]'); await tunggu(p, '[data-testid="baris-riwayat"]');
+    await tunggu(p, '[data-testid="baris-riwayat"]');
     ok("B5 riwayat harga di panel memuat kedua harga dengan alasan & pelaku", (await p.$$('[data-testid="baris-riwayat"]')).length === 2 && /Kenaikan harga supplier/.test(await teksDari(p, '[data-testid="riwayat-harga"]')));
     ok("B5 tidak ada 'nilai persediaan' hasil stok × harga yang diklaim angka pembukuan (50 × 38.000 = 1.900.000)", !/1\.900\.000/.test(await teksDari(p, '[data-testid="drawer-bahan"]')));
     await foto(p, "B5-riwayat-harga"); await p.close();

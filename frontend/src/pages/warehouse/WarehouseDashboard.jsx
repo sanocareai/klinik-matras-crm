@@ -89,7 +89,7 @@ export default function WarehouseDashboard() {
             </section>
 
             <ActiveComplaintsWidget currentOwner="WAREHOUSE" title="Kasus Komplain Butuh Material" />
-            <p className="m-0 text-[11.5px] text-ink3">Angka stok per bahan, bahan tanpa catatan, dan batas minimum ada di <Link to="/warehouse/inventory" className="font-semibold text-accent">Stok &amp; Lokasi</Link>.</p>
+            <p className="m-0 text-[11.5px] text-ink3">Angka stok per bahan, bahan tanpa catatan, dan batas minimum ada di <Link to="/warehouse/inventory" className="font-semibold text-accent">Stok bahan</Link>.</p>
           </>
         )}
       </PageBody>

@@ -289,7 +289,7 @@ const DIVISIONS = {
       {
         section: "Stok", grup: true, Icon: Package,
         items: [
-          { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
+          { to: "/warehouse/inventory", label: "Stok bahan",     Icon: Package },
           // Usulan bahan katalog dari Produksi + pemakaian sementara yang perlu rekonsiliasi (tidak mengubah saldo; stok baru hanya lewat penerimaan/pengeluaran resmi).
           { to: "/warehouse/usulan-bahan", label: "Usulan Bahan", Icon: PackagePlus },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
@@ -956,6 +956,7 @@ export default function Layout({ user, onLogout }) {
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
   const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
   useWorkspaceFont(crmShell && divisionKey === "bengkel"); // tipografi Produksi juga untuk portal di <body>; dilepas saat pindah workspace
+  useWorkspaceFont(crmShell && divisionKey === "warehouse", "gudang"); // tipografi Gudang (Apple/Inter) juga untuk portal di <body>; dilepas saat pindah workspace
   // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
   // Finance: sidebar hanya memuat hub, jadi pencarian memakai semua halaman hub yang boleh dilihat peran ini (sumber & penyaringan sama dengan sidebar/hub).
   const halamanCari = crmShell

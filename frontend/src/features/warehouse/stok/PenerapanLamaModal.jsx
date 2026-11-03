@@ -37,7 +37,7 @@ export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bo
   const aksi = async (fn) => { setSibuk(true); setGalat(""); try { await fn(); await muatAntre(); onSelesai?.(); } catch (e) { setGalat(e.message); } finally { setSibuk(false); } };
 
   return (
-    <Modal portalToBody open={open} onOpenChange={(o) => (o ? null : onClose())} title="Beri harga ke pemakaian lama" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[640px] gud-modal"
+    <Modal portalToBody dialogBilaTempel open={open} onOpenChange={(o) => (o ? null : onClose())} title="Beri harga ke pemakaian lama" description={`${bahan.kode} — ${bahan.nama}`} className="sm:w-[760px] gud-modal"
       footer={<button type="button" className="gud-tombol" onClick={onClose}>Tutup</button>}>
       <div className="space-y-3" data-testid="modal-penerapan">
         <p className="rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2">{pra?.aturan ?? "Tindakan khusus berpersetujuan: tidak otomatis untuk semua order lama; tidak mengubah stok, ISSUE, jurnal, GL, atau valuasi Finance."} <b>{TEKS.bukan}</b></p>

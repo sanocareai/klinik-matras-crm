@@ -49,7 +49,7 @@ test("teks aturan tetap ada dan tidak berubah makna: HPP operasional ≠ nilai F
 
 test("pengawatan drawer: Tersedia/Saldo/Dipesan, tombol di kartu, penjelasan di ikon info, bagian terlipat, label Indonesia, layanan sama", () => {
   const d = src("features", "warehouse", "components", "ItemDetailDrawer.jsx");
-  for (const k of ['data-testid="stok-tersedia"', 'data-testid="stok-saldo"', 'data-testid="stok-dipesan"', "ISTILAH.tersedia", "ISTILAH.saldo", "ISTILAH.dipesan", "InfoToggleButton", "<KoreksiSaldoPanel", "<HargaBerlakuPanel materialId={materialId} />", 'testid="lipat-referensi-harga"', 'testid="lipat-detail-bahan"', 'testid="lipat-pergerakan"', "Riwayat pergerakan", "keIndonesia"]) assert.ok(d.includes(k), k);
+  for (const k of ['data-testid="stok-tersedia"', 'data-testid="stok-saldo"', 'data-testid="stok-dipesan"', "ISTILAH.tersedia", "Saldo tercatat", "ISTILAH.dipesan", "<KoreksiSaldoPanel", "<HargaBerlakuPanel materialId={materialId} />", 'testid="lipat-referensi-harga"', 'testid="lipat-detail-bahan"', 'testid="lipat-pergerakan"', "Riwayat pergerakan", "keIndonesia"]) assert.ok(d.includes(k), k);
   const tampilanSaja = d.replace(/^\s*\/\/.*$/gm, ""); // komentar kode tidak ikut tampil
   for (const lama of ["Available Stock", "On Hand", "Reserved", "Movement History", "Unit of Measure", "Service Line"]) assert.ok(!tampilanSaja.includes(lama), `istilah Inggris dihapus: ${lama}`);
   assert.ok(!d.includes("dihitung dari penjumlahan seluruh baris ledger"), "rumus tidak lagi tampil di awal (pindah ke ikon info)");
@@ -59,13 +59,13 @@ test("pengawatan drawer: Tersedia/Saldo/Dipesan, tombol di kartu, penjelasan di 
 
 test("panel koreksi saldo: tombol Koreksi saldo hanya bila berizin; Riwayat; layanan sama; aturan di ikon info; modal memuat ketentuan", () => {
   const p = src("features", "warehouse", "stok", "KoreksiSaldoPanel.jsx");
-  for (const k of ["d.izin.bolehMengajukan &&", "disabled={!!aktif}", "api.getKoreksiSaldoBahan(materialId)", 'data-testid="tombol-koreksi-saldo"', 'data-testid="tombol-riwayat-koreksi"', "peringatanStok(", "InfoToggleIsi", "TEKS_DRAWER.aturanKoreksi", "d.izin.teks", 'data-testid="izin-koreksi"', "<KoreksiSaldoModal"]) assert.ok(p.includes(k), k);
+  for (const k of ["d.izin.bolehMengajukan &&", "disabled={!!aktif}", "api.getKoreksiSaldoBahan(materialId)", 'data-testid="tombol-koreksi-saldo"', 'data-testid="tombol-riwayat-koreksi"', "peringatanStok(", "penjelasan-koreksi", "d.izin.teks", 'data-testid="izin-koreksi"', "<KoreksiSaldoModal"]) assert.ok(p.includes(k), k);
   const m = src("features", "warehouse", "stok", "KoreksiSaldoModal.jsx"); assert.match(m, /TEKS\.jalur/); assert.match(m, /data-testid="catatan-tidak-disentuh"/); assert.match(m, /api\.ajukanKoreksiSaldo\(body, kunciUntuk/); assert.match(m, /saldoDilihat: pra\.saldoDilihat/);
 });
 
 test("panel harga berlaku: harga atau 'Belum diisi', label bukti, Ubah harga hanya bila d.bolehUbah, nilai Finance + terdampak terlipat, tanpa Rp0 untuk belum ada harga; modal memuat ketentuan", () => {
   const p = src("features", "warehouse", "stok", "HargaBerlakuPanel.jsx");
-  for (const k of ["d.bolehUbah && <button", 'data-testid="tombol-ubah-harga"', 'data-testid="tombol-riwayat-harga"', 'testid="lipat-finance"', 'testid="lipat-dampak"', "barisDampakBermakna(", "peringatanHarga(", "ringkasHarga(", "TEKS_DRAWER.bedaAngka", 'data-testid="nilai-persediaan-finance"', 'data-testid="pemisah-angka"', "api.getHargaBerlaku(materialId)", "e.status === 403"]) assert.ok(p.includes(k), k);
+  for (const k of ["d.bolehUbah && <button", 'data-testid="tombol-ubah-harga"', 'data-testid="tombol-riwayat-harga"', 'testid="beda-angka"', 'testid="lipat-dampak"', "barisDampakBermakna(", "peringatanHarga(", "ringkasHarga(", "TEKS_DRAWER.bedaAngka", 'data-testid="nilai-persediaan-finance"', 'data-testid="pemisah-angka"', "api.getHargaBerlaku(materialId)", "e.status === 403"]) assert.ok(p.includes(k), k);
   assert.ok(!/\|\| ?0\b/.test(p.replace(/^\s*\/\/.*$/gm, "")), "tidak ada fallback ke 0");
   const m = src("features", "warehouse", "stok", "UbahHargaModal.jsx"); for (const k of ["TEKS.bukan", "TEKS.finance", "TEKS.aturanTanpaMundur", 'data-testid="belum-ada-harga-modal"', "hashPratinjau: pra.hash", "api.pratinjauHargaBerlaku(masukan)"]) assert.ok(m.includes(k), k);
   assert.match(m, /bukan Rp0/);

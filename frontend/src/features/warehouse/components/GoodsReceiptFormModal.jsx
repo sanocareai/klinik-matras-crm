@@ -201,7 +201,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
               ))}
               {coba && !lines.some((x) => x.materialId) && <p className="gud-f-galat" role="alert">Minimal satu item wajib dipilih</p>}
               <button type="button" onClick={tambahBaris} className="gud-tombol gud-tombol-kecil"><IkTambah size={15} /> Tambah baris</button>
-              {materials.length === 0 && <p className="gud-f-hint">Belum ada item aktif di katalog — tambahkan lewat Stok &amp; Lokasi dulu.</p>}
+              {materials.length === 0 && <p className="gud-f-hint">Belum ada item aktif di katalog — tambahkan lewat Stok bahan dulu.</p>}
             </fieldset>
           </>
         )}

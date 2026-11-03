@@ -43,7 +43,7 @@ test("teks aturan baru: tanpa mundur, izin eksplisit, basis harga retur/waste", 
 });
 test("kontrak sumber: panel di drawer Stok; modal tampil di atas drawer (portalToBody); kartu jejak terpisah dari biaya persediaan Finance; satuan tidak dapat diganti", () => {
   assert.match(src("features/warehouse/components/ItemDetailDrawer.jsx"), /<HargaBerlakuPanel materialId=\{materialId\} \/>/);
-  assert.match(src("features/warehouse/stok/UbahHargaModal.jsx"), /<Modal portalToBody open/); assert.match(src("features/warehouse/stok/PenerapanLamaModal.jsx"), /<Modal portalToBody open/);
+  assert.match(src("features/warehouse/stok/UbahHargaModal.jsx"), /<Modal portalToBody dialogBilaTempel open/); assert.match(src("features/warehouse/stok/PenerapanLamaModal.jsx"), /<Modal portalToBody dialogBilaTempel open/);
   const modal = src("features/warehouse/stok/UbahHargaModal.jsx"); assert.match(modal, /data-testid="satuan-tetap"/); assert.doesNotMatch(modal, /<select/); assert.match(modal, /Idempotency|kunci\.current/); assert.match(modal, /hashPratinjau: pra\.hash/);
   const jejak = src("features/finance/JejakBiayaBahan.jsx"); assert.match(jejak, /HppOperasionalKartu/); assert.match(jejak, /Finance — biaya perolehan PSA\/GR/);
   assert.match(src("features/finance/HppOperasionalKartu.jsx"), /Belum ada/); assert.doesNotMatch(src("features/finance/HppOperasionalKartu.jsx"), /\|\| ?0\b/);

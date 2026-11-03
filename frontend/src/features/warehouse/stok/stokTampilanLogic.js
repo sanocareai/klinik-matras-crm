@@ -83,3 +83,16 @@ export function ringkasHasil(rows, peta = null) {
   }
   return o;
 }
+
+/**
+ * Dokumen asal sebuah pergerakan stok. HANYA dari kolom tautan yang memang dikirim server (goodsReceiptId, materialIssueId, stockTransferId, stockCountId) — tidak menebak dari catatan.
+ * Rute detail dokumen diberi bila ada di aplikasi; izin baca dokumen = izin baca persediaan yang sama dengan pembacaan riwayat pergerakan, jadi tautan hanya muncul untuk pengguna yang sudah bisa membuka riwayat ini.
+ * Tanpa tautan dokumen → teks jujur "Tanpa dokumen tertaut" (mis. penerimaan lama, penyesuaian koreksi saldo, retur).
+ */
+export function dokumenAsal(m) {
+  if (m?.goodsReceiptId) return { jenis: "Penerimaan barang", ke: `/warehouse/goods-receipt/${m.goodsReceiptId}` };
+  if (m?.materialIssueId) return { jenis: "Pengeluaran material", ke: `/warehouse/material-issue/${m.materialIssueId}` };
+  if (m?.stockTransferId) return { jenis: "Transfer stok", ke: `/warehouse/transfers/${m.stockTransferId}` };
+  if (m?.stockCountId) return { jenis: "Opname stok", ke: `/warehouse/stock-count/${m.stockCountId}` };
+  return null;
+}

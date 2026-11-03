@@ -1,62 +1,70 @@
-import React from "react";
+import React, { useRef, useState } from "react";
 import { cn } from "@/lib/utils.js";
-import { IkKotak, IkPanah } from "@/components/gudangIcons.jsx";
-import IkonBahan from "./IkonBahan.jsx";
-import { statusRingkas, teksTersedia, hargaBaris } from "./stokTampilanLogic.js";
+import { IkCentang, IkKotak, IkPanah, IkSalin } from "@/components/gudangIcons.jsx";
+import { statusRingkas, teksTersedia } from "./stokTampilanLogic.js";
 import { tampilSaldo } from "./stokLogic.js";
 
-// DAFTAR BAHAN (redesain Gudang, 3 Nov 2026) — kolom utama: Bahan & kode · Saldo tercatat · Tersedia · Satuan · Kondisi · Rincian (+ Harga / satuan bila berizin Finance).
-// Satu elemen <button> per baris (keyboard dan sentuhan; tinggi ≥ 44px). Susunan menyesuaikan LEBAR DAFTAR (container query), bukan lebar layar: dengan panel kanan terbuka, kolom Harga disembunyikan
-// (tetap ada di tab Harga) dan di bawah ±600px berubah menjadi kartu. Angka dari baris server; "belum diketahui" = belum ada catatan stok (BUKAN 0); harga belum ada = "Belum ada harga berlaku" (BUKAN Rp0).
-// Satuan SELALU ditampilkan di kolomnya sendiri — kuantitas bahan berbeda satuan tidak pernah dijumlahkan.
-const POLA = { green: "hijau", orange: "kuning", red: "merah", neutral: "netral" };
+// DAFTAR BAHAN (redesain Gudang, 3 Nov 2026; disusun ulang tahap 2) — kolom: Bahan & kode · Saldo tercatat · Tersedia · Kondisi · Rincian. Harga TIDAK jadi kolom (ada di tab Harga ruang kerja bahan).
+// Setiap baris = satu area yang bisa diklik (tombol berisi nama bahan diperluas ke seluruh baris; tombol "Salin kode" berdiri sendiri di atasnya — tidak ada tombol di dalam tombol).
+// Susunan mengikuti LEBAR DAFTAR (container query), bukan lebar layar: dengan ruang kerja terbuka daftar tetap tabel; di bawah ±560px menjadi kartu.
+// Angka dari baris server: "Saldo tercatat" = saldo buku pergerakan; "Tersedia" = saldo dikurangi yang sudah dipesan (angka server). "belum diketahui" = belum ada catatan stok (BUKAN 0).
+// Satuan SELALU menempel pada angkanya — kuantitas bahan berbeda satuan tidak pernah dijumlahkan. Hanya kondisi yang perlu perhatian yang diberi lencana berwarna; kondisi normal berupa teks biasa.
+const PERHATIAN = new Set(["MINUS", "BELUM_DIKETAHUI", "MENIPIS", "TERPESAN_PENUH"]);
 
-function Baris({ r, peta, dipilih, onPilih }) {
-  const st = statusRingkas(r); const t = teksTersedia(r); const sd = tampilSaldo(r); const h = hargaBaris(peta, r.materialId); const satuan = String(r.satuan ?? "").toLowerCase();
+function SalinKode({ kode }) {
+  const [ok, setOk] = useState(false); const waktu = useRef(null);
+  const salin = async (e) => {
+    e.stopPropagation();
+    try { await navigator.clipboard.writeText(kode); }
+    catch { const t = document.createElement("textarea"); t.value = kode; t.setAttribute("readonly", ""); t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); } finally { document.body.removeChild(t); } }
+    setOk(true); clearTimeout(waktu.current); waktu.current = setTimeout(() => setOk(false), 1600);
+  };
+  return (
+    <button type="button" onClick={salin} className="gud-salin" aria-label={ok ? `Kode ${kode} tersalin` : `Salin kode ${kode}`} title={ok ? "Tersalin" : "Salin kode"} data-testid="salin-kode" data-ok={ok ? "ya" : undefined}>
+      {ok ? <IkCentang size={14} /> : <IkSalin size={14} />}
+    </button>
+  );
+}
+
+function Baris({ r, dipilih, onPilih }) {
+  const st = statusRingkas(r); const t = teksTersedia(r); const sd = tampilSaldo(r); const satuan = String(r.satuan ?? "").toLowerCase();
   const tercatat = sd.jenis === "BELUM_DIKETAHUI" ? null : sd.teks;
   return (
     <li>
-      <button type="button" onClick={() => onPilih(r)} aria-label={`Buka rincian ${r.nama}`} data-testid="baris-stok" data-kode={r.kode} data-status={st.kode} aria-current={dipilih ? "true" : undefined}
-        title={r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok untuk bahan ini"} className="gud-stok-baris max-sm:min-h-11" data-harga={peta ? "ya" : "tidak"}>
-        <IkonBahan kode={r.kelompok?.kode} className="gud-stok-ikon" />
+      <div className="gud-stok-baris" data-testid="baris-stok" data-kode={r.kode} data-status={st.kode} data-aktif={dipilih ? "ya" : undefined} aria-current={dipilih ? "true" : undefined}
+        title={r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok untuk bahan ini"}>
         <span className="gud-stok-nama">
-          <span className="gud-stok-judul" data-testid="nama-bahan">{r.nama}</span>
-          <span className="gud-stok-kode" data-testid="kode-bahan">{r.kode}</span>
+          <button type="button" onClick={() => onPilih(r)} className="gud-stok-buka max-sm:min-h-11" aria-label={`Buka rincian ${r.nama}`}>
+            <span className="gud-stok-judul" data-testid="nama-bahan">{r.nama}</span>
+          </button>
+          <span className="gud-stok-kodebaris"><span className="gud-stok-kode" data-testid="kode-bahan">{r.kode}</span><SalinKode kode={r.kode} /></span>
         </span>
         <span className="gud-stok-sel gud-stok-saldo" data-label="Saldo tercatat" data-testid="sel-saldo" data-jenis={sd.jenis} title={sd.keterangan}>
-          {tercatat === null ? <em>belum diketahui</em> : <span className={cn("gud-angka", Number(r.saldo) < 0 && "gud-minus")} data-testid="saldo-angka">{tercatat}</span>}
+          {tercatat === null ? <em>belum diketahui</em> : <><span className={cn("gud-angka", Number(r.saldo) < 0 && "gud-minus")} data-testid="saldo-angka">{tercatat}</span> <span className="gud-stok-satuan" data-testid="sel-satuan">{satuan || "—"}</span></>}
         </span>
         <span className="gud-stok-sel gud-stok-tersedia" data-label="Tersedia">
-          {t.angka === null ? <em>belum diketahui</em> : <span className={cn("gud-angka", t.minus && "gud-minus")} data-testid="tersedia-angka">{t.teks}</span>}
+          {t.angka === null ? <em>belum diketahui</em> : <><span className={cn("gud-angka", t.minus && "gud-minus")} data-testid="tersedia-angka">{t.teks}</span> <span className="gud-stok-satuan">{satuan || "—"}</span></>}
         </span>
-        <span className="gud-stok-sel gud-stok-satuan" data-label="Satuan" data-testid="sel-satuan">{satuan || "—"}</span>
-        {peta && (
-          <span className="gud-stok-sel gud-stok-harga" data-label="Harga / satuan" data-testid="sel-harga">
-            {h?.ada
-              ? <span data-testid="harga-daftar" data-ada="1" title={`${h.label} — HPP operasional per satuan stok, bukan nilai persediaan Finance`}><span className="gud-angka">Rp{Number(h.harga).toLocaleString("id-ID", { maximumFractionDigits: 4 })}</span></span>
-              : <em data-testid="harga-daftar" data-ada="0">{h?.teks ?? "Belum ada harga berlaku"}</em>}
-          </span>
-        )}
         <span className="gud-stok-sel gud-stok-kondisi" data-label="Kondisi">
-          <span className="gud-pill gud-pill-titik" data-warna={st.nada === "neutral" ? "neutral" : st.nada === "green" ? "green" : st.nada === "red" ? "red" : "orange"} data-pola={POLA[st.nada]} data-testid="status-baris">{st.teks}</span>
+          {PERHATIAN.has(st.kode)
+            ? <span className="gud-pill gud-pill-titik" data-warna={st.nada === "red" ? "red" : st.nada === "orange" ? "orange" : "neutral"} data-testid="status-baris">{st.teks}</span>
+            : <span className="gud-kondisi-biasa" data-nada={st.nada} data-testid="status-baris">{st.teks}</span>}
         </span>
-        <IkPanah size={16} aria-hidden className="gud-stok-panah" />
-      </button>
+        <span className="gud-stok-rincian-sel" aria-hidden><span className="gud-stok-rincian-teks">Rincian</span><IkPanah size={16} className="gud-stok-panah" /></span>
+      </div>
     </li>
   );
 }
 
 function Rangka() {
-  return <>{Array.from({ length: 6 }, (_, i) => <li key={i} className="gud-rangka" aria-hidden><span style={{ display: "block", height: 60, borderRadius: 12 }} /></li>)}</>;
+  return <>{Array.from({ length: 6 }, (_, i) => <li key={i} className="gud-rangka" aria-hidden><span style={{ display: "block", height: 56, borderRadius: 12 }} /></li>)}</>;
 }
 
-export default function DaftarBahan({ halaman, loading, peta, dipilihId, onPilih, onHalaman, kosong, tampilBantuan = null }) {
-  const adaHarga = !!peta;
+export default function DaftarBahan({ halaman, loading, dipilihId, onPilih, onHalaman, kosong, tampilBantuan = null }) {
   return (
     <section aria-label="Daftar bahan" className="gud-stok-daftar" data-testid="daftar-bahan">
-      <div className="gud-stok-kepala" aria-hidden data-testid="kepala-kolom" data-harga={adaHarga ? "ya" : "tidak"}>
-        <span className="gud-stok-k-bahan">Bahan &amp; kode</span><span className="gud-stok-k-saldo">Saldo tercatat</span><span className="gud-stok-k-tersedia">Tersedia</span><span className="gud-stok-k-satuan">Satuan</span>
-        {adaHarga && <span className="gud-stok-k-harga">Harga / satuan</span>}<span className="gud-stok-k-kondisi">Kondisi</span><span className="gud-stok-k-rincian">Rincian</span>
+      <div className="gud-stok-kepala" aria-hidden data-testid="kepala-kolom">
+        <span className="gud-stok-k-bahan">Bahan &amp; kode</span><span className="gud-stok-k-saldo">Saldo tercatat</span><span className="gud-stok-k-tersedia">Tersedia</span><span className="gud-stok-k-kondisi">Kondisi</span><span className="gud-stok-k-rincian">Rincian</span>
       </div>
       {kosong ? (
         <div className="gud-kosong" data-testid="daftar-kosong">
@@ -67,7 +75,7 @@ export default function DaftarBahan({ halaman, loading, peta, dipilihId, onPilih
         </div>
       ) : (
         <ul className="gud-stok-ul">
-          {loading ? <Rangka /> : halaman.baris.map((r) => <Baris key={r.materialId} r={r} peta={peta} dipilih={dipilihId === r.materialId} onPilih={onPilih} />)}
+          {loading ? <Rangka /> : halaman.baris.map((r) => <Baris key={r.materialId} r={r} dipilih={dipilihId === r.materialId} onPilih={onPilih} />)}
         </ul>
       )}
       {!kosong && !loading && (

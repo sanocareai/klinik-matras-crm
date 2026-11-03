@@ -48,8 +48,8 @@ test("panel bahan: empat tab, docked di desktop; Koreksi saldo bukan tombol utam
 test("daftar: baris tombol sungguhan, kolom utama, tata letak container query, tidak menjumlah satuan berbeda", () => {
   const s = baca("features/warehouse/stok/DaftarBahan.jsx"); const css = baca("styles/sanss-gudang-stok.css"); const dasar = baca("styles/sanss-gudang.css");
   for (const k of ["gud-stok-baris", 'data-testid="sel-saldo"', 'data-testid="tersedia-angka"', 'data-testid="sel-satuan"', 'data-testid="status-baris"']) assert.ok(s.includes(k), k);
-  assert.match(dasar, /.gud-daftar {[^}]*container-name: ?gud-daftar/); assert.match(css, /@container gud-daftar \(max-width: ?640px\)/);
-  assert.match(css, /min-height: ?44px/);
+  assert.match(dasar, /.gud-daftar {[^}]*container-name: ?gud-daftar/); assert.match(css, /@container gud-daftar \(max-width: ?560px\)/);
+  assert.match(s, /max-sm:min-h-11/); assert.match(s, /gud-salin|SalinKode/);
 });
 
 test("halaman: saringan jujur terhadap cakupan data; tanpa filter lokasi/urutan/ekspor yang tidak didukung backend", () => {
@@ -68,4 +68,70 @@ test("ikon bahan dan ikon aksi berasal dari satu keluarga (gudangIcons), tanpa l
 test("GudKontrol: WaktuGud (tanggal & jam aplikasi) dan PilihGud kosongNormal tersedia", () => {
   const g = baca("features/warehouse/form/GudKontrol.jsx");
   assert.match(g, /export function WaktuGud/); assert.match(g, /kosongNormal/);
+});
+
+// ── Tahap 2 (Stok bahan disusun ulang): struktur, tipografi, dokumen asal, form bagian ─────────────────────────────────────────────
+import { dokumenAsal } from "../src/features/warehouse/stok/stokTampilanLogic.js";
+
+test("label halaman 'Stok bahan' di menu, breadcrumb, judul tab, dan judul halaman; rute lama tetap", () => {
+  assert.match(baca("components/Layout.jsx"), /to: "\/warehouse\/inventory", label: "Stok bahan"/);
+  assert.match(baca("components/Topbar.jsx"), /"\/warehouse\/inventory":\s+\["Gudang", "Stok bahan"\]/);
+  assert.match(baca("lib/tabTitles.js"), /rawLast === "inventory"\) return "Stok bahan"/);
+  assert.match(baca("pages/warehouse/WarehouseInventory.jsx"), /<h1 className="page-title">Stok bahan<\/h1>/);
+  assert.match(baca("routes/pageRegistry.jsx"), /path: "\/warehouse\/inventory", render/);
+});
+
+test("struktur: ringkasan satu baris, satu panel (pencarian + Filter popover + kelompok + chip + daftar), ruang kerja ±40% menempel", () => {
+  const p = baca("pages/warehouse/WarehouseInventory.jsx"); const css = baca("styles/sanss-gudang-stok.css"); const dasar = baca("styles/sanss-gudang.css");
+  for (const k of ["gud-strip", "FilterPopover", 'data-testid="toolbar-saringan"', "gud-stok-panel", "ItemDetailDrawer"]) assert.ok(p.includes(k), k);
+  assert.ok(!p.includes("gud-ubin"), "ubin besar diganti ringkasan satu baris");
+  assert.match(dasar, /\.gud-split-buka \{ grid-template-columns: minmax\(0, 1fr\) minmax\(480px, 40%\)/);
+  assert.match(css, /\.gud-strip \{ display: grid; grid-template-columns: repeat\(4/);
+  const f = baca("features/warehouse/stok/FilterPopover.jsx");
+  for (const k of ['aria-expanded={buka}', 'e.key === "Escape"', 'data-testid="buka-filter"', 'data-testid="selesai-filter"', ".gud-menu"]) assert.ok(f.includes(k), k);
+});
+
+test("daftar: kolom Bahan & kode | Saldo tercatat | Tersedia | Kondisi | Rincian; kode bisa disalin tanpa tombol di dalam tombol; kondisi normal bukan lencana", () => {
+  const d = baca("features/warehouse/stok/DaftarBahan.jsx");
+  for (const k of ["Bahan &amp; kode", "Saldo tercatat", ">Tersedia<", ">Kondisi<", ">Rincian<", "SalinKode", 'data-testid="salin-kode"', "PERHATIAN", "gud-kondisi-biasa"]) assert.ok(d.includes(k), k);
+  assert.ok(!/Harga \/ satuan|stok-k-satuan|sel-harga/.test(d), "tidak ada kolom Satuan/Harga terpisah");
+  assert.match(d, /<div className="gud-stok-baris" data-testid="baris-stok"/); // baris = area, tombol buka berada di dalamnya (tidak ada <button> bersarang)
+});
+
+test("tipografi Gudang: stack Apple/Inter terkunci ke .gud-skin dan workspace=gudang; Layout memasang hook khusus Gudang", () => {
+  const t = baca("styles/gudang-tipografi.css");
+  assert.match(t, /:root\[data-workspace="gudang"\]/); assert.match(t, /\.app-shell\.crm-skin\.gud-skin/); assert.match(t, /"Inter Variable", Inter/); assert.match(t, /-apple-system, BlinkMacSystemFont/);
+  assert.ok(!/(^|[^-])font-weight: ?(700|800|900)/.test(tanpaKomentar(t)), "tanpa bobot 700+");
+  assert.ok(!/^(body|html|\.app-shell)\s*\{/m.test(t), "tidak menyentuh selektor global");
+  assert.match(baca("components/Layout.jsx"), /useWorkspaceFont\(crmShell && divisionKey === "warehouse", "gudang"\)/);
+  assert.match(baca("main.jsx"), /gudang-tipografi\.css/);
+});
+
+test("ruang kerja: tab Saldo/Harga/Pergerakan/Informasi; informasi penting tampil langsung (tanpa accordion/ikon info); Ubah informasi di header; nonaktif di tab Informasi", () => {
+  const d = baca("features/warehouse/components/ItemDetailDrawer.jsx"); const h = baca("features/warehouse/stok/HargaBerlakuPanel.jsx"); const k = baca("features/warehouse/stok/KoreksiSaldoPanel.jsx");
+  assert.match(d, /aksiHeader=\{<button[\s\S]*?data-testid="edit-bahan"/);
+  assert.ok(!/<Lipat|InfoToggle|<details/.test(d + h + k), "tanpa accordion/ikon info di ruang kerja");
+  assert.match(k, /tidak langsung mengubah saldo/); assert.match(d, /Lokasi dari riwayat penerimaan/); assert.match(d, /data-testid="aksi-bahan"/);
+  assert.match(baca("components/ui/fokus-overlay.jsx"), /aksiHeader/);
+});
+
+test("dokumenAsal: tautan HANYA dari kolom tautan yang dikirim server; tanpa itu → tidak ada tautan (tidak menebak dari catatan)", () => {
+  assert.equal(dokumenAsal({ note: "GR-001" }), null);
+  assert.deepEqual(dokumenAsal({ goodsReceiptId: "a1" }), { jenis: "Penerimaan barang", ke: "/warehouse/goods-receipt/a1" });
+  assert.deepEqual(dokumenAsal({ materialIssueId: "b2" }), { jenis: "Pengeluaran material", ke: "/warehouse/material-issue/b2" });
+  assert.deepEqual(dokumenAsal({ stockTransferId: "c3" }), { jenis: "Transfer stok", ke: "/warehouse/transfers/c3" });
+  assert.deepEqual(dokumenAsal({ stockCountId: "d4" }), { jenis: "Opname stok", ke: "/warehouse/stock-count/d4" });
+});
+
+test("form: dialog lebar di desktop (dialogBilaTempel), bagian-bagian jelas; Modal bersama hanya mendapat prop opsional baru", () => {
+  for (const f of ["KoreksiSaldoModal", "UbahHargaModal", "PenerapanLamaModal"]) assert.ok(baca(`features/warehouse/stok/${f}.jsx`).includes("dialogBilaTempel"), f);
+  assert.match(baca("features/warehouse/stok/KoreksiSaldoModal.jsx"), /gud-form-dua/); assert.match(baca("features/warehouse/stok/UbahHargaModal.jsx"), /gud-form-dua/);
+  const i = baca("features/warehouse/components/ItemFormModal.jsx");
+  for (const k of ["Identitas bahan", "Satuan dan kategori", "Titik restok", 'data-testid="seksi-identitas"', 'data-testid="seksi-satuan"']) assert.ok(i.includes(k), k);
+  const m = baca("components/ui/modal.jsx"); assert.match(m, /dialogBilaTempel = false/); assert.match(m, /lapisan\?\.slot && !\(dialogBilaTempel && tempel\)/);
+});
+
+test("data gagal dimuat dibedakan dari kosong dan tidak menampilkan angka palsu", () => {
+  const p = baca("pages/warehouse/WarehouseInventory.jsx");
+  assert.match(p, /Daftar bahan gagal dimuat/); assert.match(p, /data-testid="galat-muat"/); assert.match(p, /gagalMuat/);
 });

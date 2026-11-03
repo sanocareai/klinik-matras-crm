@@ -77,32 +77,44 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
   }
 
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={ubah ? "Ubah bahan" : "Tambah bahan"} description={ubah ? "Mengubah informasi bahan tidak mengubah saldo, harga, atau dokumen lama." : "Bahan baru belum punya saldo; stok baru bertambah lewat penerimaan resmi."} className="w-[600px] gud-modal">
-      <form onSubmit={simpan} className="gud-form" noValidate data-testid="form-bahan">
-        <div className="gud-form-baris">
-          <GudField label="Kode bahan" htmlFor="wh-code" wajib galat={galat.code} hint={ubah ? "Kode tidak bisa diubah setelah bahan dibuat." : undefined}>
-            <input id="wh-code" className="gud-f-teks" value={form.code} onChange={set("code")} disabled={ubah} placeholder="FOAM-HR-D18-5CM" aria-invalid={!!galat.code || undefined} data-testid="input-kode" />
-          </GudField>
-          <GudField label="Satuan stok" htmlFor="wh-unit" wajib hint={ubah ? "Satuan dikunci — ledger sudah memakainya." : "Tidak bisa diubah setelah bahan dibuat."}>
-            <PilihGud id="wh-unit" value={form.unit} onChange={set("unit")} opsi={opsiSatuan} disabled={ubah} data-testid="pilih-satuan" />
-          </GudField>
-        </div>
-        <GudField label="Nama bahan" htmlFor="wh-name" wajib galat={galat.name}>
-          <input id="wh-name" className="gud-f-teks" value={form.name} onChange={set("name")} placeholder="Busa HR Density 18 — 5cm" aria-invalid={!!galat.name || undefined} data-testid="input-nama" />
-        </GudField>
-        <div className="gud-form-baris">
-          <GudField label="Kategori" htmlFor="wh-cat"><PilihGud id="wh-cat" value={form.category} onChange={set("category")} opsi={opsiKategori} data-testid="pilih-kategori" /></GudField>
-          <GudField label="Lini layanan" htmlFor="wh-line" hint={ubah ? "Dikunci setelah bahan dibuat." : undefined}><PilihGud id="wh-line" value={form.serviceLine} onChange={set("serviceLine")} opsi={opsiLini} disabled={ubah} data-testid="pilih-lini" /></GudField>
-        </div>
-        <div className="gud-form-baris">
-          <GudField label="Batas minimum (titik restok)" htmlFor="wh-rop" galat={galat.reorderPoint}>
-            <AngkaGud id="wh-rop" value={String(form.reorderPoint ?? "")} onChange={set("reorderPoint")} satuan={String(form.unit ?? "").toLowerCase()} invalid={!!galat.reorderPoint} placeholder="kosong = belum diatur" data-testid="input-batas-minimum" />
-          </GudField>
-          <GudField label="Jumlah restok standar" htmlFor="wh-roq" galat={galat.reorderQty}>
-            <AngkaGud id="wh-roq" value={String(form.reorderQty ?? "")} onChange={set("reorderQty")} satuan={String(form.unit ?? "").toLowerCase()} invalid={!!galat.reorderQty} placeholder="jumlah restok" data-testid="input-jumlah-restok" />
-          </GudField>
-        </div>
-        <p className="gud-petunjuk">Batas minimum kosong berarti <strong>belum diatur</strong>: bahan ini tidak pernah muncul sebagai saran Restok (bukan "restok di angka nol"). Hanya petugas berwenang yang mengisinya; sistem tidak membuat angka sendiri.</p>
+    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={ubah ? "Ubah bahan" : "Tambah bahan"} description={ubah ? "Mengubah informasi bahan tidak mengubah saldo, harga, atau dokumen lama." : "Bahan baru belum punya saldo; stok baru bertambah lewat penerimaan resmi."} className="w-[720px] gud-modal">
+      <form onSubmit={simpan} className="gud-form gud-form-bagian" noValidate data-testid="form-bahan">
+        <fieldset className="gud-f-seksi" data-testid="seksi-identitas">
+          <legend className="gud-f-bagian-judul">Identitas bahan</legend>
+          <div className="gud-form-baris gud-form-baris-kode">
+            <GudField label="Kode bahan" htmlFor="wh-code" wajib galat={galat.code} hint={ubah ? "Kode tidak bisa diubah setelah bahan dibuat." : "Dipakai di dokumen dan pencarian; tidak bisa diubah setelah dibuat."}>
+              <input id="wh-code" className="gud-f-teks" value={form.code} onChange={set("code")} disabled={ubah} placeholder="FOAM-HR-D18-5CM" aria-invalid={!!galat.code || undefined} data-testid="input-kode" />
+            </GudField>
+            <GudField label="Nama bahan" htmlFor="wh-name" wajib galat={galat.name}>
+              <input id="wh-name" className="gud-f-teks" value={form.name} onChange={set("name")} placeholder="Busa HR Density 18 — 5cm" aria-invalid={!!galat.name || undefined} data-testid="input-nama" />
+            </GudField>
+          </div>
+        </fieldset>
+
+        <fieldset className="gud-f-seksi" data-testid="seksi-satuan">
+          <legend className="gud-f-bagian-judul">Satuan dan kategori</legend>
+          <div className="gud-form-baris">
+            <GudField label="Satuan stok" htmlFor="wh-unit" wajib hint={ubah ? "Satuan dikunci — buku stok sudah memakainya." : "Tidak bisa diubah setelah bahan dibuat."}>
+              <PilihGud id="wh-unit" value={form.unit} onChange={set("unit")} opsi={opsiSatuan} disabled={ubah} data-testid="pilih-satuan" />
+            </GudField>
+            <GudField label="Kategori" htmlFor="wh-cat"><PilihGud id="wh-cat" value={form.category} onChange={set("category")} opsi={opsiKategori} data-testid="pilih-kategori" /></GudField>
+            <GudField label="Lini layanan" htmlFor="wh-line" hint={ubah ? "Dikunci setelah bahan dibuat." : undefined}><PilihGud id="wh-line" value={form.serviceLine} onChange={set("serviceLine")} opsi={opsiLini} disabled={ubah} data-testid="pilih-lini" /></GudField>
+          </div>
+          <p className="gud-petunjuk" data-testid="catatan-satuan">Satuan stok adalah satuan buku stok. Konversi satuan beli ke satuan stok dicatat pada dokumen pembelian/penerimaan, bukan di formulir ini.</p>
+        </fieldset>
+
+        <fieldset className="gud-f-seksi" data-testid="seksi-restok">
+          <legend className="gud-f-bagian-judul">Titik restok (opsional)</legend>
+          <div className="gud-form-baris">
+            <GudField label="Batas minimum (titik restok)" htmlFor="wh-rop" galat={galat.reorderPoint}>
+              <AngkaGud id="wh-rop" value={String(form.reorderPoint ?? "")} onChange={set("reorderPoint")} satuan={String(form.unit ?? "").toLowerCase()} invalid={!!galat.reorderPoint} placeholder="kosong = belum diatur" data-testid="input-batas-minimum" />
+            </GudField>
+            <GudField label="Jumlah restok standar" htmlFor="wh-roq" galat={galat.reorderQty}>
+              <AngkaGud id="wh-roq" value={String(form.reorderQty ?? "")} onChange={set("reorderQty")} satuan={String(form.unit ?? "").toLowerCase()} invalid={!!galat.reorderQty} placeholder="jumlah restok" data-testid="input-jumlah-restok" />
+            </GudField>
+          </div>
+          <p className="gud-petunjuk">Batas minimum kosong berarti <strong>belum diatur</strong>: bahan ini tidak pernah muncul sebagai saran Restok (bukan "restok di angka nol"). Hanya petugas berwenang yang mengisinya; sistem tidak membuat angka sendiri.</p>
+        </fieldset>
 
         {err && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-bahan">{err}</p>}
 
