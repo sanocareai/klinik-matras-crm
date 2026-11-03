@@ -116,3 +116,9 @@ test("barisPerItem membawa progres PO + id baris PO", () => {
   const r = { status: "ARRIVED", lines: [{ id: "x", purchaseOrderLineId: "L1", material: { code: "B", name: "Busa", unit: "PCS" }, orderedQty: "100", receivedQty: "50", acceptedQty: null, rejectedQty: null }], poRingkas: { lines: [{ id: "L1", progres: { dipesan: 100, datang: 50, belumDatang: 50 } }] } };
   const [b] = barisPerItem(r); assert.equal(b.progres.dipesan, 100); assert.equal(b.purchaseOrderLineId, "L1"); assert.equal(b.tiba, 50); assert.equal(b.baik, null);
 });
+
+test("Dialog (portal ke <body>): warna kolom angka & tombol ditulis eksplisit per tema, bukan var(--crm-*) tanpa fallback gelap (kolom putih + teks terang di mode gelap = tak terbaca)", () => {
+  assert.match(css, /:root\[data-theme="dark"\] \.gud-dlg-penuh \.gud-f-angka input \{[^}]*background: #14141F !important;[^}]*color: #F2F4FF/);
+  assert.match(css, /:root\[data-theme="dark"\] \.gud-dlg-penuh \.gud-tombol:not\(\.gud-tombol-utama\) \{[^}]*background: rgba/);
+  assert.match(css, /:root\[data-theme="dark"\] \.gud-dlg-pengganti \{ background: #14141F; \}/);
+});
