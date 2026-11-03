@@ -137,12 +137,12 @@ function Rincian({ id, onTutup, onBerubah, tempel }) {
           <p className="gud-petunjuk">Peminta tidak tercatat pada kontrak permintaan ini; bahan dan jumlah berasal dari rencana bahan (BOM) Produksi.</p>
           <div className="gud-bahan-pendukung">
             <h3 className="gud-bahan-sub">Bahan yang diminta</h3>
-            <ul className="gud-item-daftar" data-testid="item-dokumen">
+            <ul className="gud-bhn-daftar" data-testid="item-dokumen">
               {r.lines.map((l) => (
-                <li key={l.id} className="gud-item" data-testid="baris-item" data-kode={l.code}>
-                  <div className="gud-item-nama"><strong>{l.code}</strong><span className="gud-redup">{l.name}</span></div>
-                  <div className="gud-item-angka"><span className="gud-item-label">Rencana (BOM)</span><span className="gud-angka">{teksJumlah(l.planned)} {satuan(l.unit)}</span></div>
-                  <div className="gud-item-angka"><span className="gud-item-label">Direservasi</span><span className={cn("gud-angka", Number(l.planned) !== Number(l.reserved) && "gud-minus")} data-testid="direservasi">{teksJumlah(l.reserved)} {satuan(l.unit)}</span></div>
+                <li key={l.id} className="gud-bhn" data-testid="baris-item" data-kode={l.code}>
+                  <div className="gud-bhn-nama"><strong>{l.code}</strong><span className="gud-redup">{l.name}</span></div>
+                  <div className="gud-bhn-angka"><span className="gud-bhn-label">Rencana (BOM)</span><span className="gud-angka">{teksJumlah(l.planned)} {satuan(l.unit)}</span></div>
+                  <div className="gud-bhn-angka"><span className="gud-bhn-label">Direservasi</span><span className={cn("gud-angka", Number(l.planned) !== Number(l.reserved) && "gud-minus")} data-testid="direservasi">{teksJumlah(l.reserved)} {satuan(l.unit)}</span></div>
                 </li>
               ))}
             </ul>
@@ -151,13 +151,13 @@ function Rincian({ id, onTutup, onBerubah, tempel }) {
         </section>
         <section hidden={tab !== "keluar"} className="gud-bahan-bagian" role="tabpanel" data-testid="bagian-pengeluaran">
           <p className={cn("gud-info", r.status === "ISSUED" && "gud-info-ok")} data-testid="status-pengeluaran">{r.status === "ISSUED" ? <>Diserahkan {waktuTeks(r.issuedAt)}. Stok fisik sudah berkurang sebesar jumlah diserahkan di bawah.</> : r.status === "CANCELLED" ? <>Dibatalkan — tidak ada bahan yang diserahkan.</> : <>Belum diserahkan. Jumlah hanya direservasi; saldo baru berkurang saat <b>Serahkan bahan</b>.</>}</p>
-          <ul className="gud-item-daftar">
+          <ul className="gud-bhn-daftar">
             {r.lines.map((l) => (
-              <li key={l.id} className="gud-item" data-testid="baris-keluar" data-kode={l.code}>
-                <div className="gud-item-nama"><strong>{l.code}</strong><span className="gud-redup">{l.name}</span></div>
-                <div className="gud-item-angka"><span className="gud-item-label">Direservasi</span><span className="gud-angka">{teksJumlah(l.reserved)} {satuan(l.unit)}</span></div>
-                <div className="gud-item-angka"><span className="gud-item-label">Diserahkan</span><span className="gud-angka" data-testid="diserahkan">{r.status === "ISSUED" ? `${teksJumlah(l.picked)} ${satuan(l.unit)}` : "—"}</span></div>
-                <div className="gud-item-angka"><span className="gud-item-label">Status reservasi</span><span>{l.reservationStatus ?? "—"}</span></div>
+              <li key={l.id} className="gud-bhn" data-testid="baris-keluar" data-kode={l.code}>
+                <div className="gud-bhn-nama"><strong>{l.code}</strong><span className="gud-redup">{l.name}</span></div>
+                <div className="gud-bhn-angka"><span className="gud-bhn-label">Direservasi</span><span className="gud-angka">{teksJumlah(l.reserved)} {satuan(l.unit)}</span></div>
+                <div className="gud-bhn-angka"><span className="gud-bhn-label">Diserahkan</span><span className="gud-angka" data-testid="diserahkan">{r.status === "ISSUED" ? `${teksJumlah(l.picked)} ${satuan(l.unit)}` : "—"}</span></div>
+                <div className="gud-bhn-angka"><span className="gud-bhn-label">Status reservasi</span><span>{l.reservationStatus ?? "—"}</span></div>
               </li>
             ))}
           </ul>

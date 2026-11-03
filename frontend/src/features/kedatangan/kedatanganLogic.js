@@ -80,6 +80,35 @@ export function galatKedatangan(f, { tanggalPO = null } = {}) {
   return null;
 }
 
+/**
+ * Galat PER KOLOM untuk formulir Gudang (redesain Penerimaan, 4 Nov 2026): dipakai agar pesan muncul di dekat kolomnya, setelah pengguna menyentuh kolom / mencoba menyimpan.
+ * Aturan IDENTIK dengan `galatKedatangan` (yang tetap dipakai Finance); hanya dipecah per kolom. Server tetap penentu. Kunci baris: `baris:<purchaseOrderLineId>`.
+ */
+export function galatBarisKedatangan(l) {
+  if (l.jumlahDatang === "" || Number(l.jumlahDatang) === 0) return "";
+  const n = Number(l.jumlahDatang);
+  if (!(n > 0)) return "Jumlah datang harus lebih dari 0";
+  if (!tigaDesimal(n)) return "Jumlah maksimal 3 angka di belakang koma";
+  if (l.pengganti) {
+    if (k3(n) > k3(sisaPenggantiTerpilih(l))) return `Melebihi barang ditolak yang menunggu pengganti. Batas ${jumlahTeks(sisaPenggantiTerpilih(l))} ${l.satuan}. Pengganti tidak menaikkan jumlah PO.`;
+  } else if (k3(n) > k3(l.belumDatang)) {
+    return `Melebihi yang belum datang. Batas ${jumlahTeks(l.belumDatang)} ${l.satuan}. Minta Finance merevisi jumlah PO bila memang dikirim lebih${l.menungguPengganti > 0 ? "; bila ini barang pengganti untuk yang ditolak, centang pengiriman pengganti" : ""}.`;
+  }
+  if (l.jumlahPendamping !== "" && l.pendamping?.mode === "AKTUAL" && !(Number(l.jumlahPendamping) >= 0)) return `Jumlah ${String(l.pendamping.satuan).toLowerCase()} tidak boleh negatif`;
+  return "";
+}
+export function galatKolomKedatangan(f, { tanggalPO = null } = {}) {
+  const k = {};
+  if (!f.tanggalTiba) k.tanggalTiba = "Isi tanggal barang tiba";
+  else if (f.tanggalTiba > hariIniISO()) k.tanggalTiba = "Tanggal barang tiba tidak boleh di masa depan";
+  else if (tanggalPO && f.tanggalTiba < String(tanggalPO).slice(0, 10)) k.tanggalTiba = `Tidak boleh sebelum tanggal PO (${tanggalTeks(tanggalPO)})`;
+  if (String(f.penerima).trim().length < 2) k.penerima = "Isi PIC/penerima barang";
+  if (!String(f.catatan).trim()) k.catatan = "Isi catatan kedatangan (mis. kondisi dus, kekurangan, atau nama pengirim)";
+  for (const l of f.lines) { const g = galatBarisKedatangan(l); if (g) k[`baris:${l.purchaseOrderLineId}`] = g; }
+  if (!f.lines.some((l) => l.jumlahDatang !== "" && Number(l.jumlahDatang) !== 0)) k.jumlah = "Isi jumlah datang minimal satu item";
+  return k;
+}
+
 /** Kekurangan yang akan terlihat setelah disimpan (surat jalan/bukti opsional): daftar peringatan lunak. */
 export function kekuranganIsian(f) {
   const d = [];

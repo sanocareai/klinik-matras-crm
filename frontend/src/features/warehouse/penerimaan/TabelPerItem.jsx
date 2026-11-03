@@ -1,95 +1,76 @@
-import React, { useContext, useMemo, useState } from "react";
-import { Search } from "lucide-react";
-import { cn } from "@/lib/utils.js";
-import { TempelCtx } from "@/components/ui/fokus-overlay.jsx";
-import { AngkaGud } from "@/features/warehouse/form/GudKontrol.jsx";
-import { catatanBaris, kalimatBaris, teksAngka } from "./penerimaanLogic.js";
+import React, { useMemo, useState } from "react";
+import { IkAwas, IkCari } from "@/components/gudangIcons.jsx";
+import { catatanBaris, kodeSekunder, progresItemPO, teksAngka } from "./penerimaanLogic.js";
 
-const KOLOM = [
-  { k: "dipesan", label: "Dipesan (PO)", tip: "Jumlah di PO" },
-  { k: "dijadwalkan", label: "Dijadwalkan", tip: "Jumlah yang dijadwalkan pada dokumen ini" },
-  { k: "tiba", label: "Tiba", tip: "Barang yang benar-benar tiba (—: belum dicatat)" },
-  { k: "baik", label: "Diterima baik", tip: "Lolos pemeriksaan" },
-  { k: "ditolak", label: "Ditolak", tip: "Tidak lolos pemeriksaan" },
-  { k: "masukStok", label: "Masuk stok", tip: "Sudah disimpan ke stok dari dokumen ini" },
-  { k: "sisaPO", label: "Sisa PO", tip: "Belum datang dari PO (pengiriman asli)" },
+// RINCIAN PER ITEM (redesain Penerimaan, 4 Nov 2026) — baca-saja. Tata letak mengikuti LEBAR KONTAINER panel (container query `gud-pi`), bukan lebar layar: nama bahan SATU baris penuh di atas (membungkus wajar),
+// kode hanya bila tidak sekadar mengulang nama, lalu dua grid berlabel yang turun baris sendiri bila sempit:
+//   • "Dokumen ini": Dijadwalkan · Tiba · Baik · Ditolak · Masuk stok (jumlah pada penerimaan yang dibuka; "—" = belum diisi, bukan nol);
+//   • "PO … (semua penerimaan)": Dipesan · Sudah datang · Belum datang · Baik belum disimpan · Sudah masuk stok (+ Menunggu pengganti / Ditolak bila ada) — angka & definisi dari server (progresPO.js), per satuan.
+// Pengisian jumlah (tiba / baik / ditolak) TIDAK di sini: dialog Pemeriksaan (DialogPemeriksaan.jsx). Panel ini hanya untuk membaca.
+const SEL_DOKUMEN = [["dijadwalkan", "Dijadwalkan"], ["tiba", "Tiba"], ["baik", "Baik"], ["ditolak", "Ditolak"], ["masukStok", "Masuk stok"]];
+
+// Definisi = teks server (services/finance/progresPO.js DEFINISI_PROGRES), dipakai verbatim agar semua layar sepakat tentang arti angka. Satuan: satuan beli PO bila ada.
+const LEGENDA = [
+  ["Dipesan", "Jumlah yang dipesan di PO."],
+  ["Sudah datang", "Total yang tiba pada pengiriman asli (bukan pengganti), termasuk yang kemudian ditolak. Inilah yang dihitung terhadap jumlah dipesan."],
+  ["Belum datang", "Dipesan dikurangi datang pada pengiriman asli. Barang ditolak tetap dihitung sudah datang; pengiriman pengganti tidak mengurangi angka ini dan tidak menaikkan batas PO."],
+  ["Baik belum disimpan", "Jumlah baik dikurangi masuk stok: lolos pemeriksaan, tetapi Simpan ke Stok belum ditekan."],
+  ["Sudah masuk stok", "Barang baik yang sudah disimpan ke stok. Hanya ini yang menambah stok."],
+  ["Menunggu pengganti", "Jumlah ditolak yang belum diganti supplier."],
 ];
 
-/**
- * Matriks per item: pesan · dijadwalkan · tiba · diterima · masuk stok — satu tampilan per penerimaan, tanpa modal. "—" = belum diisi (bukan nol).
- * @param editable  { tiba: bool } bila pemeriksaan boleh diisi: kolom Diterima baik/Ditolak berubah menjadi isian; Tiba hanya untuk baris tanpa PO
- * @param nilai     isian sementara { [lineId]: { acceptedQty, rejectedQty, receivedQty, condition } }
- */
-export default function TabelPerItem({ rows: semua, editable = null, nilai = {}, onUbah = () => {}, className }) {
-  // Banyak item (PO besar): kotak cari, ringkasan, header tabel menempel saat digulir — supaya tetap ringkas dan mudah dibandingkan. Sedikit item: tampilan tidak berubah.
-  const tempel = useContext(TempelCtx); // panel sempit di samping daftar: selalu kartu per item (tabel 8 kolom tidak muat)
+function Sel({ label, nilai, satuan, aksen, testid }) {
+  return <div className="gud-pi-sel" data-testid={testid}><dt>{label}</dt><dd className={aksen}>{teksAngka(nilai)}{nilai !== null && nilai !== undefined && satuan ? <span className="gud-pi-satuan-kecil"> {satuan}</span> : null}</dd></div>;
+}
+
+export default function TabelPerItem({ rows: semua, nomorPO = null, className }) {
   const [cari, setCari] = useState(""); const banyak = semua.length > 8;
   const rows = useMemo(() => { const k = cari.trim().toLowerCase(); return !banyak || !k ? semua : semua.filter((b) => `${b.kode} ${b.nama}`.toLowerCase().includes(k)); }, [semua, cari, banyak]);
   const adaCatatan = banyak ? semua.filter((b) => catatanBaris(b).length > 0).length : 0;
-  const isi = (b, f, awal) => (nilai[b.id] && f in nilai[b.id] ? nilai[b.id][f] : awal ?? "");
-  // Kolom angka aplikasi (AngkaGud): desimal, satuan di dalam kolom. Galat hidup per baris: baik + ditolak tidak boleh melebihi jumlah tiba (server tetap penentu).
-  const angka = (b, f) => { const v = isi(b, f, b[f === "acceptedQty" ? "baik" : f === "rejectedQty" ? "ditolak" : "tiba"]); const n = Number(v); return v === "" || v === null || v === undefined ? null : n; };
-  const galatBaris = (b) => {
-    const baik = angka(b, "acceptedQty"); const tolak = angka(b, "rejectedQty"); const tibaN = nilai[b.id] && "receivedQty" in nilai[b.id] ? Number(nilai[b.id].receivedQty) : b.tiba;
-    if ((baik !== null && (!Number.isFinite(baik) || baik < 0)) || (tolak !== null && (!Number.isFinite(tolak) || tolak < 0))) return "Jumlah harus angka 0 atau lebih";
-    if (tibaN !== null && Number.isFinite(tibaN) && (baik ?? 0) + (tolak ?? 0) > tibaN + 1e-9) return "Baik + ditolak melebihi jumlah tiba";
-    return "";
-  };
-  const input = (b, f, awal, aria, ro = false) => (
-    <AngkaGud value={isi(b, f, awal)} disabled={ro} onChange={(v) => onUbah(b.id, f, v)} aria-label={`${aria} ${b.kode}`} data-testid={`isian-${f}-${b.kode}`} invalid={f !== "receivedQty" && !!galatBaris(b)} satuan={b.satuan} />
-  );
   return (
     <div className={className} data-testid="tabel-per-item">
       {banyak && (
-        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1.5" data-testid="ringkas-item">
-          <span className="text-[12px] text-ink2"><strong className="text-ink">{semua.length}</strong> item{adaCatatan > 0 && <> · <strong className="text-orange">{adaCatatan}</strong> perlu dicek</>}{cari && <> · {rows.length} cocok</>}</span>
-          <div className="relative min-w-[200px] flex-1 sm:max-w-xs"><Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
-            <input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari item di dokumen ini" aria-label="Cari item di dokumen ini" data-testid="cari-item" className="w-full rounded-btn border border-border bg-surface py-1.5 pl-8 pr-2 text-[12.5px] text-ink outline-none focus:border-accent max-sm:min-h-11" /></div>
+        <div className="gud-pi-alat" data-testid="ringkas-item">
+          <span className="gud-petunjuk m-0"><strong>{semua.length}</strong> item{adaCatatan > 0 && <> · <strong>{adaCatatan}</strong> perlu dicek</>}{cari && <> · {rows.length} cocok</>}</span>
+          <div className="gud-cari"><IkCari size={16} aria-hidden /><input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari item di dokumen ini" aria-label="Cari item di dokumen ini" data-testid="cari-item" /></div>
         </div>
       )}
-      {banyak && rows.length === 0 && <p className="m-0 py-3 text-[12.5px] text-ink3" data-testid="item-tak-cocok">Tidak ada item yang cocok dengan “{cari}”.</p>}
-      <div className={cn(tempel ? "hidden" : "hidden overflow-x-auto md:block", banyak && "max-h-[44vh] overflow-y-auto")}>
-        <table className="w-full border-collapse text-[12.5px]">
-          <thead className={banyak ? "sticky top-0 z-[1] bg-surface" : undefined}>
-            <tr className="border-b border-line text-left text-[10.5px] font-bold uppercase tracking-wide text-ink3">
-              <th scope="col" className="py-1.5 pr-2">Item</th>
-              {KOLOM.map((c) => <th key={c.k} scope="col" title={c.tip} className="px-1.5 py-1.5 text-right">{c.label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => (
-              <tr key={b.id} className="border-b border-line align-top" data-testid="baris-item" data-kode={b.kode}>
-                <td className="py-2 pr-2"><div className="font-semibold text-ink">{b.kode}</div><div className="text-[11px] text-ink2">{b.nama}</div><div className="text-[10.5px] text-ink3">{b.satuan}</div>
-                  {catatanBaris(b).map((c) => <div key={c} className="text-[11px] font-medium text-orange" data-testid="catatan-baris">{c}</div>)}
-                  {editable && galatBaris(b) && <div className="text-[11px] font-medium text-red" role="alert" data-testid="galat-baris">{galatBaris(b)}</div>}</td>
-                {KOLOM.map((c) => {
-                  let sel;
-                  if (editable && c.k === "baik") sel = input(b, "acceptedQty", b.baik, "Diterima baik");
-                  else if (editable && c.k === "ditolak") sel = input(b, "rejectedQty", b.ditolak, "Ditolak");
-                  else if (editable?.tiba && !b.dariPO && c.k === "tiba") sel = input(b, "receivedQty", b.tiba, "Tiba");
-                  else sel = <span className={cn("tabular-nums", b[c.k] === null || b[c.k] === undefined ? "text-ink3" : c.k === "masukStok" && b.masukStok > 0 ? "font-semibold text-green" : "text-ink")}>{teksAngka(b[c.k])}</span>;
-                  return <td key={c.k} className="px-1.5 py-2 text-right">{sel}</td>;
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <ul className={cn("gud-item-daftar m-0 list-none space-y-2 p-0", !tempel && "md:hidden")}>
-        {rows.map((b) => (
-          <li key={b.id} className="gud-item" data-testid="kartu-item" data-kode={b.kode}>
-            <div className="gud-item-kepala"><div className="min-w-0"><span className="gud-item-nama">{b.nama || b.kode}</span><span className="gud-item-kode">{b.kode}</span></div><span className="gud-item-satuan">{b.satuan}</span></div>
-            <div className="gud-item-angka">
-              <label><span>Tiba</span>{editable?.tiba && !b.dariPO ? input(b, "receivedQty", b.tiba, "Tiba") : <strong>{teksAngka(b.tiba)}</strong>}</label>
-              <label><span>Baik</span>{editable ? input(b, "acceptedQty", b.baik, "Diterima baik") : <strong>{teksAngka(b.baik)}</strong>}</label>
-              <label><span>Ditolak</span>{editable ? input(b, "rejectedQty", b.ditolak, "Ditolak") : <strong>{teksAngka(b.ditolak)}</strong>}</label>
-            </div>
-            <div className="gud-item-kalimat">{kalimatBaris(b)}</div>
-            {editable && galatBaris(b) && <div className="gud-item-catatan" role="alert" data-testid="galat-baris">{galatBaris(b)}</div>}
-            {catatanBaris(b).map((c) => <div key={c} className="gud-item-catatan">{c}</div>)}
-          </li>
-        ))}
+      {banyak && rows.length === 0 && <p className="gud-petunjuk" data-testid="item-tak-cocok">Tidak ada item yang cocok dengan “{cari}”.</p>}
+      <ul className="gud-pi-daftar">
+        {rows.map((b) => {
+          const kode = kodeSekunder(b); const po = progresItemPO(b);
+          return (
+            <li key={b.id} className="gud-pi" data-testid="kartu-item" data-kode={b.kode}>
+              <div className="gud-pi-kepala">
+                <span className="gud-pi-nama" data-testid="nama-item">{b.nama || b.kode}</span>
+                <span className="gud-pi-satuan" title="Satuan hitung penerimaan ini">{b.satuan}</span>
+              </div>
+              {kode && <div className="gud-pi-kode" data-testid="kode-item">{kode}</div>}
+              <dl className="gud-pi-grid" aria-label={`${b.nama || b.kode}: dokumen ini`} data-testid="angka-dokumen">
+                {SEL_DOKUMEN.map(([k, label]) => <Sel key={k} label={label} nilai={b[k]} satuan={b.satuan} aksen={k === "masukStok" && b.masukStok > 0 ? "gud-pi-hijau" : undefined} testid={`sel-${k}`} />)}
+              </dl>
+              {po && (
+                <>
+                  <div className="gud-pi-judul">{nomorPO ? `${nomorPO} — ` : ""}semua penerimaan PO</div>
+                  <dl className="gud-pi-grid gud-pi-grid-po" aria-label={`${b.nama || b.kode}: progres PO`} data-testid="angka-po">
+                    {po.map((s) => <Sel key={s.kunci} label={s.label} nilai={s.nilai} satuan={b.satuan} aksen={s.kunci === "belumDatang" && s.nilai > 0 ? "gud-pi-tebal" : s.kunci === "menungguPengganti" && s.nilai > 0 ? "gud-pi-awas" : undefined} testid={`po-${s.kunci}`} />)}
+                  </dl>
+                </>
+              )}
+              {b.faktor !== 1 && b.satuanStok && <div className="gud-pi-catatan gud-pi-info" data-testid="konversi-penerimaan">Hitung dalam {b.satuan} sesuai PO: 1 {b.satuan} = {teksAngka(b.faktor)} {b.satuanStok}. Simpan ke Stok menambah {teksAngka(Math.round((b.baik ?? 0) * b.faktor * 1e4) / 1e4)} {b.satuanStok}{b.masukStok > 0 ? ` (sudah masuk: ${teksAngka(b.masukStokStok)} ${b.satuanStok})` : ""}.</div>}
+              {catatanBaris(b).map((c) => <div key={c} className="gud-pi-catatan"><IkAwas size={14} aria-hidden /> {c}</div>)}
+            </li>
+          );
+        })}
       </ul>
+      {semua.some((b) => b.progres) && (
+        <details className="gud-lipat mt-3" data-testid="legenda-angka">
+          <summary><span>Arti tiap angka</span></summary>
+          <dl className="gud-pi-legenda">
+            {LEGENDA.map(([k, d]) => <div key={k}><dt>{k}</dt><dd>{d}</dd></div>)}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }

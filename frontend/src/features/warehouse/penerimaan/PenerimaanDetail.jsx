@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Info, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, Info } from "lucide-react";
 import { api } from "@/api.js";
 import { FokusOverlay } from "@/components/ui/fokus-overlay.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -12,17 +12,15 @@ import KoreksiPenerimaanModal from "@/features/warehouse/koreksi/KoreksiPenerima
 import AksiDokumen from "@/features/warehouse/aksi/AksiDokumen.jsx";
 import PipelineStatus from "./PipelineStatus.jsx";
 import TabelPerItem from "./TabelPerItem.jsx";
+import DialogPemeriksaan from "./DialogPemeriksaan.jsx";
 import { ModalCatatKedatangan, ModalKoreksiKedatangan } from "@/features/kedatangan/PanelKedatangan.jsx";
 import { LABEL_WORKSPACE, tanggalTeks, waktuTeks } from "@/features/kedatangan/kedatanganLogic.js";
-import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
-import { barisPerItem, galatIsianPemeriksaan, identitasPenerimaan, penerimaanLainSamaPO, tanggalPendek } from "./penerimaanLogic.js";
-import { UNIT_LABEL } from "../inventoryReal.js";
+import { barisPerItem, galatIsianPemeriksaan, identitasPenerimaan, pengirimanLainPO, tanggalPendek, teksAngka } from "./penerimaanLogic.js";
 
-// DETAIL PENERIMAAN BARANG — satu HALAMAN (bukan drawer yang ditimpa modal). Urutan baca petugas: identitas dokumen → alur (PO → jadwal → tiba → periksa → stok) → pengaruh ke stok →
-// per item (pesan · dijadwalkan · tiba · diterima · masuk stok) → aksi yang relevan untuk status ini → progres pemakaian. Status, tahap, dan aksi datang dari server (`tampilan`).
+// DETAIL PENERIMAAN BARANG — panel BACA (menempel di samping daftar ≥1200px; jendela fokus di bawahnya). Urutan baca petugas: identitas dokumen → alur (tahap saat ini; "Lihat alur" untuk semua tahap) → rincian per item (angka berlabel,
+// mengikuti lebar panel) → pengiriman lain pada PO yang sama → aksi yang relevan untuk status ini → progres pemakaian. Status, tahap, dan aksi datang dari server (`tampilan`).
+// FORM panjang TIDAK di panel: Pemeriksaan, Catat Barang Tiba, dan Koreksi Kedatangan terbuka sebagai dialog kerja lebar (layar penuh di HP).
 // Sesudah masuk stok tidak ada Undo/Hapus: satu aksi "Koreksi" yang menjelaskan dampak (Koreksi Kedatangan resmi untuk PO; koreksi bertaut untuk non-PO).
-// Satuan tampil: label Indonesia bila ada, selain itu kode huruf kecil.
-const satuanTampil = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 
 // Aksi → isian kecil di tempat (tanpa modal).
 const SPEC = {
@@ -45,6 +43,7 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
   const [r, setR] = useState(null); const [semua, setSemua] = useState([]); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
   const [isian, setIsian] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState("");
   const [tibaPO, setTibaPO] = useState(null); const [koreksiPO, setKoreksiPO] = useState(null); const [koreksiGR, setKoreksiGR] = useState(false);
+  const [periksa, setPeriksa] = useState(false); const [galatPeriksa, setGalatPeriksa] = useState("");
 
   const muat = useCallback(async (kabari = true) => {
     setMemuat(true); setGalat("");
@@ -56,7 +55,7 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
   useEffect(() => { setR(null); setIsian({}); muat(false); }, [muat]);
 
   const t = r?.tampilan; const baris = useMemo(() => (r ? barisPerItem(r) : []), [r]);
-  const ident = r ? identitasPenerimaan(r) : null; const lain = r ? penerimaanLainSamaPO(r, semua) : [];
+  const ident = r ? identitasPenerimaan(r) : null; const lain = r ? pengirimanLainPO(r, semua) : [];
   const bisaPeriksa = !!t?.aksi.some((a) => a.kode === "ISI_PEMERIKSAAN"); const tibaBisaDiisi = bisaPeriksa && !r?.purchaseOrderId;
   const galatDini = galatIsianPemeriksaan(Object.assign({}, ...Object.values(isian)));
   const adaIsian = Object.keys(isian).length > 0;
@@ -65,7 +64,14 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
     const ops = Object.entries(isian).map(([lineId, p]) => { const body = {}; for (const k of ["receivedQty", "acceptedQty", "rejectedQty", "condition"]) if (k in p) body[k] = p[k]; return api.updateGoodsReceiptLine(id, lineId, body); });
     await Promise.all(ops);
   }
+  // Pemeriksaan: dialog kerja lebar. Gagal simpan → dialog tetap terbuka, isian bertahan, pesan server tampil di footer dialog.
+  const simpanDariDialog = async () => {
+    setGalatPeriksa("");
+    try { await simpanIsian(); setPeriksa(false); await muat(); } catch (e) { setGalatPeriksa(e.message || "Gagal menyimpan hasil pemeriksaan"); }
+  };
+  const tutupPeriksa = () => { setPeriksa(false); setIsian({}); setGalatPeriksa(""); };
   const jalankan = async (kode, v = {}) => {
+    if (kode === "ISI_PEMERIKSAAN") { setGalatPeriksa(""); setPeriksa(true); return; }
     if (galatDini && ["SIMPAN_KE_STOK", "MAJUKAN", "ISI_PEMERIKSAAN", "TANDAI_TIBA"].includes(kode)) throw new Error(galatDini); // isian pemeriksaan belum valid
     setSibuk(true); setKonflik(""); setInfo("");
     try {
@@ -82,7 +88,6 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
       else if (kode === "JADWALKAN") hasil = await api.updateGoodsReceipt(id, { status: "SCHEDULED", revisi: r.revisi });
       else if (kode === "TANDAI_TIBA" || kode === "MAJUKAN") { if (adaIsian) await simpanIsian(); const urut = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]; hasil = await api.updateGoodsReceipt(id, { status: urut[urut.indexOf(r.status) + 1], revisi: r.revisi }); }
       else if (kode === "SIMPAN_KE_STOK") { if (adaIsian) await simpanIsian(); await api.putawayGoodsReceipt(id); }
-      else if (kode === "ISI_PEMERIKSAAN") { await simpanIsian(); }
       else if (kode === "CATAT_TIBA") { setTibaPO(await api.getBarangAkanDatangDetail(r.purchaseOrderId)); return; }
       else if (kode === "KOREKSI_KEDATANGAN") { setKoreksiPO(await api.getBarangAkanDatangDetail(r.purchaseOrderId)); return; }
       else if (kode === "KOREKSI_PENERIMAAN") { setKoreksiGR(true); return; }
@@ -92,9 +97,10 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
       throw e;
     } finally { setSibuk(false); }
   };
-  // Aksi pemeriksaan tampil sebagai tombol simpan isian hanya bila ada isian; selebihnya isian langsung di tabel.
-  const aksiTampil = (t?.aksi ?? []).filter((a) => !(a.kode === "ISI_PEMERIKSAAN" && !adaIsian));
-  const aksiLabel = aksiTampil.map((a) => (a.kode === "SIMPAN_KE_STOK" ? { ...a, label: "Simpan ke Stok" } : a.kode === "ISI_PEMERIKSAAN" ? { ...a, label: "Simpan hasil pemeriksaan" } : a));
+  // Tindakan konkret untuk tahap ini selalu tampil sebagai tombol (bukan hanya menu "Ubah status"). "Isi pemeriksaan" membuka dialog; angka tidak diisi di panel.
+  // Label MAJUKAN menyebut langkah konkretnya (kode aksi & aturan server tidak berubah).
+  const labelMajukan = { ARRIVED: "Mulai pemeriksaan", INSPECTION: "Tandai siap masuk stok" }[r?.status];
+  const aksiLabel = (t?.aksi ?? []).map((a) => (a.kode === "SIMPAN_KE_STOK" ? { ...a, label: "Simpan ke Stok" } : a.kode === "ISI_PEMERIKSAAN" ? { ...a, label: "Isi hasil pemeriksaan" } : a.kode === "MAJUKAN" && labelMajukan ? { ...a, label: labelMajukan } : a));
 
   const keluar = onTutup ?? (() => navigate("/warehouse/goods-receipt"));
   const tautan = (x) => `/warehouse/goods-receipt/${x}${saringan}`;
@@ -154,18 +160,6 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
           {r.notes && <p className="m-0 text-[12px] text-ink2" data-testid="catatan-dokumen">{r.notes}</p>}
         </Card>
 
-        {lain.length > 0 && (
-          <div className="flex items-start gap-2 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5 text-[12.5px] text-ink2" data-testid="penerimaan-lain-po" role="note">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-orange" aria-hidden />
-            <div>
-              <p className="m-0 font-semibold text-ink">PO {ident.nomorPO} punya {lain.length} penerimaan lain yang masih berjalan</p>
-              <ul className="m-0 mt-1 list-none space-y-0.5 p-0">
-                {lain.map((x) => <li key={x.id}><Link replace to={tautan(x.id)} className="font-semibold text-accent">{x.receiptNumber}</Link> · {x.tampilan?.label ?? x.status} · dibuat {x.createdBy?.name ?? "—"} · jadwal {tanggalPendek(x.expectedDate)}</li>)}
-              </ul>
-              <p className="m-0 mt-1 text-ink3">Ini dokumen yang berbeda. Jumlah baik tidak boleh melebihi sisa PO, dan sistem tidak menggabungkan atau menganggapnya duplikat.</p>
-            </div>
-          </div>
-        )}
 
         {r.purchaseOrderId && r.arrivedDate && (
           <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-btn bg-inset px-3 py-2 text-[12px]" data-testid="info-kedatangan">
@@ -193,23 +187,36 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
               {r.pemeriksaanSebelumnya.baris.map((b) => <li key={b.lineId}><span className="rounded-chip bg-inset px-1.5 py-0.5 text-[10.5px] font-semibold text-ink3">Pemeriksaan sebelumnya · tidak berlaku</span> <strong>{b.kode}</strong>: baik {b.diterimaBaik ?? "—"} · ditolak {b.ditolak ?? "—"}{b.kondisi ? ` · ${b.kondisi}` : ""}</li>)}
             </ul>
             {bolehUbah && r.status === "INSPECTION" && !r.pemeriksaanSebelumnya.sudahDiisiUlang && (
-              <button type="button" onClick={() => setIsian((x) => ({ ...x, ...Object.fromEntries(r.pemeriksaanSebelumnya.baris.map((b) => [b.lineId, { ...(x[b.lineId] ?? {}), acceptedQty: b.diterimaBaik ?? "", rejectedQty: b.ditolak ?? "", ...(b.kondisi ? { condition: b.kondisi } : {}) }])) }))}
+              <button type="button" onClick={() => { setIsian((x) => ({ ...x, ...Object.fromEntries(r.pemeriksaanSebelumnya.baris.map((b) => [b.lineId, { ...(x[b.lineId] ?? {}), acceptedQty: b.diterimaBaik ?? "", rejectedQty: b.ditolak ?? "", ...(b.kondisi ? { condition: b.kondisi } : {}) }])) })); setGalatPeriksa(""); setPeriksa(true); }}
                 className="rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-hovertint max-sm:min-h-11" data-testid="pakai-isian-awal">Pakai hasil lama sebagai isian awal (tinjau, lalu simpan)</button>
             )}
           </div>
         )}
         <Card className="space-y-3 p-4">
-          <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Per item — cocokkan pesanan, jadwal, kedatangan, dan stok</h3>
-          <TabelPerItem rows={baris} editable={bisaPeriksa ? { tiba: tibaBisaDiisi } : null} nilai={isian} onUbah={(lineId, f, v) => setIsian((x) => ({ ...x, [lineId]: { ...x[lineId], [f]: v } }))} />
-          {r.lines.filter((l) => l.purchaseOrderLine?.purchaseUnit).map((l) => (
-            <p key={l.id} className="m-0 text-[11.5px] font-medium text-accent" data-testid="konversi-penerimaan">
-              {l.material.code}: hitung dalam {satuanTampil(l.purchaseOrderLine.purchaseUnit)} sesuai PO. 1 {satuanTampil(l.purchaseOrderLine.purchaseUnit)} = {teksJumlah(Number(l.purchaseOrderLine.conversionFactor))} {satuanTampil(l.material.unit)}
-              {" — "}Simpan ke Stok menambah {teksJumlah(Math.round(Number(l.acceptedQty ?? 0) * Number(l.purchaseOrderLine.conversionFactor) * 1e4) / 1e4)} {satuanTampil(l.material.unit)}.
-            </p>
-          ))}
-          {r.poRingkas?.lines?.map((q) => <p key={q.id} className="m-0 text-[11px] text-ink2" data-testid="progres-po-baris">PO {r.lines.find((x) => x.purchaseOrderLineId === q.id)?.material?.code ?? ""}: dipesan {teksJumlah(q.progres.dipesan)} · datang {teksJumlah(q.progres.datang)} · belum datang {teksJumlah(q.progres.belumDatang)} · masuk stok {teksJumlah(q.progres.masukStok)} · <strong>belum masuk stok {teksJumlah(q.progres.belumMasukStok)}</strong></p>)}
-          {galatDini && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-isian">{galatDini}</p>}
+          <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Rincian per item</h3>
+          <TabelPerItem rows={baris} nomorPO={ident.nomorPO} />
         </Card>
+
+        {r.purchaseOrderId && (
+          <section className="gud-bertahap" data-testid="pengiriman-bertahap" aria-label="Pengiriman pada PO ini">
+            <h3>Pengiriman untuk {ident.nomorPO ?? "PO ini"}</h3>
+            <ul className="gud-bertahap-daftar">
+              <li data-testid="pengiriman-ini"><strong>{r.receiptNumber}</strong> <span>(dokumen ini)</span> <span>{t.label}</span> <span>{r.arrivedDate ? `tiba ${tanggalPendek(r.arrivedDate)}` : `jadwal ${tanggalPendek(r.expectedDate)}`}</span></li>
+              {lain.map((x) => (
+                <li key={x.id} data-testid="pengiriman-lain">
+                  <Link replace to={tautan(x.id)}>{x.nomor}</Link> <span>{x.label}</span> <span>{x.tiba ? `tiba ${tanggalPendek(x.tiba)}` : `jadwal ${tanggalPendek(x.jadwal)}`}</span>
+                  {x.baris.slice(0, 3).map((b) => <span key={b.kode}>{b.nama || b.kode}: {b.tiba !== null ? `tiba ${teksAngka(b.tiba)}` : `dijadwalkan ${teksAngka(b.jadwal)}`} {b.satuan}</span>)}
+                  {x.baris.length > 3 && <span>+{x.baris.length - 3} item lain</span>}
+                </li>
+              ))}
+            </ul>
+            <p className="gud-bertahap-aturan" data-testid="aturan-bertahap">
+              <b>Satu pengiriman = satu dokumen penerimaan.</b> PO 100 yang datang 50 lalu 50 tercatat sebagai dua penerimaan, masing-masing di tanggal kedatangannya. Total yang datang tidak boleh melebihi “Belum datang”;
+              kelebihan yang disepakati perlu <b>revisi jumlah PO oleh Finance</b> (Gudang tidak merevisi PO). Barang pengganti untuk yang ditolak dicatat lewat tautan pengganti dan tidak dihitung sebagai tambahan pesanan.
+              {r.status === "COMPLETED" && <> Jumlah baik yang sudah masuk stok tidak diubah langsung: pakai <b>Koreksi Kedatangan</b> (ada pratinjau dampak, tercatat di riwayat, dan dibatasi bila sudah ada faktur atau retur).</>}
+            </p>
+          </section>
+        )}
 
         {(koreksiRelevan || ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"].includes(r.status)) && (
           <KartuJalurKoreksi tipe="GOODS_RECEIPT" id={id} versi={`${r.status}-${versi}`} ringkas aksi={{ KOREKSI_PENERIMAAN: () => setKoreksiGR(true), KOREKSI_KEDATANGAN: async () => { setKoreksiPO(await api.getBarangAkanDatangDetail(r.purchaseOrderId)); } }} />
@@ -239,6 +246,10 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
         <Button variant="ghost" size="sm" onClick={() => muat()} disabled={memuat} className="self-start max-sm:min-h-11" data-testid="muat-ulang">{memuat ? <Loader2 size={14} className="animate-spin" /> : null} Muat ulang</Button>
       </div>
 
+      {periksa && (
+        <DialogPemeriksaan r={r} baris={baris} isian={isian} tibaBisaDiisi={tibaBisaDiisi} galat={galatPeriksa} onTutup={tutupPeriksa} onSimpan={simpanDariDialog}
+          onUbah={(lineId, f, v) => setIsian((x) => ({ ...x, [lineId]: { ...x[lineId], [f]: v } }))} />
+      )}
       {koreksiGR && <KoreksiPenerimaanModal receiptId={id} onClose={() => setKoreksiGR(false)} onDone={() => muat()} />}
       {koreksiPO && <ModalKoreksiKedatangan po={koreksiPO} receipt={koreksiPO.penerimaan.find((x) => x.id === id) ?? null} workspace="GUDANG" onClose={() => setKoreksiPO(null)} onDone={() => { setKoreksiPO(null); muat(); }} />}
       {tibaPO && <ModalCatatKedatangan po={tibaPO} receipt={tibaPO.penerimaan.find((x) => x.id === id) ?? null} workspace="GUDANG" onClose={() => setTibaPO(null)} onDone={() => { setTibaPO(null); muat(); }} />}

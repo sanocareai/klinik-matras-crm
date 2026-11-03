@@ -64,7 +64,7 @@ export function barisPerItem(r) {
       dipesan: q ? q.dipesan : null, dijadwalkan: angka(l.orderedQty), tiba: angka(l.receivedQty), baik, ditolak: angka(l.rejectedQty),
       masukStok: selesai ? (baik ?? 0) : 0, masukStokStok: selesai && baik != null ? Math.round(baik * faktor * 1e4) / 1e4 : 0,
       sisaPO: q ? q.belumDatang : null, dariPO: !!l.purchaseOrderLineId,
-      kondisi: l.condition ?? "", catatan: l.notes ?? "",
+      kondisi: l.condition ?? "", catatan: l.notes ?? "", progres: q, purchaseOrderLineId: l.purchaseOrderLineId ?? null,
     };
   });
 }
@@ -144,3 +144,47 @@ export function cocokJadwal(r, kunci, hari = hariIni()) {
 }
 /** Daftar supplier unik (terurut) untuk saringan. */
 export const daftarSupplier = (rows) => [...new Set((rows ?? []).map((r) => (r.supplier ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id"));
+
+// ── Redesain Penerimaan (4 Nov 2026): rincian per item berbasis lebar panel, dialog pemeriksaan, pengiriman bertahap. Murni tampilan — angka & definisi tetap dari server (progresPO.js).
+const normal = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+/** Kode sekunder hanya bila TIDAK sekadar mengulang nama (mis. "BUSA-OCEAN-D18-120X200X2CM" untuk nama "BUSA OCEAN D18 120X200X2CM" disembunyikan). */
+export const kodeSekunder = (b) => (b?.kode && b.kode !== "—" && normal(b.kode) !== normal(b.nama) ? b.kode : null);
+
+/** Angka PO (semua penerimaan) per item untuk layar: Dipesan · Sudah datang · Belum datang · Baik belum disimpan · Sudah masuk stok (+ Menunggu pengganti bila > 0). null = tidak ada PO. */
+export function progresItemPO(b) {
+  const q = b?.progres; if (!q) return null;
+  const sel = [["dipesan", "Dipesan", q.dipesan], ["datang", "Sudah datang", q.datangAsli ?? q.datang], ["belumDatang", "Belum datang", q.belumDatang], ["baikBelumDisimpan", "Baik belum disimpan", q.baikBelumDisimpan], ["masukStok", "Sudah masuk stok", q.masukStok]];
+  if (Number(q.menungguPengganti) > 0) sel.push(["menungguPengganti", "Menunggu pengganti", q.menungguPengganti]);
+  if (Number(q.ditolak) > 0) sel.push(["ditolak", "Ditolak (riwayat)", q.ditolak]);
+  return sel.map(([kunci, label, nilai]) => ({ kunci, label, nilai: Number(nilai) }));
+}
+
+/** Galat per baris isian pemeriksaan: angka ≥ 0, maks 3 desimal, baik + ditolak ≤ tiba. `nilaiBaris` = isian sementara baris itu ({acceptedQty,rejectedQty,receivedQty}). "" = lolos. */
+export function galatBarisPemeriksaan(b, nilaiBaris = {}) {
+  const ambil = (f, awal) => (f in nilaiBaris ? nilaiBaris[f] : awal);
+  const baik = ambil("acceptedQty", b.baik); const tolak = ambil("rejectedQty", b.ditolak); const tiba = ambil("receivedQty", b.tiba);
+  for (const v of [baik, tolak, tiba]) {
+    if (v === "" || v === null || v === undefined) continue;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return "Jumlah harus angka 0 atau lebih";
+    if (Math.abs(n * 1000 - Math.round(n * 1000)) > 1e-6) return "Jumlah maksimal 3 angka di belakang koma";
+  }
+  const t = tiba === "" || tiba === null || tiba === undefined ? null : Number(tiba);
+  if (t !== null && (Number(baik || 0) + Number(tolak || 0)) > t + 1e-9) return `Baik + ditolak (${teksAngka(Number(baik || 0) + Number(tolak || 0))}) melebihi jumlah tiba (${teksAngka(t)})`;
+  return "";
+}
+
+/** Pengiriman LAIN untuk PO yang sama (semua status selain ditolak/dibatalkan): satu pengiriman = satu dokumen. Tiap baris memuat jumlah tiba per bahan yang juga ada di dokumen ini. */
+export function pengirimanLainPO(r, semua) {
+  if (!r?.purchaseOrderId) return [];
+  const kodeIni = new Set((r.lines ?? []).map((l) => l.purchaseOrderLineId).filter(Boolean));
+  return (semua ?? []).filter((x) => x.id !== r.id && x.purchaseOrderId === r.purchaseOrderId && x.status !== "REJECTED").map((x) => ({
+    id: x.id, nomor: x.receiptNumber, status: x.status, label: x.tampilan?.label ?? x.status, tiba: x.arrivedDate ?? null, jadwal: x.expectedDate ?? null,
+    baris: (x.lines ?? []).filter((l) => kodeIni.has(l.purchaseOrderLineId)).map((l) => ({ kode: l.material?.code ?? "—", nama: l.material?.name ?? "", tiba: angka(l.receivedQty), baik: angka(l.acceptedQty), jadwal: angka(l.orderedQty), satuan: l.purchaseOrderLine?.purchaseUnit || l.purchaseOrderLine?.unit || l.material?.unit || "" })),
+  })).sort((a, b) => String(a.tiba ?? a.jadwal ?? "").localeCompare(String(b.tiba ?? b.jadwal ?? "")));
+}
+
+/** Tab pertama yang memuat dokumen ini (untuk "Tampilkan di daftar"). Dokumen dibatalkan/ditolak → Selesai. */
+export const tabUntukDokumen = (r) => (TAB_PENERIMAAN.find((t) => t.key !== "semua" && t.cocok(r))?.key ?? "semua");
+/** Dokumen terbuka tidak ikut hasil daftar yang sedang tampil (tab/saringan)? `terfilter` = baris daftar; rows belum dimuat → false (tidak menuduh). */
+export const diLuarDaftar = (id, rows, terfilter) => !!id && !!rows && !!terfilter && rows.some((x) => x.id === id) && !terfilter.some((x) => x.id === id);

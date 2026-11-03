@@ -33,22 +33,22 @@
 .gud-filter-dua { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 
 /* ── Rincian dokumen: baris bahan tanpa kartu di dalam kartu ───────────── */
-.gud-item-daftar { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
-.gud-item { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; padding: 12px 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
-.gud-item:first-child { border-top: 0; }
-.gud-item-nama { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 15px; font-weight: 500; position: relative; padding-right: 44px; }
-.gud-item-nama strong { font-weight: 500; }
-.gud-item-nama .gud-redup { font-size: 14px; }
-.gud-item-angka { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 14px; }
-.gud-item-label { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
-.gud-item-lebar { grid-column: 1 / -1; margin: 0; }
-.gud-item-isian { display: flex; flex-direction: column; gap: 4px; }
-.gud-item p[data-nada="awas"], .gud-katalog-stok[data-nada="awas"] { color: var(--ord-pending-fg, #6E4300); }
-.gud-item p[data-nada="redup"], .gud-katalog-stok[data-nada="redup"] { color: var(--text-tertiary); }
+.gud-bhn-daftar { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.gud-bhn { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; padding: 12px 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-bhn:first-child { border-top: 0; }
+.gud-bhn-nama { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 15px; font-weight: 500; position: relative; padding-right: 44px; }
+.gud-bhn-nama strong { font-weight: 500; }
+.gud-bhn-nama .gud-redup { font-size: 14px; }
+.gud-bhn-angka { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 14px; }
+.gud-bhn-label { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
+.gud-bhn-lebar { grid-column: 1 / -1; margin: 0; }
+.gud-bhn-isian { display: flex; flex-direction: column; gap: 4px; }
+.gud-bhn p[data-nada="awas"], .gud-katalog-stok[data-nada="awas"] { color: var(--ord-pending-fg, #6E4300); }
+.gud-bhn p[data-nada="redup"], .gud-katalog-stok[data-nada="redup"] { color: var(--text-tertiary); }
 .gud-info-ok { background: var(--ord-delivered-bg, #DDF6E5); color: var(--ord-delivered-fg, #11663A); }
 .gud-info > svg { vertical-align: -2px; }
 .gud-dok .gud-tombol-kecil { min-height: 40px; }
-@media (max-width: 640px) { .gud-item { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .gud-bhn { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ── Form permintaan: katalog + daftar berdampingan (HP: daftar dulu, lalu katalog) ─ */
 .gud-katalog-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
@@ -89,3 +89,125 @@
   .gud-mi-grid .gud-katalog-daftar { max-height: 330px; }
 }
 @container gud-mi (max-width: 859px) { .gud-mi-grid .gud-katalog-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ───────── Redesain Penerimaan (4 Nov 2026) ─────────
+   Rincian per item mengikuti LEBAR KONTAINER panel (container `gud-pi`), BUKAN lebar layar: nama bahan satu baris penuh di atas, kode hanya bila tidak mengulang nama,
+   lalu dua grid berlabel yang turun baris sendiri bila sempit (auto-fit). Nama tidak pernah berada di kolom sempit → tidak ada lagi satu huruf per baris (font tidak dikecilkan). */
+[data-testid="tabel-per-item"] { container-type: inline-size; container-name: gud-pi; min-width: 0; }
+.gud-pi-alat { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 10px; }
+.gud-pi-alat .gud-cari { flex: 1 1 200px; max-width: 320px; }
+.gud-pi-daftar { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.gud-pi { min-width: 0; padding: 14px 16px; border-radius: 16px; background: var(--bg-inset, #F1F3FF); }
+.gud-pi-kepala { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 12px; }
+.gud-pi-nama { display: block; flex: 1 1 100%; min-width: 0; font-size: 15px; font-weight: 500; line-height: 1.35; color: var(--text-primary); overflow-wrap: break-word; word-break: normal; hyphens: none; }
+.gud-pi-kepala .gud-pi-nama { flex: 1 1 14ch; }
+.gud-pi-satuan { flex: none; padding: 2px 10px; border-radius: 999px; background: var(--crm-panel, #fff); font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.gud-pi-kode { margin-top: 2px; font-size: 13px; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.gud-pi-judul { margin-top: 12px; font-size: 13px; font-weight: 500; color: var(--text-secondary); overflow-wrap: anywhere; }
+.gud-pi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 112px), 1fr)); gap: 8px 12px; margin: 10px 0 0; padding: 0; }
+.gud-pi-judul + .gud-pi-grid { margin-top: 6px; }
+.gud-pi-sel { min-width: 0; margin: 0; }
+.gud-pi-sel dt { font-size: 12.5px; font-weight: 400; line-height: 1.3; color: var(--text-tertiary); }
+.gud-pi-sel dd { margin: 2px 0 0; font-size: 15px; font-weight: 500; line-height: 1.3; color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gud-pi-satuan-kecil { font-size: 12.5px; font-weight: 400; color: var(--text-tertiary); }
+.gud-pi-tebal { font-weight: 600 !important; }
+.gud-pi-hijau { color: var(--ord-delivered-fg, #11663A) !important; }
+.gud-pi-awas { color: var(--ord-pending-fg, #6E4300) !important; }
+:root[data-theme="dark"] .gud-pi-hijau { color: #8BE0A9 !important; }
+:root[data-theme="dark"] .gud-pi-awas { color: #FFD27A !important; }
+.gud-pi-catatan { margin-top: 10px; font-size: 13px; line-height: 1.5; font-weight: 500; color: var(--ord-pending-fg, #6E4300); }
+:root[data-theme="dark"] .gud-pi-catatan { color: #FFD27A; }
+.gud-pi-catatan > svg { vertical-align: -2px; }
+.gud-pi-info { font-weight: 400; color: var(--text-secondary); }
+:root[data-theme="dark"] .gud-pi-info { color: var(--text-secondary); }
+
+/* Alur status ringkas: lebar penuh → stepper tampil; sempit → hanya tahap saat ini + "Lihat alur" (enam tahap tetap ada, tidak dikurangi) */
+.gud-alur-wadah { container-type: inline-size; container-name: gud-pipa; min-width: 0; }
+.gud-alur-ringkas { display: none; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--text-secondary); }
+.gud-alur-kini strong { font-weight: 500; color: var(--crm-primary-ink, var(--accent)); }
+@container gud-pipa (max-width: 600px) {
+  .gud-alur-ringkas { display: flex; }
+  .gud-alur-penuh[data-buka="tidak"] .gud-stepper { display: none; }
+  .gud-alur-penuh { margin-top: 4px; }
+  .gud-alur-hint { display: none; }
+  .gud-alur-penuh .gud-stepper { overflow-x: visible; flex-direction: column; gap: 6px; }
+  .gud-alur-penuh .gud-stepper > li { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; text-align: left; min-width: 0; }
+  .gud-alur-penuh .gud-stepper > li::before { display: none; }
+}
+
+/* Dialog kerja (Pemeriksaan, Catat tiba, Koreksi): lebar di desktop; layar penuh di HP; header & footer tidak ikut scroll sehingga tombol selalu terjangkau */
+.gud-dlg-penuh { max-height: min(88vh, 860px); }
+@media (max-width: 639px) {
+  .gud-dlg-penuh { width: 100vw !important; max-width: 100vw !important; height: 100dvh; max-height: 100dvh; left: 0 !important; top: 0 !important; transform: none !important; border-radius: 0 !important; }
+}
+.gud-dlg-penuh > div:last-child:not(:nth-child(2)) { flex-wrap: wrap; align-items: center; }
+.gud-dlg-penuh > div:last-child .gud-info { flex: 1 1 100%; margin: 0 0 4px; }
+.gud-dlg-form { container-type: inline-size; container-name: gud-dlg; display: flex; flex-direction: column; gap: 20px; }
+.gud-dlg-bagian { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gud-dlg-judul { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.gud-dlg-judul-baris { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.gud-dlg-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; margin: 0; padding: 12px 16px; border-radius: 14px; background: var(--bg-inset, #F1F3FF); }
+.gud-dlg-info > div { min-width: 0; }
+.gud-dlg-info dt { font-size: 12.5px; color: var(--text-tertiary); }
+.gud-dlg-info dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+.gud-dlg-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+@container gud-dlg (max-width: 560px) { .gud-dlg-info-grid { grid-template-columns: minmax(0, 1fr); } }
+.gud-dlg-daftar { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border-radius: 14px; background: var(--bg-inset, #F1F3FF); }
+.gud-dlg-baris { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(120px, 150px)); gap: 8px 14px; align-items: start; padding: 12px 16px; }
+.gud-dlg-baris + .gud-dlg-baris { border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-dlg-baris-tiba { grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); }
+.gud-dlg-baris[data-invalid="ya"] { box-shadow: inset 3px 0 0 var(--ord-cancelled-dot, #D92D20); }
+.gud-dlg-kepala-kolom { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(120px, 150px)); gap: 8px 14px; padding: 0 16px; font-size: 12.5px; font-weight: 500; color: var(--text-tertiary); }
+.gud-dlg-kepala-tiba { grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); }
+.gud-dlg-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gud-dlg-ket { margin-top: 4px; font-size: 13px; line-height: 1.45; color: var(--text-tertiary); }
+.gud-dlg-progres { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; padding: 0; }
+.gud-dlg-progres > div { min-width: 0; }
+.gud-dlg-progres dt { display: inline; font-size: 12.5px; color: var(--text-tertiary); }
+.gud-dlg-progres dt::after { content: ": "; }
+.gud-dlg-progres dd { display: inline; margin: 0; font-size: 13px; font-weight: 500; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.gud-dlg-progres > div[data-tebal="ya"] dd { font-weight: 700; }
+.gud-dlg-progres > div[data-awas="ya"] dd { color: var(--ord-pending-fg, #6E4300); }
+.gud-dlg-isi { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gud-dlg-label { display: none; font-size: 12.5px; color: var(--text-tertiary); }
+.gud-dlg-tetap { display: flex; align-items: center; min-height: 44px; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.gud-dlg-lebar { grid-column: 1 / -1; margin: 0; }
+.gud-dlg-pengganti { padding: 10px 12px; border-radius: 12px; background: var(--crm-panel, #fff); font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.gud-dlg-asal { display: flex; flex-direction: column; gap: 8px; }
+.gud-dlg-form .gud-f-galat > svg { vertical-align: -2px; }
+/* Dialog sempit (HP atau panel): kolom angka turun di bawah nama, berlabel */
+@container gud-dlg (max-width: 640px) {
+  .gud-dlg-kepala-kolom { display: none; }
+  .gud-dlg-baris { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gud-dlg-baris-tiba { grid-template-columns: minmax(0, 1fr); }
+  .gud-dlg-item { grid-column: 1 / -1; }
+  .gud-dlg-label { display: block; }
+}
+@container gud-dlg (max-width: 400px) { .gud-dlg-baris { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+
+/* Pengiriman bertahap pada PO yang sama: satu pengiriman = satu dokumen */
+.gud-bertahap { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--bg-inset, #F1F3FF); }
+.gud-bertahap h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.gud-bertahap-daftar { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gud-bertahap-daftar li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+.gud-bertahap-daftar a { font-weight: 500; color: var(--crm-primary-ink, #2F57E0); text-decoration: none; }
+.gud-bertahap-daftar a:hover { text-decoration: underline; }
+.gud-bertahap-aturan { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-tertiary); }
+.gud-bertahap-aturan b { font-weight: 500; color: var(--text-secondary); }
+
+/* Dokumen terbuka tidak ikut hasil daftar saat ini */
+.gud-luar-daftar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--ord-pending-bg, #FFF0C2); font-size: 14px; line-height: 1.45; color: var(--ord-pending-fg, #6E4300); }
+:root[data-theme="dark"] .gud-luar-daftar { background: rgba(255, 210, 122, 0.14); color: #FFD27A; }
+.gud-luar-daftar span { flex: 1 1 220px; min-width: 0; }
+.gud-luar-daftar button { flex: none; }
+.gud-pi-legenda { display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.5; }
+.gud-pi-legenda dt { font-weight: 500; color: var(--text-primary); }
+.gud-pi-legenda dd { margin: 0; color: var(--text-secondary); }
+
+/* Panel menempel (docked): tinggi dihitung dari POSISI AWALNYA di bawah header aplikasi (±118px) + jarak bawah 12px, bukan 96px — sebelumnya dasar panel (bilah tindakan) terpotong ±22px di jendela 900px. */
+.fokus-tempel { height: calc(100dvh - 130px); max-height: calc(100dvh - 130px); }
+/* Kolom isian di dalam daftar dialog: kotak berbatas jelas (latar daftar = latar kolom bawaan, jadi tanpa batas kolom tidak terlihat sebagai isian) */
+.gud-dlg-daftar .gud-f-angka input { background: var(--crm-panel, #fff) !important; box-shadow: inset 0 0 0 1px rgba(27, 27, 57, 0.2); }
+:root[data-theme="dark"] .gud-dlg-daftar .gud-f-angka input { box-shadow: inset 0 0 0 1px rgba(153, 183, 252, 0.3); }
+.gud-dlg-tetap { gap: 4px; padding: 0 2px; }
+.gud-dlg-tetap .gud-pi-satuan-kecil { margin-left: 2px; }

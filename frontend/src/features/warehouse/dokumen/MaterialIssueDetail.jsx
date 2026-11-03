@@ -151,15 +151,15 @@ export default function MaterialIssueDetail({ id, onTutup, onBerubah, saringan =
           {r.notes && <p className="gud-petunjuk" data-testid="catatan-dokumen">Catatan: {r.notes}</p>}
           <div className="gud-bahan-pendukung">
             <h3 className="gud-bahan-sub">Bahan yang diminta</h3>
-            <ul className="gud-item-daftar" data-testid="item-dokumen">
+            <ul className="gud-bhn-daftar" data-testid="item-dokumen">
               {r.lines.map((l) => {
                 const k = ket[l.id]; const u = satuan(l.material.unit);
                 return (
-                  <li key={l.id} className="gud-item" data-testid="baris-item" data-kode={l.material.code}>
-                    <div className="gud-item-nama"><strong>{l.material.code}</strong><span className="gud-redup">{l.material.name}</span></div>
-                    <div className="gud-item-angka"><span className="gud-item-label">Diminta</span><span className="gud-angka" data-testid="diminta">{teksJumlah(l.requestedQty)} {u}</span></div>
-                    {!final && !batal && k && <p className="gud-petunjuk gud-item-lebar" data-testid="ketersediaan" data-cukup={String(k.cukup)}>{kalimatKetersediaan(k, u)} <span className="gud-redup">(saldo total dikurangi cadangan dokumen lain; perkiraan saat ini, bukan jaminan)</span></p>}
-                    {!final && !batal && k?.cukup === false && <p role="note" className="gud-item-lebar gud-merah-teks" data-testid="peringatan-item"><IkAwas size={14} aria-hidden /> Stok tersedia belum cukup untuk jumlah ini</p>}
+                  <li key={l.id} className="gud-bhn" data-testid="baris-item" data-kode={l.material.code}>
+                    <div className="gud-bhn-nama"><strong>{l.material.code}</strong><span className="gud-redup">{l.material.name}</span></div>
+                    <div className="gud-bhn-angka"><span className="gud-bhn-label">Diminta</span><span className="gud-angka" data-testid="diminta">{teksJumlah(l.requestedQty)} {u}</span></div>
+                    {!final && !batal && k && <p className="gud-petunjuk gud-bhn-lebar" data-testid="ketersediaan" data-cukup={String(k.cukup)}>{kalimatKetersediaan(k, u)} <span className="gud-redup">(saldo total dikurangi cadangan dokumen lain; perkiraan saat ini, bukan jaminan)</span></p>}
+                    {!final && !batal && k?.cukup === false && <p role="note" className="gud-bhn-lebar gud-merah-teks" data-testid="peringatan-item"><IkAwas size={14} aria-hidden /> Stok tersedia belum cukup untuk jumlah ini</p>}
                   </li>
                 );
               })}
@@ -175,24 +175,24 @@ export default function MaterialIssueDetail({ id, onTutup, onBerubah, saringan =
               : mencadang ? <>Belum dikeluarkan. Jumlah diminta <b>dicadangkan</b> (tidak tersedia untuk permintaan lain) tetapi saldo belum berkurang; saldo baru berkurang saat <b>Keluarkan dari stok</b>.</>
               : <>Belum dikeluarkan dan belum dicadangkan — dokumen belum memengaruhi stok.</>}
           </p>
-          <ul className="gud-item-daftar" data-testid="item-pengeluaran">
+          <ul className="gud-bhn-daftar" data-testid="item-pengeluaran">
             {r.lines.map((l) => {
               const u = satuan(l.material.unit); const sel = selisihKeluar(l); const k = ket[l.id];
               return (
-                <li key={l.id} className="gud-item" data-testid="baris-keluar" data-kode={l.material.code}>
-                  <div className="gud-item-nama"><strong>{l.material.code}</strong><span className="gud-redup">{l.material.name}</span></div>
-                  <div className="gud-item-angka"><span className="gud-item-label">Diminta</span><span className="gud-angka">{teksJumlah(l.requestedQty)} {u}</span></div>
-                  <div className="gud-item-angka"><span className="gud-item-label">Dicadangkan</span><span className="gud-angka" data-testid="dicadangkan">{mencadang ? `${teksJumlah(l.requestedQty)} ${u}` : "—"}</span></div>
-                  <div className="gud-item-angka"><span className="gud-item-label">Dikeluarkan</span><span className="gud-angka" data-testid="dikeluarkan">{final ? `${teksJumlah(l.issuedQty)} ${u}` : "—"}</span></div>
-                  {final && sel !== null && sel !== 0 && <p className="gud-petunjuk gud-item-lebar" data-testid="selisih-keluar">{sel > 0 ? `Kurang dikeluarkan ${teksJumlah(sel)} ${u} dari yang diminta.` : `Dikeluarkan ${teksJumlah(-sel)} ${u} lebih banyak dari yang diminta.`}</p>}
-                  {!final && !batal && k && <p className="gud-petunjuk gud-item-lebar" data-testid="ketersediaan-keluar" data-cukup={String(k.cukup)}>{kalimatKetersediaan(k, u)}</p>}
+                <li key={l.id} className="gud-bhn" data-testid="baris-keluar" data-kode={l.material.code}>
+                  <div className="gud-bhn-nama"><strong>{l.material.code}</strong><span className="gud-redup">{l.material.name}</span></div>
+                  <div className="gud-bhn-angka"><span className="gud-bhn-label">Diminta</span><span className="gud-angka">{teksJumlah(l.requestedQty)} {u}</span></div>
+                  <div className="gud-bhn-angka"><span className="gud-bhn-label">Dicadangkan</span><span className="gud-angka" data-testid="dicadangkan">{mencadang ? `${teksJumlah(l.requestedQty)} ${u}` : "—"}</span></div>
+                  <div className="gud-bhn-angka"><span className="gud-bhn-label">Dikeluarkan</span><span className="gud-angka" data-testid="dikeluarkan">{final ? `${teksJumlah(l.issuedQty)} ${u}` : "—"}</span></div>
+                  {final && sel !== null && sel !== 0 && <p className="gud-petunjuk gud-bhn-lebar" data-testid="selisih-keluar">{sel > 0 ? `Kurang dikeluarkan ${teksJumlah(sel)} ${u} dari yang diminta.` : `Dikeluarkan ${teksJumlah(-sel)} ${u} lebih banyak dari yang diminta.`}</p>}
+                  {!final && !batal && k && <p className="gud-petunjuk gud-bhn-lebar" data-testid="ketersediaan-keluar" data-cukup={String(k.cukup)}>{kalimatKetersediaan(k, u)}</p>}
                   {(bisaLokasi || l.sourceLocation) && (
-                    <label className="gud-item-lebar gud-item-isian"><span className="gud-item-label">Lokasi sumber{bisaLokasi ? " (catatan)" : ""}</span>
+                    <label className="gud-bhn-lebar gud-bhn-isian"><span className="gud-bhn-label">Lokasi sumber{bisaLokasi ? " (catatan)" : ""}</span>
                       {bisaLokasi ? <input type="text" className="gud-f-teks" value={lokasi[l.id] ?? l.sourceLocation ?? ""} onChange={(e) => setLokasi((x) => ({ ...x, [l.id]: e.target.value }))} placeholder="Catatan lokasi ambil" aria-label={`Lokasi sumber ${l.material.code}`} data-testid={`lokasi-${l.material.code}`} /> : <span>{l.sourceLocation}</span>}
                     </label>
                   )}
                   {bisaKeluar && (
-                    <label className="gud-item-lebar gud-item-isian"><span className="gud-item-label">Jumlah yang dikeluarkan</span>
+                    <label className="gud-bhn-lebar gud-bhn-isian"><span className="gud-bhn-label">Jumlah yang dikeluarkan</span>
                       <AngkaGud value={keluar[l.id] ?? ""} onChange={(v) => setKeluar((x) => ({ ...x, [l.id]: v }))} satuan={u} aria-label={`Jumlah keluar ${l.material.code}`} data-testid={`keluar-${l.material.code}`} invalid={!!galatKeluar && (keluar[l.id] ?? "") === ""} />
                     </label>
                   )}

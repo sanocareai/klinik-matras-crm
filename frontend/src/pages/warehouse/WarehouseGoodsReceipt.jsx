@@ -9,7 +9,7 @@ import GoodsReceiptFormModal from "@/features/warehouse/components/GoodsReceiptF
 import SumberPO from "@/features/warehouse/components/SumberPO.jsx";
 import PenerimaanDetail from "@/features/warehouse/penerimaan/PenerimaanDetail.jsx";
 import {
-  SARINGAN_JADWAL, TAB_PENERIMAAN, TAHAP_FILTER, cocokCari, cocokJadwal, daftarSupplier, filterTab, filterTahap, hitungPerTab, identitasPenerimaan, lewatJadwal, perluTindakan, tabAktif, tahapUntukTab, tanggalPendek,
+  SARINGAN_JADWAL, TAB_PENERIMAAN, TAHAP_FILTER, diLuarDaftar, tabUntukDokumen, cocokCari, cocokJadwal, daftarSupplier, filterTab, filterTahap, hitungPerTab, identitasPenerimaan, lewatJadwal, perluTindakan, tabAktif, tahapUntukTab, tanggalPendek,
 } from "@/features/warehouse/penerimaan/penerimaanLogic.js";
 
 // PENERIMAAN BARANG (redesain Gudang, 3 Nov 2026) — ruang pemeriksaan: daftar di kiri, detail dokumen di kanan (layar lebar) sehingga konteks tidak hilang saat memeriksa barang.
@@ -78,6 +78,10 @@ export default function WarehouseGoodsReceipt() {
     cari && { k: "q", label: `Kata kunci: ${cari}` },
   ].filter(Boolean);
   const gantiTab = (k) => ubahBanyak({ tab: k === "tindakan" ? "" : k, tahap: "" });
+  // Dokumen yang dibuka (lewat tautan/riwayat/PO) bisa tidak ikut hasil daftar saat ini: beri tahu + satu klik untuk menampilkannya di daftar (tab sesuai status, saringan lain dikosongkan).
+  const dokBuka = rows && id ? rows.find((x) => x.id === id) ?? null : null;
+  const luarDaftar = diLuarDaftar(id, rows, terfilter);
+  const tampilkanDiDaftar = () => { const k = tabUntukDokumen(dokBuka); ubahBanyak({ tab: k === "tindakan" ? "" : k, tahap: "", q: "", supplier: "", jadwal: "" }); };
   const reset = () => ubahBanyak({ tahap: "", supplier: "", jadwal: "", q: "" });
 
   return (
@@ -97,12 +101,19 @@ export default function WarehouseGoodsReceipt() {
 
           <p className="gud-alur" data-testid="alur-ringkas"><Link to="/warehouse/barang-akan-datang">PO yang ditunggu ada di Barang Akan Datang</Link>; di sini Anda memeriksa barang dan memasukkannya ke stok.{rows && perluDitindak > 0 && <> <strong>{perluDitindak} dokumen menunggu tindakan Anda.</strong></>}</p>
 
+          {luarDaftar && (
+            <div className="gud-luar-daftar" role="note" data-testid="di-luar-daftar">
+              <span><strong>{dokBuka?.receiptNumber}</strong> tidak termasuk dalam tampilan daftar ini (tab atau saringan yang aktif). Dokumen tetap terbuka di sebelah kanan.</span>
+              <button type="button" className="gud-tombol" onClick={tampilkanDiDaftar} data-testid="tampilkan-di-daftar">Tampilkan di daftar</button>
+            </div>
+          )}
+
           <div className="gud-cari">
             <IkCari size={16} aria-hidden />
             <input value={cari} onChange={(e) => ubahF("q", e.target.value)} placeholder="Cari GR, PO, supplier, atau bahan..." aria-label="Cari penerimaan" />
           </div>
 
-          <div role="tablist" aria-label="Kelompok penerimaan" className="gud-tab" data-testid="pipeline-daftar">
+          <div role="tablist" aria-label="Kelompok penerimaan" className="gud-tab gud-tab-lipat" data-testid="pipeline-daftar">
             {TAB_PENERIMAAN.map((t) => (
               <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => gantiTab(t.key)} data-testid={`tab-${t.key}`} className="max-sm:min-h-11">
                 {t.label}<span className="gud-tab-jumlah">{rows ? hitung[t.key] ?? 0 : "–"}</span>

@@ -65,7 +65,7 @@ test("layar: halaman detail MI & ST memakai tampilan server, AksiDokumen, AlurPe
   for (const f of ["features/warehouse/dokumen/MaterialIssueDetail.jsx", "features/warehouse/dokumen/TransferDetail.jsx"]) {
     const s = baca(f);
     assert.match(s, /AksiDokumen/, f); assert.match(s, /AlurPenerimaan/, f); assert.match(s, /KartuJalurKoreksi/, f);
-    if (f.includes("Transfer")) { assert.match(s, /JejakDokumen/, f); assert.match(s, /TabelItemDokumen/, f); } else { assert.match(s, /jejak-dokumen/, `${f}: riwayat dokumen`); assert.match(s, /gud-item/, `${f}: baris bahan di ruang kerja`); } // Nov 2026: ruang kerja MI menampilkan riwayat & baris bahan sendiri (tab Riwayat/Permintaan/Pengeluaran)
+    if (f.includes("Transfer")) { assert.match(s, /JejakDokumen/, f); assert.match(s, /TabelItemDokumen/, f); } else { assert.match(s, /jejak-dokumen/, `${f}: riwayat dokumen`); assert.match(s, /gud-bhn/, `${f}: baris bahan di ruang kerja`); } // Nov 2026: ruang kerja MI menampilkan riwayat & baris bahan sendiri (tab Riwayat/Permintaan/Pengeluaran)
     assert.match(s, /\.tampilan/, `${f}: status dari server`); assert.match(s, /izin\?\.tulis === false/, `${f}: akun hanya-lihat`);
     assert.match(s, /belum menyimpan saldo per lokasi/, `${f}: tidak menyajikan lokasi sebagai saldo per lokasi`);
     assert.doesNotMatch(s, />\s*Edit\s*</, `${f}: tidak ada tombol Edit umum`); assert.doesNotMatch(s, /window\.confirm/, `${f}: konfirmasi dampak lewat panel, bukan confirm()`);

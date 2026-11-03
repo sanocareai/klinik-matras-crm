@@ -155,8 +155,10 @@ test("Teks pengguna tidak memuat istilah teknis reversal/idempotensi di layar ba
 });
 
 test("Tata letak sempit: target sentuh min-h-11, kartu/daftar bergantian dengan tabel, tanpa lebar tetap yang memaksa gulir", () => {
-  for (const f of ["pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseInventory.jsx", "features/warehouse/aksi/AksiDokumen.jsx", "features/warehouse/penerimaan/TabelPerItem.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
-  assert.match(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /md:hidden/);
+  for (const f of ["pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseInventory.jsx", "features/warehouse/aksi/AksiDokumen.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
+  // Redesain Penerimaan (4 Nov 2026): rincian per item baca-saja; tata letak mengikuti lebar PANEL (container query), bukan dua DOM md:hidden.
+  assert.match(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /gud-pi-grid/); assert.doesNotMatch(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /md:hidden/);
+  assert.match(fs.readFileSync(path.join(dir, "../src/styles/sanss-gudang-dok.css"), "utf8"), /container-name: gud-pi/);
   // Redesain Stok & Lokasi (Okt 2026): satu susunan responsif (grid md:) menggantikan dua DOM tabel/kartu bergantian.
   assert.match(baca("features/warehouse/stok/DaftarBahan.jsx"), /gud-stok-baris/); assert.match(fs.readFileSync(path.join(dir, "../src/styles/sanss-gudang-stok.css"), "utf8"), /@container gud-daftar \(max-width: ?560px\)/); // Nov 2026: tata letak lewat container query
 });

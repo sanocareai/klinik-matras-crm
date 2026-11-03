@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { TombolAksi, Pilihan } from "@/features/finance/shared.jsx";
 import { api } from "@/api.js";
-import { AngkaGud, PilihGud, TanggalGud } from "@/features/warehouse/form/GudKontrol.jsx";
-import { IkFoto, IkSampah } from "@/components/gudangIcons.jsx";
+import { AngkaGud, GudField, PilihGud, TanggalGud } from "@/features/warehouse/form/GudKontrol.jsx";
+import { IkAwas, IkCentang, IkFoto, IkMuatUlang, IkSampah } from "@/components/gudangIcons.jsx";
 import { compressImage } from "@/utils/compressImage.js";
 import {
   labelPenerimaan, varianPenerimaan, penerimaanBelumTiba, LABEL_WORKSPACE, jumlahTeks, tanggalTeks, waktuTeks, teksPendampingAktual,
-  formKedatanganAwal, galatKedatangan, sisaPenggantiTerpilih, kekuranganIsian, bodyKedatangan, formKoreksiAwal, bodyKoreksi, galatKoreksi, kalimatRiwayat,
+  formKedatanganAwal, galatKedatangan, galatKolomKedatangan, sisaPenggantiTerpilih, kekuranganIsian, bodyKedatangan, formKoreksiAwal, bodyKoreksi, galatKoreksi, kalimatRiwayat,
 } from "@/features/kedatangan/kedatanganLogic.js";
 
 // Panel KEDATANGAN barang pada satu PO — dipakai Gudang (Barang Akan Datang) dan Finance (detail PO). Data dan aturan SATU sumber (server): layar hanya menampilkan.
@@ -174,14 +174,129 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
   const setBaris = (i, patch) => setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) }));
   const galatDini = galatKedatangan(f, { tanggalPO: po.orderDate });
   const kurang = kekuranganIsian(f);
+  const [sentuh, setSentuh] = useState({}); const [coba, setCoba] = useState(false); // Gudang: galat per kolom baru tampil setelah kolom disentuh / simpan dicoba (penanda wajib tetap ada)
+  const galatKolom = useMemo(() => (gud ? galatKolomKedatangan(f, { tanggalPO: po.orderDate }) : {}), [gud, f, po.orderDate]);
+  const sentuhi = (k) => setSentuh((s) => (s[k] ? s : { ...s, [k]: true }));
+  const tampilGalat = (k) => (coba || sentuh[k]) && galatKolom[k] ? galatKolom[k] : undefined;
   async function simpan() {
-    if (kunciRef.current) return; kunciRef.current = true; setKunciSimpan(true); // klik ganda: satu permintaan
+    if (kunciRef.current) return;
+    if (gud) { setCoba(true); if (galatDini) return; } // Gudang: tombol tidak dimatikan; klik menampilkan galat di kolomnya
+    kunciRef.current = true; setKunciSimpan(true); // klik ganda: satu permintaan
     setGalat("");
     try {
       const body = bodyKedatangan(f, receipt?.id ?? receiptId ?? null);
       const hasil = workspace === "FINANCE" ? await api.catatKedatanganFinance(po.id, body, kunci.current) : await api.catatKedatanganGudang(po.id, body, kunci.current);
       await onDone(hasil);
     } catch (e) { setGalat(e.message || "Gagal mencatat kedatangan"); kunci.current = `tiba-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; } finally { kunciRef.current = false; setKunciSimpan(false); }
+  }
+  if (gud) {
+    // GUDANG (redesain Penerimaan, 4 Nov 2026): dialog kerja lebar (layar penuh di HP). Atas: informasi pengiriman; tengah: baris item ringkas (angka PO dari server + kolom Jumlah datang); bawah (footer): tindakan selalu terjangkau.
+    // Aturan, payload, dan kunci idempotensi SAMA dengan sebelumnya; galat muncul di dekat kolom setelah disentuh / simpan dicoba; isian bertahan saat server menolak; klik ganda dicegah kunci sinkron.
+    const nilaiPO = (l) => po.lines.find((x) => x.id === l.purchaseOrderLineId) ?? {};
+    const adaGalatKolom = Object.keys(galatKolom).length > 0;
+    return (
+      <Modal portalToBody dialogBilaTempel open onOpenChange={(v) => !v && onClose()} title={`Catat Barang Tiba — ${po.poNumber}`} className="sm:w-[980px] gud-modal gud-dlg-penuh"
+        description="Satu pengiriman = satu penerimaan. Mencatat kedatangan tidak mengubah stok; stok bertambah saat Simpan ke Stok."
+        footer={(
+          <>
+            {galat && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-kedatangan">{galat}</p>}
+            {!galat && coba && adaGalatKolom && <p role="alert" className="gud-info" data-nada="galat" data-testid="galat-kedatangan"><IkAwas size={14} aria-hidden /> Ada isian yang perlu diperbaiki (ditandai di formulir).</p>}
+            {!galat && !adaGalatKolom && kurang.length > 0 && <p className="gud-petunjuk" data-testid="kekurangan-isian">Boleh disimpan dulu — akan ditandai: {kurang.join("; ")}.</p>}
+            <button type="button" className="gud-tombol" onClick={onClose}>Batal</button>
+            <button type="button" className="gud-tombol gud-tombol-utama" onClick={simpan} disabled={kunciSimpan} data-testid="simpan-kedatangan">{kunciSimpan ? <IkMuatUlang size={14} className="animate-spin" /> : <IkCentang size={16} />} Catat Barang Tiba</button>
+          </>
+        )}>
+        <form onSubmit={(e) => { e.preventDefault(); simpan(); }} noValidate className="gud-form gud-dlg-form" data-testid="form-kedatangan">
+          <section className="gud-dlg-bagian" aria-label="Informasi pengiriman">
+            <h3 className="gud-dlg-judul">Informasi pengiriman</h3>
+            <div className="gud-dlg-info-grid">
+              <GudField label="Tanggal barang tiba" wajib hint="Menjadi dasar jatuh tempo faktur (termin)." galat={tampilGalat("tanggalTiba")}>
+                <TanggalGud value={f.tanggalTiba} onChange={(v) => { sentuhi("tanggalTiba"); set("tanggalTiba", v); }} tanpaMasaDepan invalid={!!tampilGalat("tanggalTiba")} data-testid="tanggal-tiba-isian" aria-label="Tanggal barang tiba" />
+              </GudField>
+              <GudField label="PIC / penerima barang" wajib htmlFor="kd-penerima" galat={tampilGalat("penerima")}>
+                <Input id="kd-penerima" value={f.penerima} onChange={(e) => set("penerima", e.target.value)} onBlur={() => sentuhi("penerima")} aria-invalid={!!tampilGalat("penerima")} placeholder="mis. Budi (Gudang)" data-testid="isian-penerima" />
+              </GudField>
+              <GudField label="Nomor surat jalan" htmlFor="kd-surat" hint="Opsional — bila kosong tampil “Belum dilampirkan”.">
+                <Input id="kd-surat" value={f.suratJalan} onChange={(e) => set("suratJalan", e.target.value)} data-testid="isian-surat-jalan" />
+              </GudField>
+              <GudField label="Catatan kedatangan" wajib htmlFor="kd-catatan" galat={tampilGalat("catatan")}>
+                <Input id="kd-catatan" value={f.catatan} onChange={(e) => set("catatan", e.target.value)} onBlur={() => sentuhi("catatan")} aria-invalid={!!tampilGalat("catatan")} placeholder="mis. dus utuh, dikirim ekspedisi" data-testid="isian-catatan" />
+              </GudField>
+            </div>
+            <div className="gud-f">
+              <span className="gud-f-label">Foto surat jalan / bukti (opsional)</span>
+              <UnggahBukti workspace={workspace} value={f.bukti} onChange={(v) => set("bukti", v)} />
+            </div>
+          </section>
+          <section className="gud-dlg-bagian" aria-label="Barang yang datang">
+            <div className="gud-dlg-judul-baris">
+              <h3 className="gud-dlg-judul">Barang yang datang di pengiriman ini</h3>
+              {f.lines.length > 1 && <button type="button" className="gud-tombol" data-testid="isi-semua-sisa" onClick={() => f.lines.forEach((l, i) => { if (Number(l.belumDatang) > 0) setBaris(i, { jumlahDatang: String(l.belumDatang) }); })}>Isi semua sesuai sisa PO</button>}
+            </div>
+            <p className="gud-petunjuk" data-testid="aturan-bertahap">Satu pengiriman = satu dokumen penerimaan. Pengiriman bertahap (mis. PO 100 → 50 + 50) dicatat sebagai dua penerimaan di tanggalnya masing-masing; jumlah datang tidak boleh melebihi “Belum datang”. Kelebihan yang disepakati perlu revisi jumlah PO oleh Finance.</p>
+            {tampilGalat("jumlah") && <p className="gud-f-galat" role="alert" data-testid="galat-jumlah"><IkAwas size={14} aria-hidden /> {tampilGalat("jumlah")}</p>}
+            <div className="gud-dlg-kepala-kolom gud-dlg-kepala-tiba" aria-hidden><span>Item &amp; progres PO</span><span>Jumlah datang</span></div>
+            <ul className="gud-dlg-daftar" data-testid="baris-datang-daftar">
+              {f.lines.map((l, i) => {
+                const p = nilaiPO(l); const g = tampilGalat(`baris:${l.purchaseOrderLineId}`);
+                return (
+                  <li key={l.purchaseOrderLineId} className="gud-dlg-baris gud-dlg-baris-tiba" data-testid="baris-datang" data-kode={l.kode} data-invalid={g ? "ya" : undefined}>
+                    <div className="gud-dlg-item">
+                      <span className="gud-pi-nama">{l.nama || l.kode}</span>
+                      {l.kode && l.kode.replace(/[^a-z0-9]/gi, "").toLowerCase() !== String(l.nama ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase() && <span className="gud-pi-kode">{l.kode}</span>}
+                      <dl className="gud-dlg-progres" data-testid="progres-baris">
+                        <div><dt>Dipesan</dt><dd>{jumlahTeks(l.dipesan)}</dd></div>
+                        <div><dt>Sudah datang</dt><dd>{jumlahTeks(p.datangAsli ?? p.datang ?? 0)}</dd></div>
+                        <div data-tebal={Number(l.belumDatang) > 0 ? "ya" : undefined}><dt>Belum datang</dt><dd>{jumlahTeks(l.belumDatang)}</dd></div>
+                        <div><dt>Baik belum disimpan</dt><dd>{jumlahTeks(p.baikBelumDisimpan ?? 0)}</dd></div>
+                        <div><dt>Sudah masuk stok</dt><dd>{jumlahTeks(p.masukStok ?? 0)}</dd></div>
+                        {l.menungguPengganti > 0 && <div data-awas="ya"><dt>Menunggu pengganti</dt><dd>{jumlahTeks(l.menungguPengganti)}</dd></div>}
+                      </dl>
+                      <span className="gud-dlg-ket">Satuan: {l.satuan}. Batas pengiriman ini: {jumlahTeks(l.pengganti ? sisaPenggantiTerpilih(l) : l.belumDatang)} {l.satuan}.</span>
+                    </div>
+                    <div className="gud-dlg-isi gud-dlg-isi-tiba">
+                      <span className="gud-dlg-label">Jumlah datang</span>
+                      <AngkaGud value={l.jumlahDatang} onChange={(v) => { sentuhi(`baris:${l.purchaseOrderLineId}`); setBaris(i, { jumlahDatang: v }); }} satuan={l.satuan} invalid={!!g} aria-label={`Jumlah datang ${l.kode}`} data-testid={`isian-datang-${l.kode}`} />
+                    </div>
+                    {g && <p className="gud-f-galat gud-dlg-lebar" role="alert" data-testid="galat-baris-datang"><IkAwas size={14} aria-hidden /> {g}</p>}
+                    {l.pendamping?.mode === "AKTUAL" && (
+                      <div className="gud-dlg-lebar gud-dlg-pendamping">
+                        <GudField label={`Jumlah ${String(l.pendamping.satuan).toLowerCase()} aktual`} hint="Hitung fisiknya; bukan konversi dari berat.">
+                          <AngkaGud value={l.jumlahPendamping} onChange={(v) => setBaris(i, { jumlahPendamping: v })} satuan={String(l.pendamping?.satuan ?? "").toLowerCase()} aria-label={`Jumlah pendamping ${l.kode}`} />
+                        </GudField>
+                      </div>
+                    )}
+                    {l.pendamping?.mode === "TETAP" && (
+                      <p className="gud-f-hint gud-dlg-lebar">{l.jumlahDatang !== "" && Number(l.jumlahDatang) > 0 ? `Otomatis ≈ ${jumlahTeks(Number(l.jumlahDatang) * l.pendamping.rasio)} ${String(l.pendamping.satuan).toLowerCase()} (1 ${l.satuan} = ${jumlahTeks(l.pendamping.rasio)})` : `Konversi tetap: 1 ${l.satuan} = ${jumlahTeks(l.pendamping.rasio)} ${String(l.pendamping.satuan).toLowerCase()}`}</p>
+                    )}
+                    {l.menungguPengganti > 0 && (
+                      <label className="gud-pilih-baris gud-dlg-lebar gud-dlg-pengganti" data-testid="centang-pengganti">
+                        <input type="checkbox" checked={!!l.pengganti} onChange={(e) => setBaris(i, { pengganti: e.target.checked })} aria-label={`Pengiriman pengganti ${l.kode}`} />
+                        <span><strong>Ini pengiriman pengganti</strong> untuk barang yang ditolak ({jumlahTeks(l.menungguPengganti)} {l.satuan} menunggu pengganti). Pengganti tidak menaikkan jumlah PO dan tidak mengurangi “belum datang”; hubungannya ke penerimaan asal tersimpan.</span>
+                      </label>
+                    )}
+                    {l.menungguPengganti > 0 && l.pengganti && (
+                      <div className="gud-dlg-lebar gud-dlg-asal" data-testid="pilih-asal-pengganti">
+                        {l.asalPengganti.length > 1 ? (
+                          <GudField label="Pengganti untuk penolakan di penerimaan" hint="Pilih penolakan yang digantikan oleh pengiriman ini.">
+                            <PilihGud value={l.asalId} onChange={(v) => setBaris(i, { asalId: v })} aria-label={`Penolakan asal ${l.kode}`}>
+                              {l.asalPengganti.map((a) => <option key={a.lineId} value={a.lineId}>{a.receiptNumber} — menunggu pengganti {jumlahTeks(a.sisa)} {l.satuan}</option>)}
+                            </PilihGud>
+                          </GudField>
+                        ) : <p className="gud-f-hint">Pengganti untuk penolakan di <strong>{l.asalPengganti[0]?.receiptNumber ?? "—"}</strong>.</p>}
+                        <p className="gud-f-hint" data-testid="batas-pengganti">Batas jumlah pengganti: <strong>{jumlahTeks(sisaPenggantiTerpilih(l))} {l.satuan}</strong> (sisa penolakan yang belum diganti).</p>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {f.lines.length === 0 && <p className="gud-petunjuk">Tidak ada item yang masih boleh datang pada PO ini.</p>}
+          </section>
+          <p className="gud-petunjuk" data-testid="info-aktor">Dicatat otomatis atas nama akun Anda — peran dan workspace ({LABEL_WORKSPACE[workspace]}) diambil dari sesi, bukan dipilih di sini. * wajib diisi.</p>
+        </form>
+      </Modal>
+    );
   }
   return (
     <Modal
@@ -305,7 +420,7 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
   }
   return (
     <Modal
-      open onOpenChange={(v) => !v && onClose()} title={`Koreksi Kedatangan — ${receipt.nomor}`} className={gud ? "w-[680px] gud-modal" : "w-[680px]"}
+      portalToBody={gud} dialogBilaTempel={gud} open onOpenChange={(v) => !v && onClose()} title={`Koreksi Kedatangan — ${receipt.nomor}`} className={gud ? "sm:w-[860px] gud-modal gud-dlg-penuh" : "w-[680px]"}
       description="Setiap koreksi wajib beralasan dan tercatat sebelum–sesudah (siapa, kapan, dari workspace mana). Lihat dampaknya dulu: progres PO, jadwal termin, stok, dan jurnal dihitung server — sesudah Simpan ke Stok, koreksi jumlah baik memakai pembalik + pengganti dan hanya bila terbukti aman."
       footer={
         <div className="flex w-full flex-col gap-2">

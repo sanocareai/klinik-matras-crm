@@ -156,16 +156,16 @@ export default function MaterialIssueFormModal({ open, onClose, onCreated, dokum
             <div className="gud-katalog-dipilih" data-testid="daftar-diminta">
               <h4 className="gud-bahan-sub2">Diminta ({lines.length} bahan)</h4>
               {lines.length === 0 ? <p className="gud-petunjuk" data-testid="diminta-kosong">Belum ada bahan. Cari di katalog lalu pilih Tambah.</p> : (
-                <ul className="gud-item-daftar">
+                <ul className="gud-bhn-daftar">
                   {lines.map((l) => {
                     const info = tersediaTeks(peta.get(l.materialId)); const n = angkaOf(l.qty); const kurang = Number.isFinite(info.angka) && n > info.angka;
                     return (
-                      <li key={l.materialId} className="gud-item" data-testid="baris-diminta" data-kode={l.kode}>
-                        <div className="gud-item-nama"><strong>{l.kode}</strong><span className="gud-redup">{l.nama}</span><button type="button" className="gud-tombol-ikon gud-hapus-baris" onClick={() => hapusBaris(l.materialId)} aria-label={`Hapus ${l.kode} dari daftar`} data-testid="hapus-baris"><IkSampah size={16} /></button></div>
-                        <GudField label={`Jumlah diminta (${satuan(l.satuan)})`} htmlFor={`mi-qty-${l.materialId}`} galat={galat[`qty-${l.materialId}`]} className="gud-item-lebar">
+                      <li key={l.materialId} className="gud-bhn" data-testid="baris-diminta" data-kode={l.kode}>
+                        <div className="gud-bhn-nama"><strong>{l.kode}</strong><span className="gud-redup">{l.nama}</span><button type="button" className="gud-tombol-ikon gud-hapus-baris" onClick={() => hapusBaris(l.materialId)} aria-label={`Hapus ${l.kode} dari daftar`} data-testid="hapus-baris"><IkSampah size={16} /></button></div>
+                        <GudField label={`Jumlah diminta (${satuan(l.satuan)})`} htmlFor={`mi-qty-${l.materialId}`} galat={galat[`qty-${l.materialId}`]} className="gud-bhn-lebar">
                           <AngkaGud id={`mi-qty-${l.materialId}`} value={l.qty} onChange={(v) => ubahQty(l.materialId, v)} satuan={satuan(l.satuan)} invalid={!!galat[`qty-${l.materialId}`]} placeholder="0" data-testid={`qty-${l.kode}`} inputRef={(el) => { lineRefs.current[l.materialId] = el; }} />
                         </GudField>
-                        <p className="gud-petunjuk gud-item-lebar" data-nada={info.nada}>{info.teks}{kurang && <b className="gud-merah-teks" data-testid="peringatan-kurang"> — lebih dari yang tersedia; Draf tetap bisa disimpan, tetapi pengeluaran akan gagal bila saldo belum cukup.</b>}</p>
+                        <p className="gud-petunjuk gud-bhn-lebar" data-nada={info.nada}>{info.teks}{kurang && <b className="gud-merah-teks" data-testid="peringatan-kurang"> — lebih dari yang tersedia; Draf tetap bisa disimpan, tetapi pengeluaran akan gagal bila saldo belum cukup.</b>}</p>
                       </li>
                     );
                   })}
