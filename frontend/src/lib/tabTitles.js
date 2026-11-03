@@ -20,6 +20,7 @@ const RESOURCE_LABELS = {
   "goods-receipt": "Penerimaan",
   // Tahap 2: /warehouse/material-issue/<id> dan /warehouse/transfers/<id> → tab bernama menu (bukan "Material Issue" / "Transfers").
   "material-issue": "Pengeluaran",
+  "material-pickup": "Permintaan Bahan",
   transfers: "Transfer",
   // Tahap 2 (pola sederhana): halaman detail Opname, Restok, Barang Rusak, Retur, Penyesuaian.
   "stock-count": "Opname",

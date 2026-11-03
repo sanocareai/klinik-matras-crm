@@ -162,12 +162,7 @@ export default function WarehouseInventory() {
             {error && terfilter && <div role="alert" className="gud-galat" data-testid="galat-muat">{error} — angka di bawah dari pemuatan terakhir yang berhasil. <button type="button" className="gud-tautan" onClick={load}>Coba lagi</button></div>}
 
             <div className="gud-stok-ringkas-hasil">
-              <span data-testid="jumlah-tampil">{terfilter ? `${terfilter.length} bahan tampil` : gagalMuat ? "Daftar gagal dimuat" : "Memuat…"}</span>
-              {terfilter && terfilter.length > 0 && (hasil.minus + hasil.belumDiketahui + hasil.nolTerverifikasi + hasil.nolPergerakan + (hasil.hargaBelum ?? 0)) > 0 && (
-                <span data-testid="rincian-hasil" title="Dihitung dari seluruh hasil saringan, bukan hanya halaman ini">
-                  {[hasil.minus > 0 && `${hasil.minus} saldo minus`, hasil.belumDiketahui > 0 && `${hasil.belumDiketahui} belum diketahui`, hasil.nolTerverifikasi > 0 && `${hasil.nolTerverifikasi} nol terverifikasi`, hasil.nolPergerakan > 0 && `${hasil.nolPergerakan} nol menurut pergerakan`, hasil.hargaBelum > 0 && `${hasil.hargaBelum} belum ada harga`].filter(Boolean).join(" · ")}
-                </span>
-              )}
+              <span data-testid="jumlah-tampil">{terfilter ? `${terfilter.length} bahan sesuai filter` : gagalMuat ? "Daftar gagal dimuat" : "Memuat…"}</span>
             </div>
 
             <DaftarBahan halaman={halaman} loading={loading || (!terfilter && !error)} peta={harga} dipilihId={selected?.materialId ?? null} onPilih={pilihBaris} onHalaman={setNomorHalaman}

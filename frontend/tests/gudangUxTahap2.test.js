@@ -64,7 +64,8 @@ test("ketersediaan: peringatan hanya bila cukup === false; saldo belum diketahui
 test("layar: halaman detail MI & ST memakai tampilan server, AksiDokumen, AlurPenerimaan, KartuJalurKoreksi, jejak; tanpa tombol Edit umum dan tanpa klaim saldo per lokasi", () => {
   for (const f of ["features/warehouse/dokumen/MaterialIssueDetail.jsx", "features/warehouse/dokumen/TransferDetail.jsx"]) {
     const s = baca(f);
-    assert.match(s, /AksiDokumen/, f); assert.match(s, /AlurPenerimaan/, f); assert.match(s, /KartuJalurKoreksi/, f); assert.match(s, /JejakDokumen/, f); assert.match(s, /TabelItemDokumen/, f);
+    assert.match(s, /AksiDokumen/, f); assert.match(s, /AlurPenerimaan/, f); assert.match(s, /KartuJalurKoreksi/, f);
+    if (f.includes("Transfer")) { assert.match(s, /JejakDokumen/, f); assert.match(s, /TabelItemDokumen/, f); } else { assert.match(s, /jejak-dokumen/, `${f}: riwayat dokumen`); assert.match(s, /gud-item/, `${f}: baris bahan di ruang kerja`); } // Nov 2026: ruang kerja MI menampilkan riwayat & baris bahan sendiri (tab Riwayat/Permintaan/Pengeluaran)
     assert.match(s, /\.tampilan/, `${f}: status dari server`); assert.match(s, /izin\?\.tulis === false/, `${f}: akun hanya-lihat`);
     assert.match(s, /belum menyimpan saldo per lokasi/, `${f}: tidak menyajikan lokasi sebagai saldo per lokasi`);
     assert.doesNotMatch(s, />\s*Edit\s*</, `${f}: tidak ada tombol Edit umum`); assert.doesNotMatch(s, /window\.confirm/, `${f}: konfirmasi dampak lewat panel, bukan confirm()`);
@@ -78,7 +79,9 @@ test("layar: halaman detail MI & ST memakai tampilan server, AksiDokumen, AlurPe
 test("daftar: halaman, tab tahap berhitung, pencarian, kartu HP, ?buka= lama diarahkan ke halaman detail; drawer lama dihapus", () => {
   for (const [f, rute] of [["pages/warehouse/WarehouseMaterialIssue.jsx", "/warehouse/material-issue/"], ["pages/warehouse/WarehouseTransfers.jsx", "/warehouse/transfers/"]]) {
     const s = baca(f);
-    assert.match(s, /FilterTahapDokumen/, f); assert.match(s, /md:hidden/, `${f}: kartu HP`); assert.match(s, /hidden md:block/, `${f}: tabel desktop`); assert.ok(s.includes(rute), `${f}: ke halaman detail`);
+    if (f.includes("MaterialIssue")) { assert.match(s, /FilterPopover/, f); assert.match(s, /gud-dok-baris/, `${f}: baris + kartu HP lewat container query`); assert.match(s, /TAB_MI/, f); } // Nov 2026: ruang kerja dokumen (pola Stok bahan)
+    else { assert.match(s, /FilterTahapDokumen/, f); assert.match(s, /md:hidden/, `${f}: kartu HP`); assert.match(s, /hidden md:block/, `${f}: tabel desktop`); }
+    assert.ok(s.includes(rute) || s.includes("PATH"), `${f}: ke halaman detail`);
     assert.match(s, /sp\.get\("buka"\)/, `${f}: tautan lama`); assert.doesNotMatch(s, /DetailDrawer/, `${f}: tanpa drawer`);
   }
   assert.ok(!fs.existsSync(path.join(dir, "../src/features/warehouse/components/MaterialIssueDetailDrawer.jsx"))); assert.ok(!fs.existsSync(path.join(dir, "../src/features/warehouse/components/StockTransferDetailDrawer.jsx")));
@@ -88,7 +91,7 @@ test("daftar: halaman, tab tahap berhitung, pencarian, kartu HP, ?buka= lama dia
 });
 
 test("form pembuatan mengembalikan dokumen baru ke pemanggil (diarahkan ke halaman detail)", () => {
-  assert.match(baca("features/warehouse/components/MaterialIssueFormModal.jsx"), /onCreated\(baru\)/); assert.match(baca("features/warehouse/components/StockTransferFormModal.jsx"), /onCreated\(baru\)/);
+  assert.match(baca("features/warehouse/components/MaterialIssueFormModal.jsx"), /onCreated\??\.?\(baru\)/); assert.match(baca("features/warehouse/components/StockTransferFormModal.jsx"), /onCreated\(baru\)/);
 });
 
 test("AksiDokumen mendukung ringkasan dampak, catatan, galat panel, bidang pilih/area; ikon aksi baru", () => {
@@ -105,7 +108,7 @@ test("filter tahap daftar Gudang memakai useTahapFilter (replaceActivePath), BUK
   assert.match(baca("pages/warehouse/WarehouseGoodsReceipt.jsx"), /useFilterDaftar\(PATH, KUNCI\)/); assert.doesNotMatch(baca("pages/warehouse/WarehouseGoodsReceipt.jsx"), /setSp\(/);
   for (const f of ["pages/warehouse/WarehouseMaterialIssue.jsx", "pages/warehouse/WarehouseTransfers.jsx"]) {
     const s = baca(f);
-    assert.match(s, /useTahapFilter\(/, f); assert.doesNotMatch(s, /setSp\(/, `${f}: tidak boleh memakai setSearchParams untuk filter`);
+    assert.match(s, f.includes("MaterialIssue") ? /useFilterDaftar\(PATH, KUNCI\)/ : /useTahapFilter\(/, f); assert.doesNotMatch(s, /setSp\(/, `${f}: tidak boleh memakai setSearchParams untuk filter`);
   }
 });
 

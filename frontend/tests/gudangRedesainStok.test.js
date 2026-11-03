@@ -110,7 +110,8 @@ test("tipografi Gudang: stack Apple/Inter terkunci ke .gud-skin dan workspace=gu
 test("ruang kerja: tab Saldo/Harga/Pergerakan/Informasi; informasi penting tampil langsung (tanpa accordion/ikon info); Ubah informasi di header; nonaktif di tab Informasi", () => {
   const d = baca("features/warehouse/components/ItemDetailDrawer.jsx"); const h = baca("features/warehouse/stok/HargaBerlakuPanel.jsx"); const k = baca("features/warehouse/stok/KoreksiSaldoPanel.jsx");
   assert.match(d, /aksiHeader=\{<button[\s\S]*?data-testid="edit-bahan"/);
-  assert.ok(!/<Lipat|InfoToggle|<details/.test(d + h + k), "tanpa accordion/ikon info di ruang kerja");
+  assert.ok(!/<Lipat|<details/.test(d + h + k), "tanpa accordion di ruang kerja"); assert.ok(!/InfoToggle/.test(h + k), "panel Harga & Koreksi tanpa ikon info");
+  assert.match(d, /bantuanSaldo/); assert.match(d, /data-testid="definisi-saldo"/); // Nov 2026: definisi Saldo ringkas; uraian ledger & batas lokasi ada di bantuan
   assert.match(k, /tidak langsung mengubah saldo/); assert.match(d, /Lokasi dari riwayat penerimaan/); assert.match(d, /data-testid="aksi-bahan"/);
   assert.match(baca("components/ui/fokus-overlay.jsx"), /aksiHeader/);
 });

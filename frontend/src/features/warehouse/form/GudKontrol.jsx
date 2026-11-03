@@ -93,11 +93,11 @@ export function TanggalGud({ value, onChange, min, tanpaMasaDepan = false, disab
 }
 
 /** Kolom angka (jumlah): desimal, rata kanan, satuan di dalam kolom. Bukan type=number agar tidak berubah oleh roda tetikus/panah; validasi angka tetap di pemanggil. */
-export function AngkaGud({ value, onChange, satuan, invalid = false, disabled = false, id, className, "aria-label": ariaLabel, "data-testid": testId, placeholder = "0", onBlur }) {
+export function AngkaGud({ value, onChange, satuan, invalid = false, disabled = false, id, className, "aria-label": ariaLabel, "data-testid": testId, placeholder = "0", onBlur, inputRef, autoFocus }) {
   const auto = useId();
   return (
     <span className={cn("gud-f-angka", className)} data-invalid={invalid ? "ya" : undefined}>
-      <input id={id ?? auto} type="text" inputMode="decimal" autoComplete="off" value={value ?? ""} disabled={disabled} placeholder={placeholder} aria-label={ariaLabel} aria-invalid={invalid || undefined} data-testid={testId} onBlur={onBlur}
+      <input id={id ?? auto} type="text" inputMode="decimal" autoComplete="off" value={value ?? ""} disabled={disabled} placeholder={placeholder} aria-label={ariaLabel} aria-invalid={invalid || undefined} data-testid={testId} onBlur={onBlur} ref={inputRef} autoFocus={autoFocus}
         onChange={(e) => onChange?.(e.target.value.replace(",", "."))} />
       {satuan && <span className="gud-f-satuan" aria-hidden="true">{satuan}</span>}
     </span>

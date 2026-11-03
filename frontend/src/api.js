@@ -662,6 +662,7 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production-planning/material-requests${qs ? `?${qs}` : ""}`);
   },
+  getMaterialRequest: (id) => request(`/production-planning/material-requests/${id}`),
   requestMaterialPickup: (planId, idempotencyKey = mutationKey("issue-request")) =>
     request(`/production-planning/plans/${planId}/material-request`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
   pickMaterialRequest: (id, data, idempotencyKey = mutationKey("issue-pick")) =>

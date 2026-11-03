@@ -39,7 +39,7 @@ test("barisDefinisi: sumber data, masuk, keluar, siapa yang bertindak, satuan hi
 test("satu pola jendela fokus: semua detail dokumen menampilkan FokusOverlay + props { id, onTutup, onBerubah }, tanpa halaman terpisah (PageContainer) dan tanpa useParams", () => {
   for (const f of ["MaterialIssueDetail", "TransferDetail", "OpnameDetail", "RestokDetail", "RusakDetail", "ReturDetail", "PenyesuaianDetail"]) {
     const s = baca(`features/warehouse/dokumen/${f}.jsx`);
-    assert.match(s, /\{ id, onTutup, onBerubah \}/, f); assert.doesNotMatch(s, /PageContainer|useParams|<Link to=\{?["`]\/warehouse\/(material-issue|transfers|stock-count|replenishment|adjustments)/, f);
+    assert.match(s, /\{ id, onTutup, onBerubah(, [^}]*)? \}/, f); assert.doesNotMatch(s, /PageContainer|useParams|<Link to=\{?["`]\/warehouse\/(material-issue|transfers|stock-count|replenishment|adjustments)/, f);
     assert.match(s, /FokusOverlay|HalamanDokumen/, f);
   }
   assert.match(baca("features/warehouse/dokumen/KartuDokumen.jsx"), /<FokusOverlay open onClose=\{onTutup\}/); assert.doesNotMatch(baca("features/warehouse/dokumen/KartuDokumen.jsx"), /PageContainer/);
@@ -52,7 +52,8 @@ test("rute: daftar + /:id? (jendela di atas daftar); Beranda & Perlu Perhatian m
   for (const p of ["/warehouse/material-issue/:id?", "/warehouse/transfers/:id?", "/warehouse/stock-count/:id?", "/warehouse/replenishment/:id?", "/warehouse/adjustments/:jenis?/:id?", "/warehouse/dashboard/:jenis?/:id?", "/warehouse/perlu-perhatian/:jenis?/:id?", "/warehouse/retur-supplier/:id?"]) assert.ok(reg.includes(`"${p}"`), p);
   assert.doesNotMatch(reg, /path: "\/warehouse\/(material-issue|transfers|stock-count|replenishment)\/:id", render/, "tidak ada rute detail terpisah");
   for (const [f, k] of [["WarehouseMaterialIssue", "MaterialIssueDetail"], ["WarehouseTransfers", "TransferDetail"], ["WarehouseStockCount", "OpnameDetail"], ["WarehouseReplenishment", "RestokDetail"]]) {
-    const s = baca(`pages/warehouse/${f}.jsx`); assert.match(s, new RegExp(`<${k} key="fokus" id=\\{bukaId\\} onTutup=\\{tutup\\}`), f); assert.match(s, /useJendelaFokus\(/, f); assert.doesNotMatch(s, /openNewTab|window\.open/, f);
+    const s = baca(`pages/warehouse/${f}.jsx`); const baru = f === "WarehouseMaterialIssue"; // Nov 2026: ruang kerja dokumen MI memakai rute :id langsung (panel menempel), bukan useJendelaFokus
+    assert.match(s, new RegExp(`<${k} key="fokus" id=\\{${baru ? "id" : "bukaId"}\\} onTutup=\\{tutup\\}`), f); if (!baru) assert.match(s, /useJendelaFokus\(/, f); assert.doesNotMatch(s, /openNewTab|window\.open/, f);
   }
   const adj = baca("pages/warehouse/WarehouseAdjustments.jsx"); for (const j of ["damaged", "returns", "stock", "koreksi"]) assert.ok(adj.includes(`jenis === "${j}"`), j);
 });

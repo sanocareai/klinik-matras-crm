@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import { FokusOverlay } from "@/components/ui/fokus-overlay.jsx";
 import { ISTILAH, TEKS_DRAWER, labelStatusStok, teksAngkaStok } from "../stok/drawerBahanLogic.js";
 import { api } from "@/api.js";
@@ -42,6 +43,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState("saldo");
   const [tanyaAktif, setTanyaAktif] = useState(false); // konfirmasi aktif/nonaktif di dalam aplikasi
+  const bantuanSaldo = useInfoToggle();
   const [keadaan, setKeadaan] = useState(null); // keadaanSaldo dari panel Koreksi saldo → label status header yang membedakan belum diketahui / nol / minus
 
   const materialId = item?.materialId || item?.id;
@@ -103,8 +105,12 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
               <div><dt>Saldo tercatat</dt><dd data-testid="stok-saldo">{teksAngkaStok(item.balance, keadaan, (n) => formatQty(n, item.unit))}</dd></div>
               <div><dt>{ISTILAH.dipesan}</dt><dd data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
             </dl>
-            <p className="gud-petunjuk" data-testid="rumus-stok">{ISTILAH.rumusStok}</p>
-            <p className="gud-petunjuk" data-testid="sumber-angka">Sumber angka: {baris?.sumberAngka?.teks ?? "belum ada catatan pergerakan stok untuk bahan ini"}.</p>
+            <p className="gud-petunjuk gud-baris-bantuan" data-testid="definisi-saldo">Tersedia = saldo tercatat − sudah dipesan. <InfoToggleButton info={bantuanSaldo} label="cara menghitung saldo dan batas lokasi" /></p>
+            <InfoToggleIsi info={bantuanSaldo}>
+              <p className="m-0" data-testid="rumus-stok">{ISTILAH.rumusStok}</p>
+              <p className="m-0" data-testid="sumber-angka">Sumber angka: {baris?.sumberAngka?.teks ?? "belum ada catatan pergerakan stok untuk bahan ini"}.</p>
+              <p className="m-0" data-testid="catatan-lokasi">{TEKS_DRAWER.catatanLokasi} Lokasi di bawah hanya riwayat penerimaan, bukan lokasi stok saat ini.</p>
+            </InfoToggleIsi>
           </div>
           <dl className="gud-dl">
             <Baris label="Satuan">{satuanTeks}</Baris>
@@ -113,7 +119,6 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
               ? <span data-testid="drawer-riwayat-penerimaan" title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini."><IkLokasi size={14} aria-hidden /> {lokasiTerima.teks.replace("Terakhir diterima di ", "")}</span>
               : <em>belum ada penerimaan berlokasi</em>}</Baris>
           </dl>
-          <p className="gud-petunjuk" data-testid="catatan-lokasi">{TEKS_DRAWER.catatanLokasi} Ini riwayat penerimaan, bukan lokasi stok saat ini.</p>
           {item.dataNote && (
             <div className="gud-info" data-nada="awas" data-testid="data-belum-lengkap"><IkAwas size={16} aria-hidden /> <span><strong>Data belum lengkap: </strong>{item.dataNote}</span></div>
           )}

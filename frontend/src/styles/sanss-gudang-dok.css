@@ -1,0 +1,91 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS GUDANG — RUANG KERJA DOKUMEN: Pengeluaran Material & Permintaan Bahan (redesain Gudang, 3 Nov 2026)
+   Visual saja. Memakai komponen & token .gud-* (sanss-gudang.css, sanss-gudang-stok.css); tipografi Apple/Inter dari gudang-tipografi.css. Status, aksi, stok, izin, endpoint tidak diubah.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Daftar dokumen: Dokumen | Order/unit tujuan | Peminta | Tanggal | Tahap | Tindakan berikutnya ─ */
+.gud-dok-kepala, .gud-dok-baris { display: grid; align-items: center; column-gap: 16px; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(6.5rem, .8fr) minmax(8rem, 1fr) minmax(0, 1.3fr) 1.25rem; }
+.gud-dok-kepala { padding: 8px 12px; border-bottom: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); font-size: 13px; font-weight: 500; color: var(--text-tertiary); }
+.gud-dok-baris { width: 100%; min-height: 64px; padding: 8px 12px; border: 0; border-radius: 12px; background: transparent; text-align: left; font: inherit; color: var(--text-primary); cursor: pointer; transition: background-color .12s; }
+.gud-dok-baris:hover { background: var(--bg-hover, rgba(57, 101, 250, 0.05)); }
+.gud-dok-baris[aria-current="true"] { background: var(--crm-soft, #E9EBFF); }
+.gud-dok-baris:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--crm-primary, #3965FA) inset; }
+.gud-dok-sel { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; align-items: flex-start; }
+.gud-dok-utama { font-size: 14px; font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+.gud-dok-sempit { display: none; font-size: 13px; color: var(--text-tertiary); }
+.gud-dok-panah { justify-self: end; }
+.gud-dok-baris .gud-berikutnya { font-size: 14px; }
+@container gud-daftar (max-width: 900px) {
+  .gud-dok-kepala, .gud-dok-baris { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(7rem, 1fr) minmax(0, 1.3fr) 1.25rem; column-gap: 12px; }
+  .gud-dok-peminta, .gud-dok-tanggal, .gud-dok-kepala > :nth-child(3), .gud-dok-kepala > :nth-child(4) { display: none; }
+  .gud-dok-sempit { display: block; }
+}
+@container gud-daftar (max-width: 560px) {
+  .gud-dok-kepala { display: none; }
+  .gud-dok-baris { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "nomor tahap" "unit unit" "berikut berikut"; row-gap: 6px; padding: 12px 8px; }
+  .gud-dok-nomor { grid-area: nomor; } .gud-dok-unit { grid-area: unit; } .gud-dok-tahap { grid-area: tahap; align-items: flex-end; } .gud-dok-berikut { grid-area: berikut; }
+  .gud-dok-panah { display: none; }
+  .gud-dok-sel[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--text-tertiary); font-weight: 400; }
+  .gud-dok-tahap::before { display: none !important; }
+}
+
+/* ── Filter periode (dua tanggal berdampingan di dalam popover) ─────────── */
+.gud-filter-dua { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+
+/* ── Rincian dokumen: baris bahan tanpa kartu di dalam kartu ───────────── */
+.gud-item-daftar { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.gud-item { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; padding: 12px 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.gud-item:first-child { border-top: 0; }
+.gud-item-nama { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 15px; font-weight: 500; position: relative; padding-right: 44px; }
+.gud-item-nama strong { font-weight: 500; }
+.gud-item-nama .gud-redup { font-size: 14px; }
+.gud-item-angka { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 14px; }
+.gud-item-label { font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
+.gud-item-lebar { grid-column: 1 / -1; margin: 0; }
+.gud-item-isian { display: flex; flex-direction: column; gap: 4px; }
+.gud-item p[data-nada="awas"], .gud-katalog-stok[data-nada="awas"] { color: var(--ord-pending-fg, #6E4300); }
+.gud-item p[data-nada="redup"], .gud-katalog-stok[data-nada="redup"] { color: var(--text-tertiary); }
+.gud-info-ok { background: var(--ord-delivered-bg, #DDF6E5); color: var(--ord-delivered-fg, #11663A); }
+.gud-info > svg { vertical-align: -2px; }
+.gud-dok .gud-tombol-kecil { min-height: 40px; }
+@media (max-width: 640px) { .gud-item { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ── Form permintaan: katalog + daftar berdampingan (HP: daftar dulu, lalu katalog) ─ */
+.gud-katalog-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.gud-katalog-dipilih { order: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gud-katalog { order: 2; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+@media (min-width: 820px) { .gud-katalog-grid > .gud-katalog-dipilih { order: 2; } .gud-katalog-grid > .gud-katalog { order: 1; } }
+@media (max-width: 819px) { .gud-katalog-grid { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+.gud-katalog-daftar { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; border-radius: 12px; background: var(--bg-inset, #F1F3FF); }
+.gud-katalog-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "nama aksi" "stok aksi"; gap: 2px 12px; align-items: center; width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-top: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); background: transparent; text-align: left; font: inherit; color: var(--text-primary); cursor: pointer; }
+.gud-katalog-daftar > li:first-child .gud-katalog-item { border-top: 0; }
+.gud-katalog-item:hover { background: var(--crm-soft, #E9EBFF); }
+.gud-katalog-item:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--crm-primary, #3965FA) inset; }
+.gud-katalog-item[data-ada="ya"] { opacity: .6; }
+.gud-katalog-nama { grid-area: nama; display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; min-width: 0; font-size: 14px; }
+.gud-katalog-nama strong { font-weight: 500; overflow-wrap: anywhere; }
+.gud-katalog-stok { grid-area: stok; font-size: 13px; color: var(--text-secondary); }
+.gud-katalog-aksi { grid-area: aksi; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; color: var(--crm-primary-ink, #2F57E0); white-space: nowrap; }
+.gud-hapus-baris { position: absolute; right: -8px; top: -8px; }
+.gud-pilihan-terpilih { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 8px 0 14px; border-radius: 12px; background: var(--bg-inset, #F1F3FF); font-size: 14px; }
+.gud-pilihan-terpilih button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--text-tertiary); cursor: pointer; }
+.gud-unit-cari { position: relative; }
+.gud-unit-hasil { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; border-radius: 12px; background: var(--crm-panel, var(--bg-surface, #fff)); box-shadow: 0 12px 30px -8px rgba(27, 27, 57, 0.3), 0 0 0 1px var(--hairline, rgba(27, 27, 57, 0.08)); }
+:root[data-theme="dark"] .gud-unit-hasil { background: var(--bg-surface, #1C1C1E); }
+.gud-unit-hasil button { display: block; width: 100%; min-height: 44px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; font: inherit; font-size: 14px; color: var(--text-primary); cursor: pointer; }
+.gud-unit-hasil button:hover { background: var(--crm-soft, #E9EBFF); }
+
+/* Stok bahan: definisi Saldo ringkas + tombol bantuan sebaris */
+.gud-baris-bantuan { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.gud-dok-tahap .gud-pill { white-space: normal; text-align: left; line-height: 1.25; }
+
+/* Form permintaan: tiga lajur bila lebar cukup (Data | Katalog | Diminta); dua lajur; satu kolom di HP — mengikuti lebar FORM, bukan layar */
+[data-testid="form-permintaan"] { container-type: inline-size; container-name: gud-mi; }
+.gud-mi-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+@container gud-mi (min-width: 860px) {
+  .gud-mi-grid { grid-template-columns: minmax(250px, .62fr) minmax(0, 1.9fr); gap: 32px; align-items: start; }
+  .gud-mi-grid .gud-form-baris { grid-template-columns: minmax(0, 1fr); }
+  .gud-mi-grid .gud-katalog-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .gud-mi-grid .gud-katalog-daftar { max-height: 330px; }
+}
+@container gud-mi (max-width: 859px) { .gud-mi-grid .gud-katalog-grid { grid-template-columns: minmax(0, 1fr); } }
