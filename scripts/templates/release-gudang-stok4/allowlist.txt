@@ -1,0 +1,17 @@
+frontend/qa-harness/gudang-penerimaan2-server.mjs
+frontend/qa-harness/gudang-penerimaan2-skenario.cjs
+frontend/src/features/kedatangan/PanelKedatangan.jsx
+frontend/src/features/kedatangan/kedatanganLogic.js
+frontend/src/features/warehouse/components/MaterialIssueFormModal.jsx
+frontend/src/features/warehouse/dokumen/MaterialIssueDetail.jsx
+frontend/src/features/warehouse/penerimaan/DialogPemeriksaan.jsx
+frontend/src/features/warehouse/penerimaan/PenerimaanDetail.jsx
+frontend/src/features/warehouse/penerimaan/PipelineStatus.jsx
+frontend/src/features/warehouse/penerimaan/TabelPerItem.jsx
+frontend/src/features/warehouse/penerimaan/penerimaanLogic.js
+frontend/src/pages/warehouse/WarehouseGoodsReceipt.jsx
+frontend/src/pages/warehouse/WarehouseMaterialPickup.jsx
+frontend/src/styles/sanss-gudang-dok.css
+frontend/tests/gudangPenerimaanTataLetak.test.js
+frontend/tests/gudangUxTahap1.test.js
+frontend/tests/gudangUxTahap2.test.js

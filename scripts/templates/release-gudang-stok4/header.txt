@@ -1,0 +1,26 @@
+# RILIS FRONTEND-SAJA "Gudang — Penerimaan Barang: rincian per item mengikuti lebar panel, dialog kerja lebar, pengiriman bertahap, dokumen di luar daftar" — TANPA backend, TANPA migrasi, TANPA schema, TANPA perubahan data.
+# Isi (penyajian + kejelasan aturan; endpoint /inventory/goods-receipts & /barang-akan-datang, batas jumlah datang, revisi PO (Finance), pengganti, Koreksi Kedatangan, izin, idempotensi, dan audit tidak berubah):
+#   • PERBAIKAN BUG TAMPILAN: nama bahan pecah satu huruf per baris di kartu item Penerimaan (akibat tabrakan nama kelas CSS gud-item dengan rilis Pengeluaran Material; kelas Pengeluaran Material diganti gud-bhn*), kartu item sangat tinggi, form Catat tiba dipaksa di panel sempit;
+#   • Kartu item baca-saja mengikuti lebar panel: nama satu baris penuh, kode hanya bila tidak mengulang nama, dua grid berlabel (Dokumen ini; semua penerimaan PO: Dipesan · Sudah datang · Belum datang · Baik belum disimpan · Sudah masuk stok); "Arti tiap angka" memakai definisi server;
+#   • Pemeriksaan, Catat Barang Tiba, dan Koreksi Kedatangan = dialog kerja lebar (layar penuh di HP), galat per kolom setelah disentuh, isian bertahan saat gagal, klik ganda dicegah; panel samping hanya untuk membaca;
+#   • Alur status: tahap saat ini + "Lihat alur" di panel sempit (enam tahap server tetap); tombol tindakan konkret; pengiriman bertahap (satu pengiriman = satu dokumen); catatan bila dokumen terbuka di luar tab/saringan daftar; dasar panel menempel tidak lagi terpotong.
+#   • Bukti pra-rilis: skenario Penerimaan-2 (73) pada bundel produksi + backend asli + DB sandbox (PO 100 → 50 + 50; kelebihan ditolak server tanpa mengubah stok; revisi PO oleh Approver lalu penerimaan tambahan; koreksi sebelum putaway; setelah putaway lewat Koreksi Kedatangan; pengganti; tata letak 6 varian); tes statis gudangPenerimaanTataLetak (13).
+# ALLOWLIST EKSPLISIT: generator menolak bila himpunan berkas aplikasi di diff berbeda dari daftar yang disetujui.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif pada saat rilis (argumen BASE_SHA; diverifikasi dari mount container). backend/ harus IDENTIK dengan release aktif (dua berkas tes pemeriksa kontrak metrik dikecualikan HANYA pada perbandingan container-vs-folder, jalur persis); image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-gudang-stok4.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/sgs4.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sgs4.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sgs4.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sgs4.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sgs4.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-gudang-stok4.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-gudang-stok4/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
+
