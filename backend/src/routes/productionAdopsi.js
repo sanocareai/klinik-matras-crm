@@ -230,7 +230,7 @@ productionAdopsiRouter.get("/penerimaan-workshop/pilihan", requirePermission(P.U
 });
 
 productionAdopsiRouter.get("/material-catalog", requirePermission(P.UNIT_READ), async (req, res) => {
-  try { res.json(await katalogBahan(prisma, { q: req.query.q, kelompok: req.query.kelompok || null, limit: req.query.limit })); } catch (err) { handleErr(err, res); }
+  try { res.json(await katalogBahan(prisma, { q: req.query.q, kelompok: req.query.kelompok || null, limit: req.query.limit, izinHarga: hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.UNIT_MATERIAL_WRITE) })); } catch (err) { handleErr(err, res); }
 });
 
 productionAdopsiRouter.get("/units/:id/material-plan", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {

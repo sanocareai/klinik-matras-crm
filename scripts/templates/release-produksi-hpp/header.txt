@@ -1,0 +1,19 @@
+# RILIS "HPP PADA PENCATATAN BAHAN PRODUKSI" (Order Produksi → panel unit → Catat pemakaian bahan: Harga Berlaku per bahan, HPP per baris, total HPP, HPP beku setelah tercatat): WEB + BACKEND BACA-SAJA, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Backend (aditif, BACA-SAJA): GET /api/production/material-catalog membawa `harga` per bahan (Harga Berlaku Gudang saat ini = HPP operasional; satu query untuk semua baris, tanpa query per bahan) dan `izinHarga`; bahan tanpa Harga Berlaku = harga null (BUKAN 0).
+#     Harga hanya dikirim untuk peran berizin (finance:read ATAU unit_material:write — izin yang sama dengan pemakaian aktual); peran lain menerima null. GET /units/:id/adopsi membawa `hppBeku` per baris pemakaian (HPP yang SUDAH dibekukan server saat pencatatan; nominal hanya untuk peran berizin).
+#   • Frontend: pemilih bahan menampilkan harga per satuan; baris isian menampilkan harga dan HPP (jumlah × harga) sebelum dikonfirmasi; kotak Total HPP operasional (bahan tanpa harga tidak dihitung dan DILAPORKAN); setelah tercatat tampil HPP beku dari server. Pratinjau = harga berlaku sekarang; angka resmi tetap dibekukan SERVER saat Material Issue (payload tidak memuat harga).
+#   • Rilis ini TIDAK membuat atau mengubah data bisnis: tidak ada tulis ke stok, Material Issue, harga, biaya beku, jurnal, unit, pernyataan, run, jadwal, atau status. Smoke pasca-switch hanya membaca; tidak ada transaksi uji di produksi.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; invarian HPP: harga katalog = tabel Harga Berlaku, bahan tanpa harga = null, HPP beku = tabel biaya operasional, peran tanpa izin tanpa nominal, waktu respons, tanpa jejak tulis);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (kode smoke yang sama dengan rehearsal; data identik sebelum vs sesudah).
+#   • PENGUNCIAN: kunci deploy BERSAMA (release-deploy-bersama.lock) + kunci sendiri diambil ATOMIK sebelum memeriksa kunci/proses lain; kepemilikan ditentukan oleh proses (perangkat:inode fd 7/9), BUKAN nama berkas; diperiksa di fase 0,
+#     sebelum persiapan akhir, dan tepat sebelum switch. Rehearsal MENGUJI logika ini (kunci sendiri/lain, bagian kritis, baseline bergeser) lalu gerbang fase 7 pada production nyata tanpa switch.
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi / berkas tambahan / proses
+#     berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip. Gerbang disk (minimal 5 GiB) TIDAK diturunkan.
+#
+#   cat scripts/release-produksi-hpp.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/hpb.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/hpb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/hpb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/hpbr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/hpb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/hpb.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru, tanpa data baru). Rollback hanya mengembalikan form pencatatan bahan tanpa harga/HPP; tidak ada data yang berubah.
+# (dibangkitkan oleh scripts/gen-release-produksi-hpp.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-produksi-hpp/* + pustaka scripts/lib/{rehearsal,smoke}-produksi-hpp.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)

@@ -7,7 +7,7 @@
 // Tidak membuat tahap, QC, foto, penerimaan Gudang, atau pergerakan stok.
 import { MANUAL_STATUSES, WORK_STATUS, riwayatKerjaManual } from "../lib/domain/productionWorkStatus.js";
 import { uraiCatatanPembetulan } from "./pembetulanBahanUnit.js";
-import { teksDasarHarga } from "./finance/hargaBerlaku.js";
+import { hargaBerlakuBanyak, teksDasarHarga } from "./finance/hargaBerlaku.js";
 import { RencanaBahanError, normalisasiBarisRencana, selisihRencana, sameLines } from "../lib/domain/productionMaterialPlan.js";
 import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM, KELOMPOK, URUTAN_KELOMPOK } from "../constants/kelompokBahan.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
@@ -104,7 +104,8 @@ async function bahanProduksiAktif(db) {
 }
 
 /** Katalog bahan untuk rencana. `q` mencari di SELURUH katalog (kode/nama), bukan hanya satu kelompok; `kelompok` menyaring bila tidak ada pencarian atau bila diminta eksplisit. */
-export async function katalogBahan(db, { q = "", kelompok = null, limit = 80 } = {}) {
+// `izinHarga`: harga berlaku (HPP operasional) hanya dikirim untuk peran yang boleh melihatnya (sama dengan pemakaian aktual: finance:read atau unit_material:write); selain itu null.
+export async function katalogBahan(db, { q = "", kelompok = null, limit = 80, izinHarga = false } = {}) {
   const [{ rows }, boleh] = await Promise.all([stokLokasi(db), bahanProduksiAktif(db)]);
   const aktif = rows.filter((r) => r.aktif && boleh.has(r.materialId));
   const cari = String(q || "").trim().toLowerCase();
@@ -115,11 +116,14 @@ export async function katalogBahan(db, { q = "", kelompok = null, limit = 80 } =
   const dipilih = kelompok ? dasarQ.filter((r) => (r.kelompok?.kode ?? KELOMPOK_BELUM) === kelompok) : dasarQ;
   dipilih.sort((a, b) => String(a.nama).localeCompare(String(b.nama), "id"));
   const lim = Math.min(Math.max(parseInt(limit, 10) || 80, 1), 300);
+  const tampil = dipilih.slice(0, lim);
+  const hargaPeta = izinHarga ? await hargaBerlakuBanyak(db, tampil.map((r) => r.materialId), new Date()) : null;
   return {
     total: dipilih.length,
+    izinHarga: !!izinHarga,
     kelompok: urutanKelompok().map((k) => ({ ...k, jumlah: hitung.get(k.kode) ?? 0 })),
-    rows: dipilih.slice(0, lim).map(barisKatalog),
-    catatan: "Ketersediaan dihitung dari ledger pergerakan stok. 'Belum diketahui' berarti bahan belum punya catatan stok — bukan nol.",
+    rows: tampil.map((r) => ({ ...barisKatalog(r), harga: hargaPeta ? (hargaPeta.get(r.materialId) ?? { harga: null }) : null })),
+    catatan: "Ketersediaan dihitung dari ledger pergerakan stok. 'Belum diketahui' berarti bahan belum punya catatan stok — bukan nol. Harga = Harga Berlaku Gudang (HPP operasional) saat ini; kosong berarti belum ada harga berlaku — bukan nol.",
   };
 }
 function barisKatalog(r) {
@@ -217,6 +221,8 @@ export async function ambilPemakaianAktual(db, unitId, { izinHarga = false } = {
       dokumen, pelaku: m.createdBy?.name ?? null, catatan: m.note ?? m.reason ?? null,
       // Pembetulan unit terkirim: tanggal pemakaian yang DILAPORKAN (dari catatan baku) tampil terpisah dari waktu pencatatan (= tanggal). Null untuk pencatatan biasa.
       dilaporkan: uraiCatatanPembetulan(m.note)?.dilaporkan ?? null,
+      // HPP operasional yang SUDAH dibekukan saat pencatatan (Harga Berlaku pada waktu pemakaian). Hanya untuk peran berizin harga; tanpa pembekuan = status apa adanya (bukan angka tebakan).
+      hppBeku: (() => { const o = m.biayaOperasional?.[0] ?? null; if (!o) return { status: "BELUM_DIBEKUKAN", harga: null, nilai: null }; if (o.status !== "DINILAI") return { status: o.status === "GAGAL_PEMBEKUAN" ? "GAGAL_PEMBEKUAN" : "TANPA_HARGA", harga: null, nilai: null }; return { status: "DINILAI", harga: izinHarga && o.unitCost != null ? Number(o.unitCost) : null, nilai: izinHarga && o.value != null ? Number(o.value) : null, hargaTersembunyi: !izinHarga }; })(),
       // Dasar harga HPP operasional hasil pembekuan (sama dengan pratinjau, jejak biaya, dan Excel): hanya untuk pembetulan, supaya tanggal dilaporkan + harga yang dipakai terlihat di Riwayat.
       hppOperasional: (() => {
         const dil = uraiCatatanPembetulan(m.note)?.dilaporkan; if (!dil) return null; const o = m.biayaOperasional?.[0] ?? null;

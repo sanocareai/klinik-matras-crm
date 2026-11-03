@@ -71,6 +71,22 @@ export function penyelesaiHargaBerlaku(db) {
   return async (materialId, at) => { if (!c.has(materialId)) c.set(materialId, await barisAktif(db, materialId)); const r = pilih(c.get(materialId).aktif, new Date(at)); return r ? { harga: D(r.unitPrice), baris: r, label: labelDari(r) } : null; };
 }
 
+/**
+ * Harga berlaku BANYAK bahan sekaligus (satu query; tanpa query per bahan) pada waktu `at` — untuk katalog bahan di form pencatatan pemakaian. BACA-SAJA.
+ * Hasil per materialId: { harga, berlakuMulai, label, teksLabel, terjadwal }; bahan tanpa harga berlaku pada waktu itu TIDAK ada di peta (tidak ditebak). `terjadwal` = harga berikutnya yang sudah dijadwalkan (bila ada).
+ */
+export async function hargaBerlakuBanyak(db, materialIds, at = new Date()) {
+  const ids = [...new Set((materialIds ?? []).filter(Boolean))]; const peta = new Map(); if (!ids.length) return peta;
+  const semua = await db.materialHargaBerlaku.findMany({ where: { materialId: { in: ids } }, orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }, { id: "asc" }] });
+  const diganti = new Set(semua.map((x) => x.correctsId).filter(Boolean)); const t = new Date(at); const per = new Map();
+  for (const x of semua) { if (diganti.has(x.id)) continue; if (!per.has(x.materialId)) per.set(x.materialId, []); per.get(x.materialId).push(x); }
+  for (const [id, aktif] of per) {
+    const berlaku = pilih(aktif, t); const jadwal = aktif.find((x) => new Date(x.effectiveFrom) > t) ?? null;
+    if (berlaku) peta.set(id, { harga: Number(berlaku.unitPrice), berlakuMulai: berlaku.effectiveFrom, label: labelDari(berlaku), teksLabel: LABEL_BUKTI[labelDari(berlaku)] ?? null, terjadwal: jadwal ? { harga: Number(jadwal.unitPrice), berlakuMulai: jadwal.effectiveFrom } : null });
+  }
+  return peta;
+}
+
 /** Keadaan harga satu bahan pada waktu `at` (baca-saja): baris yang berlaku, dan baris terjadwal sesudahnya. Dipakai pratinjau harga dari PO. */
 export async function keadaanHarga(db, materialId, at = new Date()) {
   const { aktif } = await barisAktif(db, materialId); const t = new Date(at);

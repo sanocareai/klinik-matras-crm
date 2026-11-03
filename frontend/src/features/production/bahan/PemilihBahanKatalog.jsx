@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { ketersediaanNada, ketersediaanText } from "@/features/production/orderProduksiModel.js";
+import { rupiahHpp } from "@/features/production/bahan/bahanModel.js";
 
 // Pemilih bahan dari katalog Gudang: kategori (Busa, Kain, Benang, Pegas, Kayu, Lem/Kimia, Aksesori, Lainnya — SAMA dengan Stok & Lokasi) + pencarian DI DALAM kategori yang dipilih
 // (pilih "Semua" untuk mencari di seluruh katalog) + saldo dan satuan di tiap baris. Tombol "Bahan belum ada?" (bila diizinkan) hanya membuka usulan — tidak menambah stok.
@@ -54,7 +55,7 @@ export default function PemilihBahanKatalog({ dipilihIds, onTambah, disabled = f
             return (
               <li key={b.materialId} className="flex items-center gap-3 px-3 py-2" data-testid={`${testid}-baris`}>
                 <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{b.nama}</span>
-                  <span className="block text-[11.5px] text-ink2">{b.kode} · satuan {b.satuan}{!kelompok ? ` · ${b.kelompok?.label}` : ""} · <span className={NADA[ketersediaanNada(b)]} data-testid={`${testid}-saldo`}>{ketersediaanText(b)}</span></span></span>
+                  <span className="block text-[11.5px] text-ink2">{b.kode} · satuan {b.satuan}{!kelompok ? ` · ${b.kelompok?.label}` : ""} · {b.harga !== null && b.harga !== undefined && (b.harga.harga != null ? <><span data-testid={`${testid}-harga`} className="tabular-nums">{rupiahHpp(b.harga.harga)} / {b.satuan}</span> · </> : <><span data-testid={`${testid}-harga-kosong`} className="bh-warn">Harga belum ada</span> · </>)}<span className={NADA[ketersediaanNada(b)]} data-testid={`${testid}-saldo`}>{ketersediaanText(b)}</span></span></span>
                 <Button variant={ada ? "neutral" : "secondary"} size="sm" className="bh-pilih min-h-[40px] shrink-0" disabled={ada || disabled} onClick={() => onTambah(b)} aria-label={ada ? `${b.nama} sudah dipilih` : `Pilih ${b.nama}`}>
                   {ada ? <><CheckCircle2 size={14} aria-hidden /> Dipilih</> : <><Plus size={14} aria-hidden /> Pilih</>}
                 </Button>

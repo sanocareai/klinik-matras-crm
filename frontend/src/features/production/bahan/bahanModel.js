@@ -103,8 +103,34 @@ export function keadaanSaldo(b, qtyTeks) {
   return { status: "cukup", nada: "green", teks: `Saldo Gudang ${formatJumlah(tersedia)} ${b.satuan || ""}`.trim(), sisaTeks: sisa !== null ? `Sisa setelah dicatat: ${formatJumlah(sisa)} ${b.satuan || ""}`.trim() : null, blok: false };
 }
 
-/** Baris isian aktual dari baris katalog. */
-export const barisAktualDariKatalog = (kat) => ({ ...barisEditor(kat, ""), qty: "" });
+/** Baris isian aktual dari baris katalog. `harga` = Harga Berlaku Gudang (HPP operasional) dari katalog: undefined = belum dimuat; { harga: null } = belum ada harga berlaku; null = peran tanpa izin lihat harga. */
+export const barisAktualDariKatalog = (kat) => ({ ...barisEditor(kat, ""), qty: "", harga: kat.harga });
+
+// ── HPP operasional pada pencatatan (pratinjau = jumlah × Harga Berlaku sekarang; angka resmi dibekukan SERVER saat konfirmasi pada harga berlaku waktu pemakaian) ──
+const bulat2 = (x) => Math.round(x * 100) / 100;
+/** Rupiah untuk harga/HPP bahan: sampai 2 desimal bila perlu (harga per satuan bisa pecahan), tanpa desimal bila bulat. */
+export const rupiahHpp = (n) => (n == null || Number.isNaN(Number(n)) ? "—" : `Rp${Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`);
+/**
+ * HPP satu baris isian. status: "tersembunyi" (peran tanpa izin) | "memuat" | "tanpa_harga" (belum ada Harga Berlaku — TIDAK ditebak, tidak masuk total) | "ada".
+ * subtotal = jumlah × harga (null bila jumlah belum diisi).
+ */
+export function hppBaris(b, qtyTeks) {
+  const h = b?.harga;
+  if (h === null) return { status: "tersembunyi", harga: null, subtotal: null };
+  if (h === undefined) return { status: "memuat", harga: null, subtotal: null };
+  if (h.harga == null) return { status: "tanpa_harga", harga: null, subtotal: null };
+  const v = parseJumlah(qtyTeks);
+  return { status: "ada", harga: h.harga, subtotal: v !== null && v > 0 ? bulat2(v * h.harga) : null, terjadwal: h.terjadwal ?? null, berlakuMulai: h.berlakuMulai ?? null };
+}
+/** Ringkasan HPP semua baris yang BELUM tercatat: total (hanya baris berharga), jumlah baris tanpa harga, dan apakah total lengkap. Peran tanpa izin → tersembunyi. */
+export function ringkasHpp(baris, selesaiId = () => false) {
+  const sisa = baris.filter((b) => !selesaiId(b)); const per = sisa.map((b) => hppBaris(b, b.qty));
+  if (!per.length || per.every((p) => p.status === "tersembunyi")) return { tampil: false, total: 0, nTanpaHarga: 0, nMemuat: 0, nBerharga: 0, lengkap: true };
+  const nTanpaHarga = per.filter((p) => p.status === "tanpa_harga" && true).length; const nMemuat = per.filter((p) => p.status === "memuat").length;
+  const nBerharga = per.filter((p) => p.status === "ada" && p.subtotal !== null).length;
+  const total = bulat2(per.reduce((a, p) => a + (p.subtotal ?? 0), 0));
+  return { tampil: true, total, nTanpaHarga, nMemuat, nBerharga, lengkap: nTanpaHarga === 0 && nMemuat === 0 };
+}
 export const tambahAktual = (baris, kat) => (baris.some((b) => b.materialId === kat.materialId) ? baris : [...baris, barisAktualDariKatalog(kat)]);
 
 /** "Gunakan rencana sebagai isian awal": sisa rencana (rencana − sudah dipakai) per bahan; pengguna memeriksa & mengubah jumlah sebelum posting. TIDAK memposting. */
