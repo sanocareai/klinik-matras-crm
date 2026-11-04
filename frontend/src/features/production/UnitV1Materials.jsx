@@ -18,7 +18,7 @@ export default function UnitV1Materials({ unitId, roles, onChanged }) {
   useEffect(() => { if (canWrite) api.getMaterials({ active: true, untuk: "produksi" }).then((d) => setCatalog(Array.isArray(d) ? d : d.materials || [])).catch(() => {}); }, [canWrite]);
   async function add() {
     setBusy(true); setMsg({ kind: "", text: "" });
-    try { await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note }); setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.(); setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }
+    try { await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note, satuan: catalog.find((m) => m.id === form.materialId)?.unit || undefined }); setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.(); setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }
     catch (e) { setMsg({ kind: "error", text: e.message || "Gagal mencatat" }); } finally { setBusy(false); }
   }
   return (

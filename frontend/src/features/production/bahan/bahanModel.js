@@ -94,7 +94,7 @@ export const SATUAN_KOMPONEN = Object.freeze(["PCS", "METER", "M3", "SHEET", "SP
 
 /** Keadaan saldo untuk SATU baris bahan baru: cukup / kurang (pasti ditolak Gudang) / tidak diketahui (server yang memutuskan). */
 export function keadaanSaldo(b, qtyTeks) {
-  const v = parseJumlah(qtyTeks);
+  const v = qtyStokDariIsian(b, qtyTeks); // jumlah dalam satuan STOK (konversi METER→ROLL bila bahan beraturan)
   // "Belum diketahui" = bahan belum punya catatan stok sama sekali → saldo ledger 0 → pengurangan ditolak server ("Stok ... tidak cukup — tersedia 0"). Tidak ada gunanya mencoba: arahkan ke Gudang atau ke pemakaian sementara.
   if (b?.saldoDiketahui === false || b?.tersedia === null || b?.tersedia === undefined) return { status: "tidak_diketahui", nada: "red", teks: "Stok belum diketahui: bahan ini belum punya catatan stok, jadi server akan MENOLAK pencatatan (tidak ada stok yang bisa dikurangi). Pilih “Catat sementara — stok belum diketahui” (perlu rekonsiliasi Gudang), atau minta Gudang mencatat stok awal/opname lebih dulu.", blok: true, alternatif: "sementara" };
   const tersedia = Number(b.tersedia);
@@ -104,7 +104,28 @@ export function keadaanSaldo(b, qtyTeks) {
 }
 
 /** Baris isian aktual dari baris katalog. `harga` = Harga Berlaku Gudang (HPP operasional) dari katalog: undefined = belum dimuat; { harga: null } = belum ada harga berlaku; null = peran tanpa izin lihat harga. */
-export const barisAktualDariKatalog = (kat) => ({ ...barisEditor(kat, ""), qty: "", harga: kat.harga });
+export const barisAktualDariKatalog = (kat) => ({ ...barisEditor(kat, ""), qty: "", harga: kat.harga, ...(kat.satuanPakai ? { satuanPakai: kat.satuanPakai, satuanInput: kat.satuanPakai.satuanPakai } : {}) });
+
+// ── SATUAN PAKAI (keputusan Owner 4 Nov 2026): bahan seperti LIST WIBING dibeli/disimpan ROLL tetapi dipakai METER (1 ROLL = 90 METER). Aturan datang dari katalog server (satuanPakai);
+// konversi dilakukan SERVER (meter ÷ faktor, 4 desimal). Fungsi ini hanya untuk pratinjau di layar. Saldo/stok SELALU tampil dalam satuan stok (ROLL); saldo lama tidak diubah ke meter.
+const r4 = (v) => Math.round(Number(v) * 10000) / 10000;
+/** Aturan satuan pakai baris (dari katalog) atau null. */
+export const aturanBaris = (b) => (b?.satuanPakai && Number(b.satuanPakai.faktor) > 0 ? b.satuanPakai : null);
+/** Satuan yang sedang dipilih pengguna untuk jumlah yang diketik (METER/ROLL untuk bahan beraturan; selain itu satuan stok). */
+export const satuanIsianBaris = (b) => { const a = aturanBaris(b); return a ? (b.satuanInput || a.satuanPakai) : (b?.satuan ?? ""); };
+const dipakaiMeter = (b) => { const a = aturanBaris(b); return !!a && satuanIsianBaris(b) === a.satuanPakai; };
+/** Jumlah yang diketik → jumlah dalam satuan STOK (null bila belum valid). */
+export function qtyStokDariIsian(b, qtyTeks) {
+  const v = parseJumlah(qtyTeks); if (v === null) return null;
+  return dipakaiMeter(b) ? r4(v / Number(aturanBaris(b).faktor)) : v;
+}
+/** "20 METER ÷ 90 = 0,2222 ROLL" atau null bila tidak dikonversi / belum ada jumlah. */
+export function teksKonversiBaris(b, qtyTeks) {
+  if (!dipakaiMeter(b)) return null; const v = parseJumlah(qtyTeks); if (v === null || v <= 0) return null;
+  const a = aturanBaris(b); return `${formatJumlah(v)} ${a.satuanPakai} ÷ ${formatJumlah(a.faktor)} = ${formatJumlah(r4(v / a.faktor))} ${a.satuanStok}`;
+}
+/** Jumlah terlalu kecil untuk ketelitian stok (< 0,0001 satuan stok): server menolak. */
+export const terlaluKecilBaris = (b, qtyTeks) => { const v = parseJumlah(qtyTeks); return dipakaiMeter(b) && v !== null && v > 0 && r4(v / Number(aturanBaris(b).faktor)) < 0.0001; };
 
 // ── HPP operasional pada pencatatan (pratinjau = jumlah × Harga Berlaku sekarang; angka resmi dibekukan SERVER saat konfirmasi pada harga berlaku waktu pemakaian) ──
 const bulat2 = (x) => Math.round(x * 100) / 100;
@@ -119,8 +140,9 @@ export function hppBaris(b, qtyTeks) {
   if (h === null) return { status: "tersembunyi", harga: null, subtotal: null };
   if (h === undefined) return { status: "memuat", harga: null, subtotal: null };
   if (h.harga == null) return { status: "tanpa_harga", harga: null, subtotal: null };
-  const v = parseJumlah(qtyTeks);
-  return { status: "ada", harga: h.harga, subtotal: v !== null && v > 0 ? bulat2(v * h.harga) : null, terjadwal: h.terjadwal ?? null, berlakuMulai: h.berlakuMulai ?? null };
+  const v = qtyStokDariIsian(b, qtyTeks); // HPP dihitung dari jumlah STOK × harga per satuan stok
+  const a = aturanBaris(b);
+  return { status: "ada", harga: h.harga, hargaPakai: a && Number(h.harga) > 0 ? { harga: h.harga / Number(a.faktor), satuan: a.satuanPakai } : null, subtotal: v !== null && v > 0 ? bulat2(v * h.harga) : null, terjadwal: h.terjadwal ?? null, berlakuMulai: h.berlakuMulai ?? null };
 }
 /** Ringkasan HPP semua baris yang BELUM tercatat: total (hanya baris berharga), jumlah baris tanpa harga, dan apakah total lengkap. Peran tanpa izin → tersembunyi. */
 export function ringkasHpp(baris, selesaiId = () => false) {
@@ -153,6 +175,7 @@ export function bolehKonfirmasiAktual(baris, status = {}) {
   for (const b of tunggu) {
     const v = parseJumlah(b.qty);
     if (v === null || v <= 0) return { ok: false, alasan: "Isi jumlah > 0 untuk setiap bahan." };
+    if (terlaluKecilBaris(b, b.qty)) return { ok: false, alasan: `Jumlah ${b.nama} terlalu kecil untuk ketelitian stok (minimal 0,0001 ${b.satuan}).` };
     const ks = keadaanSaldo(b, b.qty);
     if (ks.blok) return { ok: false, alasan: ks.status === "tidak_diketahui" ? `Stok ${b.nama} belum diketahui — server pasti menolak. Ganti bahan, atau catat sebagai pemakaian sementara.` : `Saldo ${b.nama} tidak cukup.` };
   }

@@ -22,6 +22,7 @@ import { ambilKomponenLama } from "../services/productionComponentReuseService.j
 import { signEvidenceUrl } from "./productionEvidenceMedia.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
+import { muatAturanSatuanPakai, lihatAturanSatuanPakai, simpanPenimpaanSatuanPakai } from "../services/satuanPakaiService.js";
 import { hitungKelengkapanDaftar, listWorkOrders, perkayaBarisUnit } from "../services/productionOrderList.js";
 import { ambilPernyataanUnit, cabutPernyataanTanpaBahan, nyatakanTanpaBahanBaru } from "../services/unitMaterialDeclarationService.js";
 import { AdopsiError, ambilPemakaianAktual, ambilRencanaBahan, catatStatusKerjaManual, katalogBahan, loadAppEvidence, riwayatKerjaUnit, simpanRencanaBahan } from "../services/productionAdoptionService.js";
@@ -53,6 +54,7 @@ function handleErr(err, res) {
 }
 
 const bolehUbah = (user) => ({
+  pengecualianStokTidakCukup: hasPermission(user, P.UNIT_MATERIAL_WRITE) && hasPermission(user, P.UNIT_ROUTING_WRITE), // pemakaian historis unit terkirim tetap dicatat meski stok tidak cukup (pengelola saja; ditegakkan ulang di POST /units/:id/materials)
   catatanHistoris: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_MATERIAL_WRITE), // koreksi catatan historis / ajukan koreksi pemakaian (penyetuju terpisah: inventory:adjustment_approve)
   koreksiSetuju: hasPermission(user, P.INVENTORY_ADJUSTMENT_APPROVE), // setujui/tolak koreksi pemakaian (pemohon tidak boleh menyetujui sendiri — dijaga server)
   statusOrder: hasPermission(user, P.ORDER_WRITE), // jalur Sales yang sama
@@ -230,7 +232,15 @@ productionAdopsiRouter.get("/penerimaan-workshop/pilihan", requirePermission(P.U
 });
 
 productionAdopsiRouter.get("/material-catalog", requirePermission(P.UNIT_READ), async (req, res) => {
-  try { res.json(await katalogBahan(prisma, { q: req.query.q, kelompok: req.query.kelompok || null, limit: req.query.limit, izinHarga: hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.UNIT_MATERIAL_WRITE) })); } catch (err) { handleErr(err, res); }
+  try { res.json(await katalogBahan(prisma, { aturanSatuanPakai: await muatAturanSatuanPakai(prisma), q: req.query.q, kelompok: req.query.kelompok || null, limit: req.query.limit, izinHarga: hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.UNIT_MATERIAL_WRITE) })); } catch (err) { handleErr(err, res); }
+});
+
+// Satuan pakai bahan (mis. LIST WIBING: stok ROLL, dipakai METER, 1 ROLL = 90 METER — keputusan Owner 4 Nov 2026). Baca: siapa pun yang boleh melihat unit. Ubah penimpaan: pengelola (UNIT_ROUTING_WRITE), alasan wajib, tercatat di log pengaturan.
+productionAdopsiRouter.get("/satuan-pakai", requirePermission(P.UNIT_READ), async (_req, res) => {
+  try { res.json(await lihatAturanSatuanPakai(prisma)); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.put("/satuan-pakai", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try { res.json(await simpanPenimpaanSatuanPakai(prisma, { aturan: req.body?.aturan, alasan: req.body?.alasan, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
 });
 
 productionAdopsiRouter.get("/units/:id/material-plan", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {

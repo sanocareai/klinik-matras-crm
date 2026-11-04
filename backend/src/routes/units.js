@@ -28,7 +28,9 @@ import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
-import { alasanPembetulan, catatanPembetulan, uraiCatatanPembetulan, tanggalDilaporkan, periksaPembetulanLangsung, unitSelesai } from "../services/pembetulanBahanUnit.js";
+import { alasanPembetulan, catatanPembetulan, uraiCatatanPembetulan, tanggalDilaporkan, periksaPembetulanLangsung, unitSelesai, alasanPengecualian, bolehPengecualianStok, periksaCutoffOpname, PembetulanError, PREFIKS_ALASAN_PENGECUALIAN } from "../services/pembetulanBahanUnit.js";
+import { aturanUntukBahan, konversiKeStok } from "../lib/domain/satuanPakaiBahan.js";
+import { muatAturanSatuanPakai } from "../services/satuanPakaiService.js";
 import { priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
@@ -72,7 +74,7 @@ function handleEngineError(err, res) {
   // "stok tidak cukup") juga dijawab 400 yang jelas, bukan bocor ke 500
   // generik di bawah.
   if (typeof err.statusCode === "number") {
-    return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}), ...(err.current ? { current: err.current } : {}), ...(err.detail && typeof err.code === "string" && /^UNIT_/.test(err.code) ? { detail: err.detail } : {}) });
+    return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^(UNIT_|PENGECUALIAN_|SATUAN_|QTY_)/.test(err.code) ? { code: err.code } : {}), ...(err.current ? { current: err.current } : {}), ...(err.detail && typeof err.code === "string" && /^(UNIT_|PENGECUALIAN_|SATUAN_|QTY_)/.test(err.code) ? { detail: err.detail } : {}) });
   }
   // P2034 = konflik transaksi SERIALIZABLE (Production Core Slice 3I) — dua
   // perintah eksekusi (START/PAUSE/RESUME/COMPLETE) bersamaan pada tahap yang
@@ -669,16 +671,22 @@ unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res
 unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), async (req, res) => {
   try {
     const { materialId, note } = req.body;
-    const rawQty = Number(req.body.qty);
+    const qtyInput = Number(req.body.qty);
     if (!materialId) return res.status(400).json({ error: "Bahan wajib dipilih" });
     if (!UUID_RE.test(String(materialId))) return res.status(400).json({ error: "ID bahan tidak valid", code: "ID_INVALID" });
-    if (!Number.isFinite(rawQty) || rawQty === 0) {
+    if (!Number.isFinite(qtyInput) || qtyInput === 0) {
       return res.status(400).json({ error: "Jumlah wajib diisi dan tidak boleh nol" });
     }
 
     const material = await prisma.material.findUnique({ where: { id: materialId } });
     if (!material) return res.status(404).json({ error: "Bahan tidak ditemukan" });
     if (!material.active) return res.status(400).json({ error: "Bahan ini sudah nonaktif" });
+    // SATUAN PAKAI (keputusan Owner 4 Nov 2026; lib/domain/satuanPakaiBahan.js): bahan beraturan (mis. LIST WIBING: stok ROLL, dipakai METER, 1 ROLL = 90 METER) WAJIB menyebut satuan input;
+    // server mengonversi ke satuan STOK sebelum menyentuh ledger. Bahan tanpa aturan: perilaku lama (satuan tidak perlu dikirim). rawQty di bawah = jumlah dalam satuan STOK.
+    const aturanSp = aturanUntukBahan(material, await muatAturanSatuanPakai(prisma));
+    const kv = konversiKeStok({ qty: qtyInput, satuanInput: req.body.satuan ?? null, aturan: aturanSp, satuanStok: material.unit });
+    if (!kv.ok) return res.status(400).json({ error: kv.pesan, code: kv.kode });
+    const rawQty = kv.qtyStok;
 
     const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true, unitCode: true, status: true, orderId: true, createdAt: true } });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
@@ -689,7 +697,17 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     const tglB = pembetulan ? tanggalDilaporkan(req.body.tanggalPemakaian, { unitDibuat: unit.createdAt }) : null;
     // Catatan baku pembetulan menentukan DASAR HARGA HPP operasional (finance/hargaBerlaku.js: tanggalDasarHarga): hanya server yang boleh menuliskannya, dan hanya pada unit terkirim.
     if (!pembetulan && uraiCatatanPembetulan(note)) return res.status(400).json({ error: "Catatan tidak boleh diawali format baku 'Pembetulan unit terkirim (…) [dilaporkan …]' — format itu hanya dibuat sistem untuk unit terkirim.", code: "CATATAN_FORMAT_RESERVED" });
-    const catatanB = pembetulan ? catatanPembetulan(unit.unitCode, alasanB, tglB.tanggal, note || null) : (note || null);
+    const catatanDasar = [note || null, kv.dikonversi ? kv.catatan : null].filter(Boolean).join(" | ") || null; // penanda konversi satuan pakai ikut tercatat (jumlah yang diketik tidak hilang)
+    const catatanB = pembetulan ? catatanPembetulan(unit.unitCode, alasanB, tglB.tanggal, catatanDasar) : (catatanDasar ? catatanDasar.slice(0, 500) : null);
+    // PENGECUALIAN STOK TIDAK CUKUP (Nov 2026): hanya pengeluaran pada unit TERKIRIM (pemakaian historis); izin pengelola + alasan + konfirmasi eksplisit diperiksa di sini; cutoff opname dan saldo di dalam transaksi.
+    const mintaPengecualian = req.body.pengecualianStokTidakCukup === true;
+    let alasanP = null;
+    if (mintaPengecualian) {
+      if (!pembetulan || rawQty <= 0) return res.status(400).json({ error: "Pengecualian stok tidak cukup hanya untuk pengeluaran pemakaian historis pada unit yang sudah terkirim.", code: "PENGECUALIAN_HANYA_PEMAKAIAN_HISTORIS" });
+      if (!bolehPengecualianStok(req.user)) return res.status(403).json({ error: "Pengecualian stok tidak cukup hanya untuk peran pengelola (Admin, Owner, Kepala Produksi).", code: "PENGECUALIAN_STOK_TANPA_IZIN" });
+      alasanP = alasanPengecualian(req.body.alasanPengecualianStok);
+      if (req.body.konfirmasiSaldoMinus !== true) return res.status(400).json({ error: "Konfirmasi eksplisit wajib: pengeluaran ini tetap mengurangi stok dan dapat membuat saldo minus.", code: "PENGECUALIAN_STOK_KONFIRMASI_WAJIB" });
+    }
 
     // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
     // rawQty < 0 → koreksi mengurangi (RETURN, stok bertambah, ledger positif).
@@ -701,7 +719,7 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     // dan seluruh transaksinya dibatalkan (tidak ada pergerakan ganda). Tanpa header = perilaku lama (klien lama tidak berubah).
     const kunci = String(req.get("Idempotency-Key") || "").trim();
     if (kunci && (kunci.length < 12 || kunci.length > 128)) return res.status(400).json({ error: "Idempotency-Key harus 12–128 karakter", code: "IDEMPOTENCY_KEY_INVALID" });
-    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: catatanB, ...(pembetulan ? { saldoDilihat: req.body.saldoDilihat ?? null } : {}) })).digest("hex");
+    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: catatanB, ...(pembetulan ? { saldoDilihat: req.body.saldoDilihat ?? null } : {}), ...(aturanSp ? { satuan: kv.satuanInput, qtyInput } : {}), ...(mintaPengecualian ? { pengecualian: alasanP } : {}) })).digest("hex");
 
     let movement;
     try {
@@ -714,12 +732,27 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
           const dipakai = -Number(net._sum.qty ?? 0);
           if (-rawQty > dipakai + 0.00005) { const e = new Error(`Koreksi ${-rawQty} melebihi pemakaian bersih bahan ini pada unit (${Math.max(dipakai, 0)}). Kurangi jumlah koreksi.`); e.statusCode = 409; e.code = "UNIT_KOREKSI_MELEBIHI_PEMAKAIAN"; throw e; }
         }
-        if (pembetulan) await periksaPembetulanLangsung(tx, { unitId: unit.id, unitCode: unit.unitCode, hppSidik: req.body.hppSidik, orderId: unit.orderId, materialId, rawQty, saldoDilihat: req.body.saldoDilihat, konfirmasiBukanGanda: req.body.konfirmasiBukanGanda, tanggal: tglB.tanggal });
+        const periksa = pembetulan ? await periksaPembetulanLangsung(tx, { unitId: unit.id, unitCode: unit.unitCode, hppSidik: req.body.hppSidik, orderId: unit.orderId, materialId, rawQty, saldoDilihat: req.body.saldoDilihat, konfirmasiBukanGanda: req.body.konfirmasiBukanGanda, tanggal: tglB.tanggal }) : null;
+        // Pengecualian DIPAKAI hanya bila saldo memang tidak cukup (saldo yang dikunci di transaksi ini). Tidak cukup + tanpa pengecualian: ledger menolak seperti biasa.
+        let pengecualianDipakai = null;
+        if (mintaPengecualian) {
+          const saldoSesudah = Math.round((periksa.saldo - rawQty) * 10000) / 10000;
+          if (saldoSesudah < -0.000001) {
+            const [{ n }] = await tx.$queryRaw`SELECT COUNT(*)::int AS n FROM stock_movements WHERE material_id = ${materialId}::uuid`;
+            if (n === 0) throw new PembetulanError(`Bahan ${material.code} belum punya catatan stok sama sekali: saldo BELUM DIKETAHUI (bukan nol/minus) dan tidak dapat dikecualikan. Pakai "Catat sementara — stok belum diketahui" atau minta Gudang mencatat stok awal/opname.`, 409, "PENGECUALIAN_STOK_BELUM_DIKETAHUI");
+            const op = await periksaCutoffOpname(tx, { materialId, tanggal: tglB.tanggal });
+            if (op.melintasi) throw new PembetulanError(op.teks, 409, "PENGECUALIAN_MELINTASI_OPNAME", { acuan: op.melintasiDaftar });
+            pengecualianDipakai = { saldoSebelum: periksa.saldo, saldoSesudah, opnameAcuan: op.acuan[0] ?? null };
+          }
+        }
         const mv = await postStockMovement(tx, {
           materialId, type, qty: ledgerQty, unitId: unit.id,
           note: catatanB, createdById: req.user.id,
+          ...(pengecualianDipakai ? { pengecualianSaldoMinus: { alasan: alasanP, aktorId: req.user.id }, reason: `${PREFIKS_ALASAN_PENGECUALIAN}${alasanP}` } : {}),
         });
-        if (pembetulan) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB, tanggalPemakaianDilaporkan: tglB.tanggal, dasarHargaOperasional: "TANGGAL_PEMAKAIAN_DILAPORKAN", terlambatHari: tglB.terlambatHari, dicatatPada: new Date().toISOString(), konfirmasiBukanGanda: req.body.konfirmasiBukanGanda === true } });
+        if (pembetulan) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB, tanggalPemakaianDilaporkan: tglB.tanggal, dasarHargaOperasional: "TANGGAL_PEMAKAIAN_DILAPORKAN", terlambatHari: tglB.terlambatHari, dicatatPada: new Date().toISOString(), konfirmasiBukanGanda: req.body.konfirmasiBukanGanda === true,
+          ...(aturanSp ? { satuanPakai: { qtyInput, satuanInput: kv.satuanInput, qtyStok: rawQty, faktor: kv.faktor, dikonversi: kv.dikonversi } } : {}),
+          ...(mintaPengecualian ? { pengecualianStokTidakCukup: { diminta: true, dipakai: !!pengecualianDipakai, alasan: alasanP, ...(pengecualianDipakai ?? {}), tanggalPemakaian: tglB.tanggal, jumlahStok: rawQty, jumlahInput: qtyInput, satuanInput: kv.satuanInput } } : {}) } });
         // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
         await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
         if (kunci) await tx.v2Command.update({ where: { actorId_idempotencyKey: { actorId: req.user.id, idempotencyKey: kunci } }, data: { status: "APPLIED", response: { movementId: mv.id }, completedAt: new Date() } });

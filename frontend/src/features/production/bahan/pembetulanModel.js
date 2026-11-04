@@ -4,6 +4,7 @@
 //   (B) PENGELUARAN STOK         -> tambah / kembalikan / ajukan koreksi jumlah: mengubah stok, nilai Finance, dan HPP order.
 // Waktu: ada DUA waktu yang selalu terpisah — tanggal pemakaian yang DILAPORKAN (diisi pengguna) dan waktu PENCATATAN (saat konfirmasi). Waktu konfirmasi bukan waktu pekerjaan.
 import { parseJumlah } from "../orderProduksiModel.js";
+import { terlaluKecilBaris } from "./bahanModel.js";
 
 export const unitTerkirim = (status) => status === "DELIVERED";
 export const unitSelesai = unitTerkirim; // nama lama; hanya DELIVERED (dibatalkan sengaja tidak diperluas)
@@ -54,6 +55,7 @@ export function validasiPembetulan({ cara, bahan, qty, alasan, tanggal, maks = n
   const v = parseJumlah(qty);
   if (cara === "AJUKAN") { if (v === null || v < 0) return { ok: false, galat: "Isi pemakaian yang benar (angka 0 atau lebih)." }; }
   else if (v === null || v <= 0) return { ok: false, galat: "Isi jumlah lebih dari 0." };
+  if (terlaluKecilBaris(bahan, qty)) return { ok: false, galat: "Jumlah terlalu kecil untuk ketelitian stok (minimal 0,0001 satuan stok). Naikkan jumlahnya." };
   if (cara === "KURANGI" && maks !== null && v > maks + 0.00005) return { ok: false, galat: `Pengembalian melebihi pemakaian bersih bahan ini pada unit (${maks}).` };
   return { ok: true, qty: Math.round(v * 10000) / 10000, alasan: a, tanggal: t.tanggal };
 }
@@ -64,6 +66,7 @@ export function barisDampak(pra) {
   if (!pra) return [];
   const o = [{ k: "tindakan", label: "Tindakan", teks: `${pra.tindakan.judul}. ${pra.tindakan.teks}`, tegas: pra.tindakan.menulisStok }];
   o.push({ k: "waktu", label: "Waktu", teks: pra.waktu.teks });
+  if (pra.konversi) o.push({ k: "konversi", label: "Satuan pakai", teks: `${pra.konversi.teks}. Stok dan HPP dihitung dari ${koma(pra.qty)} ${pra.bahan.satuan}.` });
   if (pra.stok) {
     o.push({ k: "stok", label: "Stok", teks: `${pra.stok.saldoSebelum === null ? "belum diketahui" : koma(pra.stok.saldoSebelum)} → ${koma(pra.stok.saldoSesudah)} ${pra.bahan.satuan}` });
     o.push({ k: "pemakaian", label: "Pemakaian bahan pada unit", teks: `${koma(pra.pemakaianBersih.sebelum)} → ${koma(pra.pemakaianBersih.sesudah)} ${pra.bahan.satuan}` });
@@ -72,6 +75,7 @@ export function barisDampak(pra) {
   const h = pra.hppOperasional;
   o.push({ k: "hpp", label: "HPP operasional (Harga Berlaku)", teks: h.teks });
   if (h.tanggalDasar) o.push({ k: "dasarHarga", label: "Dasar harga", teks: `Tanggal pemakaian dilaporkan ${h.tanggalDasar} → ${h.status === "DINILAI" ? `harga ${koma(h.harga)} per ${pra.bahan?.satuan ?? "satuan"}` : "TANPA_HARGA / belum diketahui"}. Dicatat pada hari pencatatan (terpisah); harga hari pencatatan tidak dipakai.` });
+  for (const p of pra.peringatan ?? []) o.push({ k: `peringatan-${p.kode}`, label: "Peringatan", teks: p.pesan, peringatan: true });
   return o;
 }
 const NAMA_KANDIDAT = Object.freeze({
@@ -85,16 +89,42 @@ export function daftarSudahTercatat(pra) {
 }
 export const perluKonfirmasiGanda = (pra) => !!pra?.sudahTercatat?.perluKonfirmasi;
 /** Konfirmasi hanya bila pratinjau ada, tidak ada penghalang, isian belum berubah sejak pratinjau, dan (bila ada kemungkinan ganda) pengguna menyatakan ini pengeluaran BARU. */
-export const bolehKonfirmasi = (pra, sidikSekarang, sidikPratinjau, { sudahPeriksa = false } = {}) => !!pra && pra.boleh === true && sidikSekarang === sidikPratinjau && (!perluKonfirmasiGanda(pra) || sudahPeriksa === true);
-export const sidikIsian = ({ cara, bahan, qty, alasan, tanggal }) => JSON.stringify([cara, bahan?.materialId ?? null, String(qty ?? "").trim(), String(alasan ?? "").trim(), cara === "AJUKAN" ? "" : String(tanggal ?? "").trim()]);
+export const bolehKonfirmasi = (pra, sidikSekarang, sidikPratinjau, { sudahPeriksa = false, pengecualianOk = false } = {}) => !!pra && pra.boleh === true && sidikSekarang === sidikPratinjau && (!perluKonfirmasiGanda(pra) || sudahPeriksa === true) && (!pra.pengecualianStok?.berlaku || pengecualianOk === true);
+export const sidikIsian = ({ cara, bahan, qty, alasan, tanggal, satuan = "", pengecualian = false }) => JSON.stringify([cara, bahan?.materialId ?? null, String(qty ?? "").trim(), String(alasan ?? "").trim(), cara === "AJUKAN" ? "" : String(tanggal ?? "").trim(), String(satuan ?? ""), pengecualian === true]);
 /** Tubuh permintaan POST /units/:id/materials (pengeluaran/pengembalian): alasan, tanggal dilaporkan, saldo yang dilihat, dan konfirmasi bukan-ganda dikirim ke server yang menegakkannya. */
-export function tubuhPembetulan({ cara, bahan, qty, alasan, tanggal, pra, sudahPeriksa = false }) {
+export function tubuhPembetulan({ cara, bahan, qty, alasan, tanggal, pra, sudahPeriksa = false, satuan = null, pengecualian = null }) {
   const jumlah = Math.round(Number(qty) * 10000) / 10000;
-  return { materialId: bahan.materialId, qty: cara === "KURANGI" ? -jumlah : jumlah, alasanPembetulan: String(alasan).trim(), tanggalPemakaian: tanggal, saldoDilihat: pra?.stok?.saldoDilihat, hppSidik: pra?.hppOperasional?.sidik, ...(sudahPeriksa ? { konfirmasiBukanGanda: true } : {}) };
+  return {
+    materialId: bahan.materialId, qty: cara === "KURANGI" ? -jumlah : jumlah, alasanPembetulan: String(alasan).trim(), tanggalPemakaian: tanggal, saldoDilihat: pra?.stok?.saldoDilihat, hppSidik: pra?.hppOperasional?.sidik, ...(sudahPeriksa ? { konfirmasiBukanGanda: true } : {}),
+    // Bahan beraturan satuan pakai (LIST WIBING): jumlah yang diketik + satuannya dikirim apa adanya; SERVER yang mengonversi ke satuan stok.
+    ...(satuan ? { satuan } : {}),
+    // Pengecualian "Tetap catat meskipun stok tidak cukup": hanya dikirim bila pratinjau menyatakan berlaku; server memeriksa izin, alasan, konfirmasi, cutoff opname, dan saldo ulang.
+    ...(pengecualian ? { pengecualianStokTidakCukup: true, alasanPengecualianStok: String(pengecualian.alasan).trim(), konfirmasiSaldoMinus: pengecualian.konfirmasi === true } : {}),
+  };
+}
+
+// ── PENGECUALIAN STOK TIDAK CUKUP (keputusan Owner 4 Nov 2026: riwayat dilengkapi dulu, saldo dibereskan lewat stock opname) ──
+export const PENGECUALIAN_ALASAN_MIN = 10; export const PENGECUALIAN_ALASAN_MAKS = 300;
+export function validasiPengecualian({ alasan, konfirmasi }) {
+  const a = String(alasan ?? "").trim();
+  if (a.length < PENGECUALIAN_ALASAN_MIN) return { ok: false, galat: `Alasan pengecualian wajib diisi (minimal ${PENGECUALIAN_ALASAN_MIN} karakter).` };
+  if (a.length > PENGECUALIAN_ALASAN_MAKS) return { ok: false, galat: `Alasan pengecualian maksimal ${PENGECUALIAN_ALASAN_MAKS} karakter.` };
+  if (konfirmasi !== true) return { ok: false, galat: "Centang konfirmasi bahwa stok tetap berkurang dan saldo dapat menjadi minus." };
+  return { ok: true, alasan: a };
+}
+/** Keadaan blok pengecualian untuk tampilan: tampil hanya bila pratinjau melaporkan stok tidak cukup. Tidak menghitung apa pun sendiri. */
+export function infoPengecualian(pra, izin = {}) {
+  const p = pra?.pengecualianStok; if (!p?.perlu) return { tampil: false };
+  const izinOk = pra?.izin?.pengecualianStokTidakCukup ?? izin?.pengecualianStokTidakCukup ?? false;
+  return { tampil: true, bisa: p.bisa === true && izinOk, diminta: p.diminta === true, berlaku: p.berlaku === true, sebab: p.sebabTidakBisa ?? (izinOk ? null : "Hanya peran pengelola (Admin, Owner, Kepala Produksi) yang boleh memakai pengecualian ini."), saldoSebelum: p.saldoSebelum, saldoSesudah: p.saldoSesudah, satuan: pra.bahan?.satuan ?? "", opname: p.opname ?? null };
 }
 export const PESAN = Object.freeze({
   bukaSelesai: "Unit ini sudah terkirim. Pembetulan bahan tetap bisa dilakukan lewat layanan resmi yang sama. Alasan dan tanggal pemakaian wajib; setiap perubahan tersimpan di riwayat, dan baris lama tidak diubah.",
   tanpaIzin: "Akun Anda hanya bisa melihat pemakaian bahan.",
   tanggalPenjelas: "Tanggal pemakaian = kapan bahan itu sebenarnya dipakai (yang Anda laporkan). Waktu pencatatan = saat Anda menekan konfirmasi. Keduanya disimpan terpisah.",
   periksaGanda: "Saya sudah memeriksa daftar di atas. Ini pengeluaran BARU, bukan pemakaian yang sudah tercatat.",
+  pengecualianOpsi: "Tetap catat meskipun stok tidak cukup",
+  pengecualianPenjelas: "Untuk melengkapi riwayat pemakaian lama: riwayat dicatat dulu, saldo dibereskan lewat stock opname. Validasi stok tetap berlaku untuk pencatatan lain.",
+  pengecualianPeringatan: "Pengeluaran ini TETAP mengurangi stok dan saldo dapat menjadi MINUS. Tidak ada penerimaan, koreksi, harga, atau jurnal yang dibuat otomatis untuk menutupnya.",
+  pengecualianKonfirmasi: "Saya paham: stok tetap berkurang dan saldo menjadi minus sampai dibereskan lewat stock opname.",
 });

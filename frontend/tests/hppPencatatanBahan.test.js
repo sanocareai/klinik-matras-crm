@@ -17,7 +17,7 @@ test("rupiahHpp: bulat tanpa desimal, pecahan sampai 2 desimal, kosong = em dash
 
 test("hppBaris: harga + jumlah → subtotal; desimal koma; tanpa harga TIDAK jadi Rp0; peran tanpa izin tersembunyi; belum dimuat", () => {
   const b = barisAktualDariKatalog(kat({ harga: { harga: 12500, terjadwal: null } }));
-  assert.deepEqual({ ...hppBaris(b, ""), terjadwal: undefined, berlakuMulai: undefined }, { status: "ada", harga: 12500, subtotal: null, terjadwal: undefined, berlakuMulai: undefined }, "jumlah kosong: harga tampil, subtotal belum");
+  assert.deepEqual({ ...hppBaris(b, ""), terjadwal: undefined, berlakuMulai: undefined }, { status: "ada", harga: 12500, hargaPakai: null, subtotal: null, terjadwal: undefined, berlakuMulai: undefined }, "jumlah kosong: harga tampil, subtotal belum");
   assert.equal(hppBaris(b, "2").subtotal, 25000); assert.equal(hppBaris(b, "2,5").subtotal, 31250); assert.equal(hppBaris(b, "0").subtotal, null);
   assert.equal(hppBaris({ ...b, harga: { harga: 0.3333 } }, "3").subtotal, 1, "pembulatan 2 desimal");
   assert.equal(hppBaris(barisAktualDariKatalog(kat({ harga: { harga: null } })), "5").status, "tanpa_harga");
@@ -41,7 +41,7 @@ test("pengawatan UI: harga di pemilih, HPP per baris, total, hasil tercatat dari
   assert.ok(p.includes("rupiahHpp(b.harga.harga)") && p.includes("Harga belum ada"), "pemilih: harga per satuan atau 'Harga belum ada'");
   assert.ok(c.includes("<HppBaris b={b} />") && c.includes('data-testid="hpp-total"') && c.includes("belum punya Harga Berlaku — belum masuk total (bukan Rp0)"), "baris + total + pesan tanpa harga");
   assert.ok(c.includes("row.hppBeku") && c.includes("hppBeku?.nilai") && c.includes("dibekukan saat dicatat"), "setelah tercatat: angka dari server");
-  assert.ok(c.includes("api.addUnitMaterial(unitId, { materialId: b.materialId, qty: v, note: catatan.trim() || undefined }"), "payload hanya materialId, qty, note (server yang membekukan harga)");
+  assert.ok(c.includes("api.addUnitMaterial(unitId, { materialId: b.materialId, qty: v, note: catatan.trim() || undefined, ...(aturanBaris(b) ? { satuan: satuanIsianBaris(b) } : {}) }"), "payload hanya materialId, qty, note (+ satuan untuk bahan beraturan satuan pakai); server yang membekukan harga");
   assert.ok(!/harga|hpp/i.test(c.match(/api\.addUnitMaterial\([^)]*\)/)[0]), "tidak mengirim harga");
   assert.ok(c.includes("getKatalogBahanProduksi({ q: b.kode || b.nama") && c.includes("hargaDimintaRef"), "baris dari rencana memuat harga dari katalog, sekali per bahan");
   assert.ok(!/estimasi|perkiraan harga/i.test(c), "tanpa estimasi/angka karangan");

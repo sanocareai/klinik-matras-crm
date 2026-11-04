@@ -127,7 +127,7 @@ test("panel: status order lewat api.updateOrder (jalur Sales yang sama) dengan k
   assert.match(PANEL, /Ubah status order .* menjadi Siap Kirim\?/); assert.match(PANEL, /Sales dan Delivery akan melihat status yang sama/);
   assert.match(PANEL, /api\.postStatusKerjaManual\(u\.id, \{ status: kerja, note: catatan\.trim\(\) \|\| undefined, expectedLatestId: km\.terakhirId \}\)/);
   const BARU2 = strip(src("features", "production", "bahan", "CatatBahanBaru.jsx"));
-  assert.match(BARU2, /kunciIdempoten\("pakai"\)/); assert.match(BARU2, /api\.addUnitMaterial\(unitId, \{ materialId: b\.materialId, qty: v, note: catatan\.trim\(\) \|\| undefined \}, kunciUntuk\(b\)\)/);
+  assert.match(BARU2, /kunciIdempoten\("pakai"\)/); assert.match(BARU2, /api\.addUnitMaterial\(unitId, \{ materialId: b\.materialId, qty: v, note: catatan\.trim\(\) \|\| undefined, \.\.\.\(aturanBaris\(b\) \? \{ satuan: satuanIsianBaris\(b\) \} : \{\}\) \}, kunciUntuk\(b\)\)/);
   assert.match(BARU2, /cur\.sig !== sig/, "isian berubah = kunci baru; isian sama (retry) = kunci sama");
   assert.match(PANEL, /disabled=\{!izin\.statusOrder \|\| !aktif/, "akun hanya-lihat: kontrol mati"); assert.match(strip(src("features", "production", "bahan", "PemakaianAktualBagian.jsx")), /Akun Anda hanya bisa melihat/);
   assert.match(PANEL, /Menunggu kain dari supplier|Mis\. menunggu kain dari supplier/);

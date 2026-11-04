@@ -142,7 +142,7 @@ export function V1MaterialsPanel({ unitId, roles, onChanged }) {
   useEffect(() => { if (canWrite) api.getMaterials({ active: true, untuk: "produksi" }).then((d) => setCatalog(Array.isArray(d) ? d : d.materials || [])).catch(() => {}); }, [canWrite]);
   async function add() {
     setBusy(true); setMsg({ kind: "", text: "" });
-    try { await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note }); setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.(); setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }
+    try { await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note, satuan: catalog.find((m) => m.id === form.materialId)?.unit || undefined }); setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.(); setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }
     catch (e) { setMsg({ kind: "error", text: e.message || "Gagal mencatat" }); } finally { setBusy(false); }
   }
   const totals = usage?.totals || [];
@@ -152,7 +152,7 @@ export function V1MaterialsPanel({ unitId, roles, onChanged }) {
       {usage && (totals.length ? <ul className="m-0 list-none space-y-1.5 p-0">{totals.map((t) => <li key={t.material.id} className="flex items-center justify-between rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{t.material.name}</span><span className="shrink-0 tabular-nums text-ink2">{t.usedQty} {t.material.unit || ""}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">Belum ada pemakaian bahan.</p>)}
       {canWrite ? (
         <div className="space-y-2 rounded-btn bg-inset p-3">
-          <select data-testid="v1-material-select" aria-label="Pilih bahan" className={FIELD} value={form.materialId} onChange={(e) => setForm({ ...form, materialId: e.target.value })}><option value="">Pilih bahan…</option>{catalog.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+          <select data-testid="v1-material-select" aria-label="Pilih bahan" className={FIELD} value={form.materialId} onChange={(e) => setForm({ ...form, materialId: e.target.value })}><option value="">Pilih bahan…</option>{catalog.map((m) => <option key={m.id} value={m.id}>{m.name}{m.unit ? ` (${m.unit})` : ""}</option>)}</select>
           <div className="grid grid-cols-[1fr_2fr] gap-2">
             <input data-testid="v1-material-qty" aria-label="Jumlah" inputMode="decimal" className={FIELD} placeholder="Jumlah" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
             <input aria-label="Catatan bahan" className={FIELD} placeholder="Catatan (opsional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />

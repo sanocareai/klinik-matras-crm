@@ -121,6 +121,10 @@ export async function postStockMovement(tx, {
   // Pergerakan HISTORIS (impor/koreksi atas kejadian lampau): cap waktu = tanggal kejadian, bukan waktu posting. Opsional; tanpa nilai ini perilaku TIDAK berubah (DB mengisi waktu sekarang).
   // Invarian saldo tetap dihitung terhadap saldo SEKARANG di bawah kunci bahan; tanggal di masa depan ditolak.
   createdAt,
+  // PENGECUALIAN TERKENDALI (Nov 2026): HANYA untuk pemakaian historis unit terkirim di POST /units/:id/materials, setelah route memeriksa izin pengelola, alasan, konfirmasi eksplisit, dan cutoff opname.
+  // Melewati SATU pemeriksaan saja — "saldo hasil tidak boleh minus" untuk pergerakan keluar. Jumlah, kunci material, idempotensi, dan validasi lain TIDAK terpengaruh. Tanpa objek ini perilaku TIDAK berubah.
+  // Bentuk: { alasan: string (≥10 karakter), aktorId }. Penerimaan/transfer/pengeluaran Gudang/endpoint lain tidak pernah memberikannya.
+  pengecualianSaldoMinus,
 } = {}) {
   if (!tx?.stockMovement) {
     throw new Error("postStockMovement butuh `tx` (klien transaksi Prisma), bukan prisma singleton di luar transaksi");
@@ -141,7 +145,9 @@ export async function postStockMovement(tx, {
   // PERNAH ditolak karena saldo awal minus: saldo minus warisan (mis. impor pemakaian historis tanpa penerimaan) bukan alasan menahan barang yang benar-benar datang,
   // dan penerimaan justru memperkecil minusnya. Kasus nyata 15 Okt 2026: GR-141026-01, LIST-WIBING-ABU saldo -388,5 + 5 ROLL ditolak "tersedia -388.5, butuh 5".
   // Minus warisan diselesaikan lewat stok opname/penyesuaian resmi — bukan dengan menolak penerimaan, dan bukan dengan menyentuh saldo diam-diam di sini.
-  if (qtyNum < 0 && resultBalance < -EPSILON) {
+  const pengecualianSah = !!pengecualianSaldoMinus && String(pengecualianSaldoMinus.alasan ?? "").trim().length >= 10 && !!pengecualianSaldoMinus.aktorId && type === "ISSUE" && !!unitId;
+  if (pengecualianSaldoMinus && !pengecualianSah) throw new LedgerError("Pengecualian saldo minus tidak sah: hanya untuk pengeluaran (ISSUE) bertaut unit, dengan alasan (≥10 karakter) dan pelaku.");
+  if (qtyNum < 0 && resultBalance < -EPSILON && !pengecualianSah) {
     const material = await tx.material.findUnique({ where: { id: materialId }, select: { code: true } });
     throw new LedgerError(
       `Stok ${material?.code || materialId} tidak cukup — tersedia ${balance}, butuh ${Math.abs(qtyNum)}`

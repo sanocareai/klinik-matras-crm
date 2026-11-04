@@ -12,7 +12,9 @@
 // PRINSIP GANDA: sistem hanya MENAMPILKAN pengeluaran yang sudah tertaut ke unit dan yang mungkin relevan; tidak pernah menyamakan atau menautkan otomatis tanpa bukti.
 import { computeStockSnapshot, lockMaterialBalance } from "./inventoryLedger.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
-import { statusCutoverUntuk } from "./finance/persediaanAwal.js";
+import { statusCutoverUntuk, pembukaAktif } from "./finance/persediaanAwal.js";
+import { aturanBerlaku, aturanUntukBahan, konversiKeStok, ringkasAturan } from "../lib/domain/satuanPakaiBahan.js";
+import { bacaPenimpaanSatuanPakai } from "./satuanPakaiService.js";
 import { hargaUntukPergerakan, penyelesaiHargaBerlaku, hargaBerubahPadaHari, batasHargaTanggal, teksDasarHarga } from "./finance/hargaBerlaku.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
@@ -104,6 +106,42 @@ export async function hppPembetulan(db, { unit, materialId, bahan, jenis, qty, t
     teks: `TANPA_HARGA / belum diketahui. ${sebab} Pembetulan dibekukan TANPA harga operasional (bukan Rp0${tanggal ? ", dan bukan harga hari pencatatan" : ""}); HPP operasional order tidak berubah.${peringatan ? ` ${peringatan}` : ""}` };
 }
 
+// ───────────────────────────── PENGECUALIAN STOK TIDAK CUKUP (pemakaian historis) ─────────────────────────────
+// KEPUTUSAN OWNER (4 Nov 2026): riwayat pemakaian dilengkapi lebih dulu, saldo dibereskan lewat stock opname. Pengecualian TERKENDALI hanya untuk pengeluaran stok (ISSUE) pada unit TERKIRIM lewat POST /units/:id/materials:
+// izin pengelola (UNIT_ROUTING_WRITE: Admin/Owner/Kepala Produksi, selain UNIT_MATERIAL_WRITE rute), alasan, konfirmasi eksplisit, dan TIDAK melintasi opname yang sudah selesai. Validasi stok global TIDAK dilonggarkan.
+export const PENGECUALIAN_ALASAN_MIN = 10; export const PENGECUALIAN_ALASAN_MAKS = 300;
+export const PREFIKS_ALASAN_PENGECUALIAN = "Pengecualian stok tidak cukup (pemakaian historis): ";
+export const bolehPengecualianStok = (user) => hasPermission(user, P.UNIT_MATERIAL_WRITE) && hasPermission(user, P.UNIT_ROUTING_WRITE);
+/** Alasan pengecualian: 10–300 karakter (server menolak selain itu). */
+export function alasanPengecualian(raw) {
+  const t = String(raw ?? "").trim();
+  wajib(t.length >= PENGECUALIAN_ALASAN_MIN && t.length <= PENGECUALIAN_ALASAN_MAKS, `Alasan pengecualian stok wajib diisi (${PENGECUALIAN_ALASAN_MIN}–${PENGECUALIAN_ALASAN_MAKS} karakter) agar riwayatnya jelas.`, "PENGECUALIAN_STOK_ALASAN_WAJIB", 400);
+  return t;
+}
+/**
+ * CUTOFF OPNAME untuk satu bahan + tanggal pemakaian yang dilaporkan. BACA-SAJA. Pemakaian yang tanggalnya SAMA DENGAN ATAU SEBELUM acuan opname yang sudah selesai (atau persediaan awal yang sudah diposting) MUNGKIN sudah tercakup
+ * hitung fisik; mencatatnya lagi sebagai pengeluaran bisa mengurangi saldo dua kali. Acuan opname = waktu pengamatan fisik baris (observedAt), bila tidak diketahui: waktu diajukan/selesai sesi (tidak diturunkan dari waktu simpan).
+ * Tanggal dibandingkan per hari kalender WIB; tanggal SAMA dianggap melintasi (urutan dalam satu hari tidak dapat dibuktikan dari tanggal saja). Sesi opname yang masih BERJALAN hanya diperingatkan.
+ */
+export async function periksaCutoffOpname(db, { materialId, tanggal }) {
+  const acuan = []; const berjalan = [];
+  const baris = await db.stockCountLine.findMany({ where: { materialId, excludedAt: null, countedQty: { not: null }, stockCount: { status: "COMPLETED" } },
+    select: { observedAt: true, stockCount: { select: { countNumber: true, startedAt: true, submittedAt: true, completedAt: true } } }, orderBy: { stockCount: { completedAt: "desc" } }, take: 10 });
+  for (const b of baris) {
+    const c = b.stockCount; const waktu = b.observedAt ?? c.submittedAt ?? c.completedAt ?? c.startedAt; if (!waktu) continue;
+    acuan.push({ jenis: "OPNAME", nomor: c.countNumber, tanggalAcuan: wibTgl(waktu), dasar: b.observedAt ? "waktu pengamatan fisik" : c.submittedAt ? "waktu hitung diajukan" : "waktu sesi selesai" });
+  }
+  const aktif = await pembukaAktif(db);
+  if (aktif?.countedAt && await db.finInventoryOpeningLine.findFirst({ where: { openingId: aktif.id, materialId }, select: { id: true } })) acuan.push({ jenis: "PERSEDIAAN_AWAL", nomor: aktif.number, tanggalAcuan: wibTgl(aktif.countedAt), dasar: "hitung fisik persediaan awal yang sudah diposting" });
+  const jalan = await db.stockCountLine.findMany({ where: { materialId, excludedAt: null, stockCount: { status: { in: ["IN_PROGRESS", "WAITING_REVIEW"] } } }, select: { stockCount: { select: { countNumber: true, status: true } } }, take: 5 });
+  for (const j of jalan) berjalan.push({ nomor: j.stockCount.countNumber, status: j.stockCount.status });
+  const melintasi = acuan.filter((a) => tanggal <= a.tanggalAcuan);
+  const teks = melintasi.length
+    ? `Tanggal pemakaian ${tanggal} sama dengan atau sebelum acuan ${melintasi.map((a) => `${a.jenis === "OPNAME" ? "opname" : "persediaan awal"} ${a.nomor ?? ""} (${a.tanggalAcuan}, ${a.dasar})`).join("; ")}: hitung fisik itu kemungkinan SUDAH mencakup pemakaian ini. Mencatatnya sebagai pengeluaran dapat mengurangi saldo DUA KALI, jadi pengecualian stok tidak cukup diblokir untuk kasus ini.`
+    : acuan.length ? `Opname terakhir yang sudah selesai: ${acuan[0].tanggalAcuan} (${acuan[0].jenis === "OPNAME" ? "opname" : "persediaan awal"} ${acuan[0].nomor ?? ""}); tanggal pemakaian ${tanggal} sesudahnya, jadi tidak melintasi opname.` : "Belum ada opname selesai atau persediaan awal terposting untuk bahan ini: tidak ada acuan cutoff.";
+  return { melintasi: melintasi.length > 0, acuan, melintasiDaftar: melintasi, berjalan, teks: berjalan.length ? `${teks} Ada sesi opname berjalan memuat bahan ini (${berjalan.map((x) => x.nomor).join(", ")}); selisihnya dihitung terhadap saldo saat penyesuaian.` : teks };
+}
+
 const TANDA_PERHATIAN ="Sistem TIDAK menyamakan atau menautkan otomatis. Periksa daftar ini; hanya Anda yang tahu apakah sebuah catatan itu pemakaian yang sama.";
 /**
  * Pengeluaran yang SUDAH tertaut ke unit untuk bahan ini + transaksi lain yang MUNGKIN relevan (belum tertaut ke unit ini). Baca-saja. Tidak ada penautan.
@@ -153,7 +191,7 @@ const TINDAKAN = Object.freeze({
  * pengeluaran yang sudah tertaut / mungkin sudah tercatat, stok sebelum/sesudah, pemakaian bersih, nilai & jurnal Finance, HPP operasional, dan penghalang.
  * jenis: TAMBAH (ISSUE baru) | KURANGI (RETURN baru bertaut unit) | CATATAN_SEMENTARA | KOMPONEN_LAMA (dua terakhir: tanpa bahan/stok). qty selalu positif.
  */
-export async function pratinjauPembetulan(db, user, { unitId, materialId = null, jenis, qty = null, tanggalPemakaian = null } = {}, { sekarang = new Date() } = {}) {
+export async function pratinjauPembetulan(db, user, { unitId, materialId = null, jenis, qty = null, tanggalPemakaian = null, satuan = null, pengecualianStokTidakCukup = false } = {}, { sekarang = new Date() } = {}) {
   wajib(UUID.test(String(unitId ?? "")), "unit tidak valid", "UNIT_TIDAK_VALID");
   wajib(JENIS_PRATINJAU.includes(jenis), `jenis harus salah satu dari ${JENIS_PRATINJAU.join(", ")}`, "JENIS_TIDAK_VALID");
   const unit = await db.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, createdAt: true, orderId: true, order: { select: { orderNumber: true, status: true } } } });
@@ -173,18 +211,22 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
     };
   }
   wajib(UUID.test(String(materialId ?? "")), "bahan tidak valid", "BAHAN_TIDAK_VALID");
-  const q = Number(qty); wajib(Number.isFinite(q) && q > 0 && q <= 1_000_000, "Jumlah harus angka lebih dari 0", "QTY_TIDAK_VALID");
-  wajib(Math.abs(r4(q) - q) < 1e-9, "Jumlah maksimum 4 angka di belakang koma", "DESIMAL_BERLEBIH");
+  const qIn = Number(qty); wajib(Number.isFinite(qIn) && qIn > 0 && qIn <= 1_000_000, "Jumlah harus angka lebih dari 0", "QTY_TIDAK_VALID");
+  wajib(Math.abs(r4(qIn) - qIn) < 1e-9, "Jumlah maksimum 4 angka di belakang koma", "DESIMAL_BERLEBIH");
   const m = await db.material.findUnique({ where: { id: materialId }, select: { id: true, code: true, name: true, unit: true, active: true } });
   wajib(m, "Bahan tidak ditemukan", "BAHAN_TIDAK_ADA", 404);
-  const leg = await legStok(db, { unit, m, jenis, q, tanggal: waktuDilaporkan.tanggal, sekarang, waktu });
+  // SATUAN PAKAI (mis. LIST WIBING: stok ROLL, pakai METER): jumlah yang diketik dikonversi ke satuan STOK oleh server; dampak stok/HPP dihitung dari jumlah stok.
+  const aturan = aturanUntukBahan(m, aturanBerlaku(await bacaPenimpaanSatuanPakai(db)));
+  const kv = konversiKeStok({ qty: qIn, satuanInput: satuan, aturan, satuanStok: m.unit }); wajib(kv.ok, kv.pesan, kv.kode ?? "QTY_TIDAK_VALID");
+  const q = kv.qtyStok;
+  const leg = await legStok(db, { unit, m, jenis, q, tanggal: waktuDilaporkan.tanggal, sekarang, waktu, user, pengecualian: pengecualianStokTidakCukup === true ? { diminta: true } : null });
   // Pengembalian bahan ASAL Material Issue tidak boleh langsung hanya karena unit sudah terkirim: lewat persetujuan (Ubah pemakaian → Ajukan perubahan) atau Return Produksi Gudang.
   if (jenis === "KURANGI" && await adaPengeluaranMaterialIssue(db, unitId, materialId)) leg.penghalang.push({ kode: "UNIT_ASAL_MATERIAL_ISSUE", pesan: PESAN_ASAL_MI(m.code) });
   return {
     unit: { id: unit.id, kode: unit.unitCode, status: unit.status, selesai: true, order: unit.order?.orderNumber ?? null },
-    bahan: { id: m.id, kode: m.code, nama: m.name, satuan: m.unit }, jenis, qty: r4(q), tindakan, waktu,
-    stok: leg.stok, pemakaianBersih: leg.pemakaianBersih,
-    finance: leg.finance, hppOperasional: leg.hppOperasional, sudahTercatat: leg.sudahTercatat, dampak: leg.dampak, penghalang: leg.penghalang, boleh: leg.penghalang.length === 0, alasanWajib: true, izin,
+    bahan: { id: m.id, kode: m.code, nama: m.name, satuan: m.unit, satuanPakai: ringkasAturan(aturan) }, jenis, qty: r4(q), qtyInput: kv.qtyInput, satuanInput: kv.satuanInput, konversi: kv.dikonversi ? { teks: kv.teks, faktor: kv.faktor, qtyStok: kv.qtyStok } : null, tindakan, waktu,
+    stok: leg.stok, pemakaianBersih: leg.pemakaianBersih, peringatan: leg.peringatan ?? [], pengecualianStok: leg.pengecualianStok ?? null,
+    finance: leg.finance, hppOperasional: leg.hppOperasional, sudahTercatat: leg.sudahTercatat, dampak: leg.dampak, penghalang: leg.penghalang, boleh: leg.penghalang.length === 0, alasanWajib: true, izin: { ...izin, pengecualianStokTidakCukup: bolehPengecualianStok(user) },
   };
 }
 
@@ -192,7 +234,7 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
  * Dampak SATU langkah stok (pengeluaran = TAMBAH, pengembalian = KURANGI) pada satu bahan di satu unit. Baca-saja; dipakai pratinjau pembetulan unit terkirim DAN pratinjau perubahan pemakaian (ubah jumlah / ganti bahan).
  * tanggal = tanggal pemakaian yang DILAPORKAN (unit terkirim) atau null (unit berjalan: dicatat sekarang). ringan = dipakai DI DALAM transaksi penerapan: hanya saldo ledger (tanpa snapshot seluruh gudang). abaikanTertaut: lihat perluKonfirmasi di bawah.
  */
-export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang = new Date(), waktu = null, ringan = false, abaikanTertaut = false }) {
+export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang = new Date(), waktu = null, ringan = false, abaikanTertaut = false, user = null, pengecualian = null }) {
   const materialId = m.id; const unitId = unit.id; const selesai = unitSelesai(unit.status);
   let saldo; let dipesan = 0;
   if (ringan) { const [{ s }] = await db.$queryRaw`SELECT COALESCE(SUM(qty), 0)::float AS s FROM stock_movements WHERE material_id = ${materialId}::uuid`; saldo = r4(s); }
@@ -205,8 +247,20 @@ export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang 
   const penghalang = [];
   if (!m.active) penghalang.push({ kode: "BAHAN_NONAKTIF", pesan: `Bahan ${m.code} nonaktif.` });
   if (jenis === "KURANGI" && q > pemakaianSebelum + 0.00005) penghalang.push({ kode: "UNIT_KOREKSI_MELEBIHI_PEMAKAIAN", pesan: `Pengembalian ${q} melebihi pemakaian bersih bahan ini pada unit (${Math.max(pemakaianSebelum, 0)} ${m.unit}).` });
-  if (jenis === "TAMBAH" && n === 0) penghalang.push({ kode: "STOK_BELUM_DIKETAHUI", pesan: `Bahan ${m.code} belum punya catatan stok sama sekali — pengeluaran ditolak (tidak ada stok yang bisa dikurangi). Gunakan "Catat sementara — stok belum diketahui" (hanya catatan), atau minta Gudang mencatat stok awal/opname.` });
-  else if (jenis === "TAMBAH" && saldoSesudah < -EPS) penghalang.push({ kode: "SALDO_KURANG", pesan: `Stok ${m.code} tidak cukup: tersedia ${saldo} ${m.unit}, butuh ${q}.` });
+  const peringatan = []; let pengecualianStok = null;
+  const kurang = jenis === "TAMBAH" && n > 0 && saldoSesudah < -EPS;
+  if (jenis === "TAMBAH" && n === 0) penghalang.push({ kode: "STOK_BELUM_DIKETAHUI", pesan: `Bahan ${m.code} belum punya catatan stok sama sekali — pengeluaran ditolak (tidak ada stok yang bisa dikurangi). Saldo BELUM DIKETAHUI berbeda dari saldo nol/minus dan tidak dapat dikecualikan: gunakan "Catat sementara — stok belum diketahui" (hanya catatan), atau minta Gudang mencatat stok awal/opname.` });
+  else if (kurang) {
+    const izinPeran = user ? bolehPengecualianStok(user) : false;
+    const opname = selesai && tanggal ? await periksaCutoffOpname(db, { materialId, tanggal }) : { melintasi: false, acuan: [], berjalan: [], teks: "Cutoff opname hanya diperiksa untuk pemakaian historis unit terkirim." };
+    const bisa = selesai && izinPeran && !opname.melintasi;
+    const sebab = !selesai ? "Pengecualian hanya untuk pemakaian historis unit terkirim." : !izinPeran ? "Hanya peran pengelola (Admin, Owner, Kepala Produksi) yang boleh memakai pengecualian ini." : opname.melintasi ? opname.teks : null;
+    const diminta = pengecualian?.diminta === true;
+    pengecualianStok = { perlu: true, bisa, diminta, berlaku: bisa && diminta, sebabTidakBisa: sebab, saldoSebelum: saldo, saldoSesudah, opname };
+    if (bisa && diminta) peringatan.push({ kode: "SALDO_MINUS", pesan: `Stok ${m.code} tidak cukup (tersedia ${saldo} ${m.unit}, butuh ${q}) — tetap dicatat atas pengecualian. Ini MEMBUAT pengeluaran stok baru dan saldo menjadi ${saldoSesudah} ${m.unit} (minus) sampai dibereskan lewat stock opname. Tidak ada penerimaan/penyesuaian otomatis.` });
+    else penghalang.push({ kode: "SALDO_KURANG", pesan: `Stok ${m.code} tidak cukup: tersedia ${saldo} ${m.unit}, butuh ${q}.`, bisaDikecualikan: bisa, ...(sebab ? { sebabTidakBisaDikecualikan: sebab } : {}) });
+    if (diminta && !bisa) penghalang.push({ kode: "PENGECUALIAN_DITOLAK", pesan: sebab });
+  }
   const cut = await statusCutoverUntuk(db, sekarang);
   const harga = (await dasarHargaRataRata(db, materialId, { asOf: sekarang })).harga; const hargaNum = harga == null ? null : Number(harga);
   const nilai = hargaNum == null ? null : Math.round(q * hargaNum);
@@ -228,10 +282,11 @@ export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang 
     "Baris pemakaian yang sudah ada TIDAK diubah atau dihapus; pembetulan menjadi baris BARU di riwayat. Nilai beku pemakaian lama tidak berubah.",
     ...(selesai ? [`Order ${unit.order?.orderNumber ?? ""} sudah terkirim: angka HPP/pemakaian order ini akan berubah sesudah pembetulan.`] : []),
   ];
+  for (const p of peringatan) dampak.push(`PERINGATAN: ${p.pesan}`);
   if (perluKonfirmasi) dampak.push(`PERHATIAN: ${sudahTercatat.tertaut.length} pengeluaran bahan ini sudah tertaut ke unit dan/atau ${sudahTercatat.kemungkinan.length} transaksi lain mungkin relevan. Periksa dulu agar tidak tercatat dua kali.`);
   return {
     stok: { saldoSebelum: n > 0 ? saldo : null, saldoSesudah, dipesan, belumAdaCatatan: n === 0, saldoDilihat: saldo }, pemakaianBersih: { sebelum: pemakaianSebelum, sesudah: pemakaianSesudah },
-    finance, hppOperasional: hpp, sudahTercatat: { ...sudahTercatat, perluKonfirmasi }, dampak, penghalang, saldo,
+    finance, hppOperasional: hpp, sudahTercatat: { ...sudahTercatat, perluKonfirmasi }, dampak, penghalang, peringatan, pengecualianStok, saldo,
   };
 }
 

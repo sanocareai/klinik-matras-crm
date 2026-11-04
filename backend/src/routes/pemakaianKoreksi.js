@@ -49,7 +49,7 @@ pemakaianKoreksiRouter.post("/catatan-historis/evaluasi", tulisBahan, async (req
 });
 
 pemakaianKoreksiRouter.post("/units/:id/pembetulan-bahan/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
-  try { res.json(await pratinjauPembetulan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, jenis: req.body?.jenis, qty: req.body?.qty, tanggalPemakaian: req.body?.tanggalPemakaian })); } catch (e) { handleErr(e, res); }
+  try { res.json(await pratinjauPembetulan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, jenis: req.body?.jenis, qty: req.body?.qty, tanggalPemakaian: req.body?.tanggalPemakaian, satuan: req.body?.satuan ?? null, pengecualianStokTidakCukup: req.body?.pengecualianStokTidakCukup === true })); } catch (e) { handleErr(e, res); }
 });
 // Perubahan pemakaian per bahan (ubah jumlah / ganti bahan): pratinjau baca-saja + penerapan LANGSUNG atomik (Idempotency-Key wajib). Perubahan yang perlu persetujuan memakai koreksi-pemakaian di bawah.
 pemakaianKoreksiRouter.post("/units/:id/perubahan-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
