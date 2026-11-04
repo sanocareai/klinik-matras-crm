@@ -66,6 +66,8 @@ function bangkitkan({ baseScript, blok, berkasList, rehNode, smokeNode }) {
   { const L2 = s.split("\n"); const i = L2.findIndex((l) => l.startsWith('for s1 in "Pilih meja"')); must(i >= 0, "baris s1");
     L2[i] = `for s1 in ${DIST_BARU.map((x) => `"${x}"`).join(" ")}; do [ -n "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: \${s1}"; [ -z "$(grep -lF -- "$s1" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks fitur baru '\${s1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"; done`;
     s = L2.join("\n"); }
+  // "Unit Produksi" hanya ada di bundel LAMA (kumulatif); bundel hasil build segar (baseline maupun kandidat) tidak memuatnya lagi — dibuktikan dengan build segar baseline 04c620e1.
+  r(' "Nilai bersih" "Unit Produksi" "Item Penjualan & Pemenuhan"', ' "Nilai bersih" "Item Penjualan & Pemenuhan"');
   r('for s2 in "Tambah pemakaian"', `for s2 in ${DIST_LIVE_TAMBAHAN.map((x) => `"${x}"`).join(" ")} "Tambah pemakaian"`);
   // CSS: aturan baru ADA di dist baru dan BELUM di dist aktif; aturan live (Finance/Produksi/CRM) harus ada di KEDUANYA
   { const css = lf(blok["fitur-css"]).trimEnd(); const k = s.indexOf('for s2 in '); const e = s.indexOf("\n", s.indexOf("done", k) > 0 ? s.indexOf("done", k) : k) + 1; must(k > 0 && e > k, "sisip CSS"); s = s.slice(0, e) + css + "\n" + s.slice(e); }
