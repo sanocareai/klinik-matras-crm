@@ -21,7 +21,7 @@ const APLIKASI = [
   "frontend/src/features/finance/InvoicePanels.jsx", "frontend/src/features/finance/PanelDetail.jsx", "frontend/src/features/finance/kasbank/KasBankPanels.jsx",
   "frontend/src/features/finance/tagihan/DaftarTagihan.jsx", "frontend/src/features/finance/tagihan/RincianTagihan.jsx", "frontend/src/features/finance/uangMukaFaktur/kelayakanLogika.js",
   "frontend/src/features/finance/verifikasi/PanelPemeriksaan.jsx", "frontend/src/features/notifications/NotificationDrawer.jsx", "frontend/src/features/warehouse/components/GoodsReceiptDetailDrawer.jsx",
-  "frontend/src/pages/b2b/B2BOrders.jsx", "frontend/src/pages/finance/FinanceReceivables.jsx", "frontend/src/pages/finance/FinanceSuppliers.jsx",
+  "frontend/src/pages/b2b/B2BOrders.jsx", "frontend/src/pages/finance/FinanceReceivables.jsx", "frontend/src/pages/finance/FinanceSuppliers.jsx", "frontend/src/styles/sanss-gudang-dok.css",
   "frontend/tests/bannerOverlayHp.test.js", "frontend/tests/releaseSpu2Paket.test.js",
 ];
 const TPL = ["bandingkan-kode", "build-only", "container-baru", "fitur-dist", "header", "verifikasi-hotfix"].map((n) => `scripts/templates/release-finance-uang-muka-hp/${n}.txt`);
@@ -30,7 +30,7 @@ const TETAP = ["scripts/gen-release-finance-uang-muka-hp.cjs", "scripts/release-
 const blok = () => Object.fromEntries([...TPL, ...TPL_P].map((f) => [path.basename(f, ".txt"), baca(f)]));
 const bangun = (daftar) => bangkitkan({ baseScript: baca("scripts/release-gudang-pintu-masuk.sh"), blok: blok(), berkasList: daftar });
 
-test("allowlist skrip = dua puluh delapan berkas aplikasi/tes yang disetujui + berkas rilis sendiri, tidak ada yang lain", () => {
+test("allowlist skrip = dua puluh sembilan berkas aplikasi/tes yang disetujui + berkas rilis sendiri, tidak ada yang lain", () => {
   const baris = skrip.split("\n").find((l) => l.startsWith("ALLOWED_RE="));
   const isi = baris.slice("ALLOWED_RE='^(".length, -")$'".length).split("|").map((x) => x.replace(/\\\./g, "."));
   assert.deepEqual([...isi].sort(), [...APLIKASI, ...TETAP].sort());

@@ -74,13 +74,14 @@ export function Modal({
             // DS v2: tanpa border, elevasi popover + translucent blur (surface.jsx).
             POPOVER_SURFACE, "outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
-            // Saat keyboard terbuka di HP: tempel ke atas dan batasi tinggi ke area di atas keyboard (--kb-inset dari visualViewport).
-            "group/modal max-sm:data-[kb=1]:top-0 max-sm:data-[kb=1]:translate-y-0 max-sm:data-[kb=1]:max-h-[calc(100dvh-var(--kb-inset,0px))]",
+            // "group/modal": footer merapat saat keyboard terbuka. Penempelan ke atas & batas tinggi di atas keyboard dipasang lewat gaya INLINE (lihat style di bawah), bukan kelas utilitas:
+            // CSS tak berlapis milik halaman (mis. .gud-dlg-penuh { max-height: 100dvh }) mengalahkan utilitas Tailwind, sedangkan gaya inline menang.
+            "group/modal",
             className
           )}
           {...contentProps}
           data-kb={kb > 0 ? "1" : undefined}
-          style={kb > 0 ? { ...(contentProps.style || {}), "--kb-inset": `${kb}px` } : contentProps.style}
+          style={kb > 0 ? { ...(contentProps.style || {}), "--kb-inset": `${kb}px`, top: 0, "--tw-translate-y": "0px", maxHeight: `calc(100dvh - ${kb}px)` } : contentProps.style}
         >
           {(title || showClose) && (
             <div className="flex shrink-0 items-start justify-between px-6 pb-0 pt-5">

@@ -21,7 +21,8 @@ export function useInsetKeyboard(aktif) {
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!aktif || !vv) { setInset(0); return undefined; }
-    const hitung = () => { const d = Math.round(window.innerHeight - vv.height - vv.offsetTop); setInset(d > 80 ? d : 0); };
+    // Hanya layar HP (< 640px, sama dengan breakpoint `sm`): di layar lebar dialog tidak diubah.
+    const hitung = () => { const d = Math.round(window.innerHeight - vv.height - vv.offsetTop); setInset(window.innerWidth < 640 && d > 80 ? d : 0); };
     hitung();
     vv.addEventListener("resize", hitung); vv.addEventListener("scroll", hitung);
     return () => { vv.removeEventListener("resize", hitung); vv.removeEventListener("scroll", hitung); setInset(0); };

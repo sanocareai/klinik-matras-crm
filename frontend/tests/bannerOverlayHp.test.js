@@ -53,12 +53,13 @@ test("Modal: footer aman safe-area (desktop tetap 1.5rem), boleh membungkus, rap
   assert.match(m, /pb-\[max\(1\.5rem,calc\(env\(safe-area-inset-bottom\)\+0\.75rem\)\)\]/);
   assert.match(m, /flex shrink-0 flex-wrap justify-end gap-2 border-t border-line/);
   assert.match(m, /group-data-\[kb=1\]\/modal:pb-3/);
-  assert.match(m, /max-sm:data-\[kb=1\]:top-0 max-sm:data-\[kb=1\]:translate-y-0 max-sm:data-\[kb=1\]:max-h-\[calc\(100dvh-var\(--kb-inset,0px\)\)\]/);
+  assert.match(m, /"--kb-inset": `\$\{kb\}px`, top: 0, "--tw-translate-y": "0px", maxHeight: `calc\(100dvh - \$\{kb\}px\)`/, "gaya INLINE (menang atas CSS tak berlapis seperti .gud-dlg-penuh)");
+  assert.doesNotMatch(m, /max-sm:data-\[kb=1\]/, "bukan utilitas Tailwind yang bisa dikalahkan CSS halaman");
   assert.match(m, /useInsetKeyboard\(open\)/);
   assert.match(m, /document\.activeElement\?\.scrollIntoView\?\.\(\{ block: "nearest" \}\)/);
   assert.ok(m.indexOf("useInsetKeyboard(open)") < m.indexOf("if (lapisan?.slot"), "hook sebelum return awal");
   const o = baca("components/ui/overlay-status.jsx");
-  assert.match(o, /window\.visualViewport/); assert.match(o, /d > 80 \? d : 0/, "ambang 80px mengabaikan bilah alamat");
+  assert.match(o, /window\.visualViewport/); assert.match(o, /window\.innerWidth < 640 && d > 80 \? d : 0/, "ambang 80px mengabaikan bilah alamat; hanya layar HP");
 });
 
 test("cakupan pemeriksaan uang muka: batas 60 dinyatakan, kegagalan dinyatakan, tidak ada klaim 'semua diperiksa'", () => {
@@ -84,4 +85,11 @@ test("form pembayaran: faktur terisi didahulukan dalam pemeriksaan baris; Simpan
   assert.match(f, /Pembayaran BELUM disimpan; tekan Simpan lagi untuk memeriksa ulang/);
   assert.match(f, /fakturBerisikoBayarKedua\(tagihanTerbuka, alokasiAktif, peta\)/, "keputusan risiko memakai hasil pemeriksaan segar, bukan cache");
   assert.match(f, /data-testid="batas-periksa-bayar"/);
+});
+
+test("dialog Gudang layar penuh di HP: translate Tailwind v4 juga direset (bukan hanya transform) — kalau tidak dialog bergeser -50% dan setengahnya keluar layar", () => {
+  const css = baca("styles/sanss-gudang-dok.css");
+  const aturan = css.match(/@media \(max-width: 639px\) \{\s*\.gud-dlg-penuh \{[^}]*\}/)?.[0] || "";
+  assert.match(aturan, /transform: none !important; translate: none !important;/);
+  assert.match(aturan, /left: 0 !important; top: 0 !important;/);
 });

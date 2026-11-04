@@ -1,6 +1,7 @@
 # RILIS FRONTEND-SAJA "banner Install/Versi baru menyingkir selama dialog & panel layar penuh; footer dialog aman safe-area/keyboard HP; cakupan pemeriksaan uang muka dinyatakan jujur; Simpan pembayaran memeriksa faktur terpilih langsung" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data.
 # Isi (layout & penyajian saja; tidak ada endpoint/jurnal/izin/idempotensi yang berubah):
 #   • Status overlay global (components/ui/overlay-status.jsx): <DaftarOverlay /> di setiap Dialog.Content mendaftar selama dialog/panel terbuka; InstallPrompt & UpdateBanner membacanya lewat useOverlayAktif() dan menyingkir — tanpa pemeriksaan DOM, tanpa mengubah z-index; aturan tutup manual/needRefresh tidak berubah.
+#   • Dialog Gudang layar penuh di HP: translate Tailwind v4 ikut direset (dialog tidak lagi bergeser -50% keluar layar).
 #   • Modal: footer memperhitungkan safe-area (desktop tetap 1.5rem) dan boleh membungkus; saat keyboard HP terbuka (visualViewport) dialog menempel ke atas, tingginya dibatasi di atas keyboard, dan isian terfokus digulirkan ke area terlihat.
 #   • Pemeriksaan uang muka: batas 60 faktur dinyatakan di daftar dan form pembayaran (tanpa klaim 'semua sudah diperiksa'); faktur yang nominalnya diisi didahulukan; Simpan memeriksa ulang SETIAP faktur terpilih langsung ke server dan tidak menyimpan diam-diam bila pemeriksaan gagal.
 # ALLOWLIST EKSPLISIT: generator menolak bila himpunan berkas aplikasi di diff berbeda dari daftar yang disetujui. main.jsx, Layout.jsx, dan berkas backend TIDAK berubah.
