@@ -32,7 +32,9 @@ function bacaBaris(b, bahan) {
   return { jenis: b.jenis, jumlah: r4(jumlah), satuan, soTanggal: String(b.soTanggal), soWaktu, sumber, alasan };
 }
 const kunciSatu = (kunci, materialId) => `${kunci}:${materialId}`;
-const mapEvent = (e, nama) => ({ id: e.id, jenis: e.metadata?.jenis, jumlah: Number(e.metadata?.jumlah), satuan: e.metadata?.satuan, soTanggal: e.metadata?.soTanggal, soWaktu: e.metadata?.soWaktu ?? null, sumber: e.metadata?.sumber, alasan: e.metadata?.alasan, satuanStok: e.metadata?.satuanStok, saldoLedgerSaatDicatat: e.metadata?.saldoLedgerSaatDicatat ?? null,
+const urutanDari = (e) => Number(e?.metadata?.urutan ?? 0);
+const palingBaru = (rows) => rows.reduce((m, e) => (!m || urutanDari(e) > urutanDari(m) || (urutanDari(e) === urutanDari(m) && (e.createdAt > m.createdAt || (e.createdAt.getTime() === m.createdAt.getTime() && e.id > m.id))) ? e : m), null);
+const mapEvent = (e, nama) => ({ id: e.id, urutan: urutanDari(e), jenis: e.metadata?.jenis, jumlah: Number(e.metadata?.jumlah), satuan: e.metadata?.satuan, soTanggal: e.metadata?.soTanggal, soWaktu: e.metadata?.soWaktu ?? null, sumber: e.metadata?.sumber, alasan: e.metadata?.alasan, satuanStok: e.metadata?.satuanStok, saldoLedgerSaatDicatat: e.metadata?.saldoLedgerSaatDicatat ?? null,
   menggantikanId: e.metadata?.menggantikanId ?? null, koreksi: e.eventType === EVENT_TYPES.SO_HASIL_DIKOREKSI, pelaku: { id: e.actorId, nama: nama?.get(e.actorId) ?? null }, dicatatPada: e.createdAt });
 
 /**
@@ -53,12 +55,13 @@ export async function catatHasilSO(prisma, user, masukan, kunciMentah) {
       const isi = bacaBaris(b, bahan); const kunciBaris = kunciSatu(kunci, bahan.id);
       const sama = await tx.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: bahan.id, metadata: { path: ["idempotencyKey"], equals: kunciBaris } } });
       if (sama) { const m = sama.metadata ?? {}; wajib(m.jenis === isi.jenis && Number(m.jumlah) === isi.jumlah && m.satuan === isi.satuan && m.soTanggal === isi.soTanggal, "Idempotency-Key ini sudah dipakai untuk isi yang berbeda", "KUNCI_DIPAKAI_LAIN", 409); hasil.push({ ...mapEvent(sama), materialId: bahan.id, kode: bahan.code, ulang: true }); continue; }
-      const terkini = await tx.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: bahan.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+      const terkini = palingBaru(await tx.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: bahan.id } }));
       if (terkini) wajib(b.menggantikanId && b.menggantikanId === terkini.id, "Bahan ini sudah punya hasil SO tercatat. Koreksi wajib menunjuk catatan terkini (menggantikanId) — riwayat lama tidak dihapus.", "SUDAH_ADA_HASIL_SO", 409);
       else wajib(!b.menggantikanId, "tidak ada hasil SO sebelumnya untuk dikoreksi", "TIDAK_ADA_YANG_DIKOREKSI", 409);
       const [{ saldo }] = await tx.$queryRaw`SELECT COALESCE(SUM(qty), 0)::float AS saldo FROM stock_movements WHERE material_id = ${bahan.id}::uuid`;
-      const e = await recordActivity(tx, { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: bahan.id, eventType: terkini ? EVENT_TYPES.SO_HASIL_DIKOREKSI : EVENT_TYPES.SO_HASIL_DICATAT, actorId: user.id,
-        metadata: { ...isi, kode: bahan.code, satuanStok: bahan.unit, saldoLedgerSaatDicatat: r4(saldo), idempotencyKey: kunciBaris, menggantikanId: terkini?.id ?? null, versi: 1 } });
+      const urutan = (terkini ? urutanDari(terkini) : 0) + 1; const waktu = new Date(Math.max(Date.now(), terkini ? terkini.createdAt.getTime() + 1 : 0));
+      const e = await tx.activityEvent.create({ data: { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: bahan.id, eventType: terkini ? EVENT_TYPES.SO_HASIL_DIKOREKSI : EVENT_TYPES.SO_HASIL_DICATAT, actorId: user.id, actorType: "USER", createdAt: waktu,
+        metadata: { ...isi, kode: bahan.code, satuanStok: bahan.unit, saldoLedgerSaatDicatat: r4(saldo), idempotencyKey: kunciBaris, menggantikanId: terkini?.id ?? null, urutan, versi: 2 } } });
       hasil.push({ ...mapEvent(e), materialId: bahan.id, kode: bahan.code, ulang: false });
     }
     return { jumlah: hasil.length, baru: hasil.filter((h) => !h.ulang).length, ulang: hasil.filter((h) => h.ulang).length, hasil };
@@ -68,8 +71,9 @@ export async function catatHasilSO(prisma, user, masukan, kunciMentah) {
 /** Hasil SO TERKINI per bahan (Map materialId → catatan). Baca-saja. `materialIds` null = semua. */
 export async function hasilSOTerkini(db, materialIds = null) {
   const where = { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, ...(materialIds ? { entityId: { in: materialIds } } : {}) };
-  const rows = await db.activityEvent.findMany({ where, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
-  const hitung = new Map(); const terkini = new Map(); for (const e of rows) { hitung.set(e.entityId, (hitung.get(e.entityId) ?? 0) + 1); terkini.set(e.entityId, e); }
+  const rows = await db.activityEvent.findMany({ where });
+  const hitung = new Map(); const per = new Map(); for (const e of rows) { hitung.set(e.entityId, (hitung.get(e.entityId) ?? 0) + 1); (per.get(e.entityId) ?? per.set(e.entityId, []).get(e.entityId)).push(e); }
+  const terkini = new Map([...per].map(([id, a]) => [id, palingBaru(a)]));
   const aktor = [...new Set([...terkini.values()].map((e) => e.actorId).filter(Boolean))];
   const nama = aktor.length ? new Map((await db.user.findMany({ where: { id: { in: aktor } }, select: { id: true, name: true } })).map((u) => [u.id, u.name])) : new Map();
   return new Map([...terkini].map(([id, e]) => [id, { ...mapEvent(e, nama), revisi: hitung.get(id) }]));
@@ -78,7 +82,7 @@ export async function hasilSOTerkini(db, materialIds = null) {
 /** Riwayat lengkap satu bahan (lama → baru), termasuk koreksi. Baca-saja. */
 export async function riwayatHasilSO(db, materialId) {
   wajib(UUID.test(String(materialId ?? "")), "bahan tidak valid", "BAHAN_TIDAK_VALID");
-  const rows = await db.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: materialId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+  const rows = (await db.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.HASIL_SO_BAHAN, entityId: materialId } })).sort((a, b) => urutanDari(a) - urutanDari(b) || a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
   const aktor = [...new Set(rows.map((e) => e.actorId).filter(Boolean))]; const nama = aktor.length ? new Map((await db.user.findMany({ where: { id: { in: aktor } }, select: { id: true, name: true } })).map((u) => [u.id, u.name])) : new Map();
-  return rows.map((e, i) => ({ ...mapEvent(e, nama), urutan: i + 1, terkini: i === rows.length - 1 }));
+  return rows.map((e, i) => ({ ...mapEvent(e, nama), urutan: urutanDari(e) || i + 1, terkini: i === rows.length - 1 }));
 }

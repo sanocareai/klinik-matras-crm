@@ -1,7 +1,7 @@
 // Nilai persediaan — logika MURNI (tanpa DB): klasifikasi baris & cakupan. Aturan inti: pengecualian TIDAK PERNAH bernilai Rp0; nol sah dipisah; cakupan satu sumber.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { klasifikasiBaris, ringkasCakupan, urutkanRisiko, hitungEstimasi, peranPelihatNominal, STATUS, STATUS_PENGECUALIAN } from "../src/services/nilaiPersediaan.js";
+import { klasifikasiBaris, ringkasCakupan, urutkanRisiko, hitungEstimasi, peranPelihatNominal, statusHasilSO, STATUS, STATUS_PENGECUALIAN } from "../src/services/nilaiPersediaan.js";
 
 const bahan = (o = {}) => ({ id: "m1", code: "BHN-1", name: "Bahan Uji", unit: "KG", category: "RAW_MATERIAL", active: true, ...o });
 const harga = (o = {}) => ({ harga: 5000, satuan: "KG", berlakuMulai: new Date("2026-10-01T00:00:00Z"), sumber: "MANUAL", label: "BELUM_DIDUKUNG_BUKTI", ...o });
@@ -56,4 +56,21 @@ test("N6. cakupan: partisi lengkap, persentase, dan harga dari PO dihitung terpi
 test("N7. urutan tabel: yang berisiko dulu, pengecualian tidak tenggelam", () => {
   const baris = [K({ saldo: 0, jumlahPergerakan: 1 }), K({}), K({ saldo: -1 }), K({ jumlahPergerakan: 0, saldo: 0 }), K({ harga: null })];
   assert.deepEqual(urutkanRisiko(baris).map((b) => b.status), [STATUS.DINILAI, STATUS.SALDO_MINUS, STATUS.HARGA_KOSONG, STATUS.STOK_BELUM_DIKETAHUI, STATUS.SALDO_NOL]);
+});
+
+test("N8. catatan SO lama tidak terus mewakili saldo sekarang: pergerakan sesudah tanggal SO ⇒ KEDALUWARSA + peringatan + dikecualikan dari estimasi 'tanpa hasil SO bermasalah'", () => {
+  const sesudah = { padaTanggal: 1, jumlah: 2, net: 7, terakhir: "2026-11-05T03:00:00.000Z" };
+  const nol = K({ saldo: 7, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG", sesudah }) }); assert.equal(nol.hasilSO.status, "KEDALUWARSA_PERGERAKAN_BARU"); assert.equal(nol.hasilSO.kedaluwarsa, true); assert.equal(nol.hasilSOBermasalah, true); assert.match(nol.keterangan, /PERINGATAN: ada 2 pergerakan sesudah tanggal SO \(net 7/); assert.match(nol.keterangan, /tidak lagi mewakili saldo sekarang/); assert.match(nol.keterangan, /1 pergerakan terjadi pada tanggal SO/);
+  assert.deepEqual(nol.hasilSO.pergerakanSesudah, sesudah);
+  const ada = K({ jumlahPergerakan: 3, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG", sesudah }) }); assert.equal(ada.hasilSO.status, "KEDALUWARSA_PERGERAKAN_BARU", "saldo kembali 0 setelah ada pergerakan baru tetap tidak otomatis dianggap sejalan");
+  const roll = K({ saldo: 122, bahan: bahan({ unit: "METER" }), harga: harga({ satuan: "METER" }), hasilSO: SO({ jumlah: 1, satuan: "ROLL", sesudah }) }); assert.equal(roll.status, STATUS.PENGAMATAN_FISIK); assert.equal(roll.hasilSO.status, "TERBUKA_SATUAN"); assert.equal(roll.hasilSO.kedaluwarsa, true); assert.match(roll.keterangan, /Pengecualian satuan masih terbuka/); assert.match(roll.keterangan, /tidak lagi mewakili saldo sekarang/);
+  const bersih = K({ saldo: 0, jumlahPergerakan: 2, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) }); assert.equal(bersih.hasilSO.status, "SEJALAN_BELUM_DISAHKAN"); assert.equal(bersih.hasilSO.kedaluwarsa, false);
+});
+test("N9. 178 nol: 'fisik nol dikonfirmasi Owner, belum disahkan melalui Stock Count' — TIDAK PERNAH berlabel Nol terverifikasi tanpa Stock Count; nol terverifikasi sungguhan tetap berlabel sendiri", () => {
+  const b = K({ jumlahPergerakan: 0, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) });
+  assert.match(b.keterangan, /Fisik nol dikonfirmasi Owner/); assert.match(b.keterangan, /belum disahkan melalui Stock Count/); assert.equal(b.hasilSO.status, "BELUM_DISAHKAN_STOCK_COUNT"); assert.equal(b.hasilSO.statusTeks, "Fisik nol dikonfirmasi Owner, belum disahkan melalui Stock Count");
+  assert.notEqual(b.keadaanSaldo, "NOL_TERVERIFIKASI"); assert.doesNotMatch(JSON.stringify(b), /Nol terverifikasi/i);
+  const sejalan = K({ jumlahPergerakan: 2, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) }); assert.notEqual(sejalan.keadaanSaldo, "NOL_TERVERIFIKASI"); assert.doesNotMatch(sejalan.keterangan, /terverifikasi/i); assert.match(sejalan.keterangan, /belum disahkan melalui Stock Count/);
+  const ver = K({ jumlahPergerakan: 2, saldo: 0, nolTerverifikasi: true }); assert.equal(ver.keadaanSaldo, "NOL_TERVERIFIKASI"); assert.match(ver.keterangan, /Nol terverifikasi hitung fisik/);
+  assert.equal(statusHasilSO({ so: SO({ jenis: "NOL_DIKONFIRMASI" }), keadaan: "MINUS", saldo: -2 }).bermasalah, true);
 });

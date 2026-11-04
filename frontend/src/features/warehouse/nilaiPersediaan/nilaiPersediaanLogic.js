@@ -69,3 +69,14 @@ export function bangunBodyHasilSO(f, bahan) {
   const nol = f.jenis === "NOL_DIKONFIRMASI";
   return { baris: [{ materialId: bahan.materialId, jenis: f.jenis, jumlah: nol ? 0 : Number(String(f.jumlah).replace(",", ".")), ...(nol ? {} : { satuan: String(f.satuan).trim().toUpperCase() }), soTanggal: f.soTanggal, sumber: String(f.sumber).trim(), alasan: String(f.alasan).trim(), ...(bahan.hasilSO?.id ? { menggantikanId: bahan.hasilSO.id } : {}) }] };
 }
+
+const BLN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+/** "2026-11-04" → "4 Nov 2026" (tanggal sumber SO apa adanya, tanpa zona). */
+export function teksTanggalSO(t) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(t ?? "")); return m ? `${Number(m[3])} ${BLN[Number(m[2]) - 1]} ${m[1]}` : "—"; }
+/** Satu baris "sumber SO": tanggal sumber, status rekonsiliasi, dan pergerakan sesudahnya. null bila tidak ada hasil SO. */
+export function ringkasHasilSO(h) {
+  if (!h) return null; const sd = h.pergerakanSesudah ?? { jumlah: 0, net: 0, padaTanggal: 0 };
+  const bagian = [`Hasil SO ${teksTanggalSO(h.soTanggal)}`, h.statusTeks ?? "Status belum dihitung"];
+  bagian.push(sd.jumlah > 0 ? `${sd.jumlah} pergerakan sesudahnya (net ${NF.format(sd.net)})` : "tidak ada pergerakan sesudahnya");
+  return { teks: bagian.join(" · "), kedaluwarsa: !!h.kedaluwarsa, terbuka: h.status === "TERBUKA_SATUAN" };
+}

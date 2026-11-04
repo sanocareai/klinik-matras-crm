@@ -176,3 +176,30 @@ test("H8. nilai parsial (KPI lama) hanya di rincian Finance dengan definisi; tid
   const w = await dunia(); const r = await w.f.get(URL_API); const p = r.body.finance.nilaiParsial; assert.ok(p.definisi.includes("biaya penerimaan terakhir")); assert.ok(p.bahanDenganBiaya >= 1); assert.equal(typeof p.nilai, "number"); assert.ok(!JSON.stringify(r.body.kartu).includes("nilaiParsial"));
   assert.equal(p.nilai, 15 * 4200, "A: 15 × biaya penerimaan terakhir (4.200); bahan lain tanpa biaya penerimaan");
 });
+
+test("H9. pergerakan sesudah tanggal SO: laporan menampilkan tanggal sumber, status rekonsiliasi, dan pergerakan sesudahnya; catatan SO lama tidak lagi dianggap mewakili saldo sekarang; pengecualian satuan tetap terbuka", async () => {
+  const w = await dunia(); const kemarin = new Date(Date.now() - 3 * HARI).toISOString().slice(0, 10);
+  assert.equal((await so(w.g, [baris1(w.I, { soTanggal: kemarin }), { materialId: w.A.id, jenis: "NOL_DIKONFIRMASI", jumlah: 0, soTanggal: kemarin, sumber: "uji sumber", alasan: "Nol dikonfirmasi pada SO uji" }])).status, 201);
+  let r = await w.f.get(URL_API); let I = per(r.body).get(w.I.id), A = per(r.body).get(w.A.id);
+  assert.equal(I.hasilSO.soTanggal, kemarin); assert.equal(I.hasilSO.status, "TERBUKA_SATUAN"); assert.equal(I.hasilSO.kedaluwarsa, false); assert.equal(I.hasilSO.pergerakanSesudah.jumlah, 0);
+  assert.equal(A.hasilSO.status, "KEDALUWARSA_PERGERAKAN_BARU", "A menerima barang 2 hari lalu, sesudah tanggal SO (3 hari lalu)"); assert.equal(A.hasilSO.kedaluwarsa, true);
+  await mv(w.I.id, "RECEIPT", 5, new Date(Date.now() - 60_000)); await mv(w.A.id, "RECEIPT", 2, new Date(Date.now() - 60_000), { unitCost: 4300 });
+  r = await w.f.get(URL_API); I = per(r.body).get(w.I.id); A = per(r.body).get(w.A.id);
+  assert.equal(I.hasilSO.kedaluwarsa, true); assert.equal(I.hasilSO.pergerakanSesudah.jumlah, 1); assert.equal(I.hasilSO.pergerakanSesudah.net, 5); assert.ok(I.hasilSO.pergerakanSesudah.terakhir); assert.equal(I.status, "PENGAMATAN_FISIK", "pengecualian satuan tetap terbuka"); assert.equal(I.hasilSO.status, "TERBUKA_SATUAN"); assert.match(I.keterangan, /PERINGATAN: ada 1 pergerakan sesudah tanggal SO \(net 5/); assert.match(I.keterangan, /Pengecualian satuan masih terbuka/);
+  assert.equal(A.hasilSO.status, "KEDALUWARSA_PERGERAKAN_BARU"); assert.equal(A.hasilSOBermasalah, true); assert.equal(A.hasilSO.pergerakanSesudah.jumlah >= 1, true);
+  assert.ok(r.body.cakupan.hasilSOKedaluwarsa >= 2); assert.equal(r.body.cakupan.pengecualianSatuanTerbuka, 1);
+  const lampau = await w.f.get(`${URL_API}?waktu=${encodeURIComponent(new Date(Date.now() - 30 * 60_000).toISOString())}`); assert.equal(per(lampau.body).get(w.I.id).hasilSO.pergerakanSesudah.jumlah, 0, "pada waktu acuan sebelum pergerakan baru, catatan SO belum kedaluwarsa");
+});
+test("H10. urutan koreksi deterministik: koreksi serentak menunjuk catatan terkini yang sama ⇒ tepat satu menang; terkini = urutan tertinggi; linimasa createdAt menaik; riwayat dan laporan sepakat", async () => {
+  const w = await dunia(); const a = await so(w.g, [baris1(w.I)], "uji-h10-0001"); assert.equal(a.status, 201); const id1 = a.body.hasil[0].id;
+  const hasil = await Promise.all([1, 2, 3, 4].map((i) => so(w.g, [baris1(w.I, { jumlah: 20 + i, alasan: `Koreksi serentak ke-${i}`, menggantikanId: id1 })], `uji-h10-k${i}-aaaa`)));
+  assert.equal(hasil.filter((r) => r.status === 201).length, 1, JSON.stringify(hasil.map((r) => r.status))); assert.equal(hasil.filter((r) => r.status === 409).length, 3);
+  const rw = (await w.f.get(`${HASIL}/${w.I.id}`)).body.riwayat; assert.equal(rw.length, 2); assert.deepEqual(rw.map((x) => x.urutan), [1, 2]); assert.equal(rw[1].terkini, true); assert.equal(rw[1].menggantikanId, id1); assert.ok(new Date(rw[1].dicatatPada) > new Date(rw[0].dicatatPada));
+  const r = await w.f.get(URL_API); const I = per(r.body).get(w.I.id); assert.equal(I.hasilSO.id, rw[1].id, "laporan memakai catatan terkini yang sama dengan riwayat"); assert.equal(I.hasilSO.urutan, 2); assert.equal(I.hasilSO.revisi, 2);
+  const lagi = await so(w.g, [baris1(w.I, { jumlah: 30, menggantikanId: rw[1].id })], "uji-h10-lagi-aaa"); assert.equal(lagi.status, 201); const rw3 = (await w.f.get(`${HASIL}/${w.I.id}`)).body.riwayat; assert.deepEqual(rw3.map((x) => x.urutan), [1, 2, 3]); assert.equal(rw3.filter((x) => x.terkini).length, 1);
+  const lama = await so(w.g, [baris1(w.I, { jumlah: 31, menggantikanId: id1 })], "uji-h10-lama-aaa"); assert.equal(lama.status, 409, "koreksi yang menunjuk catatan bukan-terkini ditolak");
+});
+test("H11. nol dikonfirmasi tidak menjadi 'Nol terverifikasi': tanpa Stock Count keadaan saldo tetap BELUM_ADA_CATATAN/bukan NOL_TERVERIFIKASI dan teks menyebut belum disahkan melalui Stock Count", async () => {
+  const w = await dunia(); assert.equal((await so(w.g, [{ materialId: w.D.id, jenis: "NOL_DIKONFIRMASI", jumlah: 0, soTanggal: "2026-11-04", sumber: "uji", alasan: "Sel kosong = sudah dicek" }])).status, 201);
+  const d = per((await w.f.get(URL_API)).body).get(w.D.id); assert.equal(d.keadaanSaldo, "BELUM_ADA_CATATAN"); assert.equal(d.hasilSO.status, "BELUM_DISAHKAN_STOCK_COUNT"); assert.match(d.keterangan, /Fisik nol dikonfirmasi Owner/); assert.match(d.keterangan, /belum disahkan melalui Stock Count/); assert.doesNotMatch(JSON.stringify(d), /terverifikasi/i);
+});

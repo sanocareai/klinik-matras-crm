@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, TEKS_NILAI_PARSIAL, TEKS_BELUM_FINAL, periksaFormHasilSO, bangunBodyHasilSO,
+  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, TEKS_NILAI_PARSIAL, TEKS_BELUM_FINAL, periksaFormHasilSO, bangunBodyHasilSO, ringkasHasilSO, teksTanggalSO,
 } from "../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
 
 const B = (status, o = {}) => ({ materialId: `${status}-${o.kode ?? 1}`, kode: "K1", nama: "Bahan Satu", satuan: "KG", status, saldo: 1, nilai: null, harga: null, ...o });
@@ -39,7 +39,7 @@ test("L6. KPI angka ketiga hilang dari ringkasan utama (Laporan Gudang) dan hany
 });
 test("L6b. pengamatan: 'terukur dalam ROLL, belum terukur dalam satuan stok'; label nol dikonfirmasi; kartu 1 memuat dua estimasi + status belum direkonsiliasi", () => {
   const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8");
-  assert.ok(/terukur: {b.pengamatan} · belum terukur dalam {b.satuan}/.test(pg)); assert.ok(/fisik nol dikonfirmasi, belum tercatat sebagai hasil SO di ledger/.test(pg)); assert.ok(/Belum direkonsiliasi dengan hasil SO/.test(pg)); assert.ok(/Tanpa hasil SO bermasalah/.test(pg)); assert.ok(/nilaiLedger/.test(pg) && /nilaiTanpaHasilSOBermasalah/.test(pg));
+  assert.ok(/terukur: {b.pengamatan} · belum terukur dalam {b.satuan}/.test(pg)); assert.ok(/fisik nol dikonfirmasi Owner, belum disahkan melalui Stock Count/.test(pg)); assert.ok(/Belum direkonsiliasi dengan hasil SO/.test(pg)); assert.ok(/Tanpa hasil SO bermasalah/.test(pg)); assert.ok(/nilaiLedger/.test(pg) && /nilaiTanpaHasilSOBermasalah/.test(pg));
   assert.equal(STATUS_TEKS.PENGAMATAN_FISIK, "Terukur dalam satuan lain");
 });
 test("L6c. form hasil SO: validasi ringan & badan permintaan (jam SO tidak dikirim, satuan nol tidak dikirim, koreksi menunjuk catatan terkini)", () => {
@@ -57,4 +57,14 @@ test("L7. halaman: tidak menghitung nilai sendiri dan tidak menulis (hanya GET),
   const lain = fs.readdirSync(new URL("../src/styles/", import.meta.url)).filter((f) => f.endsWith(".css") && f !== "sanss-gudang-nilai.css"); for (const f of lain) { const t = fs.readFileSync(new URL(`../src/styles/${f}`, import.meta.url), "utf8"); assert.ok(!/\.nip-/.test(t), `${f} sudah memakai prefiks nip-`); }
   const reg = fs.readFileSync(new URL("../src/routes/pageRegistry.jsx", import.meta.url), "utf8"); assert.ok(/path: "\/warehouse\/nilai-persediaan"/.test(reg));
   const lay = fs.readFileSync(new URL("../src/components/Layout.jsx", import.meta.url), "utf8"); assert.ok(/to: "\/warehouse\/nilai-persediaan"/.test(lay));
+});
+
+test("L8. sumber SO tidak dianggap mewakili saldo sekarang: tanggal sumber, status rekonsiliasi, dan pergerakan sesudahnya tampil; kedaluwarsa ditandai", () => {
+  assert.equal(teksTanggalSO("2026-11-04"), "4 Nov 2026"); assert.equal(teksTanggalSO(null), "—");
+  const baru = ringkasHasilSO({ soTanggal: "2026-11-04", statusTeks: "Fisik nol dikonfirmasi Owner, belum disahkan melalui Stock Count", status: "BELUM_DISAHKAN_STOCK_COUNT", kedaluwarsa: false, pergerakanSesudah: { jumlah: 0, net: 0 } });
+  assert.match(baru.teks, /Hasil SO 4 Nov 2026/); assert.match(baru.teks, /belum disahkan melalui Stock Count/); assert.match(baru.teks, /tidak ada pergerakan sesudahnya/); assert.equal(baru.kedaluwarsa, false);
+  const lama = ringkasHasilSO({ soTanggal: "2026-11-04", statusTeks: "Tidak lagi mewakili saldo sekarang (ada pergerakan sesudah tanggal SO)", status: "KEDALUWARSA_PERGERAKAN_BARU", kedaluwarsa: true, pergerakanSesudah: { jumlah: 3, net: 12.5 } });
+  assert.equal(lama.kedaluwarsa, true); assert.match(lama.teks, /3 pergerakan sesudahnya \(net 12,5\)/); assert.match(lama.teks, /Tidak lagi mewakili saldo sekarang/);
+  assert.equal(ringkasHasilSO({ soTanggal: "2026-11-04", status: "TERBUKA_SATUAN", statusTeks: "Pengecualian satuan masih terbuka", pergerakanSesudah: { jumlah: 0, net: 0 } }).terbuka, true); assert.equal(ringkasHasilSO(null), null);
+  const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8"); assert.ok(/data-testid="np-so"/.test(pg) && /Kedaluwarsa/.test(pg) && /pengecualian satuan masih terbuka/.test(pg) && /belum disahkan melalui Stock Count/.test(pg)); assert.ok(!/Nol terverifikasi/.test(pg), "tidak ada badge Nol terverifikasi di halaman");
 });

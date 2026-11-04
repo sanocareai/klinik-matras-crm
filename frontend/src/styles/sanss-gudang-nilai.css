@@ -87,3 +87,6 @@
 [data-theme="dark"] .nipf-b { color: #B4B4BC; }
 [data-theme="dark"] .nipf-galat { background: #4A1F1C; color: #FFB3AC; }
 @media (max-width: 480px) { .nipf-dua { grid-template-columns: 1fr; } }
+
+.nip-so { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--hairline, rgba(27, 27, 57, 0.14)); }
+.nip-so-lama { color: var(--ord-pending-fg, #6E4300); }
