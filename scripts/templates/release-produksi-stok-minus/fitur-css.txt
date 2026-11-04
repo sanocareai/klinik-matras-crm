@@ -1,0 +1,5 @@
+# CSS: rilis ini TIDAK menambah aturan CSS baru (memakai kelas yang sudah ada). Semua aturan fitur live (Finance, Produksi, Gudang, CRM, HPP bahan) harus ada di KEDUANYA (dist aktif dan dist baru).
+for c0 in ".prod-hpp-total" ".prod-app-logo" ".prod-tv" ".prod-app" ".fin-pof-tabel" ".fin-pof-aksi" ".fin-pof-dobel" ".fin-ks-kartu" ".fin-ks-persamaan" ".fin-ks-trf" ".fin-ks-rincian" ".fin-ks-total" ".fin-ks-seg-item" ".fin-ks-baris" ".fin-po-baris" ".fin-po-bar" ".fin-po-strip" ".fin-poed-baris" ".fin-poed-popup"; do
+  [ -n "$(grep -lF -- "$c0" "$PREV_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$c0" "$NEW_DIR"/frontend/dist/assets/*.css 2>/dev/null | sed -n 1p)" ] || die "CSS baru KEHILANGAN ${c0}"
+done
