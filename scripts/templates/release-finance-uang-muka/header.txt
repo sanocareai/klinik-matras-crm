@@ -1,0 +1,25 @@
+# RILIS FRONTEND-SAJA "Finance — uang muka PO → penerapan ke faktur supplier: peringatan, tawaran setelah persetujuan, pengaman pembayaran, rincian penyelesaian faktur" — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data.
+# Isi (penyajian & alur layar saja; kontrak server yang SUDAH ADA dipakai apa adanya: GET /finance/purchase-orders/uang-muka/faktur/:billId/kandidat, POST /finance/purchase-orders/uang-muka/terapkan (Idempotency-Key, sisaFakturDilihat, kunci baris, jurnal Dr Utang Usaha / Cr Uang Muka), GET .../uang-muka/penerapan, POST /finance/supplier-payments):
+#   • Satu komponen penerapan bersama (pratinjau sebelum→sesudah, 'Tidak ada uang keluar baru dari bank', konfirmasi eksplisit, galat di dalam dialog dengan isian tetap, muat ulang bila data basi) dipakai dari Tagihan supplier, rincian PO, tawaran, dan form pembayaran.
+#   • Peringatan 'Ada uang muka Rp… untuk PO ini yang belum diterapkan' hanya untuk uang muka yang tertaut ke PO faktur yang sama (samaPO dari server) — di baris & rincian Tagihan supplier dan di baris faktur dalam rincian PO. Tidak ada pemasangan otomatis; uang muka tanpa kaitan jelas tidak dipilih.
+#   • Setelah faktur disetujui (Tagihan supplier, kartu faktur PO, tinjauan harga PO): tawaran terpisah 'Gunakan uang muka untuk mengurangi sisa tagihan?'. Menutup tawaran tidak membatalkan persetujuan dan tidak menulis jurnal.
+#   • Form Catat Pembayaran: periksa ulang uang muka per faktur, nominal dikosongkan bila sisa berubah, faktur yang baru lunas tidak ikut terkirim, konfirmasi risiko eksplisit bila tetap membayar padahal uang muka PO belum diterapkan (pembayaran tidak diblokir), galat tampil di dalam form.
+#   • Rincian penyelesaian faktur (nilai, pembayaran kas, uang muka diterapkan + dokumen, kredit lain, sisa) dan sen tidak dibulatkan.
+# ALLOWLIST EKSPLISIT: generator menolak bila himpunan berkas aplikasi di diff berbeda dari daftar yang disetujui. main.jsx, Layout.jsx, components/ui/*, dan berkas Produksi/Gudang TIDAK berubah.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif pada saat rilis (argumen BASE_SHA; diverifikasi dari mount container). backend/ harus IDENTIK dengan release aktif (dua berkas tes pemeriksa kontrak metrik dikecualikan HANYA pada perbandingan container-vs-folder, jalur persis); image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# ASET LAMA DILINDUNGI: aset ber-hash dari dist aktif dibawa ke dist baru (tab terbuka saat deploy tetap memuat chunk lamanya); index.html baru hanya merujuk aset baru.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env berubah.
+# CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
+# KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
+#
+#   cat scripts/release-finance-uang-muka.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/spu1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spu1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spu1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spu1.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/spu1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-finance-uang-muka.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-finance-uang-muka/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)

@@ -1,0 +1,7 @@
+if [ "$MODE" = "buildonly" ]; then
+  say "Build terisolasi selesai (--build-only): semua gerbang sampai dist lulus; produksi TIDAK diubah"
+  # hanya release dir SEMENTARA yang dibuat skrip ini (diverifikasi) yang dihapus; release aktif/lama, backup, image, volume TIDAK disentuh
+  [ "$NEW_DIR" = "$RELEASES/$DEPLOY_SHORT" ] && [ "$(tr -d '[:space:]' < "$NEW_DIR/.release-commit")" = "$DEPLOY_SHORT" ] && [ "$NEW_DIR" != "$PREV_DIR" ] || die "release dir sementara tidak terverifikasi; tidak dihapus"
+  rm -rf -- "$NEW_DIR"; ok "release dir sementara ${NEW_DIR} dihapus; disk bebas $(( $(bebas_kb) / 1024 )) MiB; bukti gerbang di ${BK_DIR}"
+  trap - EXIT; exit 0
+fi
