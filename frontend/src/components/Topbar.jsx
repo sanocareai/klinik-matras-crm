@@ -110,6 +110,7 @@ const ROUTE_LABELS = {
   "/warehouse/replenishment":   ["Gudang", "Restok"],
   "/warehouse/adjustments":     ["Gudang", "Barang Rusak & Retur"],
   "/warehouse/reports":         ["Gudang", "Riwayat Pergerakan"],
+  "/warehouse/nilai-persediaan": ["Gudang", "Nilai Persediaan"],
   "/warehouse/kpi":             ["Gudang", "KPI Gudang"],
 };
 

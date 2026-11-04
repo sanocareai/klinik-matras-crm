@@ -1,0 +1,69 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANSS GUDANG — NILAI PERSEDIAAN (kandidat laporan baca-saja, Nov 2026)
+   Prefiks .nip- (dipastikan belum dipakai kelas lain). Token dari palet yang sudah ada (--ord-*, --crm-*, --text-*, --hairline) sehingga terang/gelap mengikuti tema;
+   halaman ini tidak memakai portal, jadi variabel --crm-* tersedia. Tidak mengubah kelas .gud-* yang ada.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.nip-waktu { margin: 0 0 14px; font-size: 13px; color: var(--text-secondary, rgba(29, 29, 31, 0.74)); }
+.nip-galat { padding: 10px 14px; margin-bottom: 12px; border-radius: 12px; background: var(--ord-cancelled-bg, #FDE3E1); color: var(--ord-cancelled-fg, #8C1D18); font-size: 13px; }
+.nip-memuat { padding: 28px 0; text-align: center; color: var(--text-secondary, #555); font-size: 14px; }
+.nip-kartu { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.nip-k { min-width: 0; padding: 16px 18px; border-radius: var(--crm-radius-card, 18px); background: var(--crm-panel, var(--bg-surface, #fff)); box-shadow: var(--crm-shadow, 0 1px 2px rgba(27, 27, 57, 0.06)); border-top: 3px solid var(--hairline, rgba(27, 27, 57, 0.12)); }
+.nip-k1 { border-top-color: var(--ord-delivered-dot, #1B9B5A); }
+.nip-k2 { border-top-color: var(--crm-primary, #3B5BDB); }
+.nip-k3 { border-top-color: var(--ord-pending-dot, #E59A00); }
+.nip-k h3 { margin: 0 0 4px; font-size: 12px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary, rgba(29, 29, 31, 0.74)); }
+.nip-k p { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-primary, #1d1d1f); }
+.nip-besar { font-size: 28px; font-weight: 600; line-height: 1.15; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text-primary, #1d1d1f); overflow-wrap: anywhere; }
+.nip-kecil { font-size: 12.5px !important; color: var(--text-secondary, rgba(29, 29, 31, 0.74)) !important; }
+.nip-batas { padding-top: 6px; border-top: 1px dashed var(--hairline, rgba(27, 27, 57, 0.14)); }
+.nip-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.nip-chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500; white-space: nowrap; background: var(--bg-inset, #eee); color: var(--text-primary, #222); }
+.nip-ok { background: var(--ord-delivered-bg, #DDF3E6); color: var(--ord-delivered-fg, #0B6B3A); }
+.nip-waspada { background: var(--ord-pending-bg, #FFF0C2); color: var(--ord-pending-fg, #6E4300); }
+.nip-bahaya { background: var(--ord-cancelled-bg, #FDE3E1); color: var(--ord-cancelled-fg, #8C1D18); }
+.nip-info { background: var(--crm-soft, #E6ECFB); color: var(--crm-primary-ink, #20378C); }
+.nip-netral { background: var(--bg-inset, #ECECEF); color: var(--text-secondary, #555); }
+.nip-cakupan { margin: 16px 0 6px; }
+.nip-strip { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--bg-inset, #ECECEF); }
+.nip-seg { display: block; height: 100%; min-width: 2px; }
+.nip-bg-ok { background: var(--ord-delivered-dot, #1B9B5A); }
+.nip-bg-waspada { background: var(--ord-pending-dot, #E59A00); }
+.nip-bg-bahaya { background: var(--ord-cancelled-dot, #D64545); }
+.nip-bg-info { background: var(--crm-primary, #3B5BDB); }
+.nip-bg-netral { background: var(--text-tertiary, #9A9AA2); }
+.nip-kalimat { margin: 8px 0 6px; font-size: 13px; color: var(--text-primary, #1d1d1f); }
+.nip-def { margin: 6px 0 0 18px; padding: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary, #555); }
+.nip-tabelbox { margin-top: 12px; border-radius: var(--crm-radius-card, 18px); background: var(--crm-panel, var(--bg-surface, #fff)); box-shadow: var(--crm-shadow, 0 1px 2px rgba(27, 27, 57, 0.06)); overflow: hidden; }
+.nip-alat { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); }
+.nip-cari { flex: 1 1 220px; min-width: 0; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--hairline, rgba(27, 27, 57, 0.14)); background: var(--bg-inset, #f4f4f6); color: var(--text-primary, #1d1d1f); font: inherit; font-size: 13px; }
+.nip-cari::placeholder { color: var(--text-secondary, rgba(29, 29, 31, 0.66)); opacity: 1; }
+.nip-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.nip-filter button { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--hairline, rgba(27, 27, 57, 0.14)); background: transparent; color: var(--text-primary, #1d1d1f); font: inherit; font-size: 12.5px; cursor: pointer; }
+.nip-filter button span { margin-left: 4px; color: var(--text-secondary, #666); font-variant-numeric: tabular-nums; }
+.nip-filter button[aria-pressed="true"] { background: var(--crm-primary, #3B5BDB); border-color: var(--crm-primary, #3B5BDB); color: var(--crm-on-primary, #fff); }
+.nip-filter button[aria-pressed="true"] span { color: inherit; opacity: .85; }
+.nip-gulir { max-height: 560px; overflow: auto; }
+.nip-gulir-pendek { max-height: 360px; }
+.nip-tabel { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nip-tabel th, .nip-tabel td { padding: 9px 12px; border-bottom: 1px solid var(--hairline, rgba(27, 27, 57, 0.08)); text-align: left; vertical-align: top; }
+.nip-tabel th { position: sticky; top: 0; background: var(--crm-panel, var(--bg-surface, #fff)); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, rgba(29, 29, 31, 0.74)); z-index: 1; }
+.nip-n { text-align: right !important; font-variant-numeric: tabular-nums; }
+.nip-nama { font-weight: 500; color: var(--text-primary, #1d1d1f); }
+.nip-kode { font-size: 11.5px; color: var(--text-secondary, rgba(29, 29, 31, 0.74)); }
+.nip-ket { max-width: 360px; white-space: normal; }
+.nip-belum { color: var(--text-secondary, rgba(29, 29, 31, 0.74)); font-style: italic; }
+.nip-bukti h4 { margin: 14px 0 4px; font-size: 13px; font-weight: 600; }
+.nip-bukti ul { margin: 4px 0 0 18px; padding: 0; font-size: 12.5px; line-height: 1.5; }
+.nip-kecil-tabel { font-size: 12.5px; }
+@media (max-width: 860px) { .nip-kartu { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .nip-besar { font-size: 24px; }
+  /* tabel utama → kartu per bahan di HP (tanpa scroll horizontal) */
+  .nip-tabel[data-testid="np-tabel"] thead { display: none; }
+  .nip-tabel[data-testid="np-tabel"], .nip-tabel[data-testid="np-tabel"] tbody, .nip-tabel[data-testid="np-tabel"] tr, .nip-tabel[data-testid="np-tabel"] td { display: block; width: 100%; }
+  .nip-tabel[data-testid="np-tabel"] tr { padding: 10px 12px; border-bottom: 1px solid var(--hairline, rgba(27, 27, 57, 0.1)); }
+  .nip-tabel[data-testid="np-tabel"] td { padding: 3px 0; border: 0; text-align: left !important; }
+  .nip-tabel[data-testid="np-tabel"] td[data-label]:not([data-label="Bahan"]):not([data-label="Status"])::before { content: attr(data-label) ": "; color: var(--text-secondary, #666); font-size: 11.5px; }
+  .nip-gulir { max-height: none; }
+  .nip-gulir-pendek { overflow-x: auto; }
+}

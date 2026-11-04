@@ -2259,6 +2259,8 @@ export const api = {
   getBiayaBahanPO: (poId) => request(`/finance/biaya-bahan/po/${poId}`),
   // ── Harga Berlaku bahan = HPP OPERASIONAL (Okt 2026), diedit dari layar Stok. BUKAN nilai buku/HPP final Finance. Simpan wajib Idempotency-Key + hash pratinjau. ──
   getHargaBerlaku: (materialId) => request(`/finance/biaya-bahan/harga-berlaku/bahan/${materialId}`),
+  // Nilai Persediaan (kandidat, BACA-SAJA): estimasi nilai stok + saldo akun Finance + pengecualian pada SATU waktu acuan (ISO dengan zona; kosong = sekarang). Nominal mengikuti izin finance:read di server.
+  getNilaiPersediaan: (waktu) => request(`/inventory/nilai-persediaan${waktu ? `?waktu=${encodeURIComponent(waktu)}` : ""}`),
   getRingkasanDaftarHargaBerlaku: () => request("/finance/biaya-bahan/harga-berlaku/ringkasan-daftar"),
   getRiwayatHargaBerlaku: (materialId) => request(`/finance/biaya-bahan/harga-berlaku/bahan/${materialId}/riwayat`),
   pratinjauHargaBerlaku: (data) => request("/finance/biaya-bahan/harga-berlaku/pratinjau", { method: "POST", body: JSON.stringify(data) }),

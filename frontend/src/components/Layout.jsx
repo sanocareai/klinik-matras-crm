@@ -331,6 +331,7 @@ const DIVISIONS = {
         section: "Laporan", grup: true, Icon: BarChart3,
         items: [
           { to: "/warehouse/reports", label: "Riwayat Pergerakan", Icon: BarChart3 },
+          { to: "/warehouse/nilai-persediaan", label: "Nilai Persediaan", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "ACCOUNTANT", "APPROVER", "WAREHOUSE"] },
           { to: "/warehouse/kpi",     label: "KPI Gudang",         Icon: Gauge, bolehPeran: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "WAREHOUSE"] },
         ],
       },

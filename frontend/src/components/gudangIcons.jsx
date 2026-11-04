@@ -93,6 +93,7 @@ export const IKON_NAV_GUDANG = {
   "/warehouse/laporan-biaya": IkLaporan,
   "/finance/persediaan-awal": IkOpname,
   "/warehouse/reports": IkRiwayat,
+  "/warehouse/nilai-persediaan": IkLaporan,
   "/warehouse/kpi": IkKpi,
 };
 

@@ -112,6 +112,7 @@ import { productionUnitPhotoPathRouter } from "./routes/productionUnitPhoto.js";
 import { stockAdjustmentRouter } from "./routes/stockAdjustment.js";
 import { replenishmentRouter } from "./routes/replenishment.js";
 import { warehouseReportsRouter } from "./routes/warehouseReports.js";
+import { nilaiPersediaanRouter } from "./routes/nilaiPersediaan.js";
 import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
@@ -325,6 +326,7 @@ app.use("/api/production-v2", productionExperienceRouter); // P8 Production Expe
 app.use("/api/inventory/adjustments", stockAdjustmentRouter);
 app.use("/api/inventory/replenishment", replenishmentRouter);
 app.use("/api/inventory/reports", warehouseReportsRouter);
+app.use("/api/inventory/nilai-persediaan", nilaiPersediaanRouter); // laporan nilai persediaan BACA-SAJA (estimasi operasional + saldo akun Finance + pengecualian)
 app.use("/api/scope-revisions", scopeRevisionRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);

@@ -1,0 +1,46 @@
+// Nilai Persediaan — logika tampilan MURNI (tanpa DOM). Mengunci: pengecualian tidak pernah ditulis Rp0, belum diketahui ≠ 0, satu sumber cakupan, penyaring, waktu WIB, dan pembeda KPI lama.
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import {
+  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, KPI_LAMA,
+} from "../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
+
+const B = (status, o = {}) => ({ materialId: `${status}-${o.kode ?? 1}`, kode: "K1", nama: "Bahan Satu", satuan: "KG", status, saldo: 1, nilai: null, harga: null, ...o });
+const cakupan = { universe: 8, saldoNol: 1, relevan: 7, dinilai: 2, pengecualian: 5, persenDinilai: 28.6, perStatus: { DINILAI: 2, SALDO_NOL: 1, STOK_BELUM_DIKETAHUI: 1, HARGA_KOSONG: 1, SALDO_MINUS: 1, SATUAN_TIDAK_COCOK: 1, PENGAMATAN_FISIK: 1 } };
+
+test("L1. belum diketahui ≠ 0; nilai tidak diketahui tampil tanda hubung, bukan Rp0", () => {
+  assert.equal(teksSaldo(null, "KG"), "belum diketahui"); assert.equal(teksSaldo(0, "KG"), "0 KG"); assert.equal(teksSaldo(1234.5, "M"), "1.234,5 M");
+  assert.equal(teksRupiah(null), "—"); assert.equal(teksRupiah(undefined), "—"); assert.equal(teksRupiah(0), "Rp0", "nol sah memang Rp0"); assert.equal(teksRupiah(219087111), "Rp219.087.111");
+  assert.equal(teksHarga({ nilai: null }, "KG"), null); assert.equal(teksHarga({ nilai: 5000, satuan: "KG" }, "KG"), "Rp5.000 / KG");
+});
+test("L2. cakupan satu kalimat dari satu sumber; relevan & pengecualian konsisten", () => {
+  assert.equal(kalimatCakupan(cakupan), "2 dari 7 bahan relevan dinilai (28,6%) · 5 belum dinilai"); assert.equal(kalimatCakupan(null), "");
+  assert.equal(cakupan.dinilai + cakupan.pengecualian, cakupan.relevan); assert.equal(cakupan.relevan + cakupan.saldoNol, cakupan.universe);
+});
+test("L3. penyaring: pengecualian (bawaan) tidak memuat DINILAI/SALDO_NOL; SEMUA memuat semuanya; pencarian kode/nama", () => {
+  const baris = [B("DINILAI", { kode: "A" }), B("SALDO_NOL", { kode: "B" }), B("STOK_BELUM_DIKETAHUI", { kode: "C", nama: "Benang Halus" }), B("HARGA_KOSONG", { kode: "D" }), B("SALDO_MINUS", { kode: "E" }), B("SATUAN_TIDAK_COCOK", { kode: "F" }), B("PENGAMATAN_FISIK", { kode: "G" })];
+  assert.deepEqual(saringBaris(baris).map((b) => b.kode), ["C", "D", "E", "F", "G"]); assert.equal(saringBaris(baris, { filter: FILTER_SEMUA }).length, 7);
+  assert.deepEqual(saringBaris(baris, { filter: "SALDO_MINUS" }).map((b) => b.kode), ["E"]); assert.deepEqual(saringBaris(baris, { filter: FILTER_SEMUA, cari: "benang" }).map((b) => b.kode), ["C"]);
+  assert.equal(saringBaris(undefined).length, 0); assert.ok(STATUS_PENGECUALIAN.every((s) => STATUS_TEKS[s]));
+});
+test("L4. opsi penyaring & strip menampilkan SEMUA status yang ada (tidak ada yang hilang), total strip = 100%", () => {
+  const o = opsiFilter(cakupan); assert.equal(o[0].kode, FILTER_PENGECUALIAN); assert.equal(o[0].jumlah, 5); assert.equal(o[1].kode, FILTER_SEMUA); assert.equal(o[1].jumlah, 8);
+  assert.equal(o.slice(2).reduce((a, x) => a + x.jumlah, 0), 8); const seg = segmenCakupan(cakupan); assert.equal(seg.length, 7); assert.ok(Math.abs(seg.reduce((a, s) => a + s.persen, 0) - 100) < 1e-9);
+  assert.deepEqual(segmenCakupan({ universe: 0, perStatus: {} }), []);
+});
+test("L5. waktu selalu WIB, tidak bergantung zona peramban", () => {
+  assert.equal(teksWaktuWIB("2026-11-04T18:10:00Z"), "5 Nov 2026 01:10 WIB"); assert.equal(teksWaktuWIB("2026-11-03T15:00:00.000Z"), "3 Nov 2026 22:00 WIB"); assert.equal(teksWaktuWIB("bukan tanggal"), "—");
+});
+test("L6. KPI lama dibedakan jelas: label & penjelasan menyebut definisinya dan menunjuk laporan baru", () => {
+  assert.match(KPI_LAMA.label, /parsial/i); assert.match(KPI_LAMA.penjelasan, /biaya penerimaan terakhir/); assert.match(KPI_LAMA.penjelasan, /Estimasi nilai stok/); assert.match(KPI_LAMA.penjelasan, /saldo akun Finance/); assert.equal(KPI_LAMA.tautan, "/warehouse/nilai-persediaan");
+  const src = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseReports.jsx", import.meta.url), "utf8"); assert.ok(!/label="Inventory Value \(Partial\)"/.test(src), "label lama yang ambigu sudah diganti"); assert.ok(/KPI_LAMA\.label/.test(src) && /KPI_LAMA\.penjelasan/.test(src));
+});
+test("L7. halaman: tidak menghitung nilai sendiri dan tidak menulis (hanya GET), kelas .nip- tidak bentrok dengan kelas lain, rute & navigasi terdaftar", () => {
+  const p = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8");
+  assert.ok(!/\.nilai\s*[*+-]\s|reduce\(/.test(p.replace(/d\.finance\.bukti\.rincian\.slice/g, "")), "halaman tidak menjumlah/mengalikan nilai"); assert.ok(/api\.getNilaiPersediaan\(\)/.test(p)); assert.ok(!/method:\s*"(POST|PUT|PATCH|DELETE)"/.test(p));
+  const css = fs.readFileSync(new URL("../src/styles/sanss-gudang-nilai.css", import.meta.url), "utf8"); const kelas = [...css.matchAll(/\.(nip-[a-z0-9-]+)/g)].map((m) => m[1]); assert.ok(kelas.length > 20);
+  const lain = fs.readdirSync(new URL("../src/styles/", import.meta.url)).filter((f) => f.endsWith(".css") && f !== "sanss-gudang-nilai.css"); for (const f of lain) { const t = fs.readFileSync(new URL(`../src/styles/${f}`, import.meta.url), "utf8"); assert.ok(!/\.nip-/.test(t), `${f} sudah memakai prefiks nip-`); }
+  const reg = fs.readFileSync(new URL("../src/routes/pageRegistry.jsx", import.meta.url), "utf8"); assert.ok(/path: "\/warehouse\/nilai-persediaan"/.test(reg));
+  const lay = fs.readFileSync(new URL("../src/components/Layout.jsx", import.meta.url), "utf8"); assert.ok(/to: "\/warehouse\/nilai-persediaan"/.test(lay));
+});

@@ -99,6 +99,7 @@ const WarehouseOpnameKerja = lazy(() => import("../pages/warehouse/WarehouseOpna
 const WarehouseAdjustments = lazy(() => import("../pages/warehouse/WarehouseAdjustments.jsx"));
 const WarehouseReplenishment = lazy(() => import("../pages/warehouse/WarehouseReplenishment.jsx"));
 const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.jsx"));
+const WarehouseNilaiPersediaan = lazy(() => import("../pages/warehouse/WarehouseNilaiPersediaan.jsx"));
 // P8 Production Experience V2 (inert bila reader V2 OFF). Aplikasi PIC Table/Corner & Andon TV adalah halaman MANDIRI (App.jsx STANDALONE_PAGES).
 const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx")); // tampilan lama (tidak lagi dirute; dipertahankan untuk rujukan/rollback)
 const ProductionStatusPage = lazy(() => import("../pages/bengkel/ProductionStatusPage.jsx"));
@@ -291,6 +292,7 @@ const PAGES_DASAR = [
   { path: "/warehouse/replenishment/:id?", render: () => <WarehouseReplenishment /> },
   { path: "/warehouse/adjustments/:jenis?/:id?", render: () => <WarehouseAdjustments /> },
   { path: "/warehouse/reports", render: () => <WarehouseReports /> },
+  { path: "/warehouse/nilai-persediaan", render: () => <WarehouseNilaiPersediaan /> }, // laporan nilai persediaan BACA-SAJA: estimasi nilai stok, saldo akun Finance (belum direkonsiliasi), pengecualian
   { path: "/warehouse/kpi", render: () => <DemoPage><ProductionKpi defaultTab="gudang" /></DemoPage> },
   { path: "/dashboard",   render: (ctx) => <Dashboard user={ctx.user} /> },
   { path: "/inbox",       render: (ctx) => <Inbox user={ctx.user} /> },
