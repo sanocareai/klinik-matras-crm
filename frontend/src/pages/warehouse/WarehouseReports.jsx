@@ -7,8 +7,6 @@ import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components
 import ChartCard from "@/features/laporan/components/ChartCard.jsx";
 import KpiCard from "@/features/laporan/components/KpiCard.jsx";
 import BarRow from "@/features/laporan/components/BarRow.jsx";
-import { formatRupiahShort } from "@/utils/format.js";
-import { KPI_LAMA } from "@/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
 import {
   CATEGORY_REAL, DAMAGE_CATEGORY_REAL, ADJUSTMENT_TYPE_REAL,
 } from "@/features/warehouse/inventoryReal.js";
@@ -78,14 +76,6 @@ export default function WarehouseReports() {
                 format={(n) => (data.stockAccuracy.percentage == null ? "—" : `${n.toFixed(1)}%`)}
                 sub={data.stockAccuracy.totalCounted ? `dari ${data.stockAccuracy.totalCounted} baris count` : "Belum ada Stock Count selesai"}
                 index={3}
-              />
-              <KpiCard
-                label={KPI_LAMA.label}
-                numericValue={data.inventoryValuePartial.value}
-                format={formatRupiahShort}
-                tooltip={KPI_LAMA.penjelasan}
-                sub={`${data.inventoryValuePartial.itemsWithCost} item punya biaya penerimaan · ${data.inventoryValuePartial.itemsWithoutCost} tidak · bukan Estimasi nilai stok; lihat Nilai Persediaan`}
-                index={4}
               />
               <KpiCard
                 label="Receipt Lead Time"

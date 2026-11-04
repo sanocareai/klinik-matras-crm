@@ -67,3 +67,23 @@
   .nip-gulir { max-height: none; }
   .nip-gulir-pendek { overflow-x: auto; }
 }
+
+/* ── Tombol aksi baris & dialog Catat hasil SO (dialog di-portal ke body: warna eksplisit per tema, tanpa --crm-*) ── */
+.nip-aksi { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--hairline, rgba(27, 27, 57, 0.18)); background: transparent; color: var(--text-primary, #1d1d1f); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.nipf { display: flex; flex-direction: column; gap: 12px; color: #1d1d1f; }
+.nipf-info { margin: 0; padding: 9px 12px; border-radius: 10px; background: #EAF0FB; color: #20378C; font-size: 12.5px; line-height: 1.45; }
+.nipf-l { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 500; color: #3b3b41; }
+.nipf-l input, .nipf-l select, .nipf-l textarea { padding: 8px 10px; border-radius: 10px; border: 1px solid #C9CAD3; background: #fff; color: #1d1d1f; font: inherit; font-size: 13px; font-weight: 400; }
+.nipf-l input[aria-invalid="true"], .nipf-l textarea[aria-invalid="true"] { border-color: #C0392B; }
+.nipf-dua { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.nipf-e { color: #A52A1F; font-size: 12px; font-weight: 400; }
+.nipf-b { color: #5A5A63; font-size: 11.5px; font-weight: 400; }
+.nipf-galat { padding: 8px 12px; border-radius: 10px; background: #FDE3E1; color: #8C1D18; font-size: 12.5px; }
+[data-theme="dark"] .nipf { color: #F5F5F7; }
+[data-theme="dark"] .nipf-info { background: #1E2B4A; color: #B9CBF5; }
+[data-theme="dark"] .nipf-l { color: #D6D6DC; }
+[data-theme="dark"] .nipf-l input, [data-theme="dark"] .nipf-l select, [data-theme="dark"] .nipf-l textarea { background: #2A2A2E; border-color: #4A4A52; color: #F5F5F7; }
+[data-theme="dark"] .nipf-e { color: #FF9C93; }
+[data-theme="dark"] .nipf-b { color: #B4B4BC; }
+[data-theme="dark"] .nipf-galat { background: #4A1F1C; color: #FFB3AC; }
+@media (max-width: 480px) { .nipf-dua { grid-template-columns: 1fr; } }

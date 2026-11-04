@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, KPI_LAMA,
+  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, TEKS_NILAI_PARSIAL, TEKS_BELUM_FINAL, periksaFormHasilSO, bangunBodyHasilSO,
 } from "../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
 
 const B = (status, o = {}) => ({ materialId: `${status}-${o.kode ?? 1}`, kode: "K1", nama: "Bahan Satu", satuan: "KG", status, saldo: 1, nilai: null, harga: null, ...o });
@@ -32,9 +32,23 @@ test("L4. opsi penyaring & strip menampilkan SEMUA status yang ada (tidak ada ya
 test("L5. waktu selalu WIB, tidak bergantung zona peramban", () => {
   assert.equal(teksWaktuWIB("2026-11-04T18:10:00Z"), "5 Nov 2026 01:10 WIB"); assert.equal(teksWaktuWIB("2026-11-03T15:00:00.000Z"), "3 Nov 2026 22:00 WIB"); assert.equal(teksWaktuWIB("bukan tanggal"), "—");
 });
-test("L6. KPI lama dibedakan jelas: label & penjelasan menyebut definisinya dan menunjuk laporan baru", () => {
-  assert.match(KPI_LAMA.label, /parsial/i); assert.match(KPI_LAMA.penjelasan, /biaya penerimaan terakhir/); assert.match(KPI_LAMA.penjelasan, /Estimasi nilai stok/); assert.match(KPI_LAMA.penjelasan, /saldo akun Finance/); assert.equal(KPI_LAMA.tautan, "/warehouse/nilai-persediaan");
-  const src = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseReports.jsx", import.meta.url), "utf8"); assert.ok(!/label="Inventory Value \(Partial\)"/.test(src), "label lama yang ambigu sudah diganti"); assert.ok(/KPI_LAMA\.label/.test(src) && /KPI_LAMA\.penjelasan/.test(src));
+test("L6. KPI angka ketiga hilang dari ringkasan utama (Laporan Gudang) dan hanya ada sebagai rincian Finance dengan definisi", () => {
+  const rep = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseReports.jsx", import.meta.url), "utf8"); assert.ok(!/inventoryValuePartial/.test(rep), "kartu KPI lama dihapus dari Laporan Gudang"); assert.ok(!/label=.{0,3}Inventory Value/.test(rep), "tidak ada kartu berlabel Inventory Value");
+  const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8"); assert.ok(/Nilai parsial berdasarkan biaya penerimaan terakhir/.test(pg)); assert.ok(/TEKS_NILAI_PARSIAL/.test(pg)); assert.match(TEKS_NILAI_PARSIAL, /biaya penerimaan terakhir/); assert.match(TEKS_NILAI_PARSIAL, /Bukan Estimasi nilai stok/);
+  const kartu = pg.slice(pg.indexOf('data-testid="np-kartu"'), pg.indexOf('data-testid="np-cakupan"')); assert.ok(!/nilaiParsial/.test(kartu), "nilai parsial tidak di kartu utama"); assert.match(TEKS_BELUM_FINAL, /bukan hasil stok fisik final/);
+});
+test("L6b. pengamatan: 'terukur dalam ROLL, belum terukur dalam satuan stok'; label nol dikonfirmasi; kartu 1 memuat dua estimasi + status belum direkonsiliasi", () => {
+  const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8");
+  assert.ok(/terukur: {b.pengamatan} · belum terukur dalam {b.satuan}/.test(pg)); assert.ok(/fisik nol dikonfirmasi, belum tercatat sebagai hasil SO di ledger/.test(pg)); assert.ok(/Belum direkonsiliasi dengan hasil SO/.test(pg)); assert.ok(/Tanpa hasil SO bermasalah/.test(pg)); assert.ok(/nilaiLedger/.test(pg) && /nilaiTanpaHasilSOBermasalah/.test(pg));
+  assert.equal(STATUS_TEKS.PENGAMATAN_FISIK, "Terukur dalam satuan lain");
+});
+test("L6c. form hasil SO: validasi ringan & badan permintaan (jam SO tidak dikirim, satuan nol tidak dikirim, koreksi menunjuk catatan terkini)", () => {
+  const ok = { jenis: "PENGAMATAN_SATUAN", jumlah: "13,5", satuan: "roll", soTanggal: "2026-11-04", sumber: "KIRIM GILANG.xlsx O4", alasan: "Hasil SO terukur dalam roll" };
+  assert.deepEqual(periksaFormHasilSO(ok, { satuanStok: "METER" }), {}); assert.ok(periksaFormHasilSO({ ...ok, satuan: "meter" }, { satuanStok: "METER" }).satuan); assert.ok(periksaFormHasilSO({ ...ok, jumlah: "0" }, { satuanStok: "METER" }).jumlah);
+  assert.ok(periksaFormHasilSO({ ...ok, soTanggal: "" }, {}).soTanggal && periksaFormHasilSO({ ...ok, sumber: "x" }, {}).sumber && periksaFormHasilSO({ ...ok, alasan: "pendek" }, {}).alasan);
+  const b = bangunBodyHasilSO(ok, { materialId: "m1" }).baris[0]; assert.equal(b.jumlah, 13.5); assert.equal(b.satuan, "ROLL"); assert.ok(!("soWaktu" in b), "jam SO tidak ditebak"); assert.ok(!("menggantikanId" in b));
+  const nol = bangunBodyHasilSO({ ...ok, jenis: "NOL_DIKONFIRMASI" }, { materialId: "m2", hasilSO: { id: "so-lama" } }).baris[0]; assert.equal(nol.jumlah, 0); assert.ok(!("satuan" in nol)); assert.equal(nol.menggantikanId, "so-lama");
+  assert.deepEqual(periksaFormHasilSO({ jenis: "NOL_DIKONFIRMASI", soTanggal: "2026-11-04", sumber: "abc", alasan: "Sel kosong = sudah dicek" }, {}), {});
 });
 test("L7. halaman: tidak menghitung nilai sendiri dan tidak menulis (hanya GET), kelas .nip- tidak bentrok dengan kelas lain, rute & navigasi terdaftar", () => {
   const p = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8");

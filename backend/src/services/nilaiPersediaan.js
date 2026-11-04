@@ -1,41 +1,62 @@
 // NILAI PERSEDIAAN (kandidat laporan baca-saja, Nov 2026). TIGA angka yang TIDAK pernah dicampur:
-//   1. ESTIMASI NILAI STOK = saldo pada waktu acuan × Harga Berlaku pada waktu acuan yang SAMA (HPP operasional; harga kerja Gudang, BUKAN nilai buku).
+//   1. ESTIMASI NILAI STOK = saldo pada waktu acuan × Harga Berlaku pada waktu acuan yang SAMA (HPP operasional; harga kerja Gudang, BUKAN nilai buku, BUKAN hasil stok fisik final).
+//      Dua versi: BERDASARKAN LEDGER (semua bahan bersaldo & ber-harga, termasuk yang hasil SO-nya belum direkonsiliasi) dan YANG MENGECUALIKAN HASIL SO BERMASALAH.
 //   2. SALDO AKUN PERSEDIAAN FINANCE = saldo akun sistem PERSEDIAAN_BAHAN (jurnal GR/PSA/pemakaian). Status "belum direkonsiliasi" selama masih ada sebabnya; TIDAK dialokasikan ke bahan.
-//   3. BAHAN BELUM BISA DINILAI = pengecualian yang ditampilkan apa adanya — stok belum diketahui, harga kosong, satuan tidak cocok, saldo minus, pengamatan fisik. TIDAK PERNAH dijumlah sebagai Rp0.
-// Modul ini hanya MEMBACA. Tidak menulis stok, harga, valuasi, jurnal, PSA, maupun GR. Nominal hanya untuk pemegang izin finance:read (diputuskan pemanggil: `bolehNominal`).
+//   3. BAHAN BELUM BISA DINILAI = pengecualian yang ditampilkan apa adanya. TIDAK PERNAH dijumlah sebagai Rp0.
+// Hasil SO (services/hasilSO.js; pengamatan dalam satuan lain, nol dikonfirmasi) dibaca dari catatan berizin & beraudit — bukan dari fin_settings dan bukan dari kode. Modul ini hanya MEMBACA.
+// Nominal hanya untuk pemegang izin finance:read (diputuskan pemanggil: `bolehNominal`).
 import { AWALAN_KUNCI_PO } from "./finance/hargaBerlaku.js";
 import { klasifikasiSaldo, KEADAAN_SALDO, nolTerverifikasiPer } from "./keadaanSaldo.js";
+import { hasilSOTerkini, JENIS } from "./hasilSO.js";
+import { ROLE_PERMISSIONS, PERMISSIONS as P } from "../constants/permissions.js";
 
 export const STATUS = Object.freeze({
   DINILAI: "DINILAI", SALDO_NOL: "SALDO_NOL", STOK_BELUM_DIKETAHUI: "STOK_BELUM_DIKETAHUI", HARGA_KOSONG: "HARGA_KOSONG", SALDO_MINUS: "SALDO_MINUS", SATUAN_TIDAK_COCOK: "SATUAN_TIDAK_COCOK", PENGAMATAN_FISIK: "PENGAMATAN_FISIK",
 });
 export const LABEL_STATUS = Object.freeze({
-  DINILAI: "Dinilai", SALDO_NOL: "Saldo nol", STOK_BELUM_DIKETAHUI: "Stok belum diketahui", HARGA_KOSONG: "Harga kosong", SALDO_MINUS: "Saldo minus", SATUAN_TIDAK_COCOK: "Satuan tidak cocok", PENGAMATAN_FISIK: "Pengamatan fisik",
+  DINILAI: "Dinilai", SALDO_NOL: "Saldo nol", STOK_BELUM_DIKETAHUI: "Stok belum diketahui", HARGA_KOSONG: "Harga kosong", SALDO_MINUS: "Saldo minus", SATUAN_TIDAK_COCOK: "Satuan tidak cocok", PENGAMATAN_FISIK: "Terukur dalam satuan lain",
 });
-/** Pengecualian = bahan RELEVAN yang belum bisa dinilai. Saldo nol bukan pengecualian (tidak ada yang perlu dinilai) tetapi tetap dihitung dan ditampilkan. */
+/** Pengecualian = bahan RELEVAN yang belum bisa dinilai. Saldo nol bukan pengecualian tetapi tetap dihitung dan ditampilkan. */
 export const STATUS_PENGECUALIAN = Object.freeze([STATUS.STOK_BELUM_DIKETAHUI, STATUS.HARGA_KOSONG, STATUS.SALDO_MINUS, STATUS.SATUAN_TIDAK_COCOK, STATUS.PENGAMATAN_FISIK]);
 const URUT_RISIKO = Object.freeze({ DINILAI: 0, SALDO_MINUS: 1, SATUAN_TIDAK_COCOK: 2, HARGA_KOSONG: 3, PENGAMATAN_FISIK: 4, STOK_BELUM_DIKETAHUI: 5, SALDO_NOL: 6 });
-export const KUNCI_PENGAMATAN = "nilai_persediaan_pengamatan_fisik"; // fin_settings: JSON [{ "kode": "KAIN-LAVA-B-GRADE", "teks": "13,5 ROLL" }]; dibaca saja, tidak ada jalur tulis di modul ini
 export const DEFINISI = Object.freeze({
-  estimasi: "Saldo stok pada waktu acuan × Harga Berlaku pada waktu acuan yang sama. Harga kerja Gudang (HPP operasional) — bukan nilai buku dan bukan nilai Finance.",
+  estimasi: "Saldo stok pada waktu acuan × Harga Berlaku pada waktu acuan yang sama. Harga kerja Gudang (HPP operasional) — bukan nilai buku, bukan nilai Finance, dan bukan hasil stok fisik final.",
+  ledger: "Berdasarkan ledger: seluruh bahan bersaldo dan ber-harga menurut catatan stok, termasuk bahan yang hasil SO-nya belum direkonsiliasi dengan ledger.",
+  tanpaBermasalah: "Tanpa hasil SO bermasalah: mengecualikan bahan yang punya hasil SO tercatat tetapi belum sejalan dengan ledger (terukur dalam satuan lain, atau fisik nol dikonfirmasi sementara ledger masih berisi/minus).",
   finance: "Saldo akun Persediaan Bahan Baku di buku besar Finance (jurnal penerimaan GR, Persediaan Awal, pemakaian). Tidak dialokasikan ke bahan; status rekonsiliasi dijelaskan di bawah.",
   relevan: "Bahan aktif, atau nonaktif tetapi masih bersaldo ≠ 0 pada waktu acuan, KECUALI yang saldonya nol menurut catatan (tidak ada yang perlu dinilai). Bahan yang belum punya catatan stok TERMASUK relevan (stoknya belum diketahui).",
   waktu: "Satu waktu acuan dipakai untuk saldo (pergerakan ≤ waktu) dan Harga Berlaku (berlaku ≤ waktu). Harga yang dijadwalkan sesudah waktu itu tidak dipakai.",
+  hasilSO: "Hasil SO per bahan dicatat lewat jalur berizin dan beraudit (sumber, tanggal SO, pelaku, satuan, alasan, riwayat koreksi). Pencatatan tidak menulis ledger dan tidak membuat ADJUSTMENT.",
+  nilaiParsial: "Nilai parsial berdasarkan biaya penerimaan terakhir: hanya bahan yang pernah punya biaya penerimaan, dihitung biaya penerimaan terakhir × saldo (termasuk saldo minus). Bukan Estimasi nilai stok dan bukan saldo akun Finance; ditampilkan hanya sebagai rincian.",
 });
 const EPS = 1e-6; const r4 = (v) => Math.round(Number(v ?? 0) * 10000) / 10000;
 const wibTgl = (d) => new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+const NF = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 });
+const tglIndo = (t) => { const [y, m, d] = String(t).split("-"); return `${Number(d)} ${["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"][Number(m) - 1]} ${y}`; };
+/** Peran yang efektif memegang finance:read (dan inventory:read) — dihitung dari peta izin, bukan ditulis tangan. */
+export const peranPelihatNominal = () => Object.entries(ROLE_PERMISSIONS).filter(([, izin]) => izin.includes(P.FINANCE_READ) && izin.includes(P.INVENTORY_READ)).map(([r]) => r).sort();
 
-/** Murni. Satu baris bahan → status + nilai. nilai = null untuk SEMUA yang bukan DINILAI/SALDO_NOL (tidak pernah Rp0 palsu). */
-export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifikasi = false, harga = null, pengamatan = null }) {
-  const keadaan = klasifikasiSaldo({ jumlahPergerakan, saldo, nolTerverifikasi });
-  const dasar = { materialId: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit, kategori: bahan.category ?? null, aktif: bahan.active !== false, keadaanSaldo: keadaan, saldo: keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN ? null : r4(saldo), harga: harga ? { nilai: harga.harga, satuan: harga.satuan, berlakuSejak: harga.berlakuMulai, sumber: harga.sumber, labelBukti: harga.label } : null, nilai: null, pengamatan: pengamatan ?? null };
-  if (pengamatan) return { ...dasar, status: STATUS.PENGAMATAN_FISIK, keterangan: `Pengamatan fisik: ${pengamatan}. Tidak dikonversi ke satuan stok dan tidak diberi nilai.` };
-  if (keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN) return { ...dasar, status: STATUS.STOK_BELUM_DIKETAHUI, keterangan: "Belum ada catatan stok — saldo belum diketahui (bukan Rp0)." };
-  if (keadaan === KEADAAN_SALDO.MINUS) return { ...dasar, status: STATUS.SALDO_MINUS, keterangan: `Saldo catatan minus (${r4(saldo)}) — tidak dinilai; perlu dihitung fisik.` };
-  if (keadaan === KEADAAN_SALDO.NOL_MENURUT_PERGERAKAN || keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI) return { ...dasar, status: STATUS.SALDO_NOL, nilai: 0, keterangan: keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? "Nol terverifikasi hitung fisik." : "Nol menurut pergerakan." };
-  if (!harga) return { ...dasar, status: STATUS.HARGA_KOSONG, keterangan: "Belum ada Harga Berlaku pada waktu acuan — tidak dinilai (bukan Rp0)." };
-  if (String(harga.satuan ?? "").toUpperCase() !== String(bahan.unit ?? "").toUpperCase()) return { ...dasar, status: STATUS.SATUAN_TIDAK_COCOK, keterangan: `Satuan harga ${harga.satuan} ≠ satuan stok ${bahan.unit} — tidak dikonversi otomatis.` };
-  return { ...dasar, status: STATUS.DINILAI, nilai: r4(saldo * harga.harga), keterangan: "" };
+const ringkasSO = (so) => ({ id: so.id, jenis: so.jenis, jumlah: so.jumlah, satuan: so.satuan, soTanggal: so.soTanggal, soWaktu: so.soWaktu, sumber: so.sumber, alasan: so.alasan, pelaku: so.pelaku?.nama ?? null, dicatatPada: so.dicatatPada, revisi: so.revisi ?? 1 });
+
+/** Murni. Satu baris bahan → status + nilai. nilai = null untuk SEMUA yang bukan DINILAI/SALDO_NOL (tidak pernah Rp0 palsu). `nilaiLedger` = estimasi berbasis ledger (juga untuk bahan terukur dalam satuan lain). */
+export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifikasi = false, harga = null, hasilSO = null }) {
+  const keadaan = klasifikasiSaldo({ jumlahPergerakan, saldo, nolTerverifikasi }); const so = hasilSO ?? null;
+  const dasar = { materialId: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit, kategori: bahan.category ?? null, aktif: bahan.active !== false, keadaanSaldo: keadaan, saldo: keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN ? null : r4(saldo),
+    harga: harga ? { nilai: harga.harga, satuan: harga.satuan, berlakuSejak: harga.berlakuMulai, sumber: harga.sumber, labelBukti: harga.label } : null, nilai: null, nilaiLedger: null, hasilSO: so ? ringkasSO(so) : null, hasilSOBermasalah: false, pengamatan: so?.jenis === JENIS.PENGAMATAN_SATUAN ? `${NF.format(so.jumlah)} ${so.satuan}` : null };
+  const hargaCocok = harga && String(harga.satuan ?? "").toUpperCase() === String(bahan.unit ?? "").toUpperCase();
+  const soTxt = so ? `SO ${tglIndo(so.soTanggal)}${so.pelaku?.nama ? `, dicatat oleh ${so.pelaku.nama}` : ""}` : "";
+  if (so?.jenis === JENIS.PENGAMATAN_SATUAN) {
+    const nilaiLedger = saldo > EPS && hargaCocok ? r4(saldo * harga.harga) : null;
+    return { ...dasar, status: STATUS.PENGAMATAN_FISIK, hasilSOBermasalah: true, nilaiLedger, keterangan: `Terukur dalam ${so.satuan}: ${NF.format(so.jumlah)} ${so.satuan} (${soTxt}); belum terukur dalam satuan stok (${bahan.unit}). Tidak dikonversi dan tidak dinilai dari pengamatan.` };
+  }
+  const nol = so?.jenis === JENIS.NOL_DIKONFIRMASI;
+  if (keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN) return { ...dasar, status: STATUS.STOK_BELUM_DIKETAHUI, keterangan: nol ? `Fisik nol dikonfirmasi (${soTxt}); belum tercatat sebagai hasil SO di ledger. Saldo sistem belum diketahui — bukan "sudah sesuai".` : "Belum ada catatan stok — saldo belum diketahui (bukan Rp0)." };
+  if (keadaan === KEADAAN_SALDO.MINUS) return { ...dasar, status: STATUS.SALDO_MINUS, hasilSOBermasalah: nol, keterangan: `Saldo catatan minus (${r4(saldo)}) — tidak dinilai; perlu dihitung fisik.${nol ? ` Fisik nol dikonfirmasi (${soTxt}); belum direkonsiliasi dengan ledger.` : ""}` };
+  if (keadaan === KEADAAN_SALDO.NOL_MENURUT_PERGERAKAN || keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI) return { ...dasar, status: STATUS.SALDO_NOL, nilai: 0, nilaiLedger: 0, keterangan: (keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? "Nol terverifikasi hitung fisik." : "Nol menurut pergerakan.") + (nol ? ` Sejalan dengan hasil SO nol (${soTxt}).` : "") };
+  if (!harga) return { ...dasar, status: STATUS.HARGA_KOSONG, hasilSOBermasalah: nol, keterangan: "Belum ada Harga Berlaku pada waktu acuan — tidak dinilai (bukan Rp0)." };
+  if (!hargaCocok) return { ...dasar, status: STATUS.SATUAN_TIDAK_COCOK, hasilSOBermasalah: nol, keterangan: `Satuan harga ${harga.satuan} ≠ satuan stok ${bahan.unit} — tidak dikonversi otomatis.` };
+  const nilai = r4(saldo * harga.harga);
+  return { ...dasar, status: STATUS.DINILAI, nilai, nilaiLedger: nilai, hasilSOBermasalah: nol, keterangan: nol ? `Berbasis ledger. Fisik nol dikonfirmasi (${soTxt}) sementara ledger masih ${NF.format(r4(saldo))} ${bahan.unit}: selisih belum direkonsiliasi.` : "" };
 }
 
 /** Murni. Cakupan dari daftar baris: universe, relevan, dinilai, pengecualian per status — SATU sumber untuk kartu & strip & tabel. */
@@ -44,15 +65,15 @@ export function ringkasCakupan(baris) {
   const dinilai = baris.filter((b) => b.status === STATUS.DINILAI); const saldoNol = per[STATUS.SALDO_NOL] ?? 0;
   const pengecualian = baris.filter((b) => STATUS_PENGECUALIAN.includes(b.status)); const relevan = dinilai.length + pengecualian.length;
   return { universe: baris.length, saldoNol, relevan, dinilai: dinilai.length, pengecualian: pengecualian.length, persenDinilai: relevan ? Math.round((dinilai.length / relevan) * 1000) / 10 : null, perStatus: per,
-    dariPO: dinilai.filter((b) => b.harga?.sumber === "PO").length };
+    dariPO: dinilai.filter((b) => b.harga?.sumber === "PO").length, hasilSOBermasalah: baris.filter((b) => b.hasilSOBermasalah).length, nolDikonfirmasiBelumDiLedger: baris.filter((b) => b.status === STATUS.STOK_BELUM_DIKETAHUI && b.hasilSO?.jenis === JENIS.NOL_DIKONFIRMASI).length, hasilSOTercatat: baris.filter((b) => b.hasilSO).length };
 }
-export const urutkanRisiko = (baris) => [...baris].sort((a, b) => URUT_RISIKO[a.status] - URUT_RISIKO[b.status] || (b.nilai ?? 0) - (a.nilai ?? 0) || String(a.kode).localeCompare(String(b.kode)));
-
-function bacaPengamatan(mentah) {
-  if (!mentah) return { peta: new Map(), valid: true };
-  try { const a = JSON.parse(mentah); if (!Array.isArray(a)) return { peta: new Map(), valid: false };
-    const peta = new Map(); for (const x of a) { const k = String(x?.kode ?? "").trim(), t = String(x?.teks ?? "").trim(); if (k && t) peta.set(k, t.slice(0, 120)); } return { peta, valid: true }; } catch { return { peta: new Map(), valid: false }; }
+/** Murni. Dua estimasi dari baris yang sama: berdasarkan ledger vs yang mengecualikan hasil SO bermasalah. */
+export function hitungEstimasi(baris) {
+  const ledger = baris.reduce((a, b) => a + (b.nilaiLedger ?? 0), 0); const tanpa = baris.filter((b) => !b.hasilSOBermasalah).reduce((a, b) => a + (b.nilaiLedger ?? 0), 0);
+  const bermasalah = baris.filter((b) => b.hasilSOBermasalah);
+  return { nilaiLedger: Math.round(ledger), nilaiTanpaHasilSOBermasalah: Math.round(tanpa), bahanHasilSOBermasalah: bermasalah.length, nilaiHasilSOBermasalah: Math.round(bermasalah.reduce((a, b) => a + (b.nilaiLedger ?? 0), 0)), bahanLedgerBernilai: baris.filter((b) => (b.nilaiLedger ?? 0) > 0 || b.status === STATUS.DINILAI).length };
 }
+export const urutkanRisiko = (baris) => [...baris].sort((a, b) => URUT_RISIKO[a.status] - URUT_RISIKO[b.status] || (b.nilaiLedger ?? 0) - (a.nilaiLedger ?? 0) || String(a.kode).localeCompare(String(b.kode)));
 
 /** Harga Berlaku pada `at` untuk semua bahan: aturan SAMA dengan hargaBerlaku.js (abaikan baris yang digantikan koreksi; ambil effectiveFrom ≤ at yang terakhir). Sumber "PO" bila kunci idempotensi berawalan po-harga:. */
 async function hargaPada(db, at) {
@@ -62,7 +83,7 @@ async function hargaPada(db, at) {
   return peta;
 }
 
-/** Blok Finance: saldo akun persediaan + penyebab "belum direkonsiliasi" + bukti harga penerimaan (rincian, TIDAK mengalokasikan saldo akun ke bahan). */
+/** Blok Finance: saldo akun persediaan + penyebab "belum direkonsiliasi" + bukti harga penerimaan (rincian, TIDAK mengalokasikan saldo akun ke bahan) + nilai parsial biaya penerimaan terakhir (rincian). */
 async function blokFinance(db, { at, saldoPerBahan, bolehNominal }) {
   const tgl = wibTgl(at);
   const akun = (await db.$queryRaw`SELECT id, code, name FROM fin_accounts WHERE system_key = 'PERSEDIAAN_BAHAN' LIMIT 1`)[0] ?? null;
@@ -77,6 +98,9 @@ async function blokFinance(db, { at, saldoPerBahan, bolehNominal }) {
   const gaps = await db.$queryRaw`SELECT source::text AS sumber, reason AS alasan, COUNT(*)::int AS n FROM fin_posting_gaps WHERE resolved_at IS NULL AND source::text IN ('PEMAKAIAN_BAHAN','PENERIMAAN_BAHAN') GROUP BY 1,2 ORDER BY 1,2`;
   const rc = await db.$queryRaw`SELECT material_id::text AS id, COALESCE(SUM(qty),0)::float AS qty, COALESCE(SUM(qty * COALESCE(unit_cost_exact, unit_cost::numeric)),0)::float AS nilai, COUNT(DISTINCT goods_receipt_id)::int AS gr
     FROM stock_movements WHERE type::text = 'RECEIPT' AND qty > 0 AND COALESCE(unit_cost_exact, unit_cost::numeric) > 0 AND created_at <= ${at} GROUP BY material_id`;
+  const parsial = (await db.$queryRaw`SELECT COUNT(*) FILTER (WHERE luc IS NOT NULL)::int AS dengan_biaya, COUNT(*) FILTER (WHERE luc IS NULL)::int AS tanpa_biaya, COALESCE(SUM(bal * luc) FILTER (WHERE luc IS NOT NULL),0)::float AS nilai, COALESCE(SUM(bal * luc) FILTER (WHERE luc IS NOT NULL AND bal < 0),0)::float AS bagian_minus
+    FROM (SELECT m.id, COALESCE(SUM(sm.qty) FILTER (WHERE sm.created_at <= ${at}),0)::float AS bal, (SELECT sm2.unit_cost FROM stock_movements sm2 WHERE sm2.material_id = m.id AND sm2.unit_cost IS NOT NULL AND sm2.created_at <= ${at} ORDER BY sm2.created_at DESC LIMIT 1) AS luc
+          FROM materials m LEFT JOIN stock_movements sm ON sm.material_id = m.id WHERE m.active GROUP BY m.id) s`)[0];
   const buktiPer = new Map(rc.map((r) => [r.id, r])); const totalBukti = Math.round(rc.reduce((a, r) => a + r.nilai, 0) * 100) / 100;
   let tanpaBukti = 0, sebagian = 0, berbukti = 0; const rincian = [];
   for (const [id, s] of saldoPerBahan) { if (s.saldo <= EPS) continue; const b = buktiPer.get(id); const qb = b ? Math.min(s.saldo, b.qty) : 0; if (!b) tanpaBukti++; else if (qb + EPS < s.saldo) sebagian++; else berbukti++;
@@ -91,13 +115,14 @@ async function blokFinance(db, { at, saldoPerBahan, bolehNominal }) {
   return { ...dasar, tersedia: true, status: "BELUM_DIREKONSILIASI", alasan, saldo: kosongNominal ? null : saldo, jurnal: jurnalDicek,
     perSumber: kosongNominal ? perSumber.map((r) => ({ sumber: r.sumber, jurnal: r.jurnal, awal: r.awal, akhir: r.akhir })) : perSumber,
     persediaanAwal: opening ? { nomor: opening.number, status: opening.status, cutover: opening.cutover } : null, persediaanAwalDiposting: posted, gapTertahan: gaps, pembandingLedger: kosongNominal ? null : { totalBiayaPenerimaanBerharga: totalBukti, selisihDenganSaldoAkun: selisihBukti },
+    nilaiParsial: { definisi: DEFINISI.nilaiParsial, bahanDenganBiaya: parsial.dengan_biaya, bahanTanpaBiaya: parsial.tanpa_biaya, nilai: kosongNominal ? null : Math.round(parsial.nilai), bagianSaldoMinus: kosongNominal ? null : Math.round(parsial.bagian_minus) },
     bukti: { bahanBerstok: tanpaBukti + sebagian + berbukti, berbukti, sebagian, tanpaBukti, catatan: "Rincian bukti per bahan. Harga Berlaku (jika ada) BUKAN bukti perolehan Finance.", rincian: rincian.sort((a, b) => b.qtyTanpaBukti - a.qtyTanpaBukti || a.kode.localeCompare(b.kode)) } };
 }
 
 /**
  * Laporan nilai persediaan pada SATU waktu acuan (default: sekarang). BACA-SAJA.
  * @param opsi.waktu  Date acuan untuk saldo DAN Harga Berlaku (tidak boleh di masa depan)
- * @param opsi.bolehNominal  false ⇒ semua nominal (harga, nilai, saldo akun, biaya rata-rata) dihilangkan; status & jumlah tetap tampil
+ * @param opsi.bolehNominal  false ⇒ semua nominal (harga, nilai, saldo akun, biaya rata-rata, nilai parsial) dihilangkan; status & jumlah tetap tampil
  */
 export async function hitungNilaiPersediaan(db, { waktu = new Date(), bolehNominal = false } = {}) {
   const at = new Date(waktu); const sekarang = new Date();
@@ -107,24 +132,24 @@ export async function hitungNilaiPersediaan(db, { waktu = new Date(), bolehNomin
   const hargaPeta = await hargaPada(db, at);
   const penggunaanSekarang = sekarang.getTime() - at.getTime() < 60_000; // verifikasi nol memakai keadaan SEKARANG; untuk waktu lampau tidak diterapkan (tidak ada bukti as-of)
   const nolVer = penggunaanSekarang ? await nolTerverifikasiPer(db) : new Map();
-  const setelan = await db.finSetting.findUnique({ where: { key: KUNCI_PENGAMATAN } }); const { peta: pengamatan, valid: pengamatanValid } = bacaPengamatan(setelan?.value);
+  const soPeta = await hasilSOTerkini(db);
   const baris = []; const saldoPerBahan = new Map();
   for (const m of bahan) {
     const l = ledger.get(m.id) ?? { saldo: 0, n: 0 }; if (!m.active && Math.abs(l.saldo) <= EPS) continue; // nonaktif tanpa saldo: di luar universe
-    const h = hargaPeta.get(m.id) ?? null; const b = klasifikasiBaris({ bahan: m, saldo: l.saldo, jumlahPergerakan: l.n, nolTerverifikasi: nolVer.has(m.id), harga: h, pengamatan: pengamatan.get(m.code) ?? null });
+    const h = hargaPeta.get(m.id) ?? null; const b = klasifikasiBaris({ bahan: m, saldo: l.saldo, jumlahPergerakan: l.n, nolTerverifikasi: nolVer.has(m.id), harga: h, hasilSO: soPeta.get(m.id) ?? null });
     baris.push(b); saldoPerBahan.set(m.id, { saldo: l.saldo, kode: m.code, nama: m.name, satuan: m.unit, hargaBerlaku: h ? h.harga : null });
   }
-  const cakupan = ringkasCakupan(baris); const dinilai = baris.filter((b) => b.status === STATUS.DINILAI);
-  const total = Math.round(dinilai.reduce((a, b) => a + b.nilai, 0));
+  const cakupan = ringkasCakupan(baris); const est = hitungEstimasi(baris);
   const finance = await blokFinance(db, { at, saldoPerBahan, bolehNominal });
-  const tampilBaris = urutkanRisiko(baris).map((b) => (bolehNominal ? b : { ...b, harga: null, nilai: b.status === STATUS.SALDO_NOL ? 0 : null }));
+  const tampilBaris = urutkanRisiko(baris).map((b) => (bolehNominal ? b : { ...b, harga: null, nilai: b.status === STATUS.SALDO_NOL ? 0 : null, nilaiLedger: null }));
   return {
-    waktuAcuan: at.toISOString(), waktuHitung: sekarang.toISOString(), definisi: DEFINISI, izin: { nominal: !!bolehNominal },
+    waktuAcuan: at.toISOString(), waktuHitung: sekarang.toISOString(), definisi: DEFINISI, izin: { nominal: !!bolehNominal, peranPelihatNominal: peranPelihatNominal(), keterangan: "Nominal terlihat oleh pemegang izin finance:read; tidak ada peran baru." },
     kartu: {
-      estimasi: { nilai: bolehNominal ? total : null, bahanDinilai: cakupan.dinilai, bahanRelevan: cakupan.relevan, persen: cakupan.persenDinilai, dariPO: cakupan.dariPO, label: "Estimasi nilai stok", catatan: "Harga kerja Gudang — bukan nilai buku." },
+      estimasi: { nilaiLedger: bolehNominal ? est.nilaiLedger : null, nilaiTanpaHasilSOBermasalah: bolehNominal ? est.nilaiTanpaHasilSOBermasalah : null, bahanHasilSOBermasalah: est.bahanHasilSOBermasalah, nilaiHasilSOBermasalah: bolehNominal ? est.nilaiHasilSOBermasalah : null,
+        bahanDinilai: cakupan.dinilai, bahanRelevan: cakupan.relevan, persen: cakupan.persenDinilai, dariPO: cakupan.dariPO, label: "Estimasi nilai stok", status: "BELUM_DIREKONSILIASI_DENGAN_HASIL_SO", catatan: "Harga kerja Gudang (saldo × Harga Berlaku). Belum direkonsiliasi dengan hasil SO — bukan hasil stok fisik final." },
       finance: { saldo: finance.saldo, status: finance.status, alasan: finance.alasan, label: "Saldo akun persediaan Finance", catatan: "Belum direkonsiliasi dengan stok per bahan." },
-      belumDinilai: { jumlah: cakupan.pengecualian, perStatus: Object.fromEntries(STATUS_PENGECUALIAN.map((s) => [s, cakupan.perStatus[s] ?? 0])), label: "Bahan belum bisa dinilai", catatan: "Tidak dihitung sebagai Rp0." },
+      belumDinilai: { jumlah: cakupan.pengecualian, perStatus: Object.fromEntries(STATUS_PENGECUALIAN.map((s) => [s, cakupan.perStatus[s] ?? 0])), nolDikonfirmasiBelumDiLedger: cakupan.nolDikonfirmasiBelumDiLedger, label: "Bahan belum bisa dinilai", catatan: "Tidak dihitung sebagai Rp0." },
     },
-    cakupan, finance, baris: tampilBaris, pengamatanSetelanValid: pengamatanValid, pengamatanTerisi: pengamatan.size,
+    cakupan, finance, baris: tampilBaris, hasilSOTercatat: cakupan.hasilSOTercatat,
   };
 }

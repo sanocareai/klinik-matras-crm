@@ -8,6 +8,8 @@ import { createTestUser, createTestMaterial } from "../../backend/tests/integrat
 import { buildTestApp } from "../../backend/tests/integration/setup/testApp.js";
 import { ensureDefaultChartOfAccounts, resolveAccount, SYSTEM_KEYS } from "../../backend/src/services/finance/accounts.js";
 import { postJournal } from "../../backend/src/services/finance/journal.js";
+import { catatHasilSO } from "../../backend/src/services/hasilSO.js";
+import { prisma } from "../../backend/src/db.js";
 
 const PORT = Number(process.env.PORT || 4490); const OUT = process.env.OUT || "C:/tmp/nilai-qa"; fs.mkdirSync(OUT, { recursive: true });
 await truncateAll(); await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
@@ -35,15 +37,18 @@ const mn = await mk("minus", { code: "LIST-WIBING-QA", name: "List wibing abu", 
 const st = await mk("satuan", { code: "KAIN-SATUAN-QA", name: "Kain tabeng (harga dalam ROLL, stok METER)", unit: "METER" }); await gerak(st.id, "RECEIPT", 50, hari(8)); await harga(st.id, 900000, "ROLL", hari(6));
 const lava = await mk("lava", { code: "KAIN-LAVA-QA", name: "Kain Lava B-Grade", unit: "METER" }); await gerak(lava.id, "RECEIPT", 19, hari(9)); await gerak(lava.id, "ISSUE", -19, hari(5)); await harga(lava.id, 25641, "METER", hari(6));
 const tab = await mk("tabeng", { code: "KAI-003-QA", name: "Kain Tabeng 3C Abu", unit: "METER" }); await gerak(tab.id, "RECEIPT", 122, hari(9)); await harga(tab.id, 35500, "METER", hari(6));
-await testPrisma.finSetting.create({ data: { key: "nilai_persediaan_pengamatan_fisik", value: JSON.stringify([{ kode: "KAIN-LAVA-QA", teks: "13,5 ROLL" }, { kode: "KAI-003-QA", teks: "1 ROLL" }]) } });
 const nol = await mk("nol", { code: "SUDUT-QA", name: "Sudut gold (habis)", unit: "PCS" }); await gerak(nol.id, "RECEIPT", 4, hari(9)); await gerak(nol.id, "ISSUE", -4, hari(4)); await harga(nol.id, 1000, "PCS", hari(6));
 for (let i = 1; i <= 30; i++) { const m = await createTestMaterial({ code: `BELUM-QA-${String(i).padStart(2, "0")}`, name: `Bahan belum ada catatan ${i}`, unit: "PCS" }); if (i === 1) id.belumCatatan = m.id; }
 // ── Finance: persediaan awal DRAFT (belum diposting) + jurnal penerimaan GR ──
 await testPrisma.finInventoryOpening.create({ data: { number: "PSA-QA-001", cutoverDate: new Date("2026-10-01"), countedAt: new Date("2026-09-30T16:59:00Z"), status: "DRAFT" } });
 await testPrisma.$transaction(async (tx) => { const p = await resolveAccount(tx, SYSTEM_KEYS.PERSEDIAAN_BAHAN); const u = await resolveAccount(tx, SYSTEM_KEYS.UTANG_BELUM_DITAGIH);
   for (const [i, nilai] of [[1, 18318000], [2, 7240000], [3, 5709000]]) await postJournal(tx, { date: hari(10 - i), description: `Penerimaan barang GR-QA-${i}`, source: "PENERIMAAN_BAHAN", sourceId: `gr-qa-${i}`, idempotencyKey: `qa-gr-${i}`, lines: [{ accountId: p.id, debit: nilai }, { accountId: u.id, credit: nilai }] }); });
+// hasil SO lewat jalur resmi (pelaku = akun Gudang), bukan fin_settings
+await catatHasilSO(prisma, T.gudang.user, { baris: [{ materialId: lava.id, jenis: "PENGAMATAN_SATUAN", jumlah: 13.5, satuan: "ROLL" }, { materialId: tab.id, jenis: "PENGAMATAN_SATUAN", jumlah: 1, satuan: "ROLL" }], default: { soTanggal: "2026-11-04", sumber: "KIRIM GILANG.xlsx, sheet GILANG, sel O4/O5", alasan: "Hasil SO terukur dalam roll (QA)" } }, "qa-seed-pengamatan-0001");
+const nolB = await testPrisma.material.findFirst({ where: { code: "BELUM-QA-02" } }); await catatHasilSO(prisma, T.gudang.user, { baris: [{ materialId: nolB.id, jenis: "NOL_DIKONFIRMASI", jumlah: 0 }], default: { soTanggal: "2026-11-04", sumber: "KIRIM GILANG.xlsx baris 7", alasan: "Sel kosong = sudah dicek, fisik nol (QA)" } }, "qa-seed-nol-0001");
+id.nolB = nolB.id;
 fs.writeFileSync(path.join(OUT, "ids.json"), JSON.stringify(id, null, 2));
 
 const app = buildTestApp(); app.get("/api/health", (req, res) => res.json({ ok: true }));
-app.get("/qa/hitung", async (req, res) => res.json({ stok: await testPrisma.stockMovement.count(), harga: await testPrisma.materialHargaBerlaku.count(), jurnal: await testPrisma.finJournalEntry.count(), gr: await testPrisma.goodsReceipt.count(), adj: await testPrisma.stockAdjustmentRequest.count(), opening: await testPrisma.finInventoryOpening.count(), setelan: await testPrisma.finSetting.count() }));
+app.get("/qa/hitung", async (req, res) => res.json({ stok: await testPrisma.stockMovement.count(), harga: await testPrisma.materialHargaBerlaku.count(), jurnal: await testPrisma.finJournalEntry.count(), gr: await testPrisma.goodsReceipt.count(), adj: await testPrisma.stockAdjustmentRequest.count(), opening: await testPrisma.finInventoryOpening.count(), setelan: await testPrisma.finSetting.count(), hasilSO: await testPrisma.activityEvent.count({ where: { entityType: "hasil_so_bahan" } }) }));
 app.listen(PORT, "127.0.0.1", () => console.log(`[qa-nilai] server siap di http://127.0.0.1:${PORT} — DB ${process.env.TEST_DATABASE_URL.split("/").pop()}`));

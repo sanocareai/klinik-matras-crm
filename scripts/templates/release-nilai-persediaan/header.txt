@@ -1,0 +1,18 @@
+# RILIS "NILAI PERSEDIAAN" (Gudang › Laporan › Nilai Persediaan + pencatatan hasil SO per bahan): WEB + BACKEND ADITIF, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • BACA-SAJA untuk laporan: GET /api/inventory/nilai-persediaan (izin inventory:read; nominal hanya finance:read). Satu waktu acuan untuk saldo dan Harga Berlaku. Tiga kartu: Estimasi nilai stok (berdasarkan ledger dan yang mengecualikan hasil SO bermasalah; "belum direkonsiliasi dengan hasil SO"),
+#     Saldo akun persediaan Finance (belum direkonsiliasi; tidak dialokasikan ke bahan), Bahan belum bisa dinilai (tidak pernah Rp0). Nilai parsial biaya penerimaan terakhir hanya di rincian Finance; kartu KPI lama dihapus dari Laporan Gudang.
+#   • PENCATATAN HASIL SO (satu-satunya tulisan fitur ini): POST /api/inventory/nilai-persediaan/hasil-so (izin inventory:write, Idempotency-Key, append-only, koreksi menunjuk catatan terkini). Jenis: PENGAMATAN_SATUAN (mis. 13,5 ROLL; tidak dikonversi) dan NOL_DIKONFIRMASI.
+#     Disimpan sebagai jejak aktivitas (activity_events, entity hasil_so_bahan) — TIDAK menulis stok/ledger, ADJUSTMENT, harga, valuasi, jurnal, PSA, GR, maupun fin_settings. Rilis ini TIDAK memasukkan satu pun catatan hasil SO dan TIDAK mengubah data bisnis; smoke pasca-switch hanya GET.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; uji baca pada data nyata: invarian cakupan/estimasi/izin nominal; uji tulis pencatatan hasil SO HANYA pada salinan restore: izin, validasi, idempotensi, koreksi, tanpa tulisan ke ledger/harga/jurnal);
+#     build web di release dir; switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal; GET saja, tanpa jejak tulis).
+#   • PENGUNCIAN: kunci deploy BERSAMA (release-deploy-bersama.lock) + kunci sendiri diambil ATOMIK sebelum memeriksa kunci/proses lain; kepemilikan ditentukan oleh proses (perangkat:inode fd 7/9), BUKAN nama berkas; diperiksa di fase 0, sebelum persiapan akhir, dan tepat sebelum switch.
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi / berkas tambahan / proses berganti = berhenti sebelum switch.
+#     Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip. Gerbang disk (minimal 5 GiB) TIDAK diturunkan.
+#
+#   cat scripts/release-nilai-persediaan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/npr.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/npr.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/npr.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/nprr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/npr.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/npr.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Rollback mengembalikan kode lama: halaman Nilai Persediaan, pencatatan hasil SO, dan KPI lama di Laporan Gudang kembali seperti sebelum rilis. Catatan hasil SO yang SUDAH dibuat tetap ada di activity_events (append-only) dan tidak dihapus oleh rollback.
+# (dibangkitkan oleh scripts/gen-release-nilai-persediaan.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-nilai-persediaan/* + pustaka scripts/lib/{rehearsal,smoke}-nilai-persediaan.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)

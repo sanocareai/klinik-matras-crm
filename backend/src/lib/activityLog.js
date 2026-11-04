@@ -37,6 +37,7 @@ export const ENTITY_TYPES = Object.freeze({
   WAREHOUSE_CORRECTION: "warehouse_correction", // Koreksi Dokumen Gudang (pemohon, penyetuju, alasan, sebelum–sesudah)
   MATERIAL_PROPOSAL: "material_proposal", // usulan bahan katalog dari Produksi (hanya baris usulan; bukan stok)
   STOK_RIWAYAT_REFERENSI: "stok_riwayat_referensi", // impor catatan referensi historis dari file (bukan transaksi, bukan saldo)
+  HASIL_SO_BAHAN: "hasil_so_bahan", // hasil SO per bahan yang belum/tidak menjadi pergerakan stok (pengamatan satuan lain, nol dikonfirmasi) — append-only; services/hasilSO.js
   REPLENISHMENT: "replenishment",
   // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026) —
   // lihat catatan panjang di schema.prisma model ComplaintCase.
@@ -263,6 +264,8 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_PERUBAHAN_PEMAKAIAN_BAHAN: "PRODUCTION_PERUBAHAN_PEMAKAIAN_BAHAN",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
+  SO_HASIL_DICATAT: "SO_HASIL_DICATAT", // hasil SO per bahan dicatat (TANPA menulis ledger)
+  SO_HASIL_DIKOREKSI: "SO_HASIL_DIKOREKSI", // koreksi hasil SO per bahan: peristiwa baru yang menunjuk peristiwa sebelumnya
 
   // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026).
   // Satu event generik per titik keputusan (pola sama dengan
@@ -676,6 +679,11 @@ export function formatActivitySentence(event) {
         metadata.receiptNumber || metadata.issueNumber || metadata.transferNumber
         || metadata.countNumber || metadata.adjustmentNumber || metadata.recordNumber || metadata.returnNumber || "—"
       }${metadata.step ? ` (${metadata.step})` : ""}`;
+    case EVENT_TYPES.SO_HASIL_DICATAT:
+    case EVENT_TYPES.SO_HASIL_DIKOREKSI: {
+      const nol = metadata.jenis === "NOL_DIKONFIRMASI";
+      return `${eventType === EVENT_TYPES.SO_HASIL_DIKOREKSI ? "Hasil SO dikoreksi" : "Hasil SO dicatat"}: ${nol ? "fisik nol dikonfirmasi" : `terukur ${metadata.jumlah ?? "—"} ${metadata.satuan ?? ""}`.trim()} (SO ${metadata.soTanggal || "—"}) — tidak menulis stok`;
+    }
     case EVENT_TYPES.COMPLAINT_CREATED:
       return `Kasus komplain dibuka — ${metadata.categoryLabel || metadata.category || "—"}`;
     case EVENT_TYPES.COMPLAINT_STATUS_CHANGED:

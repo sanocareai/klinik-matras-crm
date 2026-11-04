@@ -1,7 +1,7 @@
 // Logika MURNI tampilan Nilai Persediaan (kandidat laporan baca-saja). Tidak menghitung ulang nilai: semua angka berasal dari respons server (`/api/inventory/nilai-persediaan`).
 // Aturan tampilan: pengecualian TIDAK pernah ditulis Rp0 dan tidak disembunyikan; nominal hanya bila server mengizinkan (izin.nominal); satu sumber cakupan untuk kartu, strip, dan tabel.
 export const STATUS_TEKS = Object.freeze({
-  DINILAI: "Dinilai", SALDO_NOL: "Saldo nol", STOK_BELUM_DIKETAHUI: "Stok belum diketahui", HARGA_KOSONG: "Harga kosong", SALDO_MINUS: "Saldo minus", SATUAN_TIDAK_COCOK: "Satuan tidak cocok", PENGAMATAN_FISIK: "Pengamatan fisik",
+  DINILAI: "Dinilai", SALDO_NOL: "Saldo nol", STOK_BELUM_DIKETAHUI: "Stok belum diketahui", HARGA_KOSONG: "Harga kosong", SALDO_MINUS: "Saldo minus", SATUAN_TIDAK_COCOK: "Satuan tidak cocok", PENGAMATAN_FISIK: "Terukur dalam satuan lain",
 });
 export const STATUS_NADA = Object.freeze({ DINILAI: "ok", SALDO_NOL: "netral", STOK_BELUM_DIKETAHUI: "waspada", HARGA_KOSONG: "waspada", SALDO_MINUS: "bahaya", SATUAN_TIDAK_COCOK: "bahaya", PENGAMATAN_FISIK: "info" });
 export const URUT_STATUS = Object.freeze(["DINILAI", "SALDO_MINUS", "SATUAN_TIDAK_COCOK", "HARGA_KOSONG", "PENGAMATAN_FISIK", "STOK_BELUM_DIKETAHUI", "SALDO_NOL"]);
@@ -47,5 +47,25 @@ export function segmenCakupan(cakupan) {
 }
 /** Penjelasan kartu bila nominal tidak diizinkan. */
 export const TEKS_TANPA_NOMINAL = "Nominal hanya untuk Finance/Owner. Jumlah bahan dan status tetap tampil.";
-/** Kata-kata label pada KPI lama Laporan Gudang: dibedakan jelas agar tidak jadi angka ketiga tanpa penjelasan. */
-export const KPI_LAMA = Object.freeze({ label: "Nilai parsial (biaya penerimaan terakhir)", penjelasan: "Hanya bahan yang pernah punya biaya penerimaan, dihitung biaya penerimaan terakhir × saldo. Bukan Estimasi nilai stok (Harga Berlaku) dan bukan saldo akun Finance — lihat Laporan › Nilai Persediaan.", tautan: "/warehouse/nilai-persediaan" });
+export const TEKS_NILAI_PARSIAL = "Nilai parsial berdasarkan biaya penerimaan terakhir: hanya bahan yang pernah punya biaya penerimaan, dihitung biaya penerimaan terakhir × saldo (termasuk saldo minus). Bukan Estimasi nilai stok dan bukan saldo akun Finance — hanya rincian.";
+export const TEKS_BELUM_FINAL = "Belum direkonsiliasi dengan hasil SO — bukan hasil stok fisik final.";
+
+// ── Form pencatatan hasil SO (validasi ringan di peramban; server tetap memeriksa ulang) ──
+export const JENIS_HASIL_SO = Object.freeze({ NOL_DIKONFIRMASI: "Fisik nol dikonfirmasi", PENGAMATAN_SATUAN: "Terukur dalam satuan lain (mis. ROLL)" });
+const ISO_TGL = /^\d{4}-\d{2}-\d{2}$/;
+export function periksaFormHasilSO(f, { satuanStok } = {}) {
+  const e = {}; const norm = (x) => String(x ?? "").replace(/\s+/g, " ").trim();
+  if (!ISO_TGL.test(String(f.soTanggal ?? ""))) e.soTanggal = "Tanggal SO wajib diisi.";
+  if (norm(f.sumber).length < 3) e.sumber = "Sumber wajib (mis. nama berkas dan sel).";
+  if (norm(f.alasan).length < 10) e.alasan = "Alasan wajib, minimal 10 karakter.";
+  if (f.jenis === "PENGAMATAN_SATUAN") {
+    const j = Number(String(f.jumlah ?? "").replace(",", ".")); if (String(f.jumlah ?? "").trim() === "" || !Number.isFinite(j) || j <= 0) e.jumlah = "Jumlah harus lebih dari 0.";
+    const sat = norm(f.satuan).toUpperCase(); if (!sat) e.satuan = "Satuan pengamatan wajib (mis. ROLL)."; else if (sat === String(satuanStok ?? "").toUpperCase()) e.satuan = `Sama dengan satuan stok (${satuanStok}) — gunakan Koreksi Saldo.`;
+  }
+  return e;
+}
+/** Badan permintaan. Jam SO tidak dikirim (belum dikonfirmasi — tidak ditebak). Koreksi menunjuk catatan terkini. */
+export function bangunBodyHasilSO(f, bahan) {
+  const nol = f.jenis === "NOL_DIKONFIRMASI";
+  return { baris: [{ materialId: bahan.materialId, jenis: f.jenis, jumlah: nol ? 0 : Number(String(f.jumlah).replace(",", ".")), ...(nol ? {} : { satuan: String(f.satuan).trim().toUpperCase() }), soTanggal: f.soTanggal, sumber: String(f.sumber).trim(), alasan: String(f.alasan).trim(), ...(bahan.hasilSO?.id ? { menggantikanId: bahan.hasilSO.id } : {}) }] };
+}
