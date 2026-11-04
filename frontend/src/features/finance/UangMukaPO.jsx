@@ -14,7 +14,7 @@ import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { Link } from "react-router-dom";
 import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
-import { URUTAN_STATUS_EMPAT, varianStatusEmpat, tautanKeuangan, LABEL_JENIS_PEMBAYARAN, KALIMAT_SIMPAN_KE_STOK, KALIMAT_UANG_MUKA, statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka } from "@/features/finance/uangMukaLogic.js";
+import { URUTAN_STATUS_EMPAT, varianStatusEmpat, tautanKeuangan, LABEL_JENIS_PEMBAYARAN, KALIMAT_SIMPAN_KE_STOK, KALIMAT_UANG_MUKA, statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka } from "@/features/finance/uangMukaLogic.js";
 
 // UANG MUKA SUPPLIER sebelum barang datang (Okt 2026). Semua angka datang dari server (po.keuangan, po.total*); layar ini hanya menampilkan, memberi tooltip definisi, dan mengirim aksi.
 
@@ -358,75 +358,5 @@ export function ModalBayarUangMuka({ po, admin, onClose, onSaved }) {
   );
 }
 
-// ── Terapkan uang muka ke faktur ────────────────────────────────────────────────────────────────────────────────────────
-export function ModalTerapkanUangMuka({ billId, nomorFaktur, onClose, onSaved }) {
-  const [data, setData] = useState(null);
-  const [pilih, setPilih] = useState(null);
-  const [nominal, setNominal] = useState("");
-  const [catatan, setCatatan] = useState("");
-  const [konfirmasi, setKonfirmasi] = useState(false);
-  const [konfirmasiBedaPO, setKonfirmasiBedaPO] = useState(false);
-  const [galat, setGalat] = useState("");
-  const kunciRef = useRef({ isi: "", kunci: "" });
-  useEffect(() => { api.getKandidatUangMukaFaktur(billId).then((d) => { setData(d); const pertama = d.uangMuka[0]; if (pertama) { setPilih(pertama.id); setNominal(String(pertama.saran)); } }).catch((e) => setGalat(e.message || "Gagal memuat uang muka")); }, [billId]);
-
-  const dp = data?.uangMuka.find((d) => d.id === pilih) || null;
-  const sisa = data?.faktur.sisaUtang ?? 0;
-  const siap = kesiapanTerapkan({ uangMuka: dp, nominal, sisaFaktur: sisa, konfirmasi, konfirmasiBedaPO });
-  const kunciTerapkan = (body) => { const isi = JSON.stringify(body); if (kunciRef.current.isi !== isi) kunciRef.current = { isi, kunci: `umt-${idKunci()}` }; return kunciRef.current.kunci; };
-
-  return (
-    <Modal
-      open onOpenChange={(v) => !v && onClose()} title={`Terapkan Uang Muka · ${nomorFaktur || data?.faktur.nomor || ""}`} description="Mengurangi sisa utang faktur. Tidak ada uang keluar." className="w-[560px]"
-      footer={
-        <>
-          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi
-            disabled={!siap.siap} data-testid="simpan-penerapan"
-            onClick={async () => { setGalat(""); try { const body = bodyTerapkanUangMuka({ uangMuka: dp, billId, nominal, sisaFaktur: sisa, konfirmasiBedaPO, catatan }); await api.terapkanUangMukaFaktur(body, kunciTerapkan(body)); await onSaved(); } catch (e) { setGalat(e.message || "Gagal menerapkan uang muka"); } }}
-          >
-            Terapkan Uang Muka
-          </TombolAksi>
-        </>
-      }
-    >
-      {!data && !galat && <p className="text-[13px] text-ink3">Memuat…</p>}
-      {data && (
-        <div className="space-y-3" data-testid="form-terapkan">
-          <dl className="m-0 grid grid-cols-2 gap-3 rounded-lg bg-inset px-3 py-2.5 text-[12.5px]">
-            <div><dt className="text-ink3">Nilai faktur</dt><dd className="ml-0 tabular-nums font-medium">{formatUang(data.faktur.nilai)}</dd></div>
-            <div><dt className="text-ink3">Sisa utang faktur sekarang</dt><dd className="ml-0 tabular-nums font-semibold">{formatUang(sisa)}</dd></div>
-          </dl>
-          {data.uangMuka.length === 0 ? (
-            <p className="m-0 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">Tidak ada uang muka yang belum diterapkan untuk supplier {data.faktur.supplier}.</p>
-          ) : (
-            <>
-              <fieldset className="m-0 space-y-1.5 border-0 p-0">
-                <legend className="mb-1 text-[12.5px] font-medium text-ink">Uang muka yang diterapkan</legend>
-                {data.uangMuka.map((d) => (
-                  <label key={d.id} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 max-sm:min-h-11", pilih === d.id ? "border-accent bg-accentbg" : "border-line")}>
-                    <input type="radio" name="uang-muka" checked={pilih === d.id} onChange={() => { setPilih(d.id); setNominal(String(d.saran)); setKonfirmasi(false); setKonfirmasiBedaPO(false); }} className="mt-1 h-4 w-4 shrink-0" />
-                    <span className="min-w-0 text-[12.5px]"><span className="block font-medium text-ink">{d.nomor}{d.purchaseOrder ? ` · ${d.purchaseOrder.nomor}` : ""}{d.samaPO && <Badge variant="green" className="ml-1.5">PO sama</Badge>}</span><span className="block text-ink3">Belum diterapkan {formatUang(d.saldoBelumDiterapkan)} dari {formatUang(d.nominal)}</span></span>
-                  </label>
-                ))}
-              </fieldset>
-              <Field label="Nominal diterapkan" required hint={dp ? `Maksimal ${formatUang(Math.min(dp.saldoBelumDiterapkan, sisa))} (saldo uang muka atau sisa faktur, mana yang lebih kecil)` : undefined}>
-                <InputUang value={nominal} onChange={(v) => { setNominal(v); setKonfirmasi(false); }} max={dp ? Math.min(dp.saldoBelumDiterapkan, sisa) : undefined} />
-              </Field>
-              <Field label="Catatan"><Input value={catatan} maxLength={300} onChange={(e) => setCatatan(e.target.value)} /></Field>
-              {dp && Number(nominal) > 0 && (
-                <p className="m-0 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="pratinjau-penerapan">Jurnal: Dr Utang Usaha / Cr Uang Muka Supplier {formatUang(Number(nominal))}. Sisa utang faktur {formatUang(sisa)} → <strong className="text-ink">{formatUang(Math.max(0, sisa - Number(nominal)))}</strong>. Saldo uang muka {formatUang(dp.saldoBelumDiterapkan)} → <strong className="text-ink">{formatUang(Math.max(0, dp.saldoBelumDiterapkan - Number(nominal)))}</strong>.</p>
-              )}
-              {dp?.bedaPO && (
-                <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange"><input type="checkbox" checked={konfirmasiBedaPO} onChange={(e) => setKonfirmasiBedaPO(e.target.checked)} className="mt-0.5 h-4 w-4" data-testid="konfirmasi-beda-po" /><span>Uang muka ini dibayar untuk {dp.purchaseOrder?.nomor}, bukan PO faktur ini. Saya konfirmasi pengalihan.</span></label>
-              )}
-              <label className="flex cursor-pointer items-start gap-2 text-[12.5px] text-ink"><input type="checkbox" checked={konfirmasi} onChange={(e) => setKonfirmasi(e.target.checked)} className="mt-0.5 h-4 w-4" data-testid="konfirmasi-penerapan" /><span>Saya sudah memeriksa pratinjau dan mengonfirmasi penerapan uang muka ini ke faktur.</span></label>
-              {!siap.siap && <p className="m-0 text-[12px] text-ink3" role="status">{siap.pesan}</p>}
-            </>
-          )}
-        </div>
-      )}
-      {galat && <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-1.5 text-[12.5px] text-red">{galat}</p>}
-    </Modal>
-  );
-}
+// ── Terapkan uang muka ke faktur ── satu komponen bersama (Tagihan supplier, rincian PO, tawaran setelah persetujuan, form pembayaran).
+export { PenerapanUangMuka as ModalTerapkanUangMuka } from "@/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx";

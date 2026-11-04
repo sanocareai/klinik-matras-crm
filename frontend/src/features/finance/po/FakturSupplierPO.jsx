@@ -121,7 +121,7 @@ function TombolNomor({ izin, children, className, ...rest }) {
   );
 }
 
-function BarisFaktur({ f, info, izin, buka, onToggle, onEditNomor, onRiwayat, renderRincian, po }) {
+function BarisFaktur({ f, info, izin, buka, onToggle, onEditNomor, onRiwayat, renderRincian, renderPeringatan, po }) {
   const idR = `pof-${f.id}`;
   const nilai = info?.amount ?? f.nilai;
   const label = LABEL_STATUS_FAKTUR[f.status] || f.status;
@@ -145,6 +145,7 @@ function BarisFaktur({ f, info, izin, buka, onToggle, onEditNomor, onRiwayat, re
           <Pembuka buka={buka} onToggle={onToggle} id={idR} className="fin-pod-rinci-tombol" aria-label={`Rincian faktur ${f.nomorSupplier || f.nomorInternal}`}>Rincian</Pembuka>
         </div>
       </div>
+      {renderPeringatan && <div className="px-3.5 pb-3" data-testid="peringatan-baris-faktur">{renderPeringatan(f)}</div>}
       {buka && (
         <div id={idR} className="fin-pof-buka">
           {f.sumber === "PO" ? renderRincian(po.faktur.find((x) => x.id === f.id)) : (
@@ -160,7 +161,7 @@ function BarisFaktur({ f, info, izin, buka, onToggle, onEditNomor, onRiwayat, re
 }
 
 /** Bagian "Faktur supplier": semua faktur terkait PO (nomor supplier, nomor internal, tanggal, nilai, status), kelengkapan nomor, dan jalan ke Catat faktur. */
-export function BagianFakturSupplier({ po, izin, segar, renderRincian, onCatat, onEditNomor, onRiwayat }) {
+export function BagianFakturSupplier({ po, izin, segar, renderRincian, renderPeringatan, onCatat, onEditNomor, onRiwayat }) {
   const daftar = useMemo(() => daftarFakturPO(po), [po]);
   const ringkas = ringkasKelengkapanFaktur(daftar);
   const tagihan = useTagihanSupplier(po.supplier?.id, segar);
@@ -199,7 +200,7 @@ export function BagianFakturSupplier({ po, izin, segar, renderRincian, onCatat, 
             <span role="columnheader">Nomor supplier</span><span role="columnheader">Nomor internal</span><span role="columnheader">Tanggal</span>
             <span role="columnheader" className="kanan">Nilai</span><span role="columnheader">Status</span><span role="columnheader" className="fin-sr-saja">Rincian</span>
           </div>
-          {daftar.map((f) => <BarisFaktur key={f.id} f={f} info={infoTagihan.get(f.id)} izin={izin} buka={buka.has(f.id)} onToggle={() => toggle(f.id)} onEditNomor={onEditNomor} onRiwayat={onRiwayat} renderRincian={renderRincian} po={po} />)}
+          {daftar.map((f) => <BarisFaktur key={f.id} f={f} info={infoTagihan.get(f.id)} izin={izin} buka={buka.has(f.id)} onToggle={() => toggle(f.id)} onEditNomor={onEditNomor} onRiwayat={onRiwayat} renderRincian={renderRincian} renderPeringatan={renderPeringatan} po={po} />)}
         </div>
       )}
       <p className="fin-pod-ket">Faktur dan pembayarannya tidak menambah stok. Jumlah yang menagih lebih dari barang baik yang belum ditagih akan <strong>tertahan</strong>; beda harga wajib tinjauan Finance (tanpa toleransi otomatis). Status penerimaan barang dan pembayaran dilihat di bagian terpisah.</p>

@@ -284,3 +284,9 @@
 :root .app-shell.crm-skin .fin-tg-dlg-galat { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--crm-merah-bg, rgba(220, 38, 38, .08)); color: var(--crm-merah, #b42318); font: 500 13px/1.5 Manrope, system-ui, sans-serif; }
 :root .app-shell.crm-skin .fin-tg-dlg-galat:focus-visible { outline: 2px solid var(--crm-primary); outline-offset: 2px; }
 @media (max-width: 767px) { :root .app-shell.crm-skin .fin-tg-ubah-beda li span { flex-basis: 100%; } }
+/* — uang muka PO → faktur (penanda baris, jejak di rincian) — */
+:root .app-shell.crm-skin .fin-tg-um-chip { display: inline-flex; align-items: flex-start; gap: 4px; max-width: 100%; margin-top: 4px; padding: 3px 9px; border-radius: 12px; background: var(--ord-pending-bg); color: var(--ord-pending-fg); font: 500 11.5px/1.35 Manrope, system-ui, sans-serif; text-align: left; white-space: normal; }
+:root .app-shell.crm-skin .fin-tg-um-chip svg { flex: 0 0 auto; margin-top: 2px; }
+:root .app-shell.crm-skin .fin-tg-r-bayar > li.fin-tg-r-batal { opacity: .62; }
+:root .app-shell.crm-skin .fin-tg-r-bayar > li.fin-tg-r-batal strong { text-decoration: line-through; }
+@media (max-width: 767px) { :root .app-shell.crm-skin .fin-tg-um-chip { font-size: 12px; } :root .app-shell.crm-skin .fin-tg-r-bayar > li { grid-template-columns: minmax(0, 1fr) auto; } :root .app-shell.crm-skin .fin-tg-r-bayar-tgl { grid-column: 1 / -1; order: 3; } }

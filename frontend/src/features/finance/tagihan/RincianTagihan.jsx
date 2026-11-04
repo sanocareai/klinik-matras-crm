@@ -8,6 +8,8 @@ import { RowActions } from "@/features/finance/RowActions.jsx";
 import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { tautanKeuangan } from "@/features/finance/uangMukaLogic.js";
 import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
+import { BannerUangMuka, useKelayakanFaktur } from "@/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx";
+import { fakturPerluPeriksaUangMuka } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import { ChipStatusTagihan } from "./DaftarTagihan.jsx";
 import { tampilSisa, statusTempo, asalTagihan, nomorFakturTampil, penjagaPermintaan, formatUangTepat, sisaKurangSatuRupiah, KET_SISA_SEN } from "./tagihanLogika.js";
 
@@ -64,10 +66,82 @@ function ItemFaktur({ b }) {
   );
 }
 
-export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat }) {
+const sen = (n) => Math.round((Number(n) || 0) * 100);
+
+// "Penyelesaian faktur": angka dari server apa adanya (nilai, pembayaran kas, uang muka diterapkan, kredit lain, sisa) — tidak ada rumus pelunasan baru. Uang muka diterapkan = penerapan AKTIF
+// atas faktur ini (daftar server); kredit lain = pengurang server (creditApplied) dikurangi uang muka diterapkan, supaya tidak terhitung dua kali.
+function PenyelesaianFaktur({ b, onClose, kelayakan }) {
+  const alokasi = b.allocations || [];
+  const [st, setSt] = useState({ memuat: false, daftar: [], galat: "" });
+  const [versi, setVersi] = useState(0);
+  const penjaga = useRef(penjagaPermintaan());
+  const perluDaftar = Number(b.kredit) > 0 || !!b.purchaseOrderId;
+  useEffect(() => {
+    if (!perluDaftar) { setSt({ memuat: false, daftar: [], galat: "" }); return undefined; }
+    const id = penjaga.current.mulai();
+    setSt((s) => ({ ...s, memuat: true, galat: "" }));
+    api.getPenerapanUangMuka({ supplierId: b.supplierId })
+      .then((r) => { if (penjaga.current.sahkan(id)) setSt({ memuat: false, daftar: (r.penerapan || []).filter((x) => x.faktur?.id === b.id), galat: "" }); })
+      .catch((e) => { if (penjaga.current.sahkan(id)) setSt({ memuat: false, daftar: [], galat: e?.message || "Gagal memuat penerapan uang muka" }); });
+    return () => penjaga.current.batalkan();
+  }, [b.id, b.supplierId, b.kredit, perluDaftar, versi]);
+  const aktif = st.daftar.filter((x) => x.status === "ACTIVE");
+  const dpDiterapkan = aktif.reduce((s, x) => s + sen(x.jumlah), 0) / 100;
+  const kreditLain = Math.max(0, sen(b.kredit) - sen(dpDiterapkan)) / 100;
+  const belum = (kelayakan?.sesuai || []);
+  const sisa = tampilSisa(b);
+  return (
+    <section className="fin-tg-r-bagian" data-testid="penyelesaian-faktur">
+      <h3>Penyelesaian faktur</h3>
+      <dl>
+        <Baris label="Nilai faktur">{formatUangTepat(b.amount)}</Baris>
+        <Baris label="Pembayaran kas">{Number(b.terbayar) > 0 ? formatUangTepat(b.terbayar) : "Belum ada"}</Baris>
+        <Baris label="Uang muka diterapkan">
+          <span data-testid="uang-muka-diterapkan">{st.galat ? `${formatUangTepat(b.kredit)} (uang muka dan kredit, rincian belum termuat)` : aktif.length > 0 ? formatUangTepat(dpDiterapkan) : "Belum ada"}</span>
+        </Baris>
+        {!st.galat && kreditLain > 0 && <Baris label="Kredit / penyesuaian lain">{formatUangTepat(kreditLain)}</Baris>}
+        <Baris label="Sisa utang"><strong data-testid="sisa-penyelesaian">{sisa.tampil ? formatUangTepat(sisa.nilai) : "—"}</strong></Baris>
+      </dl>
+      {alokasi.length === 0 ? <p className="fin-tg-r-ket">Belum ada pembayaran kas yang dialokasikan ke tagihan ini.</p> : (
+        <ul className="fin-tg-r-bayar">
+          {alokasi.map((x, i) => (
+            <li key={x.payment?.id || i}>
+              <Link onClick={onClose} className="fin-tg-tautan" to={tautanKeuangan("pembayaran", x.payment?.paymentNumber)}>{x.payment?.paymentNumber}<ChevronRight size={14} aria-hidden="true" /></Link>
+              <span className="fin-tg-r-bayar-tgl">{tgl(x.payment?.date)}</span><strong>{formatUangTepat(x.amount)}</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+      {st.galat && (
+        <p role="alert" className="fin-tg-r-galat" data-testid="galat-penerapan-uang-muka">{st.galat}. <button type="button" className="fin-tg-tautan" onClick={() => setVersi((n) => n + 1)} data-testid="coba-lagi-penerapan-rincian">Coba lagi</button></p>
+      )}
+      {(st.daftar.length > 0 || belum.length > 0) && (
+        <ul className="fin-tg-r-bayar" data-testid="jejak-uang-muka">
+          {st.daftar.map((x) => (
+            <li key={x.id} className={x.status !== "ACTIVE" ? "fin-tg-r-batal" : undefined}>
+              <Link onClick={onClose} className="fin-tg-tautan" to={tautanKeuangan("pembelian", x.uangMuka?.nomor)}>{x.uangMuka?.nomor}<ChevronRight size={14} aria-hidden="true" /></Link>
+              <span className="fin-tg-r-bayar-tgl">{x.status === "ACTIVE" ? "Uang muka diterapkan" : "Penerapan dibatalkan"} · {tgl(x.tanggal)}{x.jurnal ? ` · ${x.jurnal}` : ""}</span><strong>{formatUangTepat(x.jumlah)}</strong>
+            </li>
+          ))}
+          {belum.map((d) => (
+            <li key={d.id}>
+              <Link onClick={onClose} className="fin-tg-tautan" to={tautanKeuangan("pembelian", d.nomor)}>{d.nomor}<ChevronRight size={14} aria-hidden="true" /></Link>
+              <span className="fin-tg-r-bayar-tgl">Uang muka dibayar {formatUangTepat(d.nominal)} · belum diterapkan</span><strong>{formatUangTepat(d.saldoBelumDiterapkan)}</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="fin-tg-r-ket">Pembayaran dicatat terpisah dari persetujuan tagihan. Tagihan disetujui belum berarti sudah dibayar. “Uang muka dibayar”, “faktur disetujui”, dan “uang muka diterapkan” adalah tiga langkah terpisah; penerapan tidak mengeluarkan uang dari bank.</p>
+    </section>
+  );
+}
+
+export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat, bolehPost = true, onTerapkanUm }) {
   const idSemua = useId();
   const [semua, setSemua] = useState(false);
   useEffect(() => { setSemua(false); }, [b?.id]);
+  const layakPeriksa = !!b && fakturPerluPeriksaUangMuka(b);
+  const kel = useKelayakanFaktur(layakPeriksa ? [`${b.id}:${b.sisa}`] : []);
   if (!b) return null;
   const sisa = tampilSisa(b);
   const tempo = statusTempo(b);
@@ -98,7 +172,8 @@ export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat }) {
             </div>
             {!sisa.tampil && <p className="fin-tg-r-ket" data-testid="alasan-tanpa-sisa">{sisa.alasan} Nilai dokumen {formatUangTepat(b.amount)}.</p>}
             {sisaKurangSatuRupiah(b) && <p className="fin-tg-r-ket" data-testid="ket-sisa-sen">{KET_SISA_SEN}</p>}
-            {Number(b.kredit) > 0 && <p className="fin-tg-r-ket">Sudah dikurangi retur/kredit supplier {formatUangTepat(b.kredit)}.</p>}
+            {Number(b.kredit) > 0 && <p className="fin-tg-r-ket">Sudah dikurangi uang muka, retur, atau kredit supplier {formatUangTepat(b.kredit)}.</p>}
+            {layakPeriksa && <BannerUangMuka r={kel.peta.get(b.id)} galat={kel.galat[b.id]} onCoba={kel.muatUlang} onTerapkan={() => onTerapkanUm?.(b)} bolehPost={bolehPost} />}
 
             <section className="fin-tg-r-bagian">
               <h3>Supplier dan faktur</h3>
@@ -127,20 +202,7 @@ export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat }) {
               <ItemFaktur b={b} />
             </section>
 
-            <section className="fin-tg-r-bagian">
-              <h3>Pembayaran</h3>
-              {alokasi.length === 0 ? <p className="fin-tg-r-ket">Belum ada pembayaran yang dialokasikan ke tagihan ini.</p> : (
-                <ul className="fin-tg-r-bayar">
-                  {alokasi.map((x, i) => (
-                    <li key={x.payment?.id || i}>
-                      <Link onClick={onClose} className="fin-tg-tautan" to={tautanKeuangan("pembayaran", x.payment?.paymentNumber)}>{x.payment?.paymentNumber}<ChevronRight size={14} aria-hidden="true" /></Link>
-                      <span className="fin-tg-r-bayar-tgl">{tgl(x.payment?.date)}</span><strong>{formatUangTepat(x.amount)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="fin-tg-r-ket">Pembayaran dicatat terpisah dari persetujuan tagihan. Tagihan disetujui belum berarti sudah dibayar.</p>
-            </section>
+            <PenyelesaianFaktur b={b} onClose={onClose} kelayakan={kel.peta.get(b.id)} />
 
             {b.rejectReason && <section className="fin-tg-r-bagian"><h3>Alasan penolakan</h3><p className="fin-tg-r-ket">{b.rejectReason}</p></section>}
 

@@ -98,7 +98,7 @@ test("satu pintu: menu baris & rincian memakai 'Ubah tagihan'; edit/info/koreksi
   assert.ok(h.includes("<DialogAlasan") && h.includes("<DialogSetujui") && h.includes("<UbahTagihan"));
   assert.equal((h.match(/aksi=\{aksiBaris\}/g) || []).length, 2, "daftar dan rincian memakai satu pembangun aksi");
   // jalur transaksi yang SUDAH ADA, bukan jalur kedua
-  for (const s of ["api.editFinanceBill(editUntuk.id, d)", "api.rejectFinanceBill(alasanUntuk.b.id, alasan)", "api.cancelFinanceBill(alasanUntuk.b.id, alasan)", "api.approveFinanceBill(setujuiUntuk.id)", "<ModalFaktur", "<InfoDialog", "<KoreksiDialog"]) assert.ok(h.includes(s), s);
+  for (const s of ["api.editFinanceBill(editUntuk.id, d)", "api.rejectFinanceBill(alasanUntuk.b.id, alasan)", "api.cancelFinanceBill(alasanUntuk.b.id, alasan)", "api.approveFinanceBill(b.id)", "<ModalFaktur", "<InfoDialog", "<KoreksiDialog"]) assert.ok(h.includes(s), s);
 });
 
 test("ubah isi: ganti supplier melepas penerimaan tertaut dengan pemberitahuan; ringkasan sebelum→sesudah; galat tidak menghapus isian", () => {

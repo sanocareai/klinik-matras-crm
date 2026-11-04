@@ -67,12 +67,15 @@ test("pemasangan: api, PO (tombol Bayar Uang Muka, dua kelompok, tooltip, pering
   const api = baca("../src/api.js");
   assert.match(api, /bayarUangMukaPO: \(poId, data, idempotencyKey\)/); assert.match(api, /\/uang-muka\/terapkan/); assert.match(api, /penerapan\/\$\{id\}\/batal/); assert.match(api, /getUangMukaSupplierRingkasan/);
   const um = baca("../src/features/finance/UangMukaPO.jsx");
-  for (const t of ["A. Pemenuhan barang", "B. Keuangan", "Nilai PO belum tertutup pembayaran", "Bukan saldo utang supplier", "Uang muka dibayar", "Uang muka dialokasikan ke faktur", "Utang tercatat", "Pembayaran faktur", "Sisa utang", "Datang fisik", "Belum datang", "Diterima bersih dari PO", "Masuk stok", "Uang muka perlu dikembalikan atau dialihkan", "Bayar Uang Muka", "Terapkan Uang Muka", "Bukti transfer"]) assert.ok(um.includes(t), t);
+  for (const t of ["A. Pemenuhan barang", "B. Keuangan", "Nilai PO belum tertutup pembayaran", "Bukan saldo utang supplier", "Uang muka dibayar", "Uang muka dialokasikan ke faktur", "Utang tercatat", "Pembayaran faktur", "Sisa utang", "Datang fisik", "Belum datang", "Diterima bersih dari PO", "Masuk stok", "Uang muka perlu dikembalikan atau dialihkan", "Bayar Uang Muka", "Bukti transfer"]) assert.ok(um.includes(t), t);
+  // Dialog penerapan kini SATU komponen bersama (uangMukaFaktur/PenerapanUangMuka.jsx); UangMukaPO.jsx hanya meneruskannya dengan nama lama.
+  assert.match(um, /export \{ PenerapanUangMuka as ModalTerapkanUangMuka \} from "@\/features\/finance\/uangMukaFaktur\/PenerapanUangMuka\.jsx"/);
+  assert.ok(baca("../src/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx").includes("Terapkan uang muka"));
   assert.match(um, /title=\{definisi\}/); assert.match(um, /aria-label=\{`Arti \$\{label\}`\}/, "definisi bisa dibuka di layar sentuh");
   assert.doesNotMatch(um, /Sisa Utang"[^<]*sisaKomitmen|\bsisaKomitmen\b[^\n]{0,60}"Sisa utang"/, "sisa komitmen tidak diberi label utang");
   assert.doesNotMatch(um, /\b(Upload|Cancel|Save|Loading|Retry|Delete|Submit|Pay)\b/);
   const po = sumberPO();
-  assert.match(po, /data-testid="bayar-uang-muka"/); assert.match(po, /<RincianPerhitunganPO po=\{po\} \/>/); assert.match(po, /<PeringatanUangMukaPO po=\{po\} \/>/); assert.match(po, /<DaftarUangMukaPO/); assert.match(po, /data-testid="terapkan-uang-muka"/); assert.match(po, /<ModalBayarUangMuka/); assert.match(po, /<ModalTerapkanUangMuka/);
+  assert.match(po, /data-testid="bayar-uang-muka"/); assert.match(po, /<RincianPerhitunganPO po=\{po\} \/>/); assert.match(po, /<PeringatanUangMukaPO po=\{po\} \/>/); assert.match(po, /<DaftarUangMukaPO/); assert.match(po, /<PeringatanUangMukaFaktur/); assert.match(po, /<ModalBayarUangMuka/); assert.match(po, /<ModalTerapkanUangMuka/);
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.match(baca("../src/features/finance/tagihan/DaftarTagihan.jsx"), /Uang muka belum dialokasikan/); assert.match(sup, /<TabelUangMukaSupplier/); assert.match(sup, /modul="uang-muka-supplier"/); assert.match(sup, /label: "Terapkan Uang Muka"/); assert.match(sup, /<ModalTerapkanUangMuka/);
   assert.match(sup, /sisa faktur yang sudah DISETUJUI/, "Sisa utang hanya faktur disetujui");

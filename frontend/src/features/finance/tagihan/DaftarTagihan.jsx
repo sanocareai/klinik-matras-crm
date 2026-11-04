@@ -7,6 +7,7 @@ import { IkPersetujuan, IkKoin, IkGedung, IkKosong } from "@/components/financeI
 import { RowActions } from "@/features/finance/RowActions.jsx";
 import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
+import { teksPeringatanUangMuka } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import {
   TAB_TAGIHAN, LABEL_TEMPO, tampilSisa, formatUangTepat, sisaKurangSatuRupiah, KET_SISA_SEN, statusTempo, asalTagihan, nomorFakturTampil, hitungTab, ringkasKpi, BATAS_DAFTAR_TAGIHAN,
 } from "./tagihanLogika.js";
@@ -61,7 +62,8 @@ export function RingkasanTagihan({ aging, bills, uangMuka, unbilled, onTab, onLi
   );
 }
 
-function BarisTagihan({ b, hariIni, aksi, onBuka }) {
+function BarisTagihan({ b, hariIni, aksi, onBuka, kelayakanUm }) {
+  const umPO = kelayakanUm?.get(b.id);
   const sisa = tampilSisa(b);
   const tempo = statusTempo(b, hariIni);
   const asal = asalTagihan(b);
@@ -100,6 +102,7 @@ function BarisTagihan({ b, hariIni, aksi, onBuka }) {
       <div className="fin-tg-sel fin-tg-angka fin-tg-sisa" role="cell" data-label="Sisa utang">
         <span className="fin-tg-label-kecil">Sisa utang</span>
         {sisa.tampil ? <strong title={sisaKurangSatuRupiah(b) ? KET_SISA_SEN : undefined}>{formatUangTepat(sisa.nilai)}</strong> : <span className="fin-tg-strip" title={sisa.alasan} aria-label={sisa.alasan}>—</span>}
+        {umPO?.ada && <span className="fin-tg-um-chip" data-testid="chip-uang-muka" title={teksPeringatanUangMuka(umPO)}><IkKoin size={12} aria-hidden="true" />Uang muka {formatUangTepat(umPO.saldoPO)} belum diterapkan</span>}
       </div>
       <div className="fin-tg-sel fin-tg-st" role="cell" data-label="Status"><span className="fin-tg-label-kecil">Status</span><ChipStatusTagihan status={b.status} tempo={tempo} /></div>
       <div className="fin-tg-sel fin-tg-aksi" role="cell" data-tanpa-detail>
@@ -111,7 +114,7 @@ function BarisTagihan({ b, hariIni, aksi, onBuka }) {
 }
 
 export default function DaftarTagihan({
-  bills, billsTampil, tab, onTab, q, onQ, fSup, onFSup, fTempo, onFTempo, onReset, aksi, onBuka, onCatat, hariIni,
+  bills, billsTampil, tab, onTab, q, onQ, fSup, onFSup, fTempo, onFTempo, onReset, aksi, onBuka, onCatat, hariIni, kelayakanUm,
 }) {
   const hitung = useMemo(() => hitungTab(bills, hariIni), [bills, hariIni]);
   const namaSupplier = useMemo(() => [...new Set(bills.map((b) => b.supplier?.name).filter(Boolean))].sort(), [bills]);
@@ -165,7 +168,7 @@ export default function DaftarTagihan({
             <span role="columnheader" className="kanan">Nilai</span><span role="columnheader" className="kanan">Terbayar</span><span role="columnheader" className="kanan">Sisa utang</span>
             <span role="columnheader">Status</span><span role="columnheader" className="fin-sr-saja">Tindakan</span>
           </div>
-          {billsTampil.map((b) => <BarisTagihan key={b.id} b={b} hariIni={hariIni} aksi={aksi} onBuka={onBuka} />)}
+          {billsTampil.map((b) => <BarisTagihan key={b.id} b={b} hariIni={hariIni} aksi={aksi} onBuka={onBuka} kelayakanUm={kelayakanUm} />)}
         </div>
       )}
       {terpotong && <p className="fin-tg-batas" data-testid="batas-daftar">Server memuat paling banyak {BATAS_DAFTAR_TAGIHAN} tagihan (urut jatuh tempo), tanpa penanda terpotong. Daftar ini mungkin belum lengkap; angka Sisa utang di atas dan Jadwal & Aging dihitung langsung oleh server.</p>}

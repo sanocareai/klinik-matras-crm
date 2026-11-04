@@ -2221,6 +2221,7 @@ export const api = {
   terapkanUangMukaFaktur: (data, idempotencyKey) => request("/finance/purchase-orders/uang-muka/terapkan", { method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idempotencyKey } }),
   batalkanPenerapanUangMuka: (id, reason, idempotencyKey) => request(`/finance/purchase-orders/uang-muka/penerapan/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }), headers: { "Idempotency-Key": idempotencyKey } }),
   getUangMukaSupplierRingkasan: () => request("/finance/purchase-orders/uang-muka/ringkasan-supplier"),
+  getPenerapanUangMuka: (params = {}) => request(`/finance/purchase-orders/uang-muka/penerapan${qsFinance(params)}`),
   // SKU baru dari PO (hanya Admin Finance untuk cek-duplikat & perbaikan) + Katalog Supplier. SKU baru baru lahir saat draf PO disimpan.
   cekDuplikatPO: (data) => request("/finance/purchase-orders/sku/cek-duplikat-po", { method: "POST", body: JSON.stringify(data) }),
   cekDuplikatSku: (data) => request("/finance/purchase-orders/sku/cek-duplikat", { method: "POST", body: JSON.stringify(data) }),

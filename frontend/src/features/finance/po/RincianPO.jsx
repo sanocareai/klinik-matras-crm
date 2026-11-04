@@ -11,6 +11,7 @@ import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { StatusEmpatPO, RincianPerhitunganPO, RiwayatPembayaranPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
+import { PeringatanUangMukaFaktur, useTawaranUangMuka } from "@/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx";
 import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
 import { Uang, formatUang, TombolAksi, Pilihan, InputUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
@@ -75,6 +76,8 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah, petunjukFa
   }, [id]);
   useEffect(() => { muat(); }, [muat]);
   const segarkan = useCallback(async () => { await muat(); await onChanged(); setSegar((n) => n + 1); }, [muat, onChanged]);
+  // Setelah faktur disetujui: tawaran TERPISAH untuk memakai uang muka PO yang sama (tidak otomatis; menutupnya tidak membatalkan persetujuan).
+  const tawaran = useTawaranUangMuka({ bolehPost: izin.catat, onSelesai: segarkan });
 
   async function jalankan(fn) {
     setGalat("");
@@ -145,6 +148,7 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah, petunjukFa
             onSetujuiFaktur={setSetujuiFaktur}
             onTolakFaktur={setTolakFaktur}
             onTerapkanUangMuka={(fk) => setTerapkanUm({ billId: fk.id, nomor: fk.supplierRef || fk.billNumber })}
+            onSetelahSetuju={(fk) => tawaran.mulai(fk.id, fk.supplierRef || fk.billNumber)}
             onBatalkanPenerapan={setBatalUm}
             admin={penggunaAdminKeuangan()}
             onGalat={setGalat}
@@ -153,7 +157,8 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah, petunjukFa
         )}
       </Modal>
       {bayarUm && po && <ModalBayarUangMuka po={po} admin={penggunaAdminKeuangan()} onClose={() => setBayarUm(false)} onSaved={async () => { setBayarUm(false); await segarkan(); }} />}
-      {terapkanUm && <ModalTerapkanUangMuka billId={terapkanUm.billId} nomorFaktur={terapkanUm.nomor} onClose={() => setTerapkanUm(null)} onSaved={async () => { setTerapkanUm(null); await segarkan(); }} />}
+      {terapkanUm && <ModalTerapkanUangMuka billId={terapkanUm.billId} nomorFaktur={terapkanUm.nomor} bolehPost={izin.catat} onClose={() => setTerapkanUm(null)} onSaved={async () => { setTerapkanUm(null); await segarkan(); }} />}
+      {tawaran.elemen}
       {batalUm && (
         <ModalAlasan
           judul={`Batalkan penerapan uang muka ${batalUm.uangMuka.nomor}`}
@@ -174,7 +179,7 @@ export function ModalDetailPO({ id, izin, onClose, onChanged, onUbah, petunjukFa
         />
       )}
       {setujuiFaktur && (
-        <ModalSetujuiFaktur ev={setujuiFaktur} onClose={() => setSetujuiFaktur(null)} onSetujui={async (catatan) => { await api.approveFinanceBill(setujuiFaktur.billId, { catatanTinjauanHarga: catatan }); setSetujuiFaktur(null); await segarkan(); }} />
+        <ModalSetujuiFaktur ev={setujuiFaktur} onClose={() => setSetujuiFaktur(null)} onSetujui={async (catatan) => { const ev = setujuiFaktur; await api.approveFinanceBill(ev.billId, { catatanTinjauanHarga: catatan }); setSetujuiFaktur(null); await segarkan(); tawaran.mulai(ev.billId, ev.supplierRef || ev.billNumber); }} />
       )}
       {tolakFaktur && (
         <ModalAlasan
@@ -328,7 +333,7 @@ function RincianJumlah({ id, l, a, kartu = false }) {
   );
 }
 
-function IsiDetail({ po, segar, izin, petunjukFaktur, onTutupPetunjuk, onBayarUangMuka, onCatatFaktur, onEditNomor, onRiwayatFaktur, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
+function IsiDetail({ po, segar, izin, petunjukFaktur, onTutupPetunjuk, onBayarUangMuka, onCatatFaktur, onEditNomor, onRiwayatFaktur, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onSetelahSetuju, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
   const barisLaku = po.status !== "DRAFT";
   const st = statusTampil(po.status);
   const ring = ringkasPenerimaan(po);
@@ -429,8 +434,14 @@ function IsiDetail({ po, segar, izin, petunjukFaktur, onTutupPetunjuk, onBayarUa
 
         <BagianFakturSupplier
           po={po} izin={izin} segar={segar} onCatat={onCatatFaktur} onEditNomor={onEditNomor} onRiwayat={onRiwayatFaktur}
+          renderPeringatan={(f) => {
+            // Peringatan terlihat di BARIS faktur (tanpa membuka Rincian): faktur disetujui yang masih bersisa; kelayakan uang muka PO ini dari kontrak server.
+            const r = (po.keuangan?.faktur || []).find((x) => x.id === f.id);
+            if (!r || !["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(r.status) || !(r.sisa > 0)) return null;
+            return <PeringatanUangMukaFaktur billId={f.id} versi={`${segar}-${r.sisa}`} bolehPost={izin.catat} onTerapkan={() => onTerapkanUangMuka({ id: f.id, supplierRef: f.mentah, billNumber: f.nomorInternal })} />;
+          }}
           renderRincian={(fk) => (
-            <KartuFaktur fk={fk} ringkas={(po.keuangan?.faktur || []).find((x) => x.id === fk.id)} adaUangMuka={(po.keuangan?.uangMukaBelumDiterapkan ?? 0) > 0} segar={segar} onUbah={onUbahFaktur} onSetujui={onSetujuiFaktur} onTolak={onTolakFaktur} onTerapkanUangMuka={onTerapkanUangMuka} onGalat={onGalat} onSegarkan={onSegarkan} />
+            <KartuFaktur fk={fk} ringkas={(po.keuangan?.faktur || []).find((x) => x.id === fk.id)} adaUangMuka={(po.keuangan?.uangMukaBelumDiterapkan ?? 0) > 0} bolehPost={izin.catat} segar={segar} onUbah={onUbahFaktur} onSetujui={onSetujuiFaktur} onTolak={onTolakFaktur} onTerapkanUangMuka={onTerapkanUangMuka} onSetelahSetuju={onSetelahSetuju} onGalat={onGalat} onSegarkan={onSegarkan} />
           )}
         />
 
@@ -456,7 +467,7 @@ function IsiDetail({ po, segar, izin, petunjukFaktur, onTutupPetunjuk, onBayarUa
 }
 
 // Satu faktur: status pencocokan + tabel per baris (dipesan, diterima baik, sudah ditagih, diajukan, harga PO, harga faktur, selisih).
-function KartuFaktur({ fk, ringkas, adaUangMuka, segar, onUbah, onSetujui, onTolak, onTerapkanUangMuka, onGalat, onSegarkan }) {
+function KartuFaktur({ fk, ringkas, adaUangMuka, bolehPost = true, segar, onUbah, onSetujui, onTolak, onTerapkanUangMuka, onSetelahSetuju, onGalat, onSegarkan }) {
   const [ev, setEv] = useState(null);
   const [galat, setGalat] = useState("");
   const [buka, setBuka] = useState(FAKTUR_TERBUKA.includes(fk.status));
@@ -471,7 +482,10 @@ function KartuFaktur({ fk, ringkas, adaUangMuka, segar, onUbah, onSetujui, onTol
   async function setujui() {
     setGalat(""); onGalat("");
     if (ev?.perluTinjauanHarga) { onSetujui(ev); return; }
-    try { await api.approveFinanceBill(fk.id, {}); await onSegarkan(); } catch (e) { setGalat(e.message); }
+    try { await api.approveFinanceBill(fk.id, {}); } catch (e) { setGalat(e.message); return; }
+    // Persetujuan sudah tersimpan; gagalnya penyegaran tidak boleh terbaca sebagai gagal menyetujui.
+    try { await onSegarkan(); } catch { /* induk menampilkan galatnya */ }
+    onSetelahSetuju?.(fk);
   }
 
   return (
@@ -559,12 +573,6 @@ function KartuFaktur({ fk, ringkas, adaUangMuka, segar, onUbah, onSetujui, onTol
           <div><dt className="text-ink3">Dibayar</dt><dd className="ml-0 tabular-nums">{formatUang(ringkas.dibayar)}</dd></div>
           <div><dt className="text-ink3">Sisa utang</dt><dd className="ml-0 font-semibold tabular-nums text-ink">{formatUang(ringkas.sisa)}</dd></div>
         </dl>
-      )}
-      {["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(fk.status) && adaUangMuka && ringkas?.sisa > 0 && (
-        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-          <span className="text-[12px] text-ink2">Ada uang muka yang belum diterapkan untuk PO ini.</span>
-          <Button size="sm" variant="neutral" onClick={() => onTerapkanUangMuka(fk)} data-testid="terapkan-uang-muka"><Wallet size={13} /> Terapkan Uang Muka</Button>
-        </div>
       )}
       {galat && <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-1.5 text-[12px] text-red">{galat}</p>}
       {terbuka && (

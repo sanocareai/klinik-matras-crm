@@ -49,6 +49,8 @@ import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 import JadwalAgingUtang from "@/features/finance/JadwalAgingUtang.jsx";
 import { TabelUangMukaSupplier } from "@/features/finance/UangMukaSupplierTabel.jsx";
 import { ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
+import { useKelayakanFaktur, useTawaranUangMuka, BannerUangMuka } from "@/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx";
+import { fakturPerluPeriksaUangMuka, fakturBerisikoBayarKedua, cekNominalBayar } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { daftarPilihanTermin, payloadTerminSupplier, bodyTermin, galatTermin, TERMIN_AWAL, bolehMencatatFinance } from "@/features/finance/terminLogic.js";
 
@@ -143,6 +145,7 @@ export default function FinanceSuppliers() {
   const [metodeInfo, setMetodeInfo] = useState(null);
   const [rekening, setRekening] = useState([]);
   const [uangMuka, setUangMuka] = useState(null); // ringkasan uang muka per supplier (server)
+  const [versiData, setVersiData] = useState(0); // naik tiap data berhasil dimuat ulang → pemeriksaan uang muka per faktur diulang
   const [uangMukaUntuk, setUangMukaUntuk] = useState(null); // faktur yang akan diberi uang muka
   const [rincianTagihan, setRincianTagihan] = useState(null); // tagihan yang rinciannya dibuka (panel Tagihan supplier)
   const [tabB, setTabB] = useState(null); // kelompok status daftar tagihan; null = belum dipilih (ditentukan sekali setelah data termuat)
@@ -168,8 +171,11 @@ export default function FinanceSuppliers() {
 
   const supplierAdaUangMuka = useMemo(() => new Set((uangMuka?.suppliers || []).filter((s) => s.uangMukaBelumDiterapkan > 0).map((s) => s.supplierId)), [uangMuka]);
 
-  const muat = useCallback(async () => {
-    setLoading(true);
+  // `senyap`: segarkan data TANPA membongkar halaman (HalamanFinance mengganti isi dengan spinner saat loading) — dipakai agar form Catat Pembayaran yang sedang terbuka
+  // tidak kehilangan isiannya ketika uang muka diterapkan dari dalamnya. (Dipakai juga sebagai onClick: argumen event diabaikan.)
+  const muat = useCallback(async (opsi) => {
+    const senyap = opsi?.senyap === true;
+    if (!senyap) setLoading(true);
     setError(null);
     try {
       const [s, b, p, ag, ub, k, r, kb, mi, um] = await Promise.all([
@@ -194,8 +200,9 @@ export default function FinanceSuppliers() {
       setMetodeInfo(mi);
       setUangMuka(um);
       setRekening((r.accounts || []).filter((a) => a.active));
+      setVersiData((n) => n + 1);
     } catch (e) {
-      setError(e.message || "Gagal memuat data supplier");
+      if (senyap) setPesan(e.message || "Gagal menyegarkan data supplier"); else setError(e.message || "Gagal memuat data supplier");
     } finally {
       setLoading(false);
     }
@@ -218,6 +225,7 @@ export default function FinanceSuppliers() {
   const aksiBaris = (b) => aksiTagihan(b, { setUbahUntuk: dariBaris(setUbahUntuk), setVersiUntuk: dariBaris(setVersiUntuk), setAlasanUntuk: dariBaris(setAlasanUntuk), setSetujuiUntuk: dariBaris(setSetujuiUntuk), setUangMukaUntuk: dariBaris(setUangMukaUntuk), supplierAdaUangMuka });
   const suppliersAktif = useMemo(() => supplierBisaDipilih(suppliers), [suppliers]);
   const bolehCatat = useMemo(() => { try { return bolehMencatatFinance(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } }, []);
+  const tawaran = useTawaranUangMuka({ bolehPost: bolehCatat, onSelesai: muat });
   // Edit supplier: galat server DITAMPILKAN di dalam dialog (dialog tidak boleh tertutup/terkunci saat gagal) → fungsi ini melempar ulang ke dialog.
   async function simpanEditSupplier(awal, perubahan) {
     if (Object.keys(perubahan).length === 0) { setEditSupplier(null); return; }
@@ -240,6 +248,10 @@ export default function FinanceSuppliers() {
     (!fTempo || statusTempo(b, hariIni) === fTempo) &&
     cocok(qB, ...teksCari(b, angka), tanggalPendek(b.billDate), b.dueDate ? tanggalPendek(b.dueDate) : "")
   ), [bills, qB, fSupB, fTempo, tabAktifB, hariIni]);
+  // Uang muka yang tertaut ke PO faktur yang sama: kelayakan diputuskan SERVER (kandidat per faktur). Hanya baris yang tampil, bersisa, milik supplier yang punya saldo uang muka
+  // diperiksa (maks. 60); tiap penyegaran data memeriksa ulang (versiData masuk kunci).
+  const idKelayakan = useMemo(() => billsTampil.filter((b) => fakturPerluPeriksaUangMuka(b) && supplierAdaUangMuka.has(b.supplierId)).slice(0, 60).map((b) => `${b.id}:${b.sisa}:${versiData}`), [billsTampil, supplierAdaUangMuka, versiData]);
+  const kelayakan = useKelayakanFaktur(idKelayakan);
   const paymentsTampil = useMemo(() => payments.filter((p) =>
     (!fSupP || p.supplier?.name === fSupP) &&
     (!fRek || p.cashAccount?.name === fRek) &&
@@ -344,7 +356,7 @@ export default function FinanceSuppliers() {
           bills={bills} billsTampil={billsTampil} tab={tabAktifB} onTab={setTabB} hariIni={hariIni}
           q={qB} onQ={setQB} fSup={fSupB} onFSup={setFSupB} fTempo={fTempo} onFTempo={setFTempo}
           onReset={() => { setQB(""); setFSupB(""); setFTempo(""); }}
-          aksi={aksiBaris}
+          aksi={aksiBaris} kelayakanUm={kelayakan.peta}
           onBuka={setRincianTagihan} onCatat={() => setModal("tagihan")}
         />
       )}
@@ -498,7 +510,7 @@ export default function FinanceSuppliers() {
       {rincianTagihan && (
         <RincianTagihan
           b={bills.find((x) => x.id === rincianTagihan.id) || rincianTagihan} spec={specOtomatis(bills.find((x) => x.id === rincianTagihan.id) || rincianTagihan)}
-          aksi={aksiBaris}
+          aksi={aksiBaris} bolehPost={bolehCatat} onTerapkanUm={dariBaris(setUangMukaUntuk)}
           onClose={() => setRincianTagihan(null)} onRiwayat={(x) => { setRincianTagihan(null); setVersiUntuk(x); }}
         />
       )}
@@ -543,7 +555,7 @@ export default function FinanceSuppliers() {
         />
       )}
       {setujuiUntuk && (
-        <DialogSetujui b={setujuiUntuk} onClose={() => setSetujuiUntuk(null)} onSubmit={async () => { await api.approveFinanceBill(setujuiUntuk.id); setSetujuiUntuk(null); await muat(); }} />
+        <DialogSetujui b={setujuiUntuk} onClose={() => setSetujuiUntuk(null)} onSubmit={async () => { const b = setujuiUntuk; await api.approveFinanceBill(b.id); setSetujuiUntuk(null); await muat(); tawaran.mulai(b.id, b.supplierRef || b.billNumber); }} />
       )}
       {editUntuk && (
         <ModalEditTagihan
@@ -582,11 +594,12 @@ export default function FinanceSuppliers() {
       )}
       {versiPay && <RiwayatVersiDialog jenis="supplier-payments" id={versiPay.id} nomor={versiPay.paymentNumber} onClose={() => setVersiPay(null)} />}
       {versiUntuk && <RiwayatVersiDialog jenis="bills" id={versiUntuk.id} nomor={versiUntuk.billNumber} onClose={() => setVersiUntuk(null)} />}
-      {uangMukaUntuk && <ModalTerapkanUangMuka billId={uangMukaUntuk.id} nomorFaktur={uangMukaUntuk.supplierRef || uangMukaUntuk.billNumber} onClose={() => setUangMukaUntuk(null)} onSaved={async () => { setUangMukaUntuk(null); await muat(); }} />}
+      {uangMukaUntuk && <ModalTerapkanUangMuka billId={uangMukaUntuk.id} nomorFaktur={uangMukaUntuk.supplierRef || uangMukaUntuk.billNumber} bolehPost={bolehCatat} onClose={() => setUangMukaUntuk(null)} onSaved={async () => { setUangMukaUntuk(null); await muat(); }} />}
+      {tawaran.elemen}
       <ModalBayarSupplier
         open={modal === "bayar"} onClose={() => setModal(null)}
-        suppliers={suppliersAktif} bills={bills} rekening={rekening}
-        onSubmit={(d, kunci) => aksi(() => api.createFinanceSupplierPayment(d, kunci))}
+        suppliers={suppliersAktif} bills={bills} rekening={rekening} bolehPost={bolehCatat} supplierAdaUangMuka={supplierAdaUangMuka} onRefresh={() => muat({ senyap: true })}
+        onSubmit={async (d, kunci) => { await api.createFinanceSupplierPayment(d, kunci); setModal(null); await muat(); }}
       />
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
@@ -656,9 +669,18 @@ function ModalSupplierIsi({ open, onClose, onSubmit, supplier = null }) {
   );
 }
 
-function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSubmit }) {
+const SET_KOSONG = new Set();
+
+// Catat Pembayaran ke Supplier. Pengaman uang muka: sebelum uang keluar, form memeriksa ulang uang muka yang tertaut ke PO tiap faktur (kontrak server), menawarkan "Terapkan uang muka",
+// memvalidasi ulang nominal setelah sisa berubah, dan meminta konfirmasi eksplisit bila pengguna tetap membayar padahal uang muka PO itu belum diterapkan. Pembayaran baru TIDAK diblokir.
+function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSubmit, bolehPost = true, supplierAdaUangMuka = SET_KOSONG, onRefresh }) {
   const [f, setF] = useState({ supplierId: "", date: "", cashAccountId: "", reference: "", notes: "", ...BIAYA_KOSONG });
   const [alokasi, setAlokasi] = useState({});
+  const [galat, setGalat] = useState("");
+  const [catatanSisa, setCatatanSisa] = useState("");
+  const [terapkanUntuk, setTerapkanUntuk] = useState(null); // faktur yang uang mukanya diterapkan dari dalam form ini
+  const [risiko, setRisiko] = useState(null); // faktur yang masih punya uang muka PO belum diterapkan → dialog konfirmasi
+  const [paham, setPaham] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   // Kunci idempotensi: sama untuk klik ganda/retry isian yang SAMA (server memutar ulang hasil pertama), baru bila isian berubah.
   const kunciRef = useRef({ isi: "", kunci: "" });
@@ -671,12 +693,57 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
     () => bills.filter((b) => b.supplierId === f.supplierId && ["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(b.status) && b.sisa > 0),
     [bills, f.supplierId]
   );
+  // Kelayakan uang muka (server) hanya diperiksa untuk faktur atas PO milik supplier yang memang punya saldo uang muka.
+  const idKelayakan = useMemo(
+    () => (open && supplierAdaUangMuka.has(f.supplierId) ? tagihanTerbuka.filter(fakturPerluPeriksaUangMuka).slice(0, 60).map((b) => `${b.id}:${b.sisa}`) : []),
+    [open, f.supplierId, tagihanTerbuka, supplierAdaUangMuka]
+  );
+  const kel = useKelayakanFaktur(idKelayakan);
 
-  const total = Object.values(alokasi).reduce((s, v) => s + (Number(v) || 0), 0);
+  // Sisa yang dilihat saat nominal diisi. Bila data tagihan dimuat ulang (mis. uang muka baru diterapkan) dan sisanya berubah, nominal lama DIKOSONGKAN —
+  // jangan mempertahankan angka yang kini bisa membuat pembayaran berlebih.
+  const sisaDilihat = useRef({});
+  const alokasiRef = useRef(alokasi);
+  alokasiRef.current = alokasi;
+  useEffect(() => {
+    const bersih = {};
+    const dikosongkan = [];
+    for (const [id, v] of Object.entries(alokasiRef.current)) {
+      const b = tagihanTerbuka.find((x) => x.id === id);
+      const lama = sisaDilihat.current[id];
+      if (b && (lama === undefined || Number(b.sisa) === Number(lama))) bersih[id] = v;
+      else if (Number(v) > 0) { dikosongkan.push((bills.find((x) => x.id === id) || {}).billNumber || id); delete sisaDilihat.current[id]; }
+    }
+    if (dikosongkan.length > 0) {
+      setAlokasi(bersih);
+      setCatatanSisa(`Sisa tagihan ${dikosongkan.join(", ")} berubah. Nominal dikosongkan — isi ulang sesuai sisa terbaru sebelum menyimpan.`);
+    }
+  }, [tagihanTerbuka, bills]);
+
+  const isiNominal = (b, v) => { sisaDilihat.current[b.id] = b.sisa; setCatatanSisa(""); setAlokasi((s) => ({ ...s, [b.id]: v })); };
+  const alokasiAktif = useMemo(
+    () => Object.fromEntries(Object.entries(alokasi).filter(([id, v]) => Number(v) > 0 && tagihanTerbuka.some((b) => b.id === id))),
+    [alokasi, tagihanTerbuka]
+  );
+  const total = Object.values(alokasiAktif).reduce((s, v) => s + (Number(v) || 0), 0);
+  const adaLebih = tagihanTerbuka.some((b) => Number(alokasiAktif[b.id]) > 0 && cekNominalBayar(alokasiAktif[b.id], b.sisa).lebih);
   const rek = rekening.find((r) => r.id === f.cashAccountId);
-  const valid = f.supplierId && f.cashAccountId && total > 0 && biayaTransferLengkap(rek, f);
+  const valid = f.supplierId && f.cashAccountId && total > 0 && biayaTransferLengkap(rek, f) && !adaLebih;
+
+  async function kirim() {
+    setGalat("");
+    const body = { ...denganBiaya(f), allocations: Object.entries(alokasiAktif).map(([billId, amount]) => ({ billId, amount: Number(amount) })) };
+    try { await onSubmit(body, kunciBayar(JSON.stringify(body))); }
+    catch (e) { setGalat(e?.message || "Gagal menyimpan pembayaran. Isian Anda tetap ada; coba lagi."); }
+  }
+  function simpan() {
+    const berisiko = fakturBerisikoBayarKedua(tagihanTerbuka, alokasiAktif, kel.peta);
+    if (berisiko.length > 0) { setPaham(false); setRisiko(berisiko); return undefined; }
+    return kirim();
+  }
 
   return (
+    <>
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Catat Pembayaran ke Supplier"
@@ -684,26 +751,13 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi
-            disabled={!valid}
-            onClick={() => {
-              const body = {
-                ...denganBiaya(f),
-                allocations: Object.entries(alokasi)
-                  .filter(([, v]) => Number(v) > 0)
-                  .map(([billId, amount]) => ({ billId, amount: Number(amount) })),
-              };
-              return onSubmit(body, kunciBayar(JSON.stringify(body)));
-            }}
-          >
-            Simpan
-          </TombolAksi>
+          <TombolAksi disabled={!valid} onClick={simpan} data-testid="simpan-pembayaran-supplier">Simpan</TombolAksi>
         </>
       }
     >
       <div className="space-y-3">
         <Field label="Supplier" required>
-          <Pilihan value={f.supplierId} onChange={(v) => { set("supplierId", v); setAlokasi({}); }}>
+          <Pilihan value={f.supplierId} onChange={(v) => { set("supplierId", v); setAlokasi({}); setCatatanSisa(""); }}>
             <option value="">— pilih —</option>
             {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name} · sisa {formatUangTepat(s.sisaUtang)}</option>)}
           </Pilihan>
@@ -726,27 +780,39 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
               <p className="text-[13px] text-ink3">Tidak ada tagihan terbuka untuk supplier ini.</p>
             ) : (
               <div className="space-y-2">
-                {tagihanTerbuka.map((b) => (
-                  <div key={b.id} className="grid grid-cols-[1fr_190px] items-center gap-2">
-                    <div className="min-w-0 text-[13px]">
-                      <span className="block truncate font-medium">{b.billNumber} · {b.description}</span>
-                      <span className="text-[11px] text-ink3">
-                        sisa {formatUangTepat(b.sisa)}{b.dueDate ? ` · jatuh tempo ${tanggalPendek(b.dueDate)}` : " · jatuh tempo belum diisi"}
-                      </span>
-                    </div>
-                    <div className="fin-tg-bayar-isi">
-                      <InputUang
-                        value={alokasi[b.id] ?? ""}
-                        onChange={(v) => setAlokasi((s) => ({ ...s, [b.id]: v }))}
-                        max={b.sisa} step="0.01"
-                        aria-label={`Nominal untuk ${b.billNumber}`}
+                {tagihanTerbuka.map((b) => {
+                  const lebih = Number(alokasiAktif[b.id]) > 0 && cekNominalBayar(alokasiAktif[b.id], b.sisa).lebih;
+                  return (
+                    <div key={b.id} className="space-y-1.5" data-testid={`bayar-baris-${b.billNumber}`}>
+                      <div className="grid grid-cols-[1fr_190px] items-center gap-2">
+                        <div className="min-w-0 text-[13px]">
+                          <span className="block truncate font-medium">{b.billNumber} · {b.description}</span>
+                          <span className="text-[11px] text-ink3">
+                            sisa {formatUangTepat(b.sisa)}{b.dueDate ? ` · jatuh tempo ${tanggalPendek(b.dueDate)}` : " · jatuh tempo belum diisi"}
+                          </span>
+                        </div>
+                        <div className="fin-tg-bayar-isi">
+                          <InputUang
+                            value={alokasi[b.id] ?? ""}
+                            onChange={(v) => isiNominal(b, v)}
+                            max={b.sisa} step="0.01"
+                            aria-label={`Nominal untuk ${b.billNumber}`}
+                          />
+                          <button type="button" className="fin-tg-lunasi" data-testid={`lunasi-${b.billNumber}`} onClick={() => isiNominal(b, String(Number(b.sisa)))}>Lunasi</button>
+                        </div>
+                      </div>
+                      {lebih && <p role="alert" className="m-0 text-[12px] text-red" data-testid={`lebih-sisa-${b.billNumber}`}>Nominal melebihi sisa tagihan {formatUangTepat(b.sisa)}. Kurangi nominal.</p>}
+                      <BannerUangMuka
+                        r={kel.peta.get(b.id)} galat={kel.galat[b.id]} onCoba={kel.muatUlang} kompak bolehPost={bolehPost}
+                        onTerapkan={() => setTerapkanUntuk({ billId: b.id, nomor: b.supplierRef || b.billNumber })}
                       />
-                      <button type="button" className="fin-tg-lunasi" data-testid={`lunasi-${b.billNumber}`} onClick={() => setAlokasi((s) => ({ ...s, [b.id]: String(Number(b.sisa)) }))}>Lunasi</button>
                     </div>
-                  </div>
-                ))}
-                <div className="rounded-lg bg-inset px-3 py-2 text-[13px]">
-                  Total dibayar: <strong>{formatUangTepat(total)}</strong>
+                  );
+                })}
+                {catatanSisa && <p role="status" data-testid="catatan-sisa-berubah" className="m-0 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{catatanSisa}</p>}
+                <div className="rounded-lg bg-inset px-3 py-2 text-[13px]" data-testid="total-kas-keluar">
+                  Total dibayar dari kas: <strong>{formatUangTepat(total)}</strong>
+                  <span className="block text-[11.5px] text-ink3">Ini uang keluar nyata dari rekening{rek ? ` ${rek.name}` : ""}. Menerapkan uang muka ke faktur tidak termasuk di sini.</span>
                 </div>
               </div>
             )}
@@ -755,8 +821,46 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
 
         <Field label="Referensi transfer"><Input value={f.reference} onChange={(e) => set("reference", e.target.value)} /></Field>
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+        <Galat pesan={galat} testid="galat-bayar-supplier" />
       </div>
     </Modal>
+    {terapkanUntuk && (
+      <ModalTerapkanUangMuka
+        billId={terapkanUntuk.billId} nomorFaktur={terapkanUntuk.nomor} bolehPost={bolehPost}
+        onClose={() => setTerapkanUntuk(null)} onSaved={async () => { setTerapkanUntuk(null); await onRefresh?.(); }}
+      />
+    )}
+    {risiko && (
+      <Modal
+        open onOpenChange={(v) => !v && setRisiko(null)} title="Uang muka PO ini belum diterapkan"
+        description="Periksa dulu agar uang yang sudah dibayar tidak dibayar dua kali."
+        className="fin-tg-modal fin-tg-dlg w-[540px] max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
+        footer={
+          <>
+            <Button variant="neutral" onClick={() => setRisiko(null)} className="max-sm:min-h-11 max-sm:px-4" data-testid="kembali-periksa">Kembali</Button>
+            <Button variant="neutral" onClick={() => { const b = risiko[0]; const t = tagihanTerbuka.find((x) => x.id === b.id); setRisiko(null); setTerapkanUntuk({ billId: b.id, nomor: t?.supplierRef || b.nomor }); }} disabled={!bolehPost} title={bolehPost ? undefined : "Akun Anda tidak punya izin menerapkan uang muka (Finance/Akuntan)."} className="max-sm:min-h-11 max-sm:px-4" data-testid="terapkan-dulu"><Wallet size={13} aria-hidden="true" /> Terapkan uang muka dulu</Button>
+            <TombolAksi variant="destructive" disabled={!paham} data-testid="tetap-bayar" onClick={async () => { setRisiko(null); await kirim(); }}>Tetap catat pembayaran</TombolAksi>
+          </>
+        }
+      >
+        <div className="space-y-3" data-testid="konfirmasi-risiko-bayar">
+          <p className="m-0 text-[13px] text-ink">Pembayaran kas <strong>{formatUangTepat(total)}</strong> akan keluar dari {rek ? rek.name : "rekening terpilih"}. Untuk faktur berikut masih ada uang muka PO yang belum diterapkan:</p>
+          <ul className="m-0 list-none space-y-1.5 p-0">
+            {risiko.map((x) => (
+              <li key={x.id} className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">
+                <strong>{x.nomor}</strong>: dibayar kas {formatUangTepat(x.nominalKas)}; uang muka belum diterapkan {formatUangTepat(x.uangMuka)} (bisa mengurangi tagihan ini hingga {formatUangTepat(x.bisaDiterapkan)}).
+              </li>
+            ))}
+          </ul>
+          <p className="m-0 text-[12.5px] text-ink2">Bila uang muka itu sebenarnya sudah menutup tagihan, pembayaran ini menjadi pembayaran kedua. Pembayaran baru tetap boleh bila uang muka hanya menutup sebagian atau memang tidak dipakai untuk faktur ini.</p>
+          <label className="flex cursor-pointer items-start gap-2 text-[12.5px] text-ink max-sm:min-h-11">
+            <input type="checkbox" checked={paham} onChange={(e) => setPaham(e.target.checked)} className="mt-0.5 h-4 w-4" data-testid="paham-risiko" />
+            <span>Saya paham risikonya dan nominal {formatUangTepat(total)} ini benar-benar harus dibayar dari kas.</span>
+          </label>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 
