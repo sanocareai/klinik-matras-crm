@@ -1,12 +1,10 @@
 import React, { useId, useState } from "react";
-import { ChevronRight, Info, Plus, Search } from "lucide-react";
+import { ChevronRight, Info, Plus, Search, IkPesanan, IkKotak, IkAlur, IkJam } from "@/components/ikApple.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
-import { IkPesanan, IkKotak, IkAlur } from "@/components/financeIconsPO.jsx";
-import { IkJam } from "@/components/financeIconsBiaya.jsx";
 import {
   TAB_PO_TAMPIL, statusTampil, ringkasPenerimaan, kalimatHasil, kalimatCakupan, ALUR_PEMBELIAN, CATATAN_TANPA_PO, ALASAN_IZIN,
 } from "./poTampilan.js";

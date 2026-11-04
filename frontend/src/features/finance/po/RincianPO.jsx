@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useState } from "react";
-import { Ban, CheckCircle2, Download, Eye, FileText, ListChecks, Pencil, Wallet } from "lucide-react";
+import { Ban, CheckCircle2, Download, Eye, FileText, ListChecks, Pencil, Wallet, IkAlur, IkBahan, IkHarga, IkKedatangan, IkJam } from "@/components/ikApple.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -16,8 +16,6 @@ import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminL
 import { Uang, formatUang, TombolAksi, Pilihan, InputUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
 import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
-import { IkAlur, IkBahan, IkHarga, IkKedatangan } from "@/components/financeIconsPO.jsx";
-import { IkJam } from "@/components/financeIconsBiaya.jsx";
 import { ChipStatusPO, BarPenerimaan } from "./DaftarPO.jsx";
 import { BagianFakturSupplier, DialogNomorFaktur, PeringatanDuplikatNomor, useTagihanSupplier } from "./FakturSupplierPO.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";

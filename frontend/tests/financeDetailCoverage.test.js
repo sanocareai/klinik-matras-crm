@@ -42,6 +42,20 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
     assert.match(s, /<PanelDetail spec=\{panelRincian\}/, `${f}: PanelDetail tidak dipasang`);
     // Pengeluaran merender daftarnya lewat features/finance/PengeluaranPanels.jsx (klikBuka ada di sana; halaman hanya menyambungkan onBuka ke panel).
     if (f === "FinanceExpenses.jsx") { assert.match(s, /onBuka=\{\(e\) => setPanelRincian\(/, `${f}: onBuka daftar harus membuka panel rincian`); continue; }
+    if (f === "FinancePurchases.jsx") {
+      // Redesain Pembelian: satu daftar `fin-dl` melayani desktop & HP; klik/Enter/Spasi pada baris membuka panel, aksi di dalam baris (tombol, menu, input) tidak ikut membuka.
+      assert.match(s, /const buka = \(\) => setPanelRincian\(specPembelian\(/, `${f}: baris harus membuka panel rincian pembelian`);
+      assert.ok(s.includes(`onClick={(e) => { if (e.target.closest("button, a, input, select, textarea, label, [role='menuitem'], [data-tanpa-detail]")) return; buka(); }}`), `${f}: klik baris harus mengabaikan kontrol di dalamnya`);
+      assert.ok(s.includes('e.key === "Enter" || e.key === " "'), `${f}: baris harus bisa dibuka dengan Enter/Spasi`);
+      continue;
+    }
+    if (f === "FinanceSuppliers.jsx") {
+      // Tab Pembayaran & Daftar supplier memakai daftar `fin-dl`; baris Tagihan dibuka di DaftarTagihan (diuji di tagihanTabelLayout/uji Tagihan). Klik baris mengabaikan kontrol di dalamnya.
+      const klik = s.match(/onClick=\{\(e\) => \{ if \(e\.target\.closest\("button, a, input, select, \[role='menuitem'\], \[data-tanpa-detail\]"\)\) return; setPanelRincian\(specOtomatis\(/g) || [];
+      assert.ok(klik.length >= 2, `${f}: baris Pembayaran & Supplier harus bisa diklik (ditemukan ${klik.length})`);
+      assert.ok(s.includes('e.key === "Enter" || e.key === " "'), `${f}: baris harus bisa dibuka dengan Enter/Spasi`);
+      continue;
+    }
     assert.match(s, /klikBuka\(\(\) => (setPanelRincian|onBuka)\(/, `${f}: baris tabel belum bisa diklik (klikBuka)`);
   }
   const panelPengeluaran = baca(path.join(akar, "src/features/finance/PengeluaranPanels.jsx"));
@@ -66,7 +80,9 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
 
 test("halaman berdaftar dengan kartu (HP) juga bisa dibuka: RowCard memakai onClick", () => {
   // Pengeluaran tidak lagi memakai RowCard: satu daftar <li> melayani desktop & HP (CSS container query); seluruh baris diklik lewat klikBuka (diuji di atas).
-  for (const f of ["FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
+  // Pembelian ikut pola yang sama (tanpa RowCard): daftar `fin-dl` dengan baris role="row" yang bisa diklik (diuji di atas).
+  assert.doesNotMatch(baca(path.join(halaman, "FinancePurchases.jsx")), /<RowCard\n/, "Pembelian: tidak lagi memakai RowCard");
+  for (const f of ["FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
     const s = baca(path.join(halaman, f));
     const kartu = (s.match(/<RowCard\n/g) || []).length;
     const ber = (s.match(/<RowCard\n\s+key=\{[^}]+\}\n\s+onClick=/g) || []).length;

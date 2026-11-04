@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { MoreHorizontal, Loader2 } from "lucide-react";
+import { MoreHorizontal as TitikTiga } from "@/components/ikApple.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
@@ -31,7 +32,7 @@ export const AKSI_COL_WIDTH = 148;
 /** Lebar kolom Aksi kalau HANYA ada menu titik-tiga (tidak ada aksi utama untuk baris manapun di tabel ini). */
 export const AKSI_COL_WIDTH_MENU_ONLY = 64;
 
-export function RowActions({ primary, items = [], align = "end" }) {
+export function RowActions({ primary, items = [], align = "end", gayaApple = false }) {
   const [sibuk, setSibuk] = useState(false);
   const visible = items.filter((it) => it && !it.hidden);
 
@@ -85,7 +86,7 @@ export function RowActions({ primary, items = [], align = "end" }) {
               aria-label="Aksi lain"
               disabled={sibuk && !adaPrimary}
             >
-              {sibuk && !adaPrimary ? <Loader2 size={14} className="animate-spin" /> : <MoreHorizontal size={16} />}
+              {sibuk && !adaPrimary ? <Loader2 size={14} className="animate-spin" /> : (gayaApple ? <TitikTiga size={18} /> : <MoreHorizontal size={16} />)}
             </Button>
           }
         >

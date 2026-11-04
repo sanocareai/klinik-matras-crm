@@ -1,20 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarClock, AlertTriangle } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card.jsx";
+import { AlertTriangle, UbinApple } from "@/components/ikApple.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
-import { KartuAngka, formatUang, Pilihan, tanggalPendek, TombolAksi } from "@/features/finance/shared.jsx";
+import { formatUang, Pilihan, tanggalPendek, TombolAksi } from "@/features/finance/shared.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
-import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { KartuKpiApple, SegStatus, KolomCari, KosongDaftar } from "@/features/finance/DaftarGaya.jsx";
+import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
+import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
-import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import {
   TAB_AGING, NADA_INDIKATOR, VARIAN_STATUS_PEMBAYARAN, VARIAN_STATUS_BARANG, VARIAN_STATUS_FAKTUR, teksJatuhTempo, teksTermin,
 } from "@/features/finance/terminLogic.js";
@@ -46,6 +45,7 @@ export default function JadwalAgingUtang({ suppliers = [], rekening = [], bolehJ
   const [data, setData] = useState(null);
   const [galat, setGalat] = useState("");
   const [detailId, setDetailId] = useState(null);
+  const [tentang, setTentang] = useState(false);
   const pernah = useRef(false);
 
   const muat = useCallback(async () => {
@@ -61,91 +61,94 @@ export default function JadwalAgingUtang({ suppliers = [], rekening = [], bolehJ
   const k = data.ringkasan.kartu;
   const baris = data.baris;
   const terlambat = k.jumlahTerlambat;
+  const adaFilter = !!q || !!supplierId || kelompok !== "AKTIF";
+  const itemSeg = TAB_AGING.map((t) => {
+    const g = data.ringkasan.perKelompok.find((x) => x.kunci === t.kunci);
+    const jumlah = t.kunci === "AKTIF" ? k.jumlahFakturAktif : t.kunci === "DIBAYAR_SEBAGIAN" ? k.jumlahDibayarSebagian : g?.jumlah;
+    return { kunci: t.kunci, label: t.label, jumlah };
+  });
 
   return (
-    <div className="space-y-4" data-testid="jadwal-aging">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" data-testid="kartu-aging">
-        <KartuAngka label="Total Utang Aktif" metrik="utang_jatuh_tempo_aging" value={formatUang(k.totalUtangAktif)} sub={`${k.jumlahFakturAktif} faktur`} />
-        <KartuAngka label="Terlambat" value={formatUang(k.totalTerlambat)} tone={terlambat > 0 ? "red" : "default"} sub={`${terlambat} faktur`} />
-        <KartuAngka label="Jatuh Tempo 7 Hari" value={formatUang(k.jatuhTempo7Hari)} tone={k.jumlahJatuhTempo7Hari > 0 ? "orange" : "default"} sub={`${k.jumlahJatuhTempo7Hari} faktur (termasuk hari ini)`} />
-        <KartuAngka label="Jatuh Tempo 30 Hari" value={formatUang(k.jatuhTempo30Hari)} sub={`${k.jumlahJatuhTempo30Hari} faktur`} />
-        <KartuAngka label="Sudah Dijadwalkan" value={formatUang(k.sudahDijadwalkan)} sub={`${k.jumlahDijadwalkan} faktur — rencana, belum dibayar`} />
-        <KartuAngka label="Tanpa Jatuh Tempo" value={formatUang(k.tanpaJatuhTempo)} tone={k.jumlahTanpaJatuhTempo > 0 ? "orange" : "default"} sub={`${k.jumlahTanpaJatuhTempo} faktur — tanggal belum diisi`} />
-      </div>
-      <KenapaBeda metrik={["utang_jatuh_tempo_aging", "utang_supplier"]} />
+    <div className="flex flex-col gap-4" data-testid="jadwal-aging">
+      <p className="fin-tg-info" data-nada="biru">Utang supplier menurut <strong>tanggal jatuh tempo</strong> — status barang, faktur, dan pembayaran dipisahkan. Barang boleh sudah dipakai Produksi walau faktur belum dibayar. Halaman ini tidak membayar apa pun.</p>
 
-      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Kelompok aging">
-        {TAB_AGING.map((t) => {
-          const g = data.ringkasan.perKelompok.find((x) => x.kunci === t.kunci);
-          const jumlah = t.kunci === "AKTIF" ? k.jumlahFakturAktif : t.kunci === "DIBAYAR_SEBAGIAN" ? k.jumlahDibayarSebagian : g?.jumlah;
-          return (
-            <Button key={t.kunci} size="sm" variant={kelompok === t.kunci ? "secondary" : "neutral"} role="tab" aria-selected={kelompok === t.kunci} onClick={() => setKelompok(t.kunci)}>
-              {t.label}{jumlah != null && <span className="ml-1 tabular-nums text-ink3">{jumlah}</span>}
-            </Button>
-          );
-        })}
+      <section className="fin-kw-baris" data-kolom="3" aria-label="Ringkasan jadwal pembayaran" data-testid="kartu-aging">
+        <KartuKpiApple ikon="dokumen" warna="biru" label="Total utang aktif" nilai={formatUang(k.totalUtangAktif)} ket={`${k.jumlahFakturAktif} faktur`} />
+        <KartuKpiApple ikon="jam" warna={terlambat > 0 ? "merah" : "hijau"} label="Terlambat" nilai={formatUang(k.totalTerlambat)} ket={`${terlambat} faktur`} />
+        <KartuKpiApple ikon="kalender" warna={k.jumlahJatuhTempo7Hari > 0 ? "jingga" : "tosca"} label="Jatuh tempo 7 hari" nilai={formatUang(k.jatuhTempo7Hari)} ket={`${k.jumlahJatuhTempo7Hari} faktur (termasuk hari ini)`} />
+        <KartuKpiApple ikon="termin" warna="ungu" label="Jatuh tempo 30 hari" nilai={formatUang(k.jatuhTempo30Hari)} ket={`${k.jumlahJatuhTempo30Hari} faktur`} />
+        <KartuKpiApple ikon="centang" warna="hijau" label="Sudah dijadwalkan" nilai={formatUang(k.sudahDijadwalkan)} ket={`${k.jumlahDijadwalkan} faktur — rencana, belum dibayar`} />
+        <KartuKpiApple ikon="peringatan" warna={k.jumlahTanpaJatuhTempo > 0 ? "jingga" : "grafit"} label="Tanpa jatuh tempo" nilai={formatUang(k.tanpaJatuhTempo)} ket={`${k.jumlahTanpaJatuhTempo} faktur — tanggal belum diisi`} />
+      </section>
+
+      <div className="fin-tg-tentang" data-testid="tentang-angka-jadwal">
+        <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id="tentang-jadwal-isi" className="fin-tg-tentang-tombol">Tentang angka dan pencatatan</Pembuka>
+        {tentang && (
+          <div id="tentang-jadwal-isi" className="fin-tg-tentang-isi">
+            <p>Semua angka (kartu, daftar, rincian) datang dari satu perhitungan server yang sama dengan Export Excel. Aging dihitung dari <strong>tanggal jatuh tempo</strong>, bukan tanggal barang datang. “Atur jadwal bayar” hanya menyimpan rencana; pembayaran tetap dicatat di tab Pembayaran.</p>
+            <KenapaBeda metrik={["utang_jatuh_tempo_aging", "utang_supplier"]} />
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[220px] flex-1">
-          <FilterBar q={q} onQ={setQ} placeholder="Cari supplier, no. faktur, no. PO…" filters={[]} ringkasan={`${baris.length} faktur`} onReset={() => { setQ(""); setSupplierId(""); }} />
+      <section className="fin-tg-panel" aria-label="Daftar jadwal utang">
+        <div className="fin-tg-alat">
+          <SegStatus item={itemSeg} nilai={kelompok} onPilih={setKelompok} label="Kelompok aging" testidAwalan="aging" />
+          <div className="fin-tg-cari">
+            <KolomCari nilai={q} onUbah={setQ} placeholder="Cari supplier, no. faktur, no. PO…" ariaLabel="Cari faktur" testid="cari-aging" />
+            <div className="fin-tg-pilih"><SelectPO value={supplierId} onChange={setSupplierId} ariaLabel="Filter supplier" opsi={[{ nilai: "", label: "Semua supplier" }, ...suppliers.map((s) => ({ nilai: s.id, label: s.name }))]} /></div>
+            <TombolExportExcel
+              modul="aging-utang"
+              ambilBody={() => ({ filter: { q: qTunda.trim() || undefined, supplierId: supplierId || undefined }, filterLabel: labelFilterAktif([["Pencarian", qTunda.trim()], ["Supplier", suppliers.find((s) => s.id === supplierId)?.name]]) })}
+            />
+          </div>
         </div>
-        <Field label="Supplier" className="w-56 max-sm:w-full">
-          <Pilihan value={supplierId} onChange={setSupplierId} aria-label="Filter supplier">
-            <option value="">Semua supplier</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Pilihan>
-        </Field>
-        <TombolExportExcel
-          modul="aging-utang"
-          ambilBody={() => ({ filter: { q: qTunda.trim() || undefined, supplierId: supplierId || undefined }, filterLabel: labelFilterAktif([["Pencarian", qTunda.trim()], ["Supplier", suppliers.find((s) => s.id === supplierId)?.name]]) })}
-        />
-      </div>
+        <p className="fin-tg-jumlah" role="status" aria-live="polite" data-testid="jumlah-aging">
+          {baris.length} faktur
+          {adaFilter && <button type="button" className="fin-tg-reset" onClick={() => { setQ(""); setSupplierId(""); setKelompok("AKTIF"); }}>Atur ulang</button>}
+        </p>
 
-      {baris.length === 0 ? (
-        <Card><CardContent><EmptyState icon={CalendarClock} title="Tidak ada faktur di kelompok ini" description="Faktur muncul di sini setelah disetujui. Aging dihitung dari tanggal jatuh tempo." /></CardContent></Card>
-      ) : (
-        <>
-          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
-            <Table>
-              <THead>
-                <TR><TH>Supplier / Faktur</TH><TH>PO</TH><TH>Barang diterima</TH><TH>Tgl faktur</TH><TH>Termin</TH><TH>Jatuh tempo</TH><TH numeric>Nilai</TH><TH numeric>Dibayar</TH><TH numeric>Sisa</TH><TH>Status</TH></TR>
-              </THead>
-              <TBody>
-                {baris.map((r) => (
-                  <TR key={r.rowKey ?? r.billId} clickable onClick={() => setDetailId(r.billId)} className={cn("border-l-4", GARIS[r.indikator])} data-testid="baris-aging">
-                    <TD><div className="font-medium text-ink">{r.supplier}</div><div className="font-mono text-[11.5px] text-ink2">{r.nomorFaktur || r.nomorTagihan}</div></TD>
-                    <TD className="font-mono text-[12px]">{r.po?.nomor ?? "—"}</TD>
-                    <TD className="whitespace-nowrap text-[12px]">{r.tanggalBarangDiterima ? tanggalPendek(r.tanggalBarangDiterima) : "—"}</TD>
-                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.tanggalFaktur)}</TD>
-                    <TD className="text-[12px]">{teksTermin(r.termin)}</TD>
-                    <TD className="whitespace-nowrap text-[12px]"><div>{r.tanggalJatuhTempo ? tanggalPendek(r.tanggalJatuhTempo) : <span className="text-orange">Belum diisi</span>}</div><div className={cn("text-[11.5px]", r.indikator === "merah" ? "font-semibold text-red" : r.indikator === "jingga" ? "text-orange" : "text-ink3")}>{teksJatuhTempo(r)}</div></TD>
-                    <TD numeric>{formatUang(r.nilaiFaktur)}</TD>
-                    <TD numeric>{formatUang(r.dibayar)}</TD>
-                    <TD numeric className="font-semibold">{formatUang(r.sisaUtang)}</TD>
-                    <TD><TigaStatus r={r} /></TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
-          <CardList className={CARD_VIEW_CLASS}>
-            {baris.map((r) => (
-              <RowCard
-                key={r.rowKey ?? r.billId} className={cn("border-l-4", GARIS[r.indikator])} onClick={() => setDetailId(r.billId)}
-                title={r.nomorFaktur || r.nomorTagihan} subtitle={r.supplier}
-                status={<Badge variant={NADA_INDIKATOR[r.indikator].variant}>{teksJatuhTempo(r)}</Badge>}
-                fields={[
-                  { label: "Sisa utang", value: formatUang(r.sisaUtang) }, { label: "Nilai faktur", value: formatUang(r.nilaiFaktur) },
-                  { label: "Jatuh tempo", value: r.tanggalJatuhTempo ? tanggalPendek(r.tanggalJatuhTempo) : "Belum diisi" }, { label: "Termin", value: teksTermin(r.termin) },
-                  { label: "PO", value: r.po?.nomor ?? "—" }, { label: "Barang diterima", value: r.tanggalBarangDiterima ? tanggalPendek(r.tanggalBarangDiterima) : "—" },
-                  { label: "Status", value: <TigaStatus r={r} /> },
-                ]}
-              />
-            ))}
-          </CardList>
-        </>
-      )}
+        {baris.length === 0 ? (
+          <KosongDaftar testid="aging-kosong" ikon="termin" judul="Tidak ada faktur di kelompok ini" ket="Faktur muncul di sini setelah disetujui. Aging dihitung dari tanggal jatuh tempo." />
+        ) : (
+          <div className="fin-dl-tabel" role="table" aria-label="Jadwal utang supplier" style={{ "--kolom-sedang": "minmax(240px, 2.4fr) 150px 130px minmax(220px, 1.6fr)", "--kolom-lebar": "minmax(250px, 2.4fr) 130px 150px 130px 130px minmax(230px, 1.6fr)" }}>
+            <div className="fin-dl-judul" role="row">
+              <span role="columnheader">Supplier / Faktur</span><span role="columnheader" className="fin-dl-lebar">PO</span><span role="columnheader">Jatuh tempo</span>
+              <span role="columnheader" className="kanan fin-dl-lebar">Nilai</span><span role="columnheader" className="kanan">Sisa</span><span role="columnheader">Status</span>
+            </div>
+            {baris.map((r) => {
+              const buka = () => setDetailId(r.billId);
+              return (
+                <div
+                  key={r.rowKey ?? r.billId} className="fin-dl-baris" role="row" tabIndex={0} data-testid="baris-aging" data-garis={r.indikator}
+                  onClick={(e) => { if (e.target.closest("button, a, input, select")) return; buka(); }}
+                  onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); buka(); } }}
+                  aria-label={`Faktur ${r.nomorFaktur || r.nomorTagihan} dari ${r.supplier}, ${teksJatuhTempo(r)}. Buka rincian`}
+                >
+                  <div className="fin-dl-sel fin-dl-utama" role="cell">
+                    <UbinApple nama="gedung" ukuran={40} />
+                    <span className="fin-dl-teks">
+                      <span className="fin-dl-judul-baris" title={r.supplier}>{r.supplier}</span>
+                      <span className="fin-dl-nomor">{r.nomorFaktur || r.nomorTagihan}</span>
+                    </span>
+                  </div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">PO</span><span className="font-mono text-[12px]">{r.po?.nomor ?? "—"}</span></div>
+                  <div className="fin-dl-sel" role="cell">
+                    <span className="fin-dl-label">Jatuh tempo</span>
+                    <span>{r.tanggalJatuhTempo ? tanggalPendek(r.tanggalJatuhTempo) : <span className="fin-dl-sub jingga">Belum diisi</span>}</span>
+                    <span className={cn("fin-dl-sub", r.indikator === "merah" && "lewat", r.indikator === "jingga" && "jingga")}>{teksJatuhTempo(r)}</span>
+                  </div>
+                  <div className="fin-dl-sel fin-dl-angka fin-dl-lebar" role="cell"><span className="fin-dl-label">Nilai</span>{formatUang(r.nilaiFaktur)}<span className="fin-dl-sub">dibayar {formatUang(r.dibayar)}</span></div>
+                  <div className="fin-dl-sel fin-dl-angka" role="cell"><span className="fin-dl-label">Sisa utang</span><strong>{formatUang(r.sisaUtang)}</strong></div>
+                  <div className="fin-dl-sel" role="cell"><span className="fin-dl-label">Status</span><TigaStatus r={r} /></div>
+                  <div className="fin-dl-sel fin-dl-sempit" role="cell"><span className="fin-dl-label">Tanggal faktur · termin</span>{tanggalPendek(r.tanggalFaktur)} · {teksTermin(r.termin)}</div>
+                  <div className="fin-dl-sel fin-dl-sempit" role="cell"><span className="fin-dl-label">Barang diterima · PO</span>{r.tanggalBarangDiterima ? tanggalPendek(r.tanggalBarangDiterima) : "—"} · {r.po?.nomor ?? "—"}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
       {detailId && <DetailUtang billId={detailId} rekening={rekening} bolehJadwal={bolehJadwal} onClose={() => setDetailId(null)} onChanged={muat} onBukaPembayaran={onBukaPembayaran} />}
     </div>
   );

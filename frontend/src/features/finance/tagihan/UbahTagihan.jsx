@@ -1,5 +1,5 @@
 import React from "react";
-import { Pencil, FileText, Lock, History, Banknote, ArrowRight } from "lucide-react";
+import { Pencil, FileText, Lock, History, Banknote, ArrowRight } from "@/components/ikApple.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { tanggalPendek } from "@/features/finance/shared.jsx";

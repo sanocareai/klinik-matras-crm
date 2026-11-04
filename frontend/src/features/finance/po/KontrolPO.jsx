@@ -1,10 +1,10 @@
 import { createPortal } from "react-dom";
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, IkKalender, IkTermin } from "@/components/ikApple.jsx";
 import { cn } from "@/lib/utils.js";
+import "@/styles/sanss-finance-po.css"; // gaya SelectPO/Pembuka dipakai halaman lain (Pembelian, Jadwal); tanpa ini tampil polos bila dibuka langsung
 import { api } from "@/api.js";
 import { Input } from "@/components/ui/input.jsx";
-import { IkKalender, IkTermin } from "@/components/financeIconsPO.jsx";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { PILIHAN_TERMIN, TERMIN_AWAL, galatTermin } from "@/features/finance/terminLogic.js";
 import {

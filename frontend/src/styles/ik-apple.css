@@ -1,0 +1,48 @@
+/* Keluarga ikon Apple-style (components/ikApple.jsx) — Pembelian & Supplier. Ubin squircle bergradien + kilau kaca; tombol "menyala". Tanpa menyentuh gaya modul lain. */
+
+.ik-ubin {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; overflow: hidden; vertical-align: middle;
+  border-radius: 23%;
+  background: linear-gradient(155deg, var(--u1), var(--u2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 1px 2px rgba(15, 23, 42, 0.2), 0 6px 14px -4px var(--ub);
+}
+/* kilau kaca di separuh atas */
+.ik-ubin::before { content: ""; position: absolute; inset: 0 0 46% 0; background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0)); pointer-events: none; }
+.ik-ubin > svg { position: relative; filter: drop-shadow(0 1px 1.4px rgba(0, 0, 0, 0.28)); }
+.ik-kaca { filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.3)); flex: 0 0 auto; }
+
+/* Pembungkus lama yang memberi latar/ukuran kotak pada ikon tunggal: bila isinya kini ubin Apple, ubin berdiri sendiri. */
+:root :is(.fin-tg-kpi-ikon, .fin-tg-ikon-gedung, .fin-tg-kosong-ikon, .fin-pod-bagian-ikon, .fin-pof-ikon, .fin-termin-ikon, .fin-poed-ubin):has(> .ik-ubin) {
+  background: transparent; box-shadow: none; padding: 0; width: auto; height: auto; min-width: 0; border-radius: 0; border: 0;
+}
+:root :is(.fin-tg-kpi-ikon, .fin-tg-ikon-gedung, .fin-tg-kosong-ikon, .fin-pod-bagian-ikon, .fin-pof-ikon, .fin-termin-ikon, .fin-poed-ubin):has(> .ik-ubin) > .ik-ubin { display: flex; }
+
+/* Penanda uang muka di baris: ubin mungil di depan teks */
+.fin-tg-um-chip svg { filter: none; }
+
+/* ── Tombol "menyala" (aksi utama yang perlu terlihat: Terapkan uang muka) ── */
+:root .tb-menyala.tb-menyala {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 0 16px;
+  border: 0; border-radius: 13px; color: #fff; font-weight: 600; font-size: 13.5px; letter-spacing: 0; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(180deg, #7099FF 0%, #3965FA 52%, #2A4EE0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(57, 101, 250, 0.6), 0 7px 20px -3px rgba(57, 101, 250, 0.6);
+  overflow: hidden; cursor: pointer; transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+:root .tb-menyala.tb-menyala::before { content: ""; position: absolute; inset: 0 0 52% 0; background: linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0)); pointer-events: none; }
+:root .tb-menyala.tb-menyala > * { position: relative; }
+:root .tb-menyala.tb-menyala:hover:not(:disabled) { filter: brightness(1.07) saturate(1.1); transform: translateY(-1px); }
+:root .tb-menyala.tb-menyala:active:not(:disabled) { filter: brightness(0.97); transform: translateY(0); }
+:root .tb-menyala.tb-menyala:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 4px rgba(57, 101, 250, 0.75), 0 7px 20px -3px rgba(57, 101, 250, 0.6); }
+:root .tb-menyala.tb-menyala:disabled { opacity: 0.55; filter: saturate(0.65); cursor: not-allowed; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 1px rgba(57, 101, 250, 0.3); transform: none; }
+/* denyut halus pada tombol di peringatan (hanya bila pengguna tidak membatasi gerak) */
+@media (prefers-reduced-motion: no-preference) {
+  :root .tb-menyala.tb-menyala.berdenyut:not(:disabled) { animation: tb-denyut 2.6s ease-in-out infinite; }
+}
+@keyframes tb-denyut {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(57, 101, 250, 0.6), 0 7px 20px -3px rgba(57, 101, 250, 0.55); }
+  50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(57, 101, 250, 0.75), 0 7px 28px 1px rgba(57, 101, 250, 0.9); }
+}
+@media (max-width: 639px) { :root .tb-menyala.tb-menyala { min-height: 44px; padding: 0 18px; } }
+
+/* Peringatan uang muka: latar hangat dengan ubin di kiri */
+.ik-peringatan-um { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: linear-gradient(135deg, rgba(255, 196, 94, 0.22), rgba(244, 122, 0, 0.1)); box-shadow: inset 0 0 0 1px rgba(244, 122, 0, 0.25); }

@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { History, Pencil, Plus } from "lucide-react";
+import { History, Pencil, Plus, IkDokumen } from "@/components/ikApple.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
@@ -11,7 +11,6 @@ import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { tautanKeuangan } from "@/features/finance/uangMukaLogic.js";
 import { LABEL_STATUS_FAKTUR, FAKTUR_TERBUKA } from "@/features/finance/purchaseOrderLogic.js";
-import { IkDokumen } from "@/components/financeIconsBiaya.jsx";
 import {
   daftarFakturPO, ringkasKelengkapanFaktur, periksaNomorSupplier, cariDuplikatNomor, ALASAN_IZIN, ALASAN_LENGKAPI, TEKS_NOMOR_BELUM_DIISI, NOMOR_SUPPLIER_MAKS,
 } from "./poTampilan.js";

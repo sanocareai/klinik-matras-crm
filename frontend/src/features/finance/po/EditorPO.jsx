@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { AlertCircle, ChevronDown, Plus, Search, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronDown, Plus, Search, Trash2, IkBahan, IkHarga } from "@/components/ikApple.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
@@ -18,7 +18,6 @@ import {
   baris0, subtotal, totalIsian, galatBaris, galatFormulir, formDariPO, bodyDariForm, SATUAN_OPSI, labelSatuan, labelJenisSku, teksSetara, infoKonversi,
   daftarBarangBaru, barisLainDariForm, barisBaruUntukCek, masalahDariCek, masalahDariGalat, jenisMasalah,
 } from "@/features/finance/purchaseOrderLogic.js";
-import { IkBahan, IkHarga } from "@/components/financeIconsPO.jsx";
 import { ModalBarangBaru, PanelMasalahBaris } from "./BarangBaruPO.jsx";
 import { DAMPAK_HARGA_RINCI, KALIMAT_HARGA_SIMPAN, KETERANGAN_HARGA_SINGKAT } from "./poTampilan.js";
 

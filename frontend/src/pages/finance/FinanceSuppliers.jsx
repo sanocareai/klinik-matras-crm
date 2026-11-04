@@ -5,7 +5,7 @@ import "@/styles/sanss-finance-tagihan.css";
 import "@/styles/sanss-finance-po.css";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock, Wallet, ArrowLeft, ArrowRight } from "lucide-react";
+import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock, Wallet, ArrowLeft, ArrowRight, GlifKaca, ikonMenuApple, UbinApple } from "@/components/ikApple.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import DaftarTagihan, { RingkasanTagihan } from "@/features/finance/tagihan/DaftarTagihan.jsx";
 import RincianTagihan from "@/features/finance/tagihan/RincianTagihan.jsx";
@@ -50,6 +50,8 @@ import JadwalAgingUtang from "@/features/finance/JadwalAgingUtang.jsx";
 import { TabelUangMukaSupplier } from "@/features/finance/UangMukaSupplierTabel.jsx";
 import { ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import { useKelayakanFaktur, useTawaranUangMuka, BannerUangMuka } from "@/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx";
+import { KartuKpiApple, KolomCari, ChipNada, KosongDaftar } from "@/features/finance/DaftarGaya.jsx";
+import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
 import { fakturPerluPeriksaUangMuka, fakturBerisikoBayarKedua, cekNominalBayar, ringkasKelayakan, teksCakupanPeriksa, BATAS_PERIKSA_UANG_MUKA } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { daftarPilihanTermin, payloadTerminSupplier, bodyTermin, galatTermin, TERMIN_AWAL, bolehMencatatFinance } from "@/features/finance/terminLogic.js";
@@ -68,6 +70,7 @@ function aksiTagihan(b, { setUbahUntuk, setVersiUntuk, setAlasanUntuk, setSetuju
     items.unshift({ key: "uang-muka", label: "Terapkan Uang Muka", icon: Wallet, hint: "Kurangi sisa utang faktur dengan uang muka supplier yang belum diterapkan.", onClick: () => setUangMukaUntuk(b) });
   }
   items.unshift({ key: "ubah", label: "Ubah tagihan", icon: Pencil, hint: "Lihat apa yang bisa diubah menurut status tagihan.", onClick: () => setUbahUntuk(b) });
+  const itemsApple = () => ikonMenuApple(items);
   if (["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
     return {
       primary: {
@@ -76,26 +79,27 @@ function aksiTagihan(b, { setUbahUntuk, setVersiUntuk, setAlasanUntuk, setSetuju
         title: !b.billType ? "Pilih Jenis Tagihan dulu lewat Ubah tagihan (mis. Bahan Baku untuk kain/busa) supaya tidak salah tercatat sebagai beban" : undefined,
         onClick: () => setSetujuiUntuk(b),
       },
-      items,
+      items: itemsApple(),
     };
   }
-  return { primary: null, items };
+  return { primary: null, items: itemsApple() };
 }
 
 // Pembayaran supplier: koreksi langsung tidak tersedia — Batalkan (jurnal dibalik, alokasi ke tagihan dilepas) lalu catat ulang.
 function aksiPembayaran(p, { aksi, setVersiPay }) {
-  return bentukItemMenu(aksiPembayaranSupplier(p, { admin: adminSaatIni() }), {
+  return ikonMenuApple(bentukItemMenu(aksiPembayaranSupplier(p, { admin: adminSaatIni() }), {
     versi: () => setVersiPay(p),
     batalkan: () => {
       const alasan = window.prompt(`Alasan membatalkan pembayaran ${p.paymentNumber}? Jurnalnya dibalik dan tagihan kembali terbuka, lalu catat ulang pembayaran yang benar:`);
       if (alasan?.trim()) return aksi(() => api.cancelFinanceSupplierPayment(p.id, alasan.trim()));
     },
-  });
+  }));
 }
 
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
 const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]);
+const opsiPil = (semua, pasangan) => [{ nilai: "", label: semua }, ...pasangan.map(([nilai, label]) => ({ nilai, label }))];
 
 
 // SUPPLIER & UTANG USAHA — master supplier, tagihan masuk, dan pembayaran.
@@ -261,6 +265,10 @@ export default function FinanceSuppliers() {
     (!fStatusP || (fStatusP === "batal") === !!p.cancelledAt) &&
     cocok(qP, p.paymentNumber, p.date, tanggalPendek(p.date), p.supplier?.name, p.cashAccount?.name, (p.allocations || []).map((a) => a.bill?.billNumber).join(" "), angka(p.amount), p.cancelledAt ? "dibatalkan" : "terposting")
   ), [payments, qP, fSupP, fRek, fStatusP]);
+  const ringkasBayar = useMemo(() => {
+    const aktif = paymentsTampil.filter((p) => !p.cancelledAt);
+    return { total: aktif.reduce((s, p) => s + Number(p.amount || 0), 0), jumlah: aktif.length, batal: paymentsTampil.length - aktif.length };
+  }, [paymentsTampil]);
   const suppliersTampil = useMemo(() => suppliers.filter((s) =>
     (!fStatusS || (fStatusS === "aktif") === !!s.active) &&
     (!fUtang || (fUtang === "ada") === (Number(s.sisaUtang) > 0)) &&
@@ -348,7 +356,7 @@ export default function FinanceSuppliers() {
           {tab !== "supplier" && <button type="button" className="fin-tg-pendukung-tombol" onClick={() => setTab("supplier")} data-testid="buka-supplier"><Building2 size={15} aria-hidden="true" /> Daftar supplier</button>}
         </nav>
       )}
-      {tab !== "tagihan" && <p className="text-[13px] leading-relaxed text-ink3">{TAB.find((t) => t.key === tab)?.penjelasan}</p>}
+      {tab !== "tagihan" && tab !== "aging" && <p className="fin-tg-info" data-nada="biru" data-testid="info-tab">{TAB.find((t) => t.key === tab)?.penjelasan}</p>}
 
       {tab === "aging" && (
         <JadwalAgingUtang suppliers={suppliersAktif} rekening={rekening} bolehJadwal={(() => { try { return bolehMencatatFinance(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } })()} onBukaPembayaran={() => setModal("bayar")} />
@@ -366,134 +374,116 @@ export default function FinanceSuppliers() {
 
       {tab === "pembayaran" && (
         <>
-        <FilterBar
-          q={qP} onQ={setQP}
-          placeholder="Cari nomor, supplier, tagihan, nominal…"
-          filters={[
-            { key: "sup", label: "Supplier", value: fSupP, onChange: setFSupP, options: unik(payments.map((p) => p.supplier?.name)) },
-            { key: "rek", label: "Dari rekening", value: fRek, onChange: setFRek, options: unik(payments.map((p) => p.cashAccount?.name)) },
-            { key: "status", label: "Status", value: fStatusP, onChange: setFStatusP, options: [["posting", "Terposting"], ["batal", "Dibatalkan"]] },
-          ]}
-          ringkasan={paymentsTampil.length === payments.length ? `${payments.length} pembayaran` : `${paymentsTampil.length} dari ${payments.length} pembayaran`}
-          onReset={() => { setQP(""); setFSupP(""); setFRek(""); setFStatusP(""); }}
-        />
-        <Card className="overflow-hidden">
-          <JudulKartu
-            title="Pembayaran ke Supplier"
-            description="Satu pembayaran bisa melunasi beberapa tagihan sekaligus."
-            info="Cocok untuk transfer gabungan akhir bulan — satu kali transfer ke supplier, dialokasikan ke beberapa tagihan yang jatuh tempo bersamaan."
-          />
+        <section className="fin-kw-baris" data-kolom="3" aria-label="Ringkasan pembayaran supplier" data-testid="kartu-pembayaran">
+          <KartuKpiApple ikon="uang" warna="hijau" label="Total dibayar (terposting)" nilai={formatUang(ringkasBayar.total)} ket={`${ringkasBayar.jumlah} pembayaran sesuai filter, dari ${payments.length} yang dimuat`} testid="kpi-total-dibayar" />
+          <KartuKpiApple ikon="centang" warna="biru" label="Pembayaran terposting" nilai={ringkasBayar.jumlah} ket="Menutup tagihan supplier; satu pembayaran bisa melunasi beberapa tagihan" testid="kpi-bayar-terposting" />
+          <KartuKpiApple ikon="larang" warna={ringkasBayar.batal > 0 ? "merah" : "grafit"} label="Dibatalkan" nilai={ringkasBayar.batal} ket="Jurnal dibalik dan tagihan kembali terbuka" testid="kpi-bayar-batal" />
+        </section>
+        <section className="fin-tg-panel" aria-label="Daftar pembayaran supplier">
+          <div className="fin-tg-alat">
+            <div className="fin-tg-cari" style={{ justifyContent: "flex-start" }}>
+              <KolomCari nilai={qP} onUbah={setQP} placeholder="Cari nomor, supplier, tagihan, nominal…" ariaLabel="Cari pembayaran" testid="cari-pembayaran" />
+              <div className="fin-tg-pilih"><SelectPO value={fSupP} onChange={setFSupP} ariaLabel="Supplier" opsi={opsiPil("Semua supplier", unik(payments.map((p) => p.supplier?.name)))} /></div>
+              <div className="fin-tg-pilih"><SelectPO value={fRek} onChange={setFRek} ariaLabel="Dari rekening" opsi={opsiPil("Semua rekening", unik(payments.map((p) => p.cashAccount?.name)))} /></div>
+              <div className="fin-tg-pilih"><SelectPO value={fStatusP} onChange={setFStatusP} ariaLabel="Status" opsi={opsiPil("Semua status", [["posting", "Terposting"], ["batal", "Dibatalkan"]])} /></div>
+            </div>
+          </div>
+          <p className="fin-tg-jumlah" role="status" aria-live="polite" data-testid="jumlah-pembayaran">
+            {paymentsTampil.length === payments.length ? `${payments.length} pembayaran` : `${paymentsTampil.length} dari ${payments.length} pembayaran`}
+            {(qP || fSupP || fRek || fStatusP) && <button type="button" className="fin-tg-reset" onClick={() => { setQP(""); setFSupP(""); setFRek(""); setFStatusP(""); }}>Atur ulang</button>}
+          </p>
           {paymentsTampil.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">{payments.length === 0 ? "Belum ada pembayaran." : "Tidak ada pembayaran yang cocok dengan pencarian ini."}</p></CardContent>
+            <KosongDaftar testid="pembayaran-kosong" ikon="uang" judul={payments.length === 0 ? "Belum ada pembayaran" : "Tidak ada pembayaran yang cocok"} ket={payments.length === 0 ? "Pembayaran ke supplier muncul di sini setelah dicatat." : "Ubah kata kunci atau filter."} />
           ) : (
-            <TableWrap className="dh-table">
-              <Table fixed>
-                <ColGroup widths={[LEBAR_NOMOR, 92, 160, 150, null, 128, 116, AKSI_COL_WIDTH_MENU_ONLY]} />
-                <THead>
-                  <TR>
-                    <TH sticky width={LEBAR_NOMOR}>Nomor</TH>
-                    <TH width={92} className="whitespace-nowrap">Tanggal</TH>
-                    <TH width={160}>Supplier</TH>
-                    <TH width={150}>Dari Rekening</TH>
-                    <TH>Tagihan</TH>
-                    <TH numeric width={128}>Nominal</TH>
-                    <TH width={116}>Status</TH>
-                    <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
-                  </TR>
-                </THead>
-                <TBody>
-                  {paymentsTampil.map((p) => (
-                    <TR key={p.id} {...klikBuka(() => setPanelRincian(specOtomatis(p)))}>
-                      <TD sticky className="font-mono text-[12px]">
-                        <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={p.paymentNumber} data-sel="nomor">{p.paymentNumber}</span>
-                      </TD>
-                      <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
-                      <TD truncate>{p.supplier?.name}</TD>
-                      <TD truncate>{p.cashAccount?.name}</TD>
-                      <TD truncate className="text-[12px]" title={p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}>
-                        {p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}
-                      </TD>
-                      <TD numeric><NominalDenganBiaya d={p} /></TD>
-                      <TD>{p.cancelledAt ? <Badge variant="red">Dibatalkan</Badge> : <Badge variant="green">Terposting</Badge>}</TD>
-                      <TD><RowActions primary={null} items={aksiPembayaran(p, { aksi, setVersiPay })} /></TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
+            <div className="fin-dl-tabel" role="table" aria-label="Pembayaran ke supplier" style={{ "--kolom-sedang": "minmax(240px, 2.4fr) 110px 150px 130px 60px", "--kolom-lebar": "minmax(240px, 2.2fr) 110px minmax(130px, 1fr) minmax(150px, 1.4fr) 150px 130px 60px" }}>
+              <div className="fin-dl-judul" role="row">
+                <span role="columnheader">Pembayaran</span><span role="columnheader">Tanggal</span><span role="columnheader" className="fin-dl-lebar">Dari rekening</span><span role="columnheader" className="fin-dl-lebar">Tagihan</span>
+                <span role="columnheader" className="kanan">Nominal</span><span role="columnheader">Status</span><span role="columnheader" className="fin-sr-saja">Tindakan</span>
+              </div>
+              {paymentsTampil.map((p) => {
+                const tagihan = p.allocations.map((a) => a.bill?.billNumber).filter(Boolean).join(", ");
+                return (
+                  <div
+                    key={p.id} className="fin-dl-baris" role="row" tabIndex={0} data-testid="baris-pembayaran" data-garis={p.cancelledAt ? "merah" : undefined}
+                    onClick={(e) => { if (e.target.closest("button, a, input, select, [role='menuitem'], [data-tanpa-detail]")) return; setPanelRincian(specOtomatis(p)); }}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setPanelRincian(specOtomatis(p)); } }}
+                    aria-label={`Pembayaran ${p.paymentNumber} ke ${p.supplier?.name || "supplier"}. Buka rincian`}
+                  >
+                    <div className="fin-dl-sel fin-dl-utama" role="cell">
+                      <UbinApple nama="uang" ukuran={40} />
+                      <span className="fin-dl-teks"><span className="fin-dl-judul-baris" title={p.supplier?.name}>{p.supplier?.name}</span><span className="fin-dl-nomor">{p.paymentNumber}</span></span>
+                    </div>
+                    <div className="fin-dl-sel" role="cell"><span className="fin-dl-label">Tanggal</span>{tanggalPendek(p.date)}</div>
+                    <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Dari rekening</span>{p.cashAccount?.name || "—"}</div>
+                    <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Tagihan</span><span className="fin-dl-sub" title={tagihan || "—"}>{tagihan || "—"}</span></div>
+                    <div className="fin-dl-sel fin-dl-angka" role="cell"><span className="fin-dl-label">Nominal</span><NominalDenganBiaya d={p} /></div>
+                    <div className="fin-dl-sel" role="cell"><span className="fin-dl-label">Status</span><ChipNada nada={p.cancelledAt ? "merah" : "hijau"}>{p.cancelledAt ? "Dibatalkan" : "Terposting"}</ChipNada></div>
+                    <div className="fin-dl-sel fin-dl-aksi" role="cell" data-tanpa-detail>
+                      <RowActions gayaApple primary={null} items={aksiPembayaran(p, { aksi, setVersiPay })} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </Card>
+        </section>
         </>
       )}
 
       {tab === "supplier" && (
         <>
         <TabelUangMukaSupplier data={uangMuka} />
-        <FilterBar
-          q={qS} onQ={setQS}
-          placeholder="Cari kode, nama, kontak, bank…"
-          filters={[
-            { key: "status", label: "Status", value: fStatusS, onChange: setFStatusS, options: [["aktif", "Aktif"], ["nonaktif", "Nonaktif"]] },
-            { key: "utang", label: "Utang", value: fUtang, onChange: setFUtang, options: [["ada", "Ada sisa utang"], ["lunas", "Lunas"]] },
-          ]}
-          ringkasan={suppliersTampil.length === suppliers.length ? `${suppliers.length} supplier` : `${suppliersTampil.length} dari ${suppliers.length} supplier`}
-          onReset={() => { setQS(""); setFStatusS(""); setFUtang(""); }}
-        />
-        <Card className="overflow-hidden">
-          <JudulKartu
-            title="Master Supplier"
-            description="Entitas supplier baru ada sejak modul Finance. Kolom supplier di dokumen Gudang tetap teks bebas
-              seperti sebelumnya — penautannya dilakukan per tagihan, bukan dengan memigrasikan riwayat lama."
-            info="Daftarkan supplier di sini dulu sebelum mencatat tagihannya — data kontak & termin pembayaran yang tersimpan di sini yang dipakai menghitung jatuh tempo otomatis."
-          />
+        <section className="fin-tg-panel" aria-label="Daftar supplier">
+          <div className="fin-tg-alat">
+            <div className="fin-tg-cari" style={{ justifyContent: "flex-start" }}>
+              <KolomCari nilai={qS} onUbah={setQS} placeholder="Cari kode, nama, kontak, bank…" ariaLabel="Cari supplier" testid="cari-supplier" />
+              <div className="fin-tg-pilih"><SelectPO value={fStatusS} onChange={setFStatusS} ariaLabel="Status" opsi={opsiPil("Semua status", [["aktif", "Aktif"], ["nonaktif", "Nonaktif"]])} /></div>
+              <div className="fin-tg-pilih"><SelectPO value={fUtang} onChange={setFUtang} ariaLabel="Utang" opsi={opsiPil("Semua utang", [["ada", "Ada sisa utang"], ["lunas", "Lunas"]])} /></div>
+            </div>
+          </div>
+          <p className="fin-tg-jumlah" role="status" aria-live="polite" data-testid="jumlah-supplier">
+            {suppliersTampil.length === suppliers.length ? `${suppliers.length} supplier` : `${suppliersTampil.length} dari ${suppliers.length} supplier`}
+            {(qS || fStatusS || fUtang) && <button type="button" className="fin-tg-reset" onClick={() => { setQS(""); setFStatusS(""); setFUtang(""); }}>Atur ulang</button>}
+          </p>
           {suppliers.length === 0 ? (
-            <CardContent>
-              <EmptyState icon={Building2} title="Belum ada supplier" description="Daftarkan supplier yang tagihannya perlu dilacak." />
-            </CardContent>
+            <KosongDaftar testid="supplier-kosong" ikon="gedung" judul="Belum ada supplier" ket="Daftarkan supplier yang tagihannya perlu dilacak." />
           ) : suppliersTampil.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada supplier yang cocok dengan pencarian ini.</p></CardContent>
+            <KosongDaftar testid="supplier-tak-cocok" ikon="gedung" judul="Tidak ada supplier yang cocok" ket="Ubah kata kunci atau filter." />
           ) : (
-            <TableWrap className="dh-table">
-              <Table fixed>
-                <THead>
-                  <TR>
-                    <TH sticky width={100}>Kode</TH>
-                    <TH width={180}>Nama</TH>
-                    <TH width={150}>Kontak</TH>
-                    <TH width={100}>Termin</TH>
-                    <TH>Rekening</TH>
-                    <TH numeric width={140}>Sisa Utang</TH>
-                    <TH width={100}>Status</TH>
-                    <TH width={AKSI_COL_WIDTH_MENU_ONLY}>Aksi</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {suppliersTampil.map((s) => (
-                    <TR key={s.id} {...klikBuka(() => setPanelRincian(specOtomatis(s)))}>
-                      <TD sticky className="font-mono text-[12px]">{s.code}</TD>
-                      <TD truncate className="font-medium">{s.name}</TD>
-                      <TD truncate className="text-[12px] text-ink2">{s.phone || s.email || "—"}</TD>
-                      <TD className="whitespace-nowrap text-[12px]">{s.paymentTermType === "TUNAI" ? "Tunai/COD" : s.paymentTermType === "TANGGAL_KHUSUS" ? "Tanggal khusus" : s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</TD>
-                      <TD truncate className="text-[12px] text-ink2">
-                        {s.bankAccount ? `${s.bankName || ""} ${s.bankAccount}`.trim() : "—"}
-                      </TD>
-                      <TD numeric><Uang value={s.sisaUtang} nolSebagaiStrip /></TD>
-                      <TD>{s.active ? <Badge variant="green">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>}</TD>
-                      <TD>
-                        <RowActions primary={null} items={[
-                          { label: "Edit data supplier", icon: Pencil, onClick: () => setEditSupplier(s) },
-                          s.active
-                            ? { label: "Nonaktifkan", icon: Ban, destructive: true, confirmText: `Nonaktifkan ${s.name}? Supplier tidak bisa menerima tagihan baru, tetapi utang yang ada tetap bisa dibayar.`, onClick: () => ubahStatusSupplier(s) }
-                            : { label: "Aktifkan kembali", icon: CheckCircle2, onClick: () => ubahStatusSupplier(s) },
-                        ]} />
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
+            <div className="fin-dl-tabel" role="table" aria-label="Daftar supplier" style={{ "--kolom-sedang": "minmax(240px, 2.4fr) 150px 120px 60px", "--kolom-lebar": "minmax(240px, 2.2fr) minmax(130px, 1fr) 110px minmax(150px, 1.4fr) 150px 110px 60px" }}>
+              <div className="fin-dl-judul" role="row">
+                <span role="columnheader">Supplier</span><span role="columnheader" className="fin-dl-lebar">Kontak</span><span role="columnheader" className="fin-dl-lebar">Termin</span><span role="columnheader" className="fin-dl-lebar">Rekening</span>
+                <span role="columnheader" className="kanan">Sisa utang</span><span role="columnheader">Status</span><span role="columnheader" className="fin-sr-saja">Tindakan</span>
+              </div>
+              {suppliersTampil.map((s) => (
+                <div
+                  key={s.id} className="fin-dl-baris" role="row" tabIndex={0} data-testid="baris-supplier"
+                  onClick={(e) => { if (e.target.closest("button, a, input, select, [role='menuitem'], [data-tanpa-detail]")) return; setPanelRincian(specOtomatis(s)); }}
+                  onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setPanelRincian(specOtomatis(s)); } }}
+                  aria-label={`Supplier ${s.name}. Buka rincian`}
+                >
+                  <div className="fin-dl-sel fin-dl-utama" role="cell">
+                    <UbinApple nama="gedung" ukuran={40} />
+                    <span className="fin-dl-teks"><span className="fin-dl-judul-baris" title={s.name}>{s.name}</span><span className="fin-dl-nomor">{s.code}</span></span>
+                  </div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Kontak</span><span className="fin-dl-sub">{s.phone || s.email || "—"}</span></div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Termin</span>{s.paymentTermType === "TUNAI" ? "Tunai/COD" : s.paymentTermType === "TANGGAL_KHUSUS" ? "Tanggal khusus" : s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Rekening</span><span className="fin-dl-sub">{s.bankAccount ? `${s.bankName || ""} ${s.bankAccount}`.trim() : "—"}</span></div>
+                  <div className="fin-dl-sel fin-dl-angka" role="cell"><span className="fin-dl-label">Sisa utang</span><strong><Uang value={s.sisaUtang} nolSebagaiStrip /></strong></div>
+                  <div className="fin-dl-sel" role="cell"><span className="fin-dl-label">Status</span><ChipNada nada={s.active ? "hijau" : "netral"}>{s.active ? "Aktif" : "Nonaktif"}</ChipNada></div>
+                  <div className="fin-dl-sel fin-dl-aksi" role="cell" data-tanpa-detail>
+                    <RowActions gayaApple primary={null} items={[
+                      { label: "Edit data supplier", icon: Pencil, onClick: () => setEditSupplier(s) },
+                      s.active
+                        ? { label: "Nonaktifkan", icon: Ban, destructive: true, confirmText: `Nonaktifkan ${s.name}? Supplier tidak bisa menerima tagihan baru, tetapi utang yang ada tetap bisa dibayar.`, onClick: () => ubahStatusSupplier(s) }
+                        : { label: "Aktifkan kembali", icon: CheckCircle2, onClick: () => ubahStatusSupplier(s) },
+                    ]} />
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-        </Card>
+        </section>
         </>
       )}
 
@@ -853,7 +843,7 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
         footer={
           <>
             <Button variant="neutral" onClick={() => setRisiko(null)} className="max-sm:min-h-11 max-sm:px-4" data-testid="kembali-periksa">Kembali</Button>
-            <Button variant="neutral" onClick={() => { const b = risiko[0]; const t = tagihanTerbuka.find((x) => x.id === b.id); setRisiko(null); setTerapkanUntuk({ billId: b.id, nomor: t?.supplierRef || b.nomor }); }} disabled={!bolehPost} title={bolehPost ? undefined : "Akun Anda tidak punya izin menerapkan uang muka (Finance/Akuntan)."} className="max-sm:min-h-11 max-sm:px-4" data-testid="terapkan-dulu"><Wallet size={13} aria-hidden="true" /> Terapkan uang muka dulu</Button>
+            <button type="button" onClick={() => { const b = risiko[0]; const t = tagihanTerbuka.find((x) => x.id === b.id); setRisiko(null); setTerapkanUntuk({ billId: b.id, nomor: t?.supplierRef || b.nomor }); }} disabled={!bolehPost} title={bolehPost ? undefined : "Akun Anda tidak punya izin menerapkan uang muka (Finance/Akuntan)."} className="tb-menyala" data-testid="terapkan-dulu"><GlifKaca nama="koin" size={18} /><span>Terapkan uang muka dulu</span></button>
             <TombolAksi variant="destructive" disabled={!paham} data-testid="tetap-bayar" onClick={async () => { setRisiko(null); await kirim(); }}>Tetap catat pembayaran</TombolAksi>
           </>
         }

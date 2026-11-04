@@ -57,10 +57,13 @@ test("Kolom di <colgroup> sama dengan kolom yang dirender (urutan & jumlah) di t
   }
 });
 
-test("Halaman: tabel Pembayaran tetap memakai colgroup + sel berbatas potong; daftar Tagihan memakai grid container-query (bukan tier JS), tanpa TABLE_VIEW_CLASS lama", () => {
+test("Halaman: tab Pembayaran & Daftar supplier memakai daftar `fin-dl` (grid container-query, judul dipotong dengan title); daftar Tagihan memakai grid container-query (bukan tier JS), tanpa TABLE_VIEW_CLASS lama", () => {
   const s = baca("pages/finance/FinanceSuppliers.jsx");
-  assert.ok(s.includes('block min-w-0 truncate overflow-hidden whitespace-nowrap" title={p.paymentNumber}'));
-  assert.doesNotMatch(s, /TABLE_VIEW_CLASS|CARD_VIEW_CLASS|useContainerTier/);
+  assert.ok(s.includes('className="fin-dl-judul-baris" title={p.supplier?.name}') && s.includes('<span className="fin-dl-nomor">{p.paymentNumber}</span>'));
+  assert.ok(s.includes('data-testid="baris-pembayaran"') && s.includes('data-testid="baris-supplier"'));
+  assert.doesNotMatch(s, /TABLE_VIEW_CLASS|CARD_VIEW_CLASS|useContainerTier|<Table\b|<TableWrap\b/);
+  const gaya = fs.readFileSync(path.join(__dirname, "..", "src", "styles", "sanss-finance-daftar.css"), "utf8");
+  assert.ok(gaya.includes("@container tgp (min-width: 760px)") && gaya.includes("@container tgp (min-width: 1100px)"));
   const css = fs.readFileSync(path.join(__dirname, "..", "src", "styles", "sanss-finance-tagihan.css"), "utf8");
   assert.ok(css.includes("container: tgp / inline-size"));
   assert.ok(css.includes("@container tgp (min-width: 760px)"));

@@ -1,23 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, ShoppingCart, Pencil, Wallet, History, Ban } from "lucide-react";
+import { Plus, Pencil, Wallet, History, Ban, ikonMenuApple, ChevronRight, UbinApple } from "@/components/ikApple.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, ColGroup } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
-import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
 import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
@@ -26,10 +23,12 @@ import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiDokumenBiaya } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
-import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
-import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
-import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { RowActions } from "@/features/finance/RowActions.jsx";
+import { KartuKpiApple, SegStatus, KolomCari, ChipNada, KosongDaftar } from "@/features/finance/DaftarGaya.jsx";
+import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
+import { Pembuka } from "@/features/finance/RingkasanKecil.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPembelian } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
@@ -91,7 +90,7 @@ function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk,
     bisaTerapkanDp && { key: "terapkan-dp", label: "Terapkan Uang Muka", icon: Wallet, onClick: () => setTerapkanUntuk(p) },
     punyaRiwayatDp && { key: "riwayat-dp", label: "Riwayat Uang Muka", icon: History, onClick: () => setRiwayatUntuk(p) },
   ].filter(Boolean);
-  const items = [...dasar.slice(0, posisiSetelahRiwayat), ...tambahan, ...dasar.slice(posisiSetelahRiwayat)];
+  const items = ikonMenuApple([...dasar.slice(0, posisiSetelahRiwayat), ...tambahan, ...dasar.slice(posisiSetelahRiwayat)]);
 
   if (menungguKeputusan) {
     return {
@@ -129,6 +128,10 @@ function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk,
 // Uang Muka" (menu titik-tiga baris pembelian mode Utang) — mengotomasi
 // langkah yang sebelumnya harus manual lewat Jurnal Umum. Lihat
 // services/finance/posting/purchaseAdvance.js untuk jurnalnya.
+
+const NADA_STATUS_PEMBELIAN = { DRAFT: "netral", MENUNGGU_APPROVAL: "jingga", DISETUJUI: "biru", DIBAYAR: "hijau", DITOLAK: "merah", DIBATALKAN: "netral" };
+const LABEL_STATUS_PEMBELIAN = { DRAFT: "Draf", MENUNGGU_APPROVAL: "Menunggu persetujuan", DISETUJUI: "Disetujui", DIBAYAR: "Dibayar", DITOLAK: "Ditolak", DIBATALKAN: "Dibatalkan" };
+const opsiFilter = (semua, pasangan) => [{ nilai: "", label: semua }, ...pasangan.map(([nilai, label]) => ({ nilai, label }))];
 
 const STATUS_TAB = [
   { key: "MENUNGGU_APPROVAL", label: "Menunggu Persetujuan" },
@@ -169,9 +172,7 @@ export default function FinancePurchases() {
   const [versiUntuk, setVersiUntuk] = useState(null);
   const [terapkanUntuk, setTerapkanUntuk] = useState(null);
   const [riwayatUntuk, setRiwayatUntuk] = useState(null);
-  const [tableRef, tier] = useContainerTier();
-  const [terbuka, setTerbuka] = useState(() => new Set());
-  const balikTerbuka = (id) => setTerbuka((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [tentang, setTentang] = useState(false);
 
   // { diam: true } = muat ulang di latar belakang: layar TIDAK berubah jadi
   // "memuat" dan posisi scroll tetap (dipakai setelah upload foto/aksi baris).
@@ -232,6 +233,7 @@ export default function FinancePurchases() {
   }
 
   const purchases = data?.purchases || [];
+  const adaFilter = !!q || !!fKategori || !!fDivisi || !!fMode || !!fRekening || !!fBukti || status !== "";
 
   return (
     <HalamanFinance
@@ -275,232 +277,117 @@ export default function FinancePurchases() {
       )}
 
       {data?.hanyaMilikSendiri && (
-        <Penjelasan>
-          Anda melihat pengajuan milik sendiri saja. Persetujuan &amp; pembayaran dikerjakan tim Finance.
-        </Penjelasan>
+        <p className="fin-tg-info" data-nada="jingga" role="status">Anda melihat pengajuan milik sendiri saja. Persetujuan &amp; pembayaran dikerjakan tim Finance.</p>
       )}
 
-      <Penjelasan>
-        Tab ini untuk <strong>barang/aset yang dibeli tanpa tagihan resmi supplier</strong> — dibayar tunai/transfer
-        langsung atau ditalangi karyawan. Pembelian yang ada invoice &amp; terminnya dicatat di{" "}
-        <strong>Supplier &amp; Utang → Tagihan</strong>, sementara biaya operasional yang habis terpakai (bensin, tol,
-        gaji, listrik) tetap di <strong>Pengeluaran &amp; Reimbursement</strong>. Untuk jenis <strong>Uang Muka
-        Pembelian</strong>, nominalnya dicatat sebagai aset dulu (bukan beban) sampai barangnya diterima.
-      </Penjelasan>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KartuAngka
-          metrik={status ? undefined : "pembelian_aktif"}
-          label={status ? "Total di Filter Ini" : "Total Pembelian (di luar dibatalkan/ditolak)"}
-          value={formatUang(status ? (data?.ringkasan?.total ?? data?.total ?? 0) : (data?.ringkasan?.totalAktif ?? data?.total ?? 0))}
-          sub={status
-            ? `${data?.ringkasan?.jumlahSemua ?? purchases.length} pembelian`
-            : `${data?.ringkasan?.jumlahAktif ?? purchases.length} pembelian${data?.ringkasan?.tidakDihitung?.jumlah ? ` · ${data.ringkasan.tidakDihitung.jumlah} dibatalkan/ditolak (${formatUang(data.ringkasan.tidakDihitung.nominal)}) tidak dihitung` : ""}`}
-          info="Dihitung dari SEMUA pembelian sesuai filter periode & lainnya, bukan hanya baris yang tampil di tabel. Tanpa memilih tahap, pembelian yang dibatalkan atau ditolak tidak ikut dijumlahkan; pilih tab Dibatalkan/Ditolak untuk melihat totalnya."
-        />
-        <KartuAngka
-          label="Menunggu Persetujuan"
-          value={purchases.filter((p) => p.status === "MENUNGGU_APPROVAL").length}
-          tone={purchases.some((p) => p.status === "MENUNGGU_APPROVAL") ? "orange" : "default"}
-          info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
-        />
-        <KartuAngka
-          label="Disetujui, Belum Dibayar" metrik="komitmen_belum_dibayar"
-          value={purchases.filter((p) => p.status === "DISETUJUI").length}
-          sub="Reimbursement & utang"
-          info="Barang/asetnya SUDAH tercatat di buku besar, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
-        />
-      </div>
-
-      <KenapaBeda metrik={["pembelian_aktif","pengeluaran_aktif","utang_supplier","persediaan_nilai","komitmen_belum_dibayar"]} />
-
-
-      <div className="flex flex-wrap gap-2">
-        {STATUS_TAB.map((t) => (
-          <Button key={t.key || "semua"} size="sm" variant={status === t.key ? "secondary" : "neutral"} onClick={() => setStatus(t.key)}>
-            {t.label}
-          </Button>
-        ))}
-      </div>
-      <p className="text-[13px] leading-relaxed text-ink3">
-        Saring daftar di bawah berdasarkan tahap prosesnya — dari pengajuan sampai uangnya benar-benar keluar.
+      <p className="fin-tg-info" data-nada="biru" data-testid="info-pembelian">
+        Tab ini untuk <strong>barang/aset yang dibeli tanpa tagihan resmi supplier</strong> — dibayar tunai/transfer langsung atau ditalangi karyawan. Pembelian yang ada invoice &amp; terminnya dicatat di <strong>Tagihan supplier</strong>.
       </p>
 
-      <FilterBar
-        q={q} onQ={setQ}
-        placeholder="Cari nomor, keterangan, penerima, nominal…"
-        filters={[
-          { key: "kat", label: "Jenis", value: fKategori, onChange: setFKategori, options: kategori.map((k) => [k.id, k.name]) },
-          { key: "div", label: "Divisi", value: fDivisi, onChange: setFDivisi, options: Object.entries(LABEL_DIVISI) },
-          { key: "mode", label: "Cara bayar", value: fMode, onChange: setFMode, options: [["LANGSUNG", "Bayar langsung"], ["REIMBURSEMENT", "Reimbursement"], ["UTANG", "Utang"]] },
-          { key: "rekening", label: "Rekening / bank", value: fRekening, onChange: setFRekening, options: rekening.map((r) => [r.id, r.name]) },
-          { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada nota"], ["tanpa", "Tanpa nota"], ["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"]] },
-        ]}
-        ringkasan={`${purchases.length} pembelian${data?.terpotong ? " · baru 300 teratas tampil — persempit pencarian atau periode" : ""}`}
-        onReset={aturUlangFilter}
-      />
-
-      <Card className="overflow-hidden">
-        <JudulKartu
-          title="Daftar Pembelian"
-          description="Nomor PUR dibuat otomatis per bulan."
-          info="Nomor dokumen (PUR-tanggal-urutan) dibuat sistem sendiri, tidak bisa diketik manual — supaya tidak ada dua pembelian berbeda yang kebetulan pakai nomor yang sama."
+      <section className="fin-kw-baris" data-kolom="3" aria-label="Ringkasan pembelian" data-testid="kartu-pembelian">
+        <KartuKpiApple
+          ikon="keranjang" warna="biru" testid="kpi-total-pembelian"
+          label={status ? "Total di filter ini" : "Total pembelian"}
+          nilai={formatUang(status ? (data?.ringkasan?.total ?? data?.total ?? 0) : (data?.ringkasan?.totalAktif ?? data?.total ?? 0))}
+          ket={status
+            ? `${data?.ringkasan?.jumlahSemua ?? purchases.length} pembelian`
+            : `${data?.ringkasan?.jumlahAktif ?? purchases.length} pembelian${data?.ringkasan?.tidakDihitung?.jumlah ? ` · ${data.ringkasan.tidakDihitung.jumlah} dibatalkan/ditolak (${formatUang(data.ringkasan.tidakDihitung.nominal)}) tidak dihitung` : ""}`}
         />
-        {purchases.length === 0 ? (
-          <CardContent>
-            <EmptyState
-              icon={ShoppingCart}
-              title="Tidak ada pembelian"
-              description="Belum ada pembelian yang cocok dengan filter ini."
-              action={<Button size="sm" onClick={() => setModalBaru(true)}>Catat Pembelian</Button>}
-            />
-          </CardContent>
-        ) : (
-          <div ref={tableRef} data-tier={tier}>
-            {tier === "card" ? (
-              <CardList>
-                {purchases.map((p) => {
-                  const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk });
-                  return (
-                    <RowCard
-                      key={p.id}
-                      onClick={() => setPanelRincian(specPembelian(p, { badge: <StatusBadge status={p.status} /> }))}
-                      title={p.purchaseNumber}
-                      status={<StatusBadge status={p.status} />}
-                      subtitle={p.description}
-                      fields={[
-                        { label: "Tanggal", value: tanggalPendek(p.date) },
-                        { label: "Nominal", value: nominalTeks(p) },
-                        ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
-                        { label: "Jenis", value: p.category?.name },
-                        { label: "Divisi", value: LABEL_DIVISI[p.division] || p.division },
-                        { label: "Mode", value: teksModePembelian(p.mode) },
-                        { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
-                        { label: "Bukti", span: true, value: <SelBukti doc={p} jenis="purchases" aksi={aksi} /> },
-                      ]}
-                      actions={<RowActions primary={a.primary} items={a.items} />}
-                    />
-                  );
-                })}
-              </CardList>
-            ) : (
-              <TableWrap className="dh-table">
-                <Table fixed>
-                  {/* Susunan desktop PERMANEN: Klasifikasi (Jenis+Divisi) &
-                      Pembayaran (Mode+Sumber Dana) SELALU digabung. */}
-                  {tier === "full" && <ColGroup widths={[140, 104, null, 180, 160, 112, 110, 72, AKSI_COL_WIDTH]} />}
-                  {tier === "reduced" && <ColGroup widths={[140, 104, null, 140, 112, 110, 36, AKSI_COL_WIDTH]} />}
-                  {tier === "minimal" && <ColGroup widths={[140, null, 104, 100, 36, AKSI_COL_WIDTH]} />}
-                  <THead>
-                    <TR>
-                      <TH sticky width={140}>Nomor</TH>
-                      {tier !== "minimal" && <TH width={104} className="whitespace-nowrap">Tanggal</TH>}
-                      <TH className="pl-4">Keterangan</TH>
-                      {tier === "full" && <TH width={180}>Klasifikasi</TH>}
-                      {tier === "reduced" && <TH width={140}>Klasifikasi</TH>}
-                      {tier === "full" && <TH width={160}>Pembayaran</TH>}
-                      <TH numeric width={tier === "minimal" ? 104 : 112}>Nominal</TH>
-                      <TH width={tier === "minimal" ? 100 : 110}>Status</TH>
-                      {tier === "full" && <TH width={72}>Bukti</TH>}
-                      {tier !== "full" && <TH width={36} />}
-                      <TH width={AKSI_COL_WIDTH}>Aksi</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {purchases.map((p) => {
-                      const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk });
-                      const klasifikasi = (
-                        <>
-                          <span className="block truncate text-[12px]" title={p.category?.name}>{p.category?.name}</span>
-                          <span className="block truncate text-[11px] text-ink3">{LABEL_DIVISI[p.division] || p.division}</span>
-                        </>
-                      );
-                      const pembayaran = (
-                        <>
-                          <span className="block truncate text-[12px] text-ink2">{teksModePembelian(p.mode)}</span>
-                          <span className="block truncate text-[11px] text-ink3" title={teksSumberDanaPembelian(p)}>{teksSumberDanaPembelian(p)}</span>
-                        </>
-                      );
-                      const bukti = (
-                        <>
-                          <SelBukti doc={p} jenis="purchases" aksi={aksi} compact />
-                          {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
-                            <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib</span>
-                          )}
-                        </>
-                      );
-                      return (
-                        <React.Fragment key={p.id}>
-                          <TR {...klikBuka(() => setPanelRincian(specPembelian(p, { badge: <StatusBadge status={p.status} /> })))}>
-                            <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
-                            {tier !== "minimal" && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>}
-                            <TD className="max-w-0 w-full pl-4">
-                              <span className="line-clamp-2 break-words" title={p.description}>{p.description}</span>
-                              {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
-                              {(() => {
-                                const pihak = pihakPembelian(p);
-                                return (
-                                  <>
-                                    {pihak.supplier && <span className="block truncate text-[11px] text-ink3" title={`supplier ${pihak.supplier}`}>dari {pihak.supplier}</span>}
-                                    {pihak.dibeliDari && <span className="block truncate text-[11px] text-ink3" title={`dibeli dari ${pihak.dibeliDari}`} data-testid="dibeli-dari">{pihak.supplier ? "dibeli dari " : "dari "}{pihak.dibeliDari}</span>}
-                                  </>
-                                );
-                              })()}
-                            </TD>
-                            {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
-                            {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
-                            <TD numeric>
-                              <NominalDenganBiaya d={p} />
-                              {teksDpBadge(p) && <span className="block truncate text-[11px] text-ink3" title={teksDpBadge(p)}>{teksDpBadge(p)}</span>}
-                            </TD>
-                            <TD><StatusBadge status={p.status} /></TD>
-                            {tier === "full" && <TD>{bukti}</TD>}
-                            {tier !== "full" && (
-                              <TD>
-                                <ExpandToggle open={terbuka.has(p.id)} onClick={() => balikTerbuka(p.id)} label="Rincian" />
-                              </TD>
-                            )}
-                            <TD>
-                              <RowActions primary={a.primary} items={a.items} />
-                            </TD>
-                          </TR>
-                          {tier === "reduced" && (
-                            <DetailRow
-                              open={terbuka.has(p.id)}
-                              colSpan={8}
-                              fields={[
-                                { label: "Mode", value: teksModePembelian(p.mode) },
-                                { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
-                                ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
-                                { label: "Bukti", value: bukti },
-                              ]}
-                            />
-                          )}
-                          {tier === "minimal" && (
-                            <DetailRow
-                              open={terbuka.has(p.id)}
-                              colSpan={6}
-                              fields={[
-                                { label: "Tanggal", value: tanggalPendek(p.date) },
-                                { label: "Jenis", value: p.category?.name },
-                                { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge> },
-                                { label: "Mode", value: teksModePembelian(p.mode) },
-                                { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
-                                ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
-                                { label: "Bukti", value: bukti },
-                              ]}
-                            />
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </TBody>
-                </Table>
-              </TableWrap>
-            )}
+        <KartuKpiApple
+          ikon="persetujuan" warna={purchases.some((p) => p.status === "MENUNGGU_APPROVAL") ? "merahmuda" : "ungu"} testid="kpi-menunggu-pembelian"
+          label="Menunggu persetujuan" nilai={purchases.filter((p) => p.status === "MENUNGGU_APPROVAL").length}
+          ket="Belum masuk buku besar — perlu Setujui atau Tolak" onClick={() => setStatus("MENUNGGU_APPROVAL")}
+        />
+        <KartuKpiApple
+          ikon="jam" warna="jingga" testid="kpi-belum-dibayar-pembelian"
+          label="Disetujui, belum dibayar" nilai={purchases.filter((p) => p.status === "DISETUJUI").length}
+          ket="Reimbursement & utang — uangnya belum keluar" onClick={() => setStatus("DISETUJUI")}
+        />
+      </section>
+
+      <div className="fin-tg-tentang" data-testid="tentang-angka-pembelian">
+        <Pembuka buka={tentang} onToggle={() => setTentang((v) => !v)} id="tentang-pembelian-isi" className="fin-tg-tentang-tombol">Tentang angka dan pencatatan</Pembuka>
+        {tentang && (
+          <div id="tentang-pembelian-isi" className="fin-tg-tentang-isi">
+            <p>
+              Biaya operasional yang habis terpakai (bensin, tol, gaji, listrik) tetap di <strong>Pengeluaran &amp; Reimbursement</strong>. Untuk jenis <strong>Uang Muka Pembelian</strong>, nominalnya dicatat sebagai aset dulu (bukan beban) sampai barangnya diterima.
+              Total dihitung dari SEMUA pembelian sesuai filter periode &amp; lainnya, bukan hanya baris yang tampil. Tanpa memilih tahap, pembelian yang dibatalkan atau ditolak tidak ikut dijumlahkan.
+            </p>
+            <KenapaBeda metrik={["pembelian_aktif", "pengeluaran_aktif", "utang_supplier", "persediaan_nilai", "komitmen_belum_dibayar"]} />
           </div>
         )}
-      </Card>
+      </div>
+
+      <section className="fin-tg-panel" aria-label="Daftar pembelian">
+        <div className="fin-tg-alat">
+          <SegStatus item={STATUS_TAB.map((t) => ({ kunci: t.key, label: t.label }))} nilai={status} onPilih={setStatus} label="Tahap pembelian" testidAwalan="tab-pembelian" />
+          <div className="fin-tg-cari">
+            <KolomCari nilai={q} onUbah={setQ} placeholder="Cari nomor, keterangan, penerima, nominal…" ariaLabel="Cari pembelian" testid="cari-pembelian" />
+            <div className="fin-tg-pilih"><SelectPO value={fKategori} onChange={setFKategori} ariaLabel="Jenis" opsi={opsiFilter("Semua jenis", kategori.map((k) => [k.id, k.name]))} /></div>
+            <div className="fin-tg-pilih"><SelectPO value={fDivisi} onChange={setFDivisi} ariaLabel="Divisi" opsi={opsiFilter("Semua divisi", Object.entries(LABEL_DIVISI))} /></div>
+            <div className="fin-tg-pilih"><SelectPO value={fMode} onChange={setFMode} ariaLabel="Cara bayar" opsi={opsiFilter("Semua cara bayar", [["LANGSUNG", "Bayar langsung"], ["REIMBURSEMENT", "Reimbursement"], ["UTANG", "Utang"]])} /></div>
+            <div className="fin-tg-pilih"><SelectPO value={fRekening} onChange={setFRekening} ariaLabel="Rekening / bank" opsi={opsiFilter("Semua rekening", rekening.map((r) => [r.id, r.name]))} /></div>
+            <div className="fin-tg-pilih"><SelectPO value={fBukti} onChange={setFBukti} ariaLabel="Bukti" opsi={opsiFilter("Semua bukti", [["ada", "Ada nota"], ["tanpa", "Tanpa nota"], ["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"]])} /></div>
+          </div>
+        </div>
+        <p className="fin-tg-jumlah" role="status" aria-live="polite" data-testid="jumlah-pembelian">
+          {purchases.length} pembelian{data?.terpotong ? " · baru 300 teratas tampil — persempit pencarian atau periode" : ""}
+          {adaFilter && <button type="button" className="fin-tg-reset" onClick={aturUlangFilter}>Atur ulang</button>}
+        </p>
+
+        {purchases.length === 0 ? (
+          <KosongDaftar
+            testid="pembelian-kosong" ikon="keranjang" judul="Tidak ada pembelian" ket="Belum ada pembelian yang cocok dengan filter ini."
+            aksi={<button type="button" className="fin-tg-tombol-utama" onClick={() => setModalBaru(true)}>Catat pembelian</button>}
+          />
+        ) : (
+          <div className="fin-dl-tabel" role="table" aria-label="Daftar pembelian" style={{ "--kolom-sedang": "minmax(240px, 2.6fr) 104px 150px 150px 120px", "--kolom-lebar": "minmax(250px, 2.6fr) 104px minmax(110px, 1fr) minmax(120px, 1fr) 140px 150px 90px 120px" }}>
+            <div className="fin-dl-judul" role="row">
+              <span role="columnheader">Pembelian</span><span role="columnheader">Tanggal</span><span role="columnheader" className="fin-dl-lebar">Klasifikasi</span><span role="columnheader" className="fin-dl-lebar">Pembayaran</span>
+              <span role="columnheader" className="kanan">Nominal</span><span role="columnheader">Status</span><span role="columnheader" className="fin-dl-lebar">Bukti</span><span role="columnheader" className="fin-sr-saja">Tindakan</span>
+            </div>
+            {purchases.map((p) => {
+              const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk });
+              const pihak = pihakPembelian(p);
+              const buka = () => setPanelRincian(specPembelian(p, { badge: <StatusBadge status={p.status} /> }));
+              const nada = NADA_STATUS_PEMBELIAN[p.status] || "netral";
+              return (
+                <div
+                  key={p.id} className="fin-dl-baris" role="row" tabIndex={0} data-testid="baris-pembelian" data-status={p.status}
+                  onClick={(e) => { if (e.target.closest("button, a, input, select, textarea, label, [role='menuitem'], [data-tanpa-detail]")) return; buka(); }}
+                  onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); buka(); } }}
+                  aria-label={`Pembelian ${p.purchaseNumber}, ${LABEL_STATUS_PEMBELIAN[p.status] || p.status}. Buka rincian`}
+                >
+                  <div className="fin-dl-sel fin-dl-utama" role="cell">
+                    <UbinApple nama="keranjang" ukuran={40} />
+                    <span className="fin-dl-teks">
+                      <span className="fin-dl-judul-baris" title={p.description}>{p.description}</span>
+                      <span className="fin-dl-nomor">{p.purchaseNumber}</span>
+                      {p.reimburseTo && <span className="fin-dl-sub" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
+                      {pihak.supplier && <span className="fin-dl-sub" title={`supplier ${pihak.supplier}`}>dari {pihak.supplier}</span>}
+                      {pihak.dibeliDari && <span className="fin-dl-sub" title={`dibeli dari ${pihak.dibeliDari}`} data-testid="dibeli-dari">{pihak.supplier ? "dibeli dari " : "dari "}{pihak.dibeliDari}</span>}
+                    </span>
+                  </div>
+                  <div className="fin-dl-sel" role="cell"><span className="fin-dl-label">Tanggal</span>{tanggalPendek(p.date)}</div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Klasifikasi</span><span title={p.category?.name}>{p.category?.name}</span><span className="fin-dl-sub">{LABEL_DIVISI[p.division] || p.division}</span></div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell"><span className="fin-dl-label">Pembayaran</span><span>{teksModePembelian(p.mode)}</span><span className="fin-dl-sub" title={teksSumberDanaPembelian(p)}>{teksSumberDanaPembelian(p)}</span></div>
+                  <div className="fin-dl-sel fin-dl-angka" role="cell"><span className="fin-dl-label">Nominal</span><NominalDenganBiaya d={p} />{teksDpBadge(p) && <span className="fin-dl-sub" title={teksDpBadge(p)}>{teksDpBadge(p)}</span>}</div>
+                  <div className="fin-dl-sel" role="cell"><span className="fin-dl-label">Status</span><ChipNada nada={nada}>{LABEL_STATUS_PEMBELIAN[p.status] || p.status}</ChipNada></div>
+                  <div className="fin-dl-sel fin-dl-lebar" role="cell" data-tanpa-detail>
+                    <span className="fin-dl-label">Bukti</span>
+                    <SelBukti doc={p} jenis="purchases" aksi={aksi} compact />
+                    {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && <span className="fin-dl-sub lewat">Nota wajib</span>}
+                  </div>
+                  <div className="fin-dl-sel fin-dl-aksi" role="cell" data-tanpa-detail>
+                    <RowActions gayaApple primary={a.primary} items={a.items} />
+                    <ChevronRight size={18} aria-hidden="true" className="fin-dl-buka" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <ModalPembelian
         open={modalBaru} onClose={() => setModalBaru(false)}

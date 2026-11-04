@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check } from "lucide-react";
+import { AlertCircle, Check, IkPesanan, IkKotak, IkDokumen } from "@/components/ikApple.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -7,8 +7,6 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { InputUang, formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
-import { IkPesanan, IkKotak } from "@/components/financeIconsPO.jsx";
-import { IkDokumen } from "@/components/financeIconsBiaya.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/JenisTagihan.jsx";
 import { TERMIN_AWAL, bodyTermin, galatTermin } from "@/features/finance/terminLogic.js";

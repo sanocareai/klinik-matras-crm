@@ -1,12 +1,10 @@
 import React, { useMemo } from "react";
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Search, X, IkDokumen, IkTermin, IkKotak, IkPersetujuan, IkKoin, IkGedung, IkKosong } from "@/components/ikApple.jsx";
 import { cn } from "@/lib/utils.js";
-import { IkDokumen } from "@/components/financeIconsBiaya.jsx";
-import { IkTermin, IkKotak } from "@/components/financeIconsPO.jsx";
-import { IkPersetujuan, IkKoin, IkGedung, IkKosong } from "@/components/financeIconsTagihan.jsx";
 import { RowActions } from "@/features/finance/RowActions.jsx";
 import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
+import { KartuKpiApple } from "@/features/finance/DaftarGaya.jsx";
 import { teksPeringatanUangMuka, teksCakupanPeriksa } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import {
   TAB_TAGIHAN, LABEL_TEMPO, tampilSisa, formatUangTepat, sisaKurangSatuRupiah, KET_SISA_SEN, statusTempo, asalTagihan, nomorFakturTampil, hitungTab, ringkasKpi, BATAS_DAFTAR_TAGIHAN,
@@ -28,35 +26,18 @@ export function ChipStatusTagihan({ status, tempo }) {
   );
 }
 
-function KartuKpi({ Ikon, label, nilai, chip, ket, onClick, nada = "biasa", testid }) {
-  const isi = (
-    <>
-      <span className="fin-tg-kpi-ikon" aria-hidden="true"><Ikon size={24} /></span>
-      <span className="fin-tg-kpi-teks">
-        <span className="fin-tg-kpi-label">{label}</span>
-        <span className="fin-tg-kpi-nilai">{nilai}{chip && <span className="fin-tg-kpi-chip">{chip}</span>}</span>
-        {ket && <span className="fin-tg-kpi-ket">{ket}</span>}
-      </span>
-      {onClick && <ChevronRight size={18} aria-hidden="true" className="fin-tg-kpi-panah" />}
-    </>
-  );
-  return onClick
-    ? <button type="button" className="fin-tg-kpi" data-nada={nada} onClick={onClick} data-testid={testid}>{isi}</button>
-    : <div className="fin-tg-kpi" data-nada={nada} data-testid={testid}>{isi}</div>;
-}
-
 export function RingkasanTagihan({ aging, bills, uangMuka, unbilled, onTab, onLihatUangMuka, onLihatPenerimaan }) {
   const k = useMemo(() => ringkasKpi({ aging, bills, uangMuka, unbilled }), [aging, bills, uangMuka, unbilled]);
   return (
     <section className="fin-tg-kpi-wadah" aria-label="Ringkasan utang supplier" data-testid="kartu-supplier-utang">
       <div className="fin-tg-kpi-utama">
-        <KartuKpi Ikon={IkDokumen} label="Sisa utang" nilai={formatUangTepat(k.sisaUtang.nilai)} ket={`${k.sisaUtang.jumlah} tagihan terbuka · utang resmi, sudah disetujui`} onClick={() => onTab("belum")} testid="kpi-sisa-utang" />
-        <KartuKpi Ikon={IkTermin} label="Lewat jatuh tempo" nilai={formatUangTepat(k.lewatTempo.nilai)} chip={k.lewatTempo.jumlah > 0 ? `${k.lewatTempo.jumlah} tagihan` : undefined} nada={k.lewatTempo.jumlah > 0 ? "peringatan" : "biasa"} ket={k.lewatTempo.jumlah === 0 ? "Tidak ada" : undefined} onClick={() => onTab("proses")} testid="kpi-lewat-tempo" />
-        <KartuKpi Ikon={IkPersetujuan} label="Menunggu persetujuan" nilai={`${k.menunggu.jumlah} tagihan`} ket={k.menunggu.terpotong ? "Dihitung dari 300 tagihan yang dimuat" : "Belum menjadi utang sampai disetujui"} nada={k.menunggu.jumlah > 0 ? "peringatan" : "biasa"} onClick={() => onTab("proses")} testid="kpi-menunggu" />
+        <KartuKpiApple ikon="dokumen" warna="biru" label="Sisa utang" nilai={formatUangTepat(k.sisaUtang.nilai)} ket={`${k.sisaUtang.jumlah} tagihan terbuka · utang resmi, sudah disetujui`} onClick={() => onTab("belum")} testid="kpi-sisa-utang" />
+        <KartuKpiApple ikon="termin" warna={k.lewatTempo.jumlah > 0 ? "merah" : "jingga"} label="Lewat jatuh tempo" nilai={formatUangTepat(k.lewatTempo.nilai)} chip={k.lewatTempo.jumlah > 0 ? `${k.lewatTempo.jumlah} tagihan` : undefined} ket={k.lewatTempo.jumlah === 0 ? "Tidak ada" : undefined} onClick={() => onTab("proses")} testid="kpi-lewat-tempo" />
+        <KartuKpiApple ikon="persetujuan" warna="merahmuda" label="Menunggu persetujuan" nilai={`${k.menunggu.jumlah} tagihan`} ket={k.menunggu.terpotong ? "Dihitung dari 300 tagihan yang dimuat" : "Belum menjadi utang sampai disetujui"} onClick={() => onTab("proses")} testid="kpi-menunggu" />
       </div>
       <div className="fin-tg-kpi-pendukung">
-        <KartuKpi Ikon={IkKoin} label="Uang muka belum dialokasikan" nilai={formatUang(k.uangMuka.nilai)} ket={`${k.uangMuka.supplier} supplier · aset, bukan utang`} onClick={onLihatUangMuka} testid="kpi-uang-muka" />
-        <KartuKpi Ikon={IkKotak} label="Penerimaan belum ditagih" nilai={`${k.penerimaan.jumlah}${k.penerimaan.terpotong ? "+" : ""} penerimaan`} ket={k.penerimaan.terpotong ? "Menampilkan 100 terbaru; mungkin ada lebih" : "Barang masuk, tagihan belum dicatat"} onClick={onLihatPenerimaan} testid="kpi-penerimaan" />
+        <KartuKpiApple kecil ikon="koin" warna="hijau" label="Uang muka belum dialokasikan" nilai={formatUang(k.uangMuka.nilai)} ket={`${k.uangMuka.supplier} supplier · aset, bukan utang`} onClick={onLihatUangMuka} testid="kpi-uang-muka" />
+        <KartuKpiApple kecil ikon="kotak" warna="ungu" label="Penerimaan belum ditagih" nilai={`${k.penerimaan.jumlah}${k.penerimaan.terpotong ? "+" : ""} penerimaan`} ket={k.penerimaan.terpotong ? "Menampilkan 100 terbaru; mungkin ada lebih" : "Barang masuk, tagihan belum dicatat"} onClick={onLihatPenerimaan} testid="kpi-penerimaan" />
       </div>
     </section>
   );
@@ -106,7 +87,7 @@ function BarisTagihan({ b, hariIni, aksi, onBuka, kelayakanUm }) {
       </div>
       <div className="fin-tg-sel fin-tg-st" role="cell" data-label="Status"><span className="fin-tg-label-kecil">Status</span><ChipStatusTagihan status={b.status} tempo={tempo} /></div>
       <div className="fin-tg-sel fin-tg-aksi" role="cell" data-tanpa-detail>
-        <RowActions primary={a.primary} items={a.items} />
+        <RowActions gayaApple primary={a.primary} items={a.items} />
         <ChevronRight size={18} aria-hidden="true" className="fin-tg-buka" />
       </div>
     </div>

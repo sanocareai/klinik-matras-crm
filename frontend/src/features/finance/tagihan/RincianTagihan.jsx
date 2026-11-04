@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
-import { ChevronDown, ChevronRight, X, History } from "lucide-react";
+import { ChevronDown, ChevronRight, X, History } from "@/components/ikApple.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import { RowActions } from "@/features/finance/RowActions.jsx";
@@ -223,7 +223,7 @@ export default function RincianTagihan({ b, aksi, spec, onClose, onRiwayat, bole
 
           <footer className="fin-tg-r-kaki">
             <button type="button" className="fin-tombol fin-tg-r-riwayat" onClick={() => onRiwayat(b)}><History size={16} aria-hidden="true" /><span>Riwayat</span></button>
-            <div className="fin-tg-r-aksi"><RowActions primary={a.primary} items={a.items} /></div>
+            <div className="fin-tg-r-aksi"><RowActions gayaApple primary={a.primary} items={a.items} /></div>
           </footer>
           <DaftarOverlay />
         </Dialog.Content>

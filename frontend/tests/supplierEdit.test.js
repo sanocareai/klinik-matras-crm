@@ -62,7 +62,8 @@ test("supplierBisaDipilih: nonaktif tidak dipilih untuk transaksi baru, kecuali 
 
 test("halaman: kolom Aksi di Master Supplier (Edit + Nonaktifkan/Aktifkan), supplier nonaktif dimuat, dropdown transaksi hanya yang aktif", () => {
   assert.match(halaman, /api\.getFinanceSuppliers\(\{ includeInactive: "1" \}\)/);
-  assert.match(halaman, /<TH width=\{AKSI_COL_WIDTH_MENU_ONLY\}>Aksi<\/TH>/);
+  assert.match(halaman, /<span role="columnheader" className="fin-sr-saja">Tindakan<\/span>/, "kolom Tindakan tetap ada (terbaca pembaca layar) di daftar supplier");
+  assert.match(halaman, /<RowActions gayaApple primary=\{null\} items=\{\[\s*\{ label: "Edit data supplier"/, "menu aksi baris supplier memakai RowActions gaya Apple");
   assert.match(halaman, /label: "Edit data supplier", icon: Pencil,/, "RowActions menerima KOMPONEN ikon, bukan elemen JSX (elemen membuat halaman crash saat menu dibuka)");
   assert.doesNotMatch(halaman, /icon: <w+/, "tidak boleh ada icon berupa elemen JSX di item menu");
   assert.match(halaman, /label: "Edit data supplier"/);

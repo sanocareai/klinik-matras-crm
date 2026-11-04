@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Info, RefreshCw, Wallet } from "lucide-react";
+import { Info, RefreshCw, UbinApple, GlifKaca } from "@/components/ikApple.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -84,15 +84,15 @@ export function BannerUangMuka({ r, galat, onCoba, onTerapkan, bolehPost = true,
   }
   if (!r?.ada) return null;
   return (
-    <div role="status" data-testid="peringatan-uang-muka-faktur" className="flex flex-wrap items-start gap-2 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">
-      <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+    <div role="status" data-testid="peringatan-uang-muka-faktur" className="ik-peringatan-um text-[12.5px] text-orange">
+      <UbinApple nama="koin" nada="jingga" ukuran={kompak ? 32 : 38} />
       <div className="min-w-0 flex-1">
         <p className="m-0 font-medium">{teksPeringatanUangMuka(r)}</p>
         {!kompak && <p className="m-0 mt-0.5 text-[12px]">Dokumen: {r.sesuai.map((d) => d.nomor).join(", ")}. Uang muka dibayar, faktur disetujui, dan penerapan adalah tiga langkah terpisah.</p>}
       </div>
-      <Button size="sm" variant="neutral" onClick={onTerapkan} disabled={!bolehPost} title={bolehPost ? undefined : KETERANGAN_IZIN} data-testid="terapkan-uang-muka-peringatan" className="max-sm:min-h-11 max-sm:px-4">
-        <Wallet size={13} aria-hidden="true" /> Terapkan uang muka
-      </Button>
+      <button type="button" onClick={onTerapkan} disabled={!bolehPost} title={bolehPost ? undefined : KETERANGAN_IZIN} data-testid="terapkan-uang-muka-peringatan" className="tb-menyala berdenyut">
+        <GlifKaca nama="koin" size={18} /><span>Terapkan uang muka</span>
+      </button>
     </div>
   );
 }
@@ -176,7 +176,12 @@ export function PenerapanUangMuka({ billId, nomorFaktur, onClose, onSaved, boleh
     try { await onSaved?.(); } catch { /* halaman induk menampilkan galatnya sendiri */ }
   }
 
-  const judul = `Terapkan uang muka · ${nomorFaktur || data?.faktur.nomor || ""}`.trim();
+  const judul = (
+    <span className="inline-flex items-center gap-2.5">
+      <UbinApple nama="koin" ukuran={34} />
+      <span>{`Terapkan uang muka · ${nomorFaktur || data?.faktur.nomor || ""}`.trim()}</span>
+    </span>
+  );
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()} title={judul} description="Mengurangi sisa tagihan faktur. Tidak ada uang keluar baru dari bank."
@@ -184,8 +189,8 @@ export function PenerapanUangMuka({ billId, nomorFaktur, onClose, onSaved, boleh
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi disabled={!siap.siap || !bolehPost} title={bolehPost ? undefined : KETERANGAN_IZIN} data-testid="simpan-penerapan" onClick={terapkan}>
-            <Wallet size={14} aria-hidden="true" /> Terapkan uang muka
+          <TombolAksi className="tb-menyala" disabled={!siap.siap || !bolehPost} title={bolehPost ? undefined : KETERANGAN_IZIN} data-testid="simpan-penerapan" onClick={terapkan}>
+            <GlifKaca nama="koin" size={18} /><span>Terapkan uang muka</span>
           </TombolAksi>
         </>
       }
@@ -330,7 +335,7 @@ function TawaranUangMuka({ st, bolehPost, onTutup, onCoba, onTerapkan }) {
       footer={
         st.tahap === "gagal"
           ? <><Button variant="neutral" onClick={onTutup} className="max-sm:min-h-11 max-sm:px-4" data-testid="tutup-tawaran">Tutup</Button><Button onClick={onCoba} data-testid="coba-lagi-tawaran" className="max-sm:min-h-11 max-sm:px-4"><RefreshCw size={13} aria-hidden="true" /> Coba lagi</Button></>
-          : <><Button variant="neutral" onClick={onTutup} className="max-sm:min-h-11 max-sm:px-4" data-testid="nanti-saja">Nanti saja</Button><Button onClick={onTerapkan} disabled={!bolehPost} title={bolehPost ? undefined : KETERANGAN_IZIN} data-testid="lanjut-terapkan" className="max-sm:min-h-11 max-sm:px-4"><Wallet size={13} aria-hidden="true" /> Terapkan uang muka</Button></>
+          : <><Button variant="neutral" onClick={onTutup} className="max-sm:min-h-11 max-sm:px-4" data-testid="nanti-saja">Nanti saja</Button><button type="button" onClick={onTerapkan} disabled={!bolehPost} title={bolehPost ? undefined : KETERANGAN_IZIN} data-testid="lanjut-terapkan" className="tb-menyala berdenyut"><GlifKaca nama="koin" size={18} /><span>Terapkan uang muka</span></button></>
       }
     >
       {st.tahap === "gagal" ? (
