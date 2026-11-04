@@ -7,7 +7,7 @@ import { IkPersetujuan, IkKoin, IkGedung, IkKosong } from "@/components/financeI
 import { RowActions } from "@/features/finance/RowActions.jsx";
 import { formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { SelectPO } from "@/features/finance/po/KontrolPO.jsx";
-import { teksPeringatanUangMuka } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
+import { teksPeringatanUangMuka, teksCakupanPeriksa } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import {
   TAB_TAGIHAN, LABEL_TEMPO, tampilSisa, formatUangTepat, sisaKurangSatuRupiah, KET_SISA_SEN, statusTempo, asalTagihan, nomorFakturTampil, hitungTab, ringkasKpi, BATAS_DAFTAR_TAGIHAN,
 } from "./tagihanLogika.js";
@@ -114,8 +114,9 @@ function BarisTagihan({ b, hariIni, aksi, onBuka, kelayakanUm }) {
 }
 
 export default function DaftarTagihan({
-  bills, billsTampil, tab, onTab, q, onQ, fSup, onFSup, fTempo, onFTempo, onReset, aksi, onBuka, onCatat, hariIni, kelayakanUm,
+  bills, billsTampil, tab, onTab, q, onQ, fSup, onFSup, fTempo, onFTempo, onReset, aksi, onBuka, onCatat, hariIni, kelayakanUm, statusPeriksaUm,
 }) {
+  const cakupanUm = statusPeriksaUm ? teksCakupanPeriksa(statusPeriksaUm) : null;
   const hitung = useMemo(() => hitungTab(bills, hariIni), [bills, hariIni]);
   const namaSupplier = useMemo(() => [...new Set(bills.map((b) => b.supplier?.name).filter(Boolean))].sort(), [bills]);
   const adaFilter = !!q || !!fSup || !!fTempo || tab !== "semua";
@@ -146,6 +147,12 @@ export default function DaftarTagihan({
         {ket && <span className="fin-tg-jumlah-ket"> · {ket}</span>}
         {adaFilter && <button type="button" className="fin-tg-reset" onClick={onReset}>Atur ulang</button>}
       </p>
+
+      {cakupanUm && (
+        <p className="fin-tg-batas" role="status" data-testid="batas-periksa-uang-muka">
+          {cakupanUm}{statusPeriksaUm.gagal > 0 && <> <button type="button" className="fin-tg-reset" onClick={statusPeriksaUm.onCoba} data-testid="coba-lagi-periksa-uang-muka">Coba lagi</button></>}
+        </p>
+      )}
 
       {bills.length === 0 ? (
         <div className="fin-tg-kosong" data-testid="tagihan-kosong">

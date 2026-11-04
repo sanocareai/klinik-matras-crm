@@ -11,6 +11,7 @@
 
 import React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X } from "lucide-react";
 
 const kosong = (v) => v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0);
@@ -95,6 +96,7 @@ export function PanelDetail({ spec, onClose }) {
               {spec.aksi && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line px-4 py-3">{spec.aksi}</div>}
             </>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

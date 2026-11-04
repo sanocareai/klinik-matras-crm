@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, Loader2, ArrowRight, XCircle, PackageCheck, Save } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
@@ -337,6 +338,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
               )}
             </div>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
       {koreksiGR && <KoreksiPenerimaanModal receiptId={receiptId} onClose={() => setKoreksiGR(false)} onDone={() => { setVersiKoreksi((v) => v + 1); load(); onChanged(); }} />}

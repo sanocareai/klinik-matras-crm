@@ -7,6 +7,17 @@ import { kesiapanTerapkan } from "../uangMukaLogic.js";
 const sen = (n) => Math.round((Number(n) || 0) * 100);
 const rupiah = (s) => s / 100;
 
+/** Batas faktur yang diperiksa otomatis untuk penanda/peringatan (satu panggilan kandidat per faktur). Di atas batas, layar WAJIB menyatakan cakupannya — tidak boleh tampak "semua sudah diperiksa". */
+export const BATAS_PERIKSA_UANG_MUKA = 60;
+
+/** Kalimat cakupan pemeriksaan uang muka di daftar; null bila semua kandidat diperiksa dan tidak ada yang gagal. */
+export function teksCakupanPeriksa({ total = 0, diperiksa = 0, terpotong = false, gagal = 0 } = {}) {
+  const bagian = [];
+  if (terpotong) bagian.push(`Penanda uang muka hanya diperiksa untuk ${diperiksa} dari ${total} faktur bersisa yang tampil. Faktur tanpa penanda BELUM tentu bebas uang muka — rincian faktur dan pembayaran tetap memeriksanya.`);
+  if (gagal > 0) bagian.push(`Pemeriksaan uang muka gagal untuk ${gagal} faktur; baris tanpa penanda belum diperiksa.`);
+  return bagian.length ? bagian.join(" ") : null;
+}
+
 /** Kode galat server yang berarti "data yang Anda lihat sudah basi": isian dipertahankan, pengguna diminta memuat ulang. */
 export const KODE_PERLU_MUAT_ULANG = ["SISA_FAKTUR_BERUBAH", "MELEBIHI_SALDO_UANG_MUKA", "MELEBIHI_SISA_FAKTUR", "FAKTUR_TIDAK_BISA_DITERAPKAN"];
 

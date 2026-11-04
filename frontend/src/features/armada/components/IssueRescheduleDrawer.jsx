@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, CalendarClock, Loader2, Undo2 } from "lucide-react";
 import { api } from "@/api.js";
 import StatusBadge from "./StatusBadge.jsx";
@@ -354,6 +355,7 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged, onAjuka
               </button>
             </div>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

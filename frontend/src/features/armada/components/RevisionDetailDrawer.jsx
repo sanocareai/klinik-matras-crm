@@ -1,6 +1,7 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, Loader2, Save, Truck } from "lucide-react";
 import { api } from "@/api.js";
 import StatusBadge from "./StatusBadge.jsx";
@@ -204,6 +205,7 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
               </button>
             </div>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

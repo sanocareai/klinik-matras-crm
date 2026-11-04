@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, Settings, CheckCheck, Inbox as InboxIcon } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -161,6 +162,7 @@ export default function NotificationDrawer() {
               Lihat semua notifikasi
             </button>
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

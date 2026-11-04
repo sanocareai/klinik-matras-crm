@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, Check, XCircle, Loader2, User, Package, Camera, PenLine, UploadCloud, Clock, Pencil } from "lucide-react";
 import { api } from "@/api.js";
 import Avatar from "@/components/Avatar.jsx";
@@ -686,6 +687,7 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
               )}
             </div>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

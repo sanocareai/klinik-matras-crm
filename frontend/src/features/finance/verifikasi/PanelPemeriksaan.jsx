@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { AlertTriangle, ExternalLink, FileText, Loader2, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { ambilUrlBertanda } from "@/features/finance/receiptMedia.jsx";
 import { Foto } from "@/features/finance/shared.jsx";
@@ -208,6 +209,7 @@ export default function PanelPemeriksaan({ model, onClose }) {
               <Aksi aksi={model.aksi} onTutup={onClose} />
             </>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -27,6 +27,7 @@
 import React, { useEffect, useRef } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { RefreshCw, X } from "lucide-react";
+import { useOverlayAktif } from "@/components/ui/overlay-status.jsx";
 
 // Turun dari 60 menit → 20 menit. Trade-off-nya cuma 3 HEAD request /jam per tab
 // (registration.update() tidak menarik ulang bundle, cuma cek sw.js) — murah,
@@ -34,6 +35,7 @@ import { RefreshCw, X } from "lucide-react";
 const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
 
 export default function UpdateBanner() {
+  const overlayAktif = useOverlayAktif();
   const registrationRef = useRef(null);
   const updateTimerRef = useRef(null);
   const {
@@ -89,8 +91,8 @@ export default function UpdateBanner() {
     return () => document.removeEventListener("visibilitychange", onHide);
   }, [needRefresh, updateServiceWorker]);
 
-  // Tidak perlu tampilkan apapun kalau tidak ada update
-  if (!needRefresh) return null;
+  // Tidak perlu tampilkan apapun kalau tidak ada update; selama dialog/panel layar penuh terbuka banner menyingkir (tidak menutup footer), `needRefresh` tidak berubah.
+  if (!needRefresh || overlayAktif) return null;
 
   return (
     <div style={{

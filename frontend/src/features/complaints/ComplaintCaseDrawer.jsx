@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, Loader2, Save, Truck, Package, ClipboardCheck, MessageSquare, CheckCircle2, ChevronDown, MoreHorizontal, Clock, Lock, Ban, ArrowRight } from "lucide-react";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -378,6 +379,7 @@ export default function ComplaintCaseDrawer({ open, caseId, onClose, onChanged }
               </>
             )}
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

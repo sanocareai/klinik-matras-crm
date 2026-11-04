@@ -50,7 +50,7 @@ import JadwalAgingUtang from "@/features/finance/JadwalAgingUtang.jsx";
 import { TabelUangMukaSupplier } from "@/features/finance/UangMukaSupplierTabel.jsx";
 import { ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import { useKelayakanFaktur, useTawaranUangMuka, BannerUangMuka } from "@/features/finance/uangMukaFaktur/PenerapanUangMuka.jsx";
-import { fakturPerluPeriksaUangMuka, fakturBerisikoBayarKedua, cekNominalBayar } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
+import { fakturPerluPeriksaUangMuka, fakturBerisikoBayarKedua, cekNominalBayar, ringkasKelayakan, teksCakupanPeriksa, BATAS_PERIKSA_UANG_MUKA } from "@/features/finance/uangMukaFaktur/kelayakanLogika.js";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { daftarPilihanTermin, payloadTerminSupplier, bodyTermin, galatTermin, TERMIN_AWAL, bolehMencatatFinance } from "@/features/finance/terminLogic.js";
 
@@ -250,8 +250,11 @@ export default function FinanceSuppliers() {
   ), [bills, qB, fSupB, fTempo, tabAktifB, hariIni]);
   // Uang muka yang tertaut ke PO faktur yang sama: kelayakan diputuskan SERVER (kandidat per faktur). Hanya baris yang tampil, bersisa, milik supplier yang punya saldo uang muka
   // diperiksa (maks. 60); tiap penyegaran data memeriksa ulang (versiData masuk kunci).
-  const idKelayakan = useMemo(() => billsTampil.filter((b) => fakturPerluPeriksaUangMuka(b) && supplierAdaUangMuka.has(b.supplierId)).slice(0, 60).map((b) => `${b.id}:${b.sisa}:${versiData}`), [billsTampil, supplierAdaUangMuka, versiData]);
+  const kandidatPeriksa = useMemo(() => billsTampil.filter((b) => fakturPerluPeriksaUangMuka(b) && supplierAdaUangMuka.has(b.supplierId)), [billsTampil, supplierAdaUangMuka]);
+  const idKelayakan = useMemo(() => kandidatPeriksa.slice(0, BATAS_PERIKSA_UANG_MUKA).map((b) => `${b.id}:${b.sisa}:${versiData}`), [kandidatPeriksa, versiData]);
   const kelayakan = useKelayakanFaktur(idKelayakan);
+  // Jujur soal cakupan: bila kandidat melebihi batas atau ada yang gagal diperiksa, daftar menyatakannya — baris tanpa penanda BUKAN berarti sudah diperiksa.
+  const statusPeriksaUm = useMemo(() => ({ total: kandidatPeriksa.length, diperiksa: Math.min(kandidatPeriksa.length, BATAS_PERIKSA_UANG_MUKA), terpotong: kandidatPeriksa.length > BATAS_PERIKSA_UANG_MUKA, gagal: Object.keys(kelayakan.galat).length, onCoba: kelayakan.muatUlang }), [kandidatPeriksa, kelayakan.galat, kelayakan.muatUlang]);
   const paymentsTampil = useMemo(() => payments.filter((p) =>
     (!fSupP || p.supplier?.name === fSupP) &&
     (!fRek || p.cashAccount?.name === fRek) &&
@@ -356,7 +359,7 @@ export default function FinanceSuppliers() {
           bills={bills} billsTampil={billsTampil} tab={tabAktifB} onTab={setTabB} hariIni={hariIni}
           q={qB} onQ={setQB} fSup={fSupB} onFSup={setFSupB} fTempo={fTempo} onFTempo={setFTempo}
           onReset={() => { setQB(""); setFSupB(""); setFTempo(""); }}
-          aksi={aksiBaris} kelayakanUm={kelayakan.peta}
+          aksi={aksiBaris} kelayakanUm={kelayakan.peta} statusPeriksaUm={statusPeriksaUm}
           onBuka={setRincianTagihan} onCatat={() => setModal("tagihan")}
         />
       )}
@@ -693,12 +696,6 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
     () => bills.filter((b) => b.supplierId === f.supplierId && ["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(b.status) && b.sisa > 0),
     [bills, f.supplierId]
   );
-  // Kelayakan uang muka (server) hanya diperiksa untuk faktur atas PO milik supplier yang memang punya saldo uang muka.
-  const idKelayakan = useMemo(
-    () => (open && supplierAdaUangMuka.has(f.supplierId) ? tagihanTerbuka.filter(fakturPerluPeriksaUangMuka).slice(0, 60).map((b) => `${b.id}:${b.sisa}`) : []),
-    [open, f.supplierId, tagihanTerbuka, supplierAdaUangMuka]
-  );
-  const kel = useKelayakanFaktur(idKelayakan);
 
   // Sisa yang dilihat saat nominal diisi. Bila data tagihan dimuat ulang (mis. uang muka baru diterapkan) dan sisanya berubah, nominal lama DIKOSONGKAN —
   // jangan mempertahankan angka yang kini bisa membuat pembayaran berlebih.
@@ -725,6 +722,16 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
     () => Object.fromEntries(Object.entries(alokasi).filter(([id, v]) => Number(v) > 0 && tagihanTerbuka.some((b) => b.id === id))),
     [alokasi, tagihanTerbuka]
   );
+  // Kelayakan uang muka (server) untuk peringatan di tiap baris: faktur atas PO milik supplier yang punya saldo uang muka. Batas BATAS_PERIKSA_UANG_MUKA faktur — tetapi faktur yang
+  // nominalnya SUDAH diisi selalu ikut diperiksa (didahulukan), dan Simpan memeriksa ulang semua faktur terpilih langsung ke server (lihat simpan()).
+  const kandidatBayar = useMemo(() => (open && supplierAdaUangMuka.has(f.supplierId) ? tagihanTerbuka.filter(fakturPerluPeriksaUangMuka) : []), [open, f.supplierId, tagihanTerbuka, supplierAdaUangMuka]);
+  const idKelayakan = useMemo(() => {
+    const terpilih = kandidatBayar.filter((b) => alokasiAktif[b.id] !== undefined);
+    const lain = kandidatBayar.filter((b) => alokasiAktif[b.id] === undefined).slice(0, Math.max(0, BATAS_PERIKSA_UANG_MUKA - terpilih.length));
+    return [...terpilih, ...lain].map((b) => `${b.id}:${b.sisa}`);
+  }, [kandidatBayar, alokasiAktif]);
+  const kel = useKelayakanFaktur(idKelayakan);
+  const cakupanBayar = teksCakupanPeriksa({ total: kandidatBayar.length, diperiksa: Math.min(kandidatBayar.length, BATAS_PERIKSA_UANG_MUKA), terpotong: kandidatBayar.length > BATAS_PERIKSA_UANG_MUKA, gagal: Object.keys(kel.galat).length });
   const total = Object.values(alokasiAktif).reduce((s, v) => s + (Number(v) || 0), 0);
   const adaLebih = tagihanTerbuka.some((b) => Number(alokasiAktif[b.id]) > 0 && cekNominalBayar(alokasiAktif[b.id], b.sisa).lebih);
   const rek = rekening.find((r) => r.id === f.cashAccountId);
@@ -736,8 +743,15 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
     try { await onSubmit(body, kunciBayar(JSON.stringify(body))); }
     catch (e) { setGalat(e?.message || "Gagal menyimpan pembayaran. Isian Anda tetap ada; coba lagi."); }
   }
-  function simpan() {
-    const berisiko = fakturBerisikoBayarKedua(tagihanTerbuka, alokasiAktif, kel.peta);
+  async function simpan() {
+    setGalat("");
+    // Pengaman saat uang akan keluar: SETIAP faktur yang nominalnya diisi diperiksa ulang langsung ke server (bukan dari hasil yang di-cache/dibatasi), di luar batas peringatan baris.
+    // Bila pemeriksaan gagal, pembayaran TIDAK disimpan diam-diam — pengguna diminta mengulang (Simpan lagi memeriksa ulang).
+    const dipilih = tagihanTerbuka.filter((b) => Number(alokasiAktif[b.id]) > 0 && fakturPerluPeriksaUangMuka(b));
+    const peta = new Map();
+    try { for (const b of dipilih) peta.set(b.id, ringkasKelayakan(await api.getKandidatUangMukaFaktur(b.id))); }
+    catch (e) { setGalat(`Uang muka untuk faktur yang Anda pilih belum bisa diperiksa (${e?.message || "gangguan"}). Pembayaran BELUM disimpan; tekan Simpan lagi untuk memeriksa ulang.`); return undefined; }
+    const berisiko = fakturBerisikoBayarKedua(tagihanTerbuka, alokasiAktif, peta);
     if (berisiko.length > 0) { setPaham(false); setRisiko(berisiko); return undefined; }
     return kirim();
   }
@@ -809,6 +823,7 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
                     </div>
                   );
                 })}
+                {cakupanBayar && <p role="status" data-testid="batas-periksa-bayar" className="m-0 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2">{cakupanBayar} Faktur yang Anda isi nominalnya selalu diperiksa ulang saat Simpan.</p>}
                 {catatanSisa && <p role="status" data-testid="catatan-sisa-berubah" className="m-0 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{catatanSisa}</p>}
                 <div className="rounded-lg bg-inset px-3 py-2 text-[13px]" data-testid="total-kas-keluar">
                   Total dibayar dari kas: <strong>{formatUangTepat(total)}</strong>

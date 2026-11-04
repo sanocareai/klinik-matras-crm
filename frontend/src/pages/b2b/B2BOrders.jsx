@@ -1,6 +1,7 @@
 import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { Plus, X, Loader2, Handshake, Package, Building2, Trash2 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -259,6 +260,7 @@ function FormTambah({ open, onClose, onCreated }) {
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Buat Order
             </button>
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { X, Download, Share2 } from "lucide-react";
+import { useOverlayAktif } from "@/components/ui/overlay-status.jsx";
 
 // Safari iOS TIDAK PERNAH fire "beforeinstallprompt" — tidak ada API
 // programatik utk memicu instalasi PWA di iOS sama sekali (batasan
@@ -21,6 +22,7 @@ function isStandalone() {
 export default function InstallPrompt() {
   const [visible, setVisible]   = useState(false);
   const [iosMode, setIosMode]   = useState(false);
+  const overlayAktif = useOverlayAktif();
   const deferredPrompt = useRef(null);
 
   useEffect(() => {
@@ -70,7 +72,9 @@ export default function InstallPrompt() {
     setVisible(false);
   }
 
-  if (!visible) return null;
+  // Menyingkir selama ada dialog transaksi / panel layar penuh (z-index banner di atas dialog → menutup tombol Simpan/Batal di HP);
+  // `visible` dan penanda "sudah ditutup" tidak diubah, jadi banner kembali sesuai aturan semula setelah overlay ditutup.
+  if (!visible || overlayAktif) return null;
 
   // iOS: tidak ada tombol "Install" programatik — tampilkan instruksi
   // manual singkat (ikon Share adalah petunjuk visual paling dikenali).

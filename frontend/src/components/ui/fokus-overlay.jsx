@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "./overlay-status.jsx";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { useTabVisibility } from "@/lib/TabsContext.jsx";
@@ -99,6 +100,7 @@ export function FokusOverlay({ open, onClose, title, subtitle, header, footer, c
             <div ref={setSlot} className="min-h-0 flex-1 overflow-y-auto" hidden={!adaPanel} data-testid="fokus-panel" />
           </LapisanTunggalCtx.Provider>
           {footer && <div className="max-h-[46%] shrink-0 overflow-y-auto border-t border-line bg-surface/90 px-5 py-3 max-sm:px-4" hidden={adaPanel} data-testid="fokus-aksi">{footer}</div>}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

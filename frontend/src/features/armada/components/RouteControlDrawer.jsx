@@ -1,5 +1,6 @@
 import React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { useNavigate } from "react-router-dom";
 import { X, User, Users, Truck, AlertTriangle, History, ExternalLink } from "lucide-react";
 import StatusBadge from "./StatusBadge.jsx";
@@ -230,6 +231,7 @@ export default function RouteControlDrawer({ route, onClose }) {
               <ExternalLink size={13} /> Buka di Route Planner
             </button>
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -1,6 +1,7 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation, Lock, UploadCloud } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
@@ -1417,6 +1418,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
               </>
             )}
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

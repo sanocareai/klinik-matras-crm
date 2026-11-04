@@ -1,5 +1,6 @@
 import React, { useId, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { AlertTriangle, ChevronRight, Copy, Info, Pencil, Search, Trash2, Wallet, X, Check, FileText } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -85,6 +86,7 @@ export function RincianKb({ spec, onClose }) {
               {s.aksi && <div className="fin-ks-r-kaki">{s.aksi}</div>}
             </>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

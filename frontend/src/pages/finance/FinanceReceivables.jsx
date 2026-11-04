@@ -4,6 +4,7 @@ import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { useNavigate } from "react-router-dom";
 import { Undo2, HelpCircle, SlidersHorizontal, Search, X, Paperclip } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { useUrlTab } from "@/lib/useUrlTab.js";
 import { specDetailPiutang } from "@/features/finance/PiutangDetail.jsx";
 import {
@@ -511,6 +512,7 @@ function LembarFilter({ open, onClose, status, onStatus, umur, onUmur, sales, on
             <Button variant="neutral" className="min-h-11 flex-1" onClick={onReset}>Reset</Button>
             <Button className="min-h-11 flex-1" onClick={onClose}>Lihat {jumlah} piutang</Button>
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

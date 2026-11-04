@@ -1,5 +1,6 @@
 import React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "./overlay-status.jsx";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 
@@ -27,6 +28,7 @@ export function PanelSamping({ open, onOpenChange, judul, subjudul, kepalaKanan 
             <Dialog.Close className="prod-ps-tutup" aria-label="Tutup"><X size={20} aria-hidden /></Dialog.Close>
           </header>
           <div className="prod-ps-isi">{children}</div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

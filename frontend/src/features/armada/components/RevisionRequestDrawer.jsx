@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { X, Search, Loader2, Send } from "lucide-react";
 import { api } from "@/api.js";
 
@@ -161,6 +162,7 @@ export default function RevisionRequestDrawer({ open, onClose, onCreated, preset
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Ajukan Revisi
             </button>
           </div>
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

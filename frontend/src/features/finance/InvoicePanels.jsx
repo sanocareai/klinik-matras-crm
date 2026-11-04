@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay } from "@/components/ui/overlay-status.jsx";
 import { AlertTriangle, ChevronRight, FileText, Filter, Info, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -291,6 +292,7 @@ export function RincianInvoice({ invoice, onClose, onAturTempo }) {
               </div>
             </>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

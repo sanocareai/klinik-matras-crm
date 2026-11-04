@@ -1,5 +1,6 @@
-import React, { useContext } from "react";
+import React, { useContext, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DaftarOverlay, useInsetKeyboard } from "./overlay-status.jsx";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { POPOVER_SURFACE, OVERLAY } from "./surface.jsx";
@@ -29,6 +30,9 @@ export function Modal({
 }) {
   // UX Gudang Tahap 3: di dalam FokusOverlay (detail dokumen), Modal TIDAK membuka dialog kedua — isinya tampil sebagai panel di jendela yang sama (satu lapisan).
   const lapisan = useContext(LapisanTunggalCtx); const tempel = useContext(TempelCtx);
+  const kb = useInsetKeyboard(open); // keyboard HP: dialog dibatasi ke area terlihat di atas keyboard supaya footer tidak tertutup
+  // Saat keyboard muncul, isian yang sedang difokuskan tetap harus terlihat (tinggi dialog baru saja mengecil): gulirkan hanya bila perlu.
+  useEffect(() => { if (kb > 0) document.activeElement?.scrollIntoView?.({ block: "nearest" }); }, [kb]);
   if (lapisan?.slot && !(dialogBilaTempel && tempel)) return open ? <PanelSatuLapisan lapisan={lapisan} title={title} description={description} footer={footer} onOpenChange={onOpenChange} showClose={showClose}>{children}</PanelSatuLapisan> : null;
   // Portal TANPA `container` (default Radix) menaruh modal langsung di
   // <body>, DI LUAR `.app-shell.glass-division` — akibatnya SELURUH CSS kaca
@@ -70,9 +74,13 @@ export function Modal({
             // DS v2: tanpa border, elevasi popover + translucent blur (surface.jsx).
             POPOVER_SURFACE, "outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
+            // Saat keyboard terbuka di HP: tempel ke atas dan batasi tinggi ke area di atas keyboard (--kb-inset dari visualViewport).
+            "group/modal max-sm:data-[kb=1]:top-0 max-sm:data-[kb=1]:translate-y-0 max-sm:data-[kb=1]:max-h-[calc(100dvh-var(--kb-inset,0px))]",
             className
           )}
           {...contentProps}
+          data-kb={kb > 0 ? "1" : undefined}
+          style={kb > 0 ? { ...(contentProps.style || {}), "--kb-inset": `${kb}px` } : contentProps.style}
         >
           {(title || showClose) && (
             <div className="flex shrink-0 items-start justify-between px-6 pb-0 pt-5">
@@ -98,8 +106,10 @@ export function Modal({
           )}
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
           {footer && (
-            <div className="flex shrink-0 justify-end gap-2 border-t border-line px-6 pb-6 pt-4">{footer}</div>
+            // Footer: aman dari poni/indikator beranda (safe-area; desktop tetap 1.5rem), boleh membungkus di layar sempit, dan rapat saat keyboard terbuka.
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line px-6 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))] pt-4 group-data-[kb=1]/modal:pb-3" data-testid="modal-footer">{footer}</div>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

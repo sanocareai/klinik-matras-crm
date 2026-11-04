@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Sparkles, CornerDownLeft } from "lucide-react";
 import { ModalPrimitive as Dialog } from "@/components/ui/modal.jsx";
+import { DaftarOverlay } from "./overlay-status.jsx";
 
 // Command palette (⌘K) — PERSIAPAN UI SAJA (Wave 1). Terbuka via ⌘K / Ctrl+K
 // atau klik entry di Topbar. Menampilkan permukaan pencarian + grup placeholder;
@@ -124,6 +125,7 @@ export function CommandPalette({ open, onOpenChange, halaman, onPilih }) {
             </div>
           </div>
           )}
+          <DaftarOverlay />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
