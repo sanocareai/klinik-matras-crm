@@ -90,7 +90,7 @@ test("CSV ekspor = layar: periode, cutoff, dasar, nilai order ≠ pembayaran ber
   const kepala = baris.findIndex((l) => l.startsWith("Sumber,")); assert.ok(kepala > 0);
   const kol = baris[kepala].split(",");
   assert.ok(kol.includes("Nilai order saat ini (Rp)") && kol.includes("Pembayaran tercatat bersih (Rp)"), "nilai order dan pembayaran tercatat TERPISAH");
-  const meta = baris[kepala + 1]; assert.match(meta, /^META,Atribusi label CRM,100,10,90,5,3,2,5,5,100,5000000,2000000,1000000,Biaya terisi setiap hari,500000,,5,2,,,Cocok dengan total kontrol yang diinput — bukan verifikasi independen$/);
+  const meta = baris[kepala + 1]; assert.match(meta, /^META,Atribusi label CRM,100,10,90,5,3,2,5,5,100,5000000,2000000,1000000,Biaya terisi setiap hari,500000,,5,2,,,Cocok dengan total kontrol yang diinput — bukan verifikasi independen,{7}$/);
   assert.ok(!/terverifikasi|Biaya lengkap/.test(csv), "label tidak boleh mengklaim verifikasi/kelengkapan terbukti");
   assert.match(csv, /Terisi setiap hari; kelengkapan per-Ad tidak diverifikasi independen|Ada sumber belum lengkap/);
   const tt = baris[kepala + 2]; assert.ok(tt.startsWith("\"'=HYPERLINK(\"\"x\"\")\"") || tt.startsWith("'=HYPERLINK"), "formula injection dinetralkan"); assert.match(tt, /Biaya belum diisi,,biaya belum diisi,,,biaya belum diisi,/);

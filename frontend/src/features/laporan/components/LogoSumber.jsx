@@ -14,7 +14,7 @@ const PATH = {
 export const WARNA_MEREK = { META: "#0467DF", TIKTOK: "#000000", WHATSAPP: "#25D366", INSTAGRAM: "#FF0069" };
 export const SUMBER_IKON_SUMBER = "Simple Icons 13.21.0 (CC0 1.0)";
 
-const NAMA = { META: "Meta", TIKTOK: "TikTok", WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", WEBSITE: "Website", LAINNYA: "Lainnya", UNKNOWN: "Tidak diketahui", UNMAPPED: "Belum terpetakan" };
+const NAMA = { META: "Meta", TIKTOK: "TikTok", GOOGLE: "Google Ads", WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", WEBSITE: "Website", LAINNYA: "Lainnya", UNKNOWN: "Tidak diketahui", UNMAPPED: "Belum terpetakan" };
 
 /** Logo sumber dalam wadah seragam. size = sisi wadah (px). Dekoratif (aria-hidden) karena nama sumber selalu ada di teks sebelahnya; prop `judul` bila dipakai sendiri. */
 export default function LogoSumber({ id, size = 36, judul = null, className }) {

@@ -10,7 +10,8 @@ import { hitungSumber, susunSumber } from "../src/services/attribution/sumber.js
 import { hitungCakupan } from "../src/services/attribution/biayaSumber.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const BASE_LIVE = "8e5437b6";
+// Baseline = release live saat kandidat ini disiapkan. NAIKKAN saat baseline live berganti (gerbang rilis memeriksa bahwa commit ini ada dan leluhur kandidat).
+const BASE_LIVE = "5cd1a5fa";
 const git = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const adaBase = git(["cat-file", "-e", `${BASE_LIVE}^{commit}`]).status === 0;
 function semuaBerkas(dir, ext, keluar = []) {
@@ -25,18 +26,18 @@ function semuaBerkas(dir, ext, keluar = []) {
 const rel = (p) => path.relative(root, p).replace(/\\/g, "/");
 const baca = (p) => fs.readFileSync(p, "utf8");
 
-test("pemakai kontrak /sumber: hanya route (attributionAds.js), klien API (api.js) dan tab Akuisisi; TIDAK ada MCP/skrip operasional/pemakai lain", () => {
+test("pemakai kontrak /sumber: hanya route (attributionAds.js), klien API (api.js), logika/ekspor tab Marketing; TIDAK ada MCP/skrip operasional/pemakai lain", () => {
   const POLA = /atribusi\/iklan\/sumber|getAtribusiSumber|hitungSumberPerforma|services\/attribution\/sumber\.js/;
   const pemakai = [...semuaBerkas(path.join(root, "backend/src"), [".js"]), ...semuaBerkas(path.join(root, "frontend/src"), [".js", ".jsx"])]
     .filter((p) => POLA.test(baca(p))).map(rel).sort();
   assert.deepEqual(pemakai, [
     "backend/src/routes/attributionAds.js", "backend/src/services/attribution/sumber.js",
-    "frontend/src/api.js", "frontend/src/features/laporan/akuisisiLogic.js", "frontend/src/features/laporan/components/AkuisisiTab.jsx", "frontend/src/pages/Laporan.jsx",
+    "frontend/src/api.js", "frontend/src/features/laporan/akuisisiLogic.js", "frontend/src/features/laporan/components/MarketingTab.jsx", "frontend/src/features/laporan/marketingLogic.js", "frontend/src/utils/marketingXlsx.js",
   ]);
   for (const dir of ["backend/src/mcp", "backend/src/mcpHub"]) for (const p of semuaBerkas(path.join(root, dir), [".js"])) assert.ok(!POLA.test(baca(p)), `${rel(p)} tidak boleh memakai /sumber`);
   // skrip operasional: hanya smoke skrip rilis (historis + kandidat) yang memanggilnya (baca-saja)
   const skrip = semuaBerkas(path.join(root, "scripts"), [".sh", ".cjs", ".mjs", ".js"]).filter((p) => /\/sumber\?|iklan\/sumber/.test(baca(p))).map(rel).sort();
-  assert.deepEqual(skrip.filter((p) => !/^scripts\/(release-akuisisi-sumber\.sh|lib\/(smoke|rehearsal|hash-live)-akuisisi-biaya\.mjs|release-akuisisi-biaya\.sh)$/.test(p)), [], "pemakai /sumber tak dikenal di scripts/");
+  assert.deepEqual(skrip.filter((p) => !/^scripts\/(release-akuisisi-sumber\.sh|lib\/(smoke|rehearsal|hash-live)-akuisisi-biaya\.mjs|release-akuisisi-biaya\.sh|release-marketing-tab\.sh|templates\/release-marketing-tab\/smoke-marketing\.txt|(gen-)?release-marketing-lengkap\.(sh|cjs)|lib\/(smoke|rehearsal|invarian)-marketing-lengkap\.mjs)$/.test(p)), [], "pemakai /sumber tak dikenal di scripts/");
 });
 
 test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya ke biayaCampaignTerbukti; kunci baru lengkap; tidak ada pemakai yang membaca kunci lama", () => {
@@ -48,7 +49,8 @@ test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya 
   for (const k of ["periode", "status", "total", "pengecualianTotal", "sumber", "sorotan", "metrik", "peringatan", "definisi", "batasan", "cutoffEvaluasi"]) assert.ok(k in r, `kunci tingkat atas hilang: ${k}`);
   for (const k of ["berbayar", "uangBersih", "uangLedger", "nilaiOrderSaatIni"]) assert.ok(k in r.total, `total.${k}`);
   for (const k of ["sumber", "lengkap", "belumLengkap", "spend", "sementara", "lead", "lunas", "nilaiOrderSaatIni", "uangBersih", "cpa", "bookedRoas", "cashRoas", "alasanNull", "catatan"]) assert.ok(k in r.total.berbayar, `total.berbayar.${k}`);
-  assert.deepEqual(r.sumber.map((s) => s.id), ["META", "TIKTOK", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA"]);
+  // Google Ads kini sumber sendiri (sebelumnya dilebur ke LAINNYA) — urutan baris SENGAJA berubah
+  assert.deepEqual(r.sumber.map((s) => s.id), ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA"]);
   for (const s of r.sumber) {
     for (const k of ["dasar", "status", "spend", "spendLengkap", "sementara", "alasanSementara", "cpl", "cpa", "bookedRoas", "cashRoas", "alasanNull"]) assert.ok(k in s.biaya, `${s.id}.biaya.${k}`);
     for (const k of ["costPerQualifiedLead", "costPerCustomerOrder", "cpaClosing", "costPerPlatformConversation"]) assert.ok(!(k in s.biaya) && !(k in s.biaya.alasanNull), `${s.id}.biaya.${k} sudah dipindah ke biayaCampaignTerbukti`);
@@ -56,11 +58,16 @@ test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya 
   }
   assert.deepEqual(r.sumber.filter((s) => s.biayaCampaignTerbukti).map((s) => s.id), ["META"]);
   assert.equal(r.sumber[0].biayaCampaignTerbukti.dasar, "ATRIBUSI_TERBUKTI");
-  assert.deepEqual(r.sumber[2].biaya.alasanNull.cpa, "TIDAK_ADA_BIAYA_DIALOKASIKAN");
-  // pemakai frontend tidak membaca kunci yang sudah dipindah / tidak ada
-  for (const f of ["akuisisiLogic.js", "biayaIklanLogic.js", "components/AkuisisiTab.jsx", "components/DetailSumberAkuisisi.jsx", "components/KelolaBiayaIklan.jsx"]) {
-    const t = baca(path.join(root, "frontend/src/features/laporan", f));
-    assert.ok(!/costPerQualifiedLead|costPerCustomerOrder|cpaClosing|costPerPlatformConversation/.test(t), `${f} membaca kunci campaign-saja`);
+  assert.deepEqual(r.sumber.find((s) => s.id === "WHATSAPP").biaya.alasanNull.cpa, "TIDAK_ADA_BIAYA_DIALOKASIKAN");
+  // pemakai frontend tidak membaca kunci yang sudah dipindah / tidak ada. Setiap berkas yang diperiksa HARUS ada (berkas hilang = tes gagal, bukan dilewati):
+  // tab Marketing menggantikan tab Akuisisi (ac6899f6); kunci campaign-saja sah dibaca HANYA oleh laporan campaign (iklanCampaignLogic.js, /atribusi/iklan), bukan pemakai /sumber.
+  const LAP = "frontend/src/features/laporan";
+  const periksa = ["akuisisiLogic.js", "biayaIklanLogic.js", "marketingLogic.js", "periodeLaporan.js", "components/MarketingTab.jsx", "components/DetailSumberAkuisisi.jsx", "components/KelolaBiayaIklan.jsx", "components/LogoSumber.jsx"].map((f) => path.join(root, LAP, f));
+  periksa.push(path.join(root, "frontend/src/utils/marketingXlsx.js"), ...semuaBerkas(path.join(root, LAP, "components/marketing"), [".js", ".jsx"]));
+  assert.ok(periksa.length >= 15, "cakupan pemakai frontend yang diperiksa terlalu sedikit: " + periksa.length);
+  for (const p of periksa) {
+    assert.ok(fs.existsSync(p), `berkas pemakai kontrak tidak ada (tes basi?): ${rel(p)}`);
+    assert.ok(!/costPerQualifiedLead|costPerCustomerOrder|cpaClosing|costPerPlatformConversation/.test(baca(p)), `${rel(p)} membaca kunci campaign-saja`);
   }
 });
 
@@ -69,11 +76,12 @@ test("laporan LAIN tidak ikut berubah: /iklan, /d7, importer spend, KPI biaya ca
     "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/routes/analytics.js", "backend/src/index.js"]) {
     assert.equal(git(["diff", "--name-only", BASE_LIVE, "--", f]).stdout.trim(), "", `${f} berubah terhadap baseline live`);
   }
-  const p = (x) => git(["show", `${BASE_LIVE}:${x}`]).stdout; // router: hanya penambahan pemasangan rute biaya sumber
+  // router: terhadap baseline live TIDAK BOLEH berubah satu baris pun (pemasangan rute biaya sumber sudah ada di baseline), dan pemasangan itu tetap ada
+  const p = (x) => git(["show", `${BASE_LIVE}:${x}`]).stdout;
   const lama = p("backend/src/routes/attributionAds.js").replace(/\r\n/g, "\n"), baru = baca(path.join(root, "backend/src/routes/attributionAds.js")).replace(/\r\n/g, "\n");
-  const tambah = baru.split("\n").filter((l) => !lama.split("\n").includes(l));
-  assert.deepEqual(tambah.map((l) => l.split("//")[0].trim()).filter(Boolean), ['import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";', "pasangRuteBiayaSumber(attributionAdsRouter);"], "perubahan router hanya memasang rute biaya sumber");
-  assert.equal(lama.split("\n").filter((l) => !baru.split("\n").includes(l)).length, 0, "tidak ada baris router lama yang dihapus/diubah");
+  assert.ok(lama.length > 1000, "router baseline tidak terbaca");
+  assert.equal(baru, lama, "router attributionAds.js berubah terhadap baseline live");
+  assert.ok(baru.includes('import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";') && baru.includes("pasangRuteBiayaSumber(attributionAdsRouter);"), "pemasangan rute biaya sumber hilang");
 });
 
 test("keterbacaan sumber biaya: setiap hari yang dihitung punya alasan pemilihan; tidak ada angka biaya tanpa penjelasan", () => {

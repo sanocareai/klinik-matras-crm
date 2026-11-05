@@ -173,13 +173,17 @@ export function ringkasBiayaBerbayar(lap) {
 
 // ── EKSPOR CSV: kolom = apa yang tampil di layar; nilai null → sel kosong + kolom alasan (tidak pernah 0). ────────────────────────────────────────────────────
 const CSV_KOLOM = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah", "Ber-order", "Membayar", "Customer lunas (terbukti ledger)", "Konversi ber-order % (÷ total lead termasuk spam)", "Pembilang", "Penyebut",
-  "Nilai order saat ini (Rp)", "Pembayaran tercatat bersih (Rp)", "Biaya iklan (Rp)", "Status biaya", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Sementara", "Verifikasi biaya (bukan verifikasi independen)"];
+  "Nilai order saat ini (Rp)", "Pembayaran tercatat bersih (Rp)", "Biaya iklan (Rp)", "Status biaya", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Sementara", "Verifikasi biaya (bukan verifikasi independen)",
+  // ── kolom TAMBAHAN di akhir (urutan kolom lama tidak berubah) ──
+  "Prospek eksplisit (keputusan manual sales)", "Prospek eksplisit % lead sah", "Prospek atau lanjut (rincian: definisi lama)", "Langsung ke transaksi tanpa catatan PROSPECT", "Saat ini di stage PROSPECT", "Biaya per prospek eksplisit (Rp)", "Alasan biaya per prospek kosong"];
 const cel = (v) => {
   if (v == null) return "";
   let t = String(v);
   if (typeof v !== "number" && /^[=+\-@\t\r]/.test(t)) t = "'" + t;   // cegah formula injection di Excel
   return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
 };
+/** 7 kolom prospek di AKHIR ekspor. Nilai tidak tersedia -> kosong (bukan 0). Biaya per prospek hanya per sumber (total berbayar tidak punya). */
+const kolomProspekCsv = (p, b) => [p?.prospekEksplisit?.jumlah, p?.prospekEksplisit?.persenDariLeadSah, p?.pernahProspekAtauLanjut?.jumlah, p?.langsungKeTransaksiTanpaProspect, p?.saatIniProspect, b?.costPerProspekEksplisit, b && b.costPerProspekEksplisit == null && p ? (alasanTeks(b?.alasanNull?.costPerProspekEksplisit) || "") : ""];
 export function buatCsvAkuisisi(lap, { urut = null } = {}) {
   if (!lap) return "";
   const p = lap.periode || {};
@@ -190,11 +194,11 @@ export function buatCsvAkuisisi(lap, { urut = null } = {}) {
     const b = s.biaya || {};
     return [s.label, b.dasar === "ATRIBUSI_LABEL_CRM" ? DASAR_BIAYA_LABEL : "", s.lead, s.spam, s.leadSah, s.berOrder, s.membayar, s.lunas, s.konversiOrder?.nilai, s.konversiOrder?.pembilang, s.konversiOrder?.penyebut,
       s.uang?.nilaiOrderSaatIni, s.uang?.uangBersih, b.spend, statusBiayaTeks(b.status), b.cpa, b.cpa == null ? (alasanTeks(b.alasanNull?.cpa) || "") : "", b.bookedRoas, b.cashRoas,
-      b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "") : "", b.sementara ? "ya" : "", b.status === "LENGKAP" ? verifikasiLabel(b.cakupan?.verifikasi) : ""];
+      b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "") : "", b.sementara ? "ya" : "", b.status === "LENGKAP" ? verifikasiLabel(b.cakupan?.verifikasi) : "", ...kolomProspekCsv(s.prospek, b)];
   });
   const t = lap.total || {}; const bb = t.berbayar;
-  const total = ["TOTAL (semua sumber)", "", t.lead, t.spam, t.leadSah, t.berOrder, t.membayar, t.lunas, "", "", "", t.nilaiOrderSaatIni, t.uangBersih, "", "", "", "", "", "", "", "", ""];
-  const berbayar = bb ? ["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, bb.lead, "", "", "", "", bb.lunas, "", "", "", bb.nilaiOrderSaatIni, bb.uangBersih, bb.spend, bb.lengkap ? "Biaya terisi setiap hari" : "Ada sumber belum lengkap", bb.cpa, bb.cpa == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.bookedRoas, bb.cashRoas, bb.cashRoas == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.sementara ? "ya" : "", bb.lengkap ? "Terisi setiap hari; kelengkapan per-Ad tidak diverifikasi independen" : ""] : null;
+  const total = ["TOTAL (semua sumber)", "", t.lead, t.spam, t.leadSah, t.berOrder, t.membayar, t.lunas, "", "", "", t.nilaiOrderSaatIni, t.uangBersih, "", "", "", "", "", "", "", "", "", ...kolomProspekCsv(t.prospek ? { prospekEksplisit: { jumlah: t.prospek.prospekEksplisit, persenDariLeadSah: t.leadSah > 0 ? Math.round((t.prospek.prospekEksplisit / t.leadSah) * 10000) / 100 : null }, pernahProspekAtauLanjut: { jumlah: t.prospek.pernahProspekAtauLanjut }, langsungKeTransaksiTanpaProspect: t.prospek.langsungKeTransaksiTanpaProspect, saatIniProspect: t.prospek.saatIniProspect } : null, null)];
+  const berbayar = bb ? ["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, bb.lead, "", "", "", "", bb.lunas, "", "", "", bb.nilaiOrderSaatIni, bb.uangBersih, bb.spend, bb.lengkap ? "Biaya terisi setiap hari" : "Ada sumber belum lengkap", bb.cpa, bb.cpa == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.bookedRoas, bb.cashRoas, bb.cashRoas == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.sementara ? "ya" : "", bb.lengkap ? "Terisi setiap hari; kelengkapan per-Ad tidak diverifikasi independen" : "", "", "", "", "", "", "", ""] : null;
   return [...meta.map((r) => r.map(cel).join(",")), "", CSV_KOLOM.map(cel).join(","), ...baris.map((r) => r.map(cel).join(",")), total.map(cel).join(","), ...(berbayar ? [berbayar.map(cel).join(",")] : [])].join("\r\n") + "\r\n";
 }
 export const namaBerkasCsv = (lap) => `marketing-sumber-${lap?.periode?.dari ?? "x"}_${lap?.periode?.sampai ?? "x"}.csv`;

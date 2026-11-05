@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { periodeTab, saranRentang, bacaUrlLaporan, tulisUrlLaporan, samaRentang, sumberAkuisisiDariTraffic, jalurRincian, teksPeriode, tglValid, tambahHari, MAKS_HARI_PERIODE } from "../src/features/laporan/periodeLaporan.js";
+import { periodeTab, saranRentang, bacaUrlLaporan, tulisUrlLaporan, samaRentang, sumberAkuisisiDariTraffic, jalurRincian, teksPeriode, tglValid, tambahHari, MAKS_HARI_PERIODE, LABEL_PELANGGAN } from "../src/features/laporan/periodeLaporan.js";
 
 const HARI_INI = "2026-10-26";
 const TABS = ["Ringkasan", "Sales", "Marketing", "Performa Tim", "Pipeline"];
@@ -60,7 +60,8 @@ test("state tunggal: roundtrip URL → baca → tulis tidak mengubah periode (re
 });
 
 test("navigasi: label Traffic → id sumber Akuisisi; B2B/karyawan tidak punya detail; jalur rincian jujur per sumber (tidak ada tabel palsu)", () => {
-  assert.deepEqual(["META_ADS", "TIKTOK_ADS", "WHATSAPP_DIRECT", "INSTAGRAM", "WEBSITE_ORGANIC", "OTHER", "GOOGLE_ADS", "REFERRAL"].map(sumberAkuisisiDariTraffic), ["META", "TIKTOK", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA", "LAINNYA", "LAINNYA"]);
+  assert.deepEqual(["META_ADS", "TIKTOK_ADS", "WHATSAPP_DIRECT", "INSTAGRAM", "WEBSITE_ORGANIC", "OTHER", "GOOGLE_ADS", "REFERRAL"].map(sumberAkuisisiDariTraffic), ["META", "TIKTOK", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA", "GOOGLE", "LAINNYA"]);   // Google Ads = sumber sendiri
+  assert.equal(jalurRincian("GOOGLE").campaign, false); assert.match(jalurRincian("GOOGLE").penjelasan, /bukan atribusi per klik/i); assert.equal(LABEL_PELANGGAN.GOOGLE, "GOOGLE_ADS");
   assert.equal(sumberAkuisisiDariTraffic("B2B_DIRECT"), null); assert.equal(sumberAkuisisiDariTraffic("PENJUALAN_KARYAWAN"), null); assert.equal(sumberAkuisisiDariTraffic(""), null);
   assert.equal(jalurRincian("META").campaign, true); assert.equal(jalurRincian("TIKTOK").campaign, false); assert.match(jalurRincian("TIKTOK").penjelasan, /belum punya data per campaign/); assert.equal(jalurRincian("WHATSAPP").campaign, false);
 });

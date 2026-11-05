@@ -6,7 +6,9 @@ import { barisMeta, BASIS_LAPORAN } from "../features/laporan/marketingLogic.js"
 
 // ── Sheet: Marketing (laporan sumber) ──────────────────────────────────────
 // Isi = objek server yang sama dengan tabel di layar (/atribusi/iklan/sumber), urutan sama dengan layar. null → "—" (bukan 0); alasan null di kolom sebelahnya.
-export const KOLOM_XLSX_MARKETING = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah (non-spam)", "Customer ber-order", "Customer membayar", "Customer lunas (terbukti ledger)", "Konversi ber-order % (÷ total lead termasuk spam)", "Konversi non-spam %", "Nilai order saat ini", "Pembayaran tercatat bersih", "Biaya iklan", "Status biaya", "CPA lunas", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong"];
+export const KOLOM_XLSX_MARKETING = ["Sumber", "Dasar biaya", "Total lead (termasuk spam)", "Spam", "Lead sah (non-spam)", "Customer ber-order", "Customer membayar", "Customer lunas (terbukti ledger)", "Konversi ber-order % (÷ total lead termasuk spam)", "Konversi non-spam %", "Nilai order saat ini", "Pembayaran tercatat bersih", "Biaya iklan", "Status biaya", "CPA lunas", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Prospek eksplisit (keputusan manual sales)", "Prospek eksplisit % lead sah", "Prospek atau lanjut (rincian: definisi lama)", "Langsung ke transaksi tanpa catatan PROSPECT", "Saat ini di stage PROSPECT", "Biaya per prospek eksplisit (Rp)", "Alasan biaya per prospek kosong"];
+/** 7 kolom prospek di AKHIR sheet. Tidak tersedia -> "—" (bukan 0). */
+const kolomProspekXlsx = (p, b) => [num(p?.prospekEksplisit?.jumlah), num(p?.prospekEksplisit?.persenDariLeadSah, FMT.pct), num(p?.pernahProspekAtauLanjut?.jumlah), num(p?.langsungKeTransaksiTanpaProspect), num(p?.saatIniProspect), rp(b?.costPerProspekEksplisit), b && b.costPerProspekEksplisit == null && p ? (alasanTeks(b?.alasanNull?.costPerProspekEksplisit) || "tidak tersedia") : ""];
 export function sheetMarketing({ periode, marketing }) {
   const { lap, urut } = marketing;
   const p = lap.periode || {};
@@ -26,13 +28,13 @@ export function sheetMarketing({ periode, marketing }) {
   daftar.forEach((s) => {
     const b = s.biaya || {};
     sb.row([s.label, b.dasar === "ATRIBUSI_LABEL_CRM" ? DASAR_BIAYA_LABEL : "—", num(s.lead), num(s.spam), num(s.leadSah), num(s.berOrder), num(s.membayar), num(s.lunas), num(s.konversiOrder?.nilai, FMT.pct), num(s.konversiOrderNonSpam?.nilai, FMT.pct),
-      rp(s.uang?.nilaiOrderSaatIni), rp(s.uang?.uangBersih), rp(b.spend), statusBiayaTeks(b.status), rp(b.cpa), b.cpa == null ? (alasanTeks(b.alasanNull?.cpa) || "tidak tersedia") : "", num(b.bookedRoas, "0.00"), num(b.cashRoas, "0.00"), b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "tidak tersedia") : ""]);
+      rp(s.uang?.nilaiOrderSaatIni), rp(s.uang?.uangBersih), rp(b.spend), statusBiayaTeks(b.status), rp(b.cpa), b.cpa == null ? (alasanTeks(b.alasanNull?.cpa) || "tidak tersedia") : "", num(b.bookedRoas, "0.00"), num(b.cashRoas, "0.00"), b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "tidak tersedia") : "", ...kolomProspekXlsx(s.prospek, b)]);
   });
   const t = lap.total || {};
-  sb.row(["TOTAL (semua sumber)", "—", num(t.lead), num(t.spam), num(t.leadSah), num(t.berOrder), num(t.membayar), num(t.lunas), t.lead > 0 ? num(Math.round((t.berOrder / t.lead) * 10000) / 100, FMT.pct) : "—", t.leadSah > 0 ? num(Math.round((t.berOrder / t.leadSah) * 10000) / 100, FMT.pct) : "—", rp(t.nilaiOrderSaatIni), rp(t.uangBersih)]);
+  sb.row(["TOTAL (semua sumber)", "—", num(t.lead), num(t.spam), num(t.leadSah), num(t.berOrder), num(t.membayar), num(t.lunas), t.lead > 0 ? num(Math.round((t.berOrder / t.lead) * 10000) / 100, FMT.pct) : "—", t.leadSah > 0 ? num(Math.round((t.berOrder / t.leadSah) * 10000) / 100, FMT.pct) : "—", rp(t.nilaiOrderSaatIni), rp(t.uangBersih), "", "", "", "", "", "", "", ...kolomProspekXlsx(t.prospek ? { prospekEksplisit: { jumlah: t.prospek.prospekEksplisit, persenDariLeadSah: t.leadSah > 0 ? Math.round((t.prospek.prospekEksplisit / t.leadSah) * 10000) / 100 : null }, pernahProspekAtauLanjut: { jumlah: t.prospek.pernahProspekAtauLanjut }, langsungKeTransaksiTanpaProspect: t.prospek.langsungKeTransaksiTanpaProspect, saatIniProspect: t.prospek.saatIniProspect } : null, null)]);
   const bb = t.berbayar;
-  if (bb) sb.row(["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, num(bb.lead), "—", "—", "—", "—", num(bb.lunas), "—", "—", rp(bb.nilaiOrderSaatIni), rp(bb.uangBersih), rp(bb.spend), bb.lengkap ? "Biaya terisi setiap hari" : "Ada sumber belum lengkap", rp(bb.cpa)]);
-  return sb.build([26, 18, 14, 8, 12, 12, 12, 12, 16, 12, 16, 16, 14, 22, 14, 24, 11, 11, 24]);
+  if (bb) sb.row(["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, num(bb.lead), "—", "—", "—", "—", num(bb.lunas), "—", "—", rp(bb.nilaiOrderSaatIni), rp(bb.uangBersih), rp(bb.spend), bb.lengkap ? "Biaya terisi setiap hari" : "Ada sumber belum lengkap", rp(bb.cpa)]);   // kolom prospek: tidak ada pada total berbayar
+  return sb.build([26, 18, 14, 8, 12, 12, 12, 12, 16, 12, 16, 16, 14, 22, 14, 24, 11, 11, 24, 18, 12, 18, 18, 14, 16, 26]);
 }
 
 // ── Sheet: Meta CTWA (campaign terbukti) ───────────────────────────────────

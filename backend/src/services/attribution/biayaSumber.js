@@ -15,7 +15,7 @@
 //    yang termuat PENUH oleh rentang laporan (diperlakukan seperti total rentang: tidak diprorata). Nominal 0 = belum diisi (diabaikan). Bila ada entri sumber aktif pada bulan itu → AdSpend diabaikan (tidak ada hitung ganda).
 import crypto from "node:crypto";
 
-export const SUMBER_BERBIAYA = Object.freeze(["META", "TIKTOK", "LAINNYA"]);
+export const SUMBER_BERBIAYA = Object.freeze(["META", "TIKTOK", "GOOGLE", "LAINNYA"]);   // GOOGLE = Google Ads (sumber sendiri sejak patch ini; sebelumnya dilebur ke LAINNYA)
 export const JENIS_ENTRI = Object.freeze(["HARIAN", "TOTAL_RENTANG"]);
 export const MAKS_HARI_ENTRI = 93;
 const TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -200,17 +200,20 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null,
 }
 
 /** KPI biaya satu sumber dari cakupan + hasil kohort (customer unik). Murni. */
-export function biayaKpiSumber({ cakupan, jenis, lead, leadSah, lunas, nilaiOrder, uangBersih, ledger, hariIni, sampai }) {
-  if (jenis === "ORGANIK") return { dasar: "ATRIBUSI_LABEL_CRM", status: "TIDAK_TERSEDIA_ORGANIK", spend: null, spendLengkap: false, sementara: false, alasanSementara: [], cpl: null, cpa: null, bookedRoas: null, cashRoas: null, alasanNull: { cpl: "TIDAK_ADA_BIAYA_DIALOKASIKAN", cpa: "TIDAK_ADA_BIAYA_DIALOKASIKAN", bookedRoas: "TIDAK_ADA_BIAYA_DIALOKASIKAN", cashRoas: "TIDAK_ADA_BIAYA_DIALOKASIKAN" }, cakupan: null };
+export function biayaKpiSumber({ cakupan, jenis, lead, leadSah, lunas, prospek = null, nilaiOrder, uangBersih, ledger, hariIni, sampai }) {
+  if (jenis === "ORGANIK") return { dasar: "ATRIBUSI_LABEL_CRM", status: "TIDAK_TERSEDIA_ORGANIK", spend: null, spendLengkap: false, sementara: false, alasanSementara: [], cpl: null, cpa: null, costPerProspekEksplisit: null, bookedRoas: null, cashRoas: null, alasanNull: { cpl: "TIDAK_ADA_BIAYA_DIALOKASIKAN", cpa: "TIDAK_ADA_BIAYA_DIALOKASIKAN", costPerProspekEksplisit: "TIDAK_ADA_BIAYA_DIALOKASIKAN", bookedRoas: "TIDAK_ADA_BIAYA_DIALOKASIKAN", cashRoas: "TIDAK_ADA_BIAYA_DIALOKASIKAN" }, cakupan: null };
   const st = cakupan.status; const lengkap = st === "LENGKAP";
   const alasanNull = {};
-  const nullAll = (a) => { for (const k of ["cpl", "cpa", "bookedRoas", "cashRoas"]) alasanNull[k] = a; };
-  let cpl = null, cpa = null, bookedRoas = null, cashRoas = null;
+  const nullAll = (a) => { for (const k of ["cpl", "cpa", "bookedRoas", "cashRoas", "costPerProspekEksplisit"]) alasanNull[k] = a; };
+  let cpl = null, cpa = null, bookedRoas = null, cashRoas = null, costPerProspekEksplisit = null;
   if (!lengkap) nullAll(st);
   else {
     const S = cakupan.spend ?? 0;
     cpl = lead > 0 ? rp(S / lead) : null; if (cpl === null) alasanNull.cpl = "BELUM_ADA_LEAD";
     cpa = lunas > 0 ? rp(S / lunas) : null; if (cpa === null) alasanNull.cpa = "BELUM_ADA_KONVERSI";
+    // biaya per prospek EKSPLISIT (keputusan MANUAL sales memindahkan lead ke PROSPECT). prospek === null (pemanggil lama) = tidak dihitung.
+    if (prospek === null) alasanNull.costPerProspekEksplisit = "TIDAK_DIHITUNG";
+    else { costPerProspekEksplisit = prospek > 0 ? rp(S / prospek) : null; if (costPerProspekEksplisit === null) alasanNull.costPerProspekEksplisit = "BELUM_ADA_PROSPEK"; }
     if (S > 0) { bookedRoas = rp(nilaiOrder / S); cashRoas = rp(uangBersih / S); } else { alasanNull.bookedRoas = "SPEND_NOL"; alasanNull.cashRoas = "SPEND_NOL"; }
   }
   const alasanSementara = [];
@@ -218,7 +221,7 @@ export function biayaKpiSumber({ cakupan, jenis, lead, leadSah, lunas, nilaiOrde
     if (ledger && ledger.orderEligible > 0 && ledger.orderBerLedger < ledger.orderEligible) alasanSementara.push(`LEDGER_PARSIAL: ${ledger.orderBerLedger} dari ${ledger.orderEligible} order punya pembayaran di ledger — customer lunas adalah batas bawah`);
     if (sampai > tambahHari(hariIni, -30)) alasanSementara.push("KOHORT_BELUM_MATANG: lead dalam 30 hari terakhir masih dapat berubah menjadi lunas");
   }
-  return { dasar: "ATRIBUSI_LABEL_CRM", status: st, spend: cakupan.spend, spendLengkap: lengkap, sementara: lengkap && alasanSementara.length > 0, alasanSementara, cpl, cpa, bookedRoas, cashRoas, alasanNull, penyebut: { lead, leadSah, customerLunas: lunas }, cakupan };
+  return { dasar: "ATRIBUSI_LABEL_CRM", status: st, spend: cakupan.spend, spendLengkap: lengkap, sementara: lengkap && alasanSementara.length > 0, alasanSementara, cpl, cpa, costPerProspekEksplisit, bookedRoas, cashRoas, alasanNull, penyebut: { lead, leadSah, customerLunas: lunas }, cakupan };
 }
 
 // ── persistensi (SQL mentah; tabel baru tanpa bergantung pada klien Prisma yang dihasilkan) ─────────────────────────────────────────────
@@ -288,7 +291,7 @@ export async function muatAdHarianMetaDetail(db, { dari, sampai }) {
 export async function muatAdHarianMeta(db, { dari, sampai }) { return (await muatAdHarianMetaDetail(db, { dari, sampai })).harian; }
 
 // ── Biaya bulanan Pengaturan Sales (AdSpend) — penyimpanan LAMA, grain bulan kalender, ikut jurnal Finance. DIBACA saja (prioritas terendah), tidak ada duplikasi/penulisan. ─────
-const PETA_ADSPEND = Object.freeze({ META_ADS: "META", TIKTOK_ADS: "TIKTOK", GOOGLE_ADS: "LAINNYA" });
+const PETA_ADSPEND = Object.freeze({ META_ADS: "META", TIKTOK_ADS: "TIKTOK", GOOGLE_ADS: "GOOGLE" });
 const akhirBulan = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 const pad2 = (n) => String(n).padStart(2, "0");
 

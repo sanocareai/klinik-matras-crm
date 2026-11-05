@@ -13,7 +13,7 @@ const hitung = (customers, orders = [], kontribusi = [], refunds = []) => hitung
 const g = (h, id) => h.per.get(id);
 
 test("pemetaan label CRM → sumber; B2B/penjualan karyawan bukan lead pemasaran; label tak dikenal/null → Lainnya", () => {
-  assert.deepEqual(["META_ADS", "TIKTOK_ADS", "WHATSAPP_DIRECT", "INSTAGRAM", "WEBSITE_ORGANIC", "WEBSITE", "OTHER", "GOOGLE_ADS", "REFERRAL", null, "ZZZ"].map(sumberDariLabel), ["META", "TIKTOK", "WHATSAPP", "INSTAGRAM", "WEBSITE", "WEBSITE", "LAINNYA", "LAINNYA", "LAINNYA", "LAINNYA", "LAINNYA"]);
+  assert.deepEqual(["META_ADS", "TIKTOK_ADS", "WHATSAPP_DIRECT", "INSTAGRAM", "WEBSITE_ORGANIC", "WEBSITE", "OTHER", "GOOGLE_ADS", "REFERRAL", null, "ZZZ"].map(sumberDariLabel), ["META", "TIKTOK", "WHATSAPP", "INSTAGRAM", "WEBSITE", "WEBSITE", "LAINNYA", "GOOGLE", "LAINNYA", "LAINNYA", "LAINNYA"]);   // GOOGLE_ADS = sumber sendiri (patch Marketing lengkap)
   assert.equal(sumberDariLabel("B2B_DIRECT"), null); assert.equal(sumberDariLabel("PENJUALAN_KARYAWAN"), null);
   const h = hitung([cust("B2B_DIRECT"), cust("PENJUALAN_KARYAWAN"), cust("META_ADS")]);
   assert.equal(h.bukanLeadPemasaran, 2); assert.equal(g(h, "META").lead, 1);
@@ -70,7 +70,7 @@ test("peringatan: hari berjalan, ledger tidak lengkap (batas bawah), spend belum
   for (const w of ["HARI_BERJALAN", "LEDGER_TIDAK_LENGKAP", "SPEND_BELUM_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI"]) assert.ok(k.includes(w), w);
   const meta = r.sumber[0]; assert.equal(meta.biaya.cpa, null); assert.equal(meta.biaya.alasanNull.cpa, "SPEND_TIDAK_LENGKAP"); assert.equal(meta.biaya.spend, 100);
   assert.equal(r.status.ledger.persen, 50);
-  assert.equal(SUMBER.length, 6); assert.ok(r.definisi.overlap.includes("tidak eksklusif"));
+  assert.equal(SUMBER.length, 7); assert.ok(r.definisi.overlap.includes("tidak eksklusif"));
 });
 
 test("konversi UTAMA = ber-order ÷ TOTAL lead (termasuk spam); konversi non-spam terpisah berlabel; spam menurunkan konversi utama; sorotan menyebut denominator & jenis & ambang sementara", () => {

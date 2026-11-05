@@ -1,0 +1,241 @@
+{
+ "dibuat": "2026-11-05T07:22:09.911Z",
+ "baseline": "5cd1a5fa2",
+ "catatan": "Kegagalan yang SUDAH ada di baseline live dan bukan bagian scope Marketing. Bukan izin: perbaikan diputuskan pemilik terpisah. Kegagalan di luar daftar ini = BLOKIR rilis.",
+ "backend": {
+  "totalBaseline": 2212,
+  "ringkas": {
+   "total": 2212,
+   "pass": 2180,
+   "fail": 24,
+   "skipped": 8,
+   "cancelled": 0,
+   "todo": 0,
+   "failDalamScope": 3
+  },
+  "gagal": [
+   {
+    "kunci": "tests/financeKontrakMetrik.test.js :: COVERAGE TAB FinanceCash.jsx: punya metrik kontrak yang valid atau dinyatakan tanpa angka uang",
+    "pesan": "FinanceCash.jsx: halaman Finance tidak punya metrik kontrak dan belum dinyatakan tanpa angka uang+ actual - expected+ [+ 'FinanceCash.jsx: halaman Finance tidak punya metrik kontrak dan belum dinyatakan tanpa angka uang'+ ]- []",
+    "alasan": "Tes audit statis kontrak metrik/registri nilai bersih Finance yang tertinggal dari kode live; tidak menyentuh berkas Marketing."
+   },
+   {
+    "kunci": "tests/financeKontrakMetrik.test.js :: COVERAGE METRIK: seluruh metrik kontrak dipakai di UI (kartu/panel Kenapa angkanya berbeda) — tidak ada metrik yatim",
+    "pesan": "metrik tanpa pemakaian di UI: uang_muka_supplier_belum_diterapkan+ actual - expected+ [+ 'uang_muka_supplier_belum_diterapkan'+ ]- []",
+    "alasan": "Tes audit statis kontrak metrik/registri nilai bersih Finance yang tertinggal dari kode live; tidak menyentuh berkas Marketing."
+   },
+   {
+    "kunci": "tests/nilaiBersihRegistry.test.js :: R3: tidak ada penjumlahan/tampilan o.value mentah di JS di luar registri",
+    "pesan": "Pakai nilaiBersih(o) (select harus memuat ...PILIH_KREDIT) ATAU daftarkan file di REGISTRI_KOTOR_DISENGAJA dengan alasan:services/finance/hargaBerlaku.js:194: (select o.value from stock_movement_biaya_operasional o where o.movement_id = s.id order by o.created_at desc, o.id desc limit 1) services/fi",
+    "alasan": "Tes audit statis kontrak metrik/registri nilai bersih Finance yang tertinggal dari kode live; tidak menyentuh berkas Marketing."
+   },
+   {
+    "kunci": "tests/pemakaianBahanLepas.test.js :: kabel pintu: units /materials, inventory issue, dan penerimaan retur produksi memanggil jalur nilai di transaksi yang sama setelah postStockMovement",
+    "pesan": "routes/units.js: pembukuan harus tepat setelah postStockMovement di transaksi yang sama",
+    "alasan": "Tes audit statis jalur pemakaian bahan/posting historis (Gudang/Produksi) yang tertinggal dari perubahan kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/pembacaKeadaanEfektif.test.js :: setiap berkas yang menyentuh catatan pemakaian historis: penulis/evaluator, atau memakai keadaan efektif, atau pembaca non-state terdaftar",
+    "pesan": "pembaca langsung state tersimpan (harus lewat terapkanKeadaanEfektif): services/finance/hargaBerlaku.js, services/laporanProduksi.js, services/pembetulanBahanUnit.js, services/pengamanHistorisPascaSO.js, services/unitMaterialDeclarationService.js+ actual - expected+ [+ 'services/finance/hargaBerlaku",
+    "alasan": "Tes audit statis jalur pemakaian bahan/posting historis (Gudang/Produksi) yang tertinggal dari perubahan kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/postingKonfirmasiManifest.test.js :: pagar statis: kedua rute tulis meneruskan konfirmasiManifest; pagar Owner & konfirmasi di service SEBELUM tulisan; UI hanya Owner memulai dan tidak menyimpan rujukan di draf",
+    "pesan": "batch: konfirmasi sebelum transaksi pembuat batch",
+    "alasan": "Tes audit statis jalur pemakaian bahan/posting historis (Gudang/Produksi) yang tertinggal dari perubahan kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/productionAdaptation.test.js :: OWNERSHIP penulis slice 2: production_settings & price_items.production_service_id hanya productionSettingsService; adaptationPolicy hanya dibuat saat run lahir (custody/P5) atau lewat command P5; delayKind hanya P5",
+    "pesan": "Expected values to be strictly deep-equal:+ actual - expected [ 'src/services/productionSettingsService.js',+ 'src/services/satuanPakaiService.js' ]",
+    "alasan": "Tes audit writer/reader modul Produksi (kepemilikan penulis, audit P5/P8/P10B) yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/productionExperience.test.js :: audit writer P8 pada source aktual: 0 pelanggaran",
+    "pesan": "[{&quot;file&quot;:&quot;src/services/laporanProduksi.js&quot;,&quot;line&quot;:219,&quot;kind&quot;:&quot;STEP_EVIDENCE_READER&quot;,&quot;disposition&quot;:&quot;UNREVIEWED_READER&quot;,&quot;ok&quot;:false}]1 !== 0",
+    "alasan": "Tes audit writer/reader modul Produksi (kepemilikan penulis, audit P5/P8/P10B) yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/productionExperience.test.js :: audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; baris DOC_* tidak pernah dihitung sebagai lifecycle",
+    "pesan": "Expected values to be strictly deep-equal:+ actual - expected [ 'src/routes/productionEvidenceMedia.js', 'src/services/finance/biayaBahan.js', 'src/services/finance/stokResmi/pratinjau.js',+ 'src/services/laporanProduksi.js', 'src/services/productionAdoptionService.js', 'src/services/productionCompo",
+    "alasan": "Tes audit writer/reader modul Produksi (kepemilikan penulis, audit P5/P8/P10B) yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/productionWorkshopExecutionMigrationAndAudit.test.js :: writer audit P5 memeriksa pagar PER FUNGSI: failStage tanpa pagar dan pagar salah tempat di resolveBlocker (tanpa unitId) terdeteksi",
+    "pesan": "The expression evaluated to a falsy value: assert.ok(misplaced.includes(resolveHead))",
+    "alasan": "Tes audit writer/reader modul Produksi (kepemilikan penulis, audit P5/P8/P10B) yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/releaseAkuisisiBiaya.test.js :: skrip = hasil bangkitan ulang generator terhadap baseline live (templat/pustaka/kode tidak menyimpang dari skrip)",
+    "pesan": "C:\\tmp\\mkt-lengkap-base\\scripts\\gen-release-akuisisi-biaya.cjs:32 const must = (c, m) => { if (!c) throw new Error(&quot;templat/masukan tak cocok: &quot; + m); }; ^ Error: templat/masukan tak cocok: perubahan prisma lain di luar schema + migrasi rilis at must (C:\\tmp\\mkt-lengkap-base\\scripts\\gen-re",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseAkuisisiBiaya.test.js :: pin: migrasi sha256 = isi berkas (LF); pin diff schema.prisma = diff terhadap baseline; diff schema MURNI penambahan",
+    "pesan": "Expected values to be strictly equal:+ actual - expected+ 'fb8a3fd7ebd562c6aa1f80919d71e3916aa913a515424840bb82297218ec9c09'- '9c208fc5989a4da4fe2999b94e51c9b0adbcd4810c70635d15c86bf428774da0'",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseAkuisisiBiaya.test.js :: allowlist = persis berkas kandidat; BACKEND/FRONTEND_SRC_EXPECT cocok; prisma/paket/compose/Dockerfile/.env/index.js/spend.js/campaign/skrip lain ditolak",
+    "pesan": "berkas kandidat di luar allowlist+ actual - expected+ [+ 'backend/prisma/migrations/20261231090000_harga_berlaku_bahan/migration.sql',+ 'backend/prisma/migrations/20261231100000_koreksi_saldo_bahan/migration.sql',+ 'backend/prisma/migrations/20261231110000_pernyataan_tanpa_bahan/migration.sql',+ 'ba",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseAtribusiKohort.test.js :: skrip rilis atribusi: pin sha256 sesuai isi berkas saat ini (basi = tinjau ulang)",
+    "pesan": "pin backend/src/index.js sudah basi — perbarui pin setelah meninjau perubahan+ actual - expected+ '4b2d9e3e9698e8a57dca453fbc92329aea321aace9675b6c63454af675a562b2'- '5fec0d94fdfdebaa09c5b00a8c3239a3d06d86b90fa15df1a8617b59bc01ad01'",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseMcpLaporanMeta.test.js :: sintaks bash valid, LF, tanpa placeholder",
+    "pesan": "scripts/lib/smoke-mcp-laporan-meta.mjs harus LF",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseMcpLaporanMeta.test.js :: skrip = hasil bangkitan ulang generator terhadap baseline live (templat/pustaka/kode tidak menyimpang dari skrip)",
+    "pesan": "C:\\tmp\\mkt-lengkap-base\\scripts\\gen-release-mcp-laporan-meta.cjs:28 const must = (c, m) => { if (!c) throw new Error(&quot;templat/masukan tak cocok: &quot; + m); }; ^ Error: templat/masukan tak cocok: rilis ini TANPA migrasi/schema: ada perubahan backend/prisma at must (C:\\tmp\\mkt-lengkap-base\\scri",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseMcpLaporanMeta.test.js :: ancestry: baseline live adalah leluhur kandidat; origin/main (bila ada) leluhur kandidat; tanpa migrasi/schema/frontend/paket/compose/env",
+    "pesan": "backend/prisma berubah+ actual - expected+ 'backend/prisma/migrations/20261231110000_pernyataan_tanpa_bahan/migration.sql\\n' ++ 'backend/prisma/schema.prisma'- ''",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/releaseMcpLaporanMeta.test.js :: allowlist = persis berkas kandidat; BACKEND_SRC_EXPECT cocok; prisma/paket/compose/Dockerfile/.env/index.js/frontend/skrip lain ditolak",
+    "pesan": "berkas kandidat di luar allowlist+ actual - expected+ [+ 'backend/prisma/migrations/20261231110000_pernyataan_tanpa_bahan/migration.sql',+ 'backend/prisma/schema.prisma',+ 'backend/src/index.js',+ 'backend/src/lib/activityLog.js',+ 'backend/src/lib/domain/filterDaftarOrderProduksi.js',+ 'backend/src",
+    "alasan": "Tes pin/allowlist/generator untuk kandidat rilis LAMA (atribusi/akuisisi-biaya/MCP laporan Meta) yang dipatok ke baseline lama; tidak berlaku untuk rilis baru. Rilis ini memakai gerbangnya sendiri (releaseMarketingLengkap.test.js)."
+   },
+   {
+    "kunci": "tests/stagingIsolation.test.js :: audit statis outbound: job latar & worker pengirim hanya jalan lewat backgroundJobsEnabled(); modul pengirim eksternal terdaftar (modul baru wajib ditinjau)",
+    "pesan": "The input did not match the regular expression /import \\{ bootstrapStaging, backgroundJobsEnabled \\} from &quot;\\.\\/lib\\/stagingGuard\\.js&quot;;\\nbootstrapStaging\\(\\);/. Input:'import &quot;dotenv/config&quot;;\\r\\n' + 'import { bootstrapStaging, backgroundJobsEnabled } from &quot;./lib/stagingGuard.",
+    "alasan": "Tes audit statis lingkungan staging/training yang tertinggal dari perubahan kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/stagingTraining.test.js :: compose staging: project terpisah, jaringan internal tanpa rute keluar, hanya edge yang publish port (loopback)",
+    "pesan": "jaringan internal: tanpa rute keluar (WhatsApp/email/webhook mustahil)",
+    "alasan": "Tes audit statis lingkungan staging/training yang tertinggal dari perubahan kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/stagingTraining.test.js :: compose staging: tidak menyentuh production (network/volume/DB/docker socket/host network)",
+    "pesan": "service backend-staging",
+    "alasan": "Tes audit statis lingkungan staging/training yang tertinggal dari perubahan kode live; bukan scope Marketing."
+   }
+  ],
+  "skip": [
+   {
+    "kunci": "tests/releaseAkuisisiSumber.test.js :: (dilewati) pin terhadap pohon kerja — digantikan dua tes di atas"
+   },
+   {
+    "kunci": "tests/releaseAtribusiIklan.test.js :: pin sha256: berkas runtime + skema + migrasi cocok dengan pohon kerja; daftar backend/src = BACKEND_SRC_EXPECT"
+   },
+   {
+    "kunci": "tests/releaseAtribusiKpiD7.test.js :: pin sha256 cocok pohon kerja; backend/src = BACKEND_SRC_EXPECT"
+   },
+   {
+    "kunci": "tests/releaseAtribusiKpiKode.test.js :: pin sha256 cocok pohon kerja; backend/src = BACKEND_SRC_EXPECT"
+   },
+   {
+    "kunci": "tests/releaseAtribusiSpend.test.js :: pin sha256: berkas runtime + skema + migrasi cocok dengan pohon kerja; daftar backend/src = BACKEND_SRC_EXPECT; frontend/src = FRONTEND_SRC_EXPECT"
+   },
+   {
+    "kunci": "tests/releaseHargaDariPo.test.js :: UJI KUNCI TERISOLASI (Linux): memuat blok KUNCI-DEPLOY dari skrip rilis ini; kunci sendiri/lain/bagian kritis"
+   },
+   {
+    "kunci": "tests/releaseKelengkapan.test.js :: UJI KUNCI TERISOLASI (Linux): kunci sendiri diterima, kunci lain/bernama-sama ditolak, dua proses tidak memasuki bagian kritis bersamaan — memuat blok yang SAMA dari skrip rilis"
+   },
+   {
+    "kunci": "tests/releaseLaporanProduksi.test.js :: UJI KUNCI TERISOLASI (Linux): memuat blok KUNCI-DEPLOY dari skrip rilis ini; kunci sendiri/lain/bagian kritis"
+   }
+  ]
+ },
+ "frontend": {
+  "totalBaseline": 2049,
+  "ringkas": {
+   "total": 2049,
+   "pass": 2034,
+   "fail": 15,
+   "skipped": 0,
+   "cancelled": 0,
+   "todo": 0,
+   "failDalamScope": 0
+  },
+  "gagal": [
+   {
+    "kunci": "tests/biayaAdminNominal.test.js :: Terpasang di tujuh daftar (tabel dan kartu) dan rincian di panel detail; transfer tidak lagi punya kolom Biaya Admin sendiri",
+    "pesan": "FinanceExpenses",
+    "alasan": "Tes struktur-sumber halaman Finance (nominal biaya admin, breakpoint tabel, formulir pembelian) yang tertinggal dari redesain Finance live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/diagnosisWizard.test.js :: Unit 360: label tombol — belum ada diagnosis → 'Isi Diagnosis'",
+    "pesan": "diagnosisCtaLabel harus diekspor dari DiagnosisWizard",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/diagnosisWizard.test.js :: Unit 360: label tombol — draft lokal tersedia → 'Lanjutkan Diagnosis'",
+    "pesan": "diagnosisCtaLabel harus diekspor dari DiagnosisWizard",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/diagnosisWizard.test.js :: Unit 360: label tombol — diagnosis RECORDED → 'Revisi Diagnosis' (menang atas draft lokal)",
+    "pesan": "diagnosisCtaLabel harus diekspor dari DiagnosisWizard",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/financeTableBreakpoints.test.js :: D-193b: halaman kolom-gabungan (Klasifikasi/Pembayaran) pakai useContainerTier, bukan hideBelow/mid CSS untuk kolom itu",
+    "pesan": "FinancePurchases.jsx diharapkan mengimpor & memanggil useContainerTier() (bukan useBreakpointTier — lihat komentar di atas test ini) untuk kolom Klasifikasi/Pembayaran.",
+    "alasan": "Tes struktur-sumber halaman Finance (nominal biaya admin, breakpoint tabel, formulir pembelian) yang tertinggal dari redesain Finance live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/financeTableBreakpoints.test.js :: D-XXX (regresi): halaman pola JS (tier hook) TIDAK menambahkan class tampil/sembunyi viewport ke <CardList>-nya",
+    "pesan": "FinancePurchases.jsx: tidak menemukan <CardList> sama sekali — struktur berubah, perbarui test ini.",
+    "alasan": "Tes struktur-sumber halaman Finance (nominal biaya admin, breakpoint tabel, formulir pembelian) yang tertinggal dari redesain Finance live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/formulirResetPembelianPihak.test.js :: SEMUA formulir 'baru' Finance dibungkus resetSaatBuka (tidak ada yang tertinggal)",
+    "pesan": "FinanceSuppliers.jsx: ModalTagihan harus bernama ModalTagihanIsi",
+    "alasan": "Tes struktur-sumber halaman Finance (nominal biaya admin, breakpoint tabel, formulir pembelian) yang tertinggal dari redesain Finance live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/gudangUxTahap3.test.js :: sidebar: enam kelompok utama; fitur biaya Finance diberi konteks; Layout memakai GudangNavGrup hanya untuk Gudang",
+    "pesan": "Expected values to be strictly deep-equal:+ actual - expected [+ 'Stok bahan',- 'Stok & Lokasi', 'Usulan Bahan', 'Pengeluaran Material', 'Transfer Stok', 'Restok' ]",
+    "alasan": "Tes struktur-sumber fitur Gudang/Penjualan Karyawan/Pipeline yang tertinggal dari kode live; bukan scope Marketing (pipelineFase memeriksa palet tahap, tidak menyentuh berkas yang diubah kandidat)."
+   },
+   {
+    "kunci": "tests/penjualanKaryawanManualUi.test.js :: Layar: angka dari server (tidak menjumlah baris di klien), tanggal cutoff dari server, form tidak mengirim total",
+    "pesan": "The input did not match the regular expression /api\\.createPenjualanKaryawan\\(\\{\\s*date: f\\.date, sellerId: f\\.sellerId/. Input:'import React, { useCallback, useEffect, useRef, useState } from &quot;react&quot;;\\n' + 'import { Plus, UserRound, Trash2 } from &quot;lucide-react&quot;;\\n' + 'import { C",
+    "alasan": "Tes struktur-sumber fitur Gudang/Penjualan Karyawan/Pipeline yang tertinggal dari kode live; bukan scope Marketing (pipelineFase memeriksa palet tahap, tidak menyentuh berkas yang diubah kandidat)."
+   },
+   {
+    "kunci": "tests/pipelineFase.test.js :: Tidak ada salinan warna tahap per halaman: KanbanCard, Laporan, Dashboard, Pipeline memakai palet bersama",
+    "pesan": "The expression evaluated to a falsy value: assert.ok(!/const STAGE_(BG|BAR|DOT)\\s*=/.test(pt) && pt.includes(&quot;stageClass(item.stage)&quot;))",
+    "alasan": "Tes struktur-sumber fitur Gudang/Penjualan Karyawan/Pipeline yang tertinggal dari kode live; bukan scope Marketing (pipelineFase memeriksa palet tahap, tidak menyentuh berkas yang diubah kandidat)."
+   },
+   {
+    "kunci": "tests/planDnd.test.js :: gulir otomatis PROGRESIF: halus di batas zona tepi, cepat di tepi layar, nol di tengah; simetris atas/bawah (seret sentuh di HP dengan backlog ±6000px)",
+    "pesan": "blok konstanta + autoScrollDelta ditemukan",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/rencanaOrderNyata.test.js :: view sintetis kartu order nyata: runId sintetis + onboardUnitId, TANPA plan; prioritas Tinggi/Komplain jadi usulan 1, Normal 0",
+    "pesan": "ex is not defined",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/rencanaOrderNyata.test.js :: aktivasi saat Jadwalkan: penanda dari server (bukan tebakan peran di browser); formulir mewajibkan centang eksplisit dan mengirim activateUnit; tanpa centang tidak terkirim",
+    "pesan": "ex is not defined",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/routeTimelineUI.test.js :: toIsoOrNull: datetime-local -> ISO; kosong/tidak valid -> null",
+    "pesan": "Cannot read properties of null (reading '0')",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   },
+   {
+    "kunci": "tests/workerAppExit.test.js :: shell: onBack (detail pekerjaan) lebih diutamakan, lalu exitTo (Link ke SANSS), lalu logo",
+    "pesan": "urutan onBack > exitTo > logo",
+    "alasan": "Tes struktur-sumber fitur Produksi/Driver/Diagnosis/Rencana yang tertinggal dari kode live; bukan scope Marketing."
+   }
+  ],
+  "skip": []
+ },
+ "skipAlasan": "Skip sengaja oleh tes itu sendiri: pin runtime kandidat rilis lama yang sudah dipakai/diganti (releaseAkuisisiSumber, releaseAtribusiIklan, releaseAtribusiKpiD7, releaseAtribusiKpiKode, releaseAtribusiSpend) dan satu uji kunci Linux-only (releaseLaporanProduksi); 2 skip lain pada suite penuh."
+}

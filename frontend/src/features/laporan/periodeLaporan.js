@@ -103,15 +103,16 @@ export function tulisUrlLaporan(search, { tab, range, sumber, marketing = {} }) 
 export const samaRentang = (a, b) => (a?.from ?? null) === (b?.from ?? null) && (a?.to ?? null) === (b?.to ?? null);
 
 // ── navigasi antar-laporan ───────────────────────────────────────────────────────────────────────────────────────────
-const PETA_TRAFFIC = { META_ADS: "META", TIKTOK_ADS: "TIKTOK", WHATSAPP_DIRECT: "WHATSAPP", INSTAGRAM: "INSTAGRAM", WEBSITE_ORGANIC: "WEBSITE", WEBSITE: "WEBSITE", OTHER: "LAINNYA", GOOGLE_ADS: "LAINNYA", REFERRAL: "LAINNYA", ADS: "LAINNYA" };
+const PETA_TRAFFIC = { META_ADS: "META", TIKTOK_ADS: "TIKTOK", WHATSAPP_DIRECT: "WHATSAPP", INSTAGRAM: "INSTAGRAM", WEBSITE_ORGANIC: "WEBSITE", WEBSITE: "WEBSITE", OTHER: "LAINNYA", GOOGLE_ADS: "GOOGLE", REFERRAL: "LAINNYA", ADS: "LAINNYA" };
 /** Label sumber Traffic (LeadSource) → id sumber Akuisisi. B2B/penjualan karyawan bukan lead pemasaran → null (tidak ada detail akuisisi). */
 export const sumberAkuisisiDariTraffic = (leadSource) => (leadSource === "B2B_DIRECT" || leadSource === "PENJUALAN_KARYAWAN" ? null : PETA_TRAFFIC[leadSource] ?? (leadSource ? "LAINNYA" : null));
 /** Id sumber Akuisisi → label LeadSource untuk daftar Pelanggan (?source=). Sumber gabungan (Website/Lainnya) memakai label utamanya. */
-export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK_ADS", WHATSAPP: "WHATSAPP_DIRECT", INSTAGRAM: "INSTAGRAM", WEBSITE: "WEBSITE_ORGANIC", LAINNYA: "OTHER" });
+export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK_ADS", WHATSAPP: "WHATSAPP_DIRECT", INSTAGRAM: "INSTAGRAM", WEBSITE: "WEBSITE_ORGANIC", GOOGLE: "GOOGLE_ADS", LAINNYA: "OTHER" });
 
 /** Apa yang bisa dibuka lebih dalam dari satu sumber — hanya yang datanya ADA (tidak ada tabel palsu). */
 export function jalurRincian(id) {
   if (id === "META") return { campaign: true, penjelasan: "Rincian campaign → ad set → ad tersedia di atas (touch iklan terbukti + pemetaan Ad ID)." };
   if (id === "TIKTOK") return { campaign: false, penjelasan: "TikTok belum punya data per campaign/ad di sistem (tidak ada touch klik per iklan). Yang tersedia: label CRM + biaya sumber yang diinput manual." };
+  if (id === "GOOGLE") return { campaign: false, penjelasan: "Google Ads hanya punya label CRM + biaya sumber manual/bulanan (belum ada klik ID Google di CRM, belum ada data per campaign). Bukan atribusi per klik." };
   return { campaign: false, penjelasan: "Sumber organik/lainnya tidak punya campaign atau biaya iklan yang dialokasikan." };
 }

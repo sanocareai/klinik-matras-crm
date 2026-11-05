@@ -6,7 +6,8 @@ import { rupiahPersis } from "./akuisisiLogic.js";
 export const SUMBER_FORM = [
   { id: "META", label: "Meta Ads" },
   { id: "TIKTOK", label: "TikTok Ads" },
-  { id: "LAINNYA", label: "Lainnya (mis. Google Ads)" },
+  { id: "GOOGLE", label: "Google Ads" },
+  { id: "LAINNYA", label: "Lainnya" },
 ];
 export const MAKS_HARI_ENTRI = 93;
 const NOMINAL_RE = /^\d{1,13}(\.\d{1,2})?$/;

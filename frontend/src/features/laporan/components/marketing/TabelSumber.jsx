@@ -12,6 +12,9 @@ import LogoSumber from "../LogoSumber.jsx";
 // Sumber tanpa hasil TETAP tampil (lead 0 bukan dihilangkan). Biaya organik = "tidak tersedia", bukan Rp0. Konversi UTAMA = ber-order ÷ TOTAL lead (termasuk spam); non-spam kolom terpisah.
 export const TIP = {
   lead: "TOTAL lead berlabel sumber itu (label CRM): customer baru dibuat di periode. Spam ikut terhitung; lead sah = bukan spam/internal/B2B/karyawan.",
+  prospek: "METRIK UTAMA. Lead sah yang PERNAH dipindah ke stage PROSPECT oleh sales (riwayat transisi sejak 25 Jul 2026; lead lama tanpa riwayat dihitung bila stage-nya sekarang PROSPECT). Keputusan MANUAL sales, bukan skor otomatis dan bukan qualified lead objektif. Tidak termasuk lead yang langsung ke transaksi tanpa catatan PROSPECT.",
+  prospekLanjut: "RINCIAN (definisi lama, label tersendiri). Lead sah yang pernah di stage PROSPECT, TRANSACTION, atau REVIEWED. Lebih besar dari prospek eksplisit karena memuat lead yang langsung ke transaksi tanpa catatan PROSPECT (belum dapat dipastikan sales menilainya prospek). Selisihnya ditampilkan di bawah angka.",
+  biayaProspek: "Biaya sumber ÷ PROSPEK EKSPLISIT (bukan prospek-atau-lanjut). Terisi hanya bila biaya sumber lengkap setiap hari dan ada prospek eksplisit; selain itu kosong dengan alasan, bukan Rp0.",
   spam: "Persentase lead sumber ini yang ditandai SPAM. Diagnostik kualitas targeting — bukan penalti.",
   berOrder: "Customer unik dengan ≥ 1 order eligible (bukan batal/pending, bukan penjualan karyawan). Ber-order BUKAN berarti sudah membayar.",
   membayar: "Customer dengan ≥ 1 pembayaran sah di ledger. Batas bawah: pembayaran di luar sistem tidak terlihat.",
@@ -38,6 +41,17 @@ export function selSumber(s, id, { banding = false, lap } = {}) {
   };
   switch (id) {
     case "lead": return { t: angka(s.lead), sub: d("lead") ? `${d("lead")} vs sebelumnya` : null };
+    case "prospek": {
+      const e = s.prospek?.prospekEksplisit; if (!e) return { t: "—", kosong: true };
+      const q = s.prospek;
+      return { t: angka(e.jumlah), kosong: false, sub: e.persenDariLeadSah == null ? "—" : `${formatPersen(e.persenDariLeadSah)} dari lead sah`, title: `Prospek eksplisit ${e.jumlah} dari ${e.penyebut} lead sah (bertanggal ${e.berTanggal}, lead lama tanpa riwayat ${e.tanpaRiwayat}). Saat ini PROSPECT: ${q.saatIniProspect}. Penilaian manual sales.` };
+    }
+    case "prospekLanjut": {
+      const a = s.prospek?.pernahProspekAtauLanjut; if (!a) return { t: "—", kosong: true };
+      const q = s.prospek;
+      return { t: angka(a.jumlah), kosong: false, sub: `+${angka(q.selisihAtauLanjutMinusEksplisit)} lanjut tanpa catatan PROSPECT`, title: `Prospek atau lanjut (definisi lama) ${a.jumlah} dari ${a.penyebut} lead sah. Prospek eksplisit ${q.prospekEksplisit?.jumlah}. Langsung ke transaksi tanpa PROSPECT: ${q.langsungKeTransaksiTanpaProspect}.` };
+    }
+    case "biayaProspek": return biaya("costPerProspekEksplisit");
     case "spam": return { t: formatPersen(s.spamPersen?.nilai), sub: `${angka(s.spam)} lead`, title: `${s.spamPersen?.pembilang} dari ${s.spamPersen?.penyebut} lead` };
     case "berOrder": return { t: angka(s.berOrder), sub: d("berOrder") ? `${d("berOrder")} vs sebelumnya` : null };
     case "membayar": return { t: angka(s.membayar), sub: d("membayar") ? `${d("membayar")} vs sebelumnya` : null };
@@ -60,6 +74,9 @@ export function selTotal(lap, id) {
   const tb = (kunci) => { const c = selTotalBerbayar(bb, kunci); return { t: c.teks, kosong: c.kosong, sub: c.kosong ? c.alasan : c.sementara ? "sementara" : null }; };
   switch (id) {
     case "lead": return { t: angka(t.lead) };
+    case "prospek": return t.prospek ? { t: angka(t.prospek.prospekEksplisit), sub: t.leadSah > 0 ? `${formatPersen(Math.round((t.prospek.prospekEksplisit / t.leadSah) * 10000) / 100)} dari lead sah` : "—", title: `Total prospek eksplisit; saat ini PROSPECT ${t.prospek.saatIniProspect}.` } : { t: "—", kosong: true };
+    case "prospekLanjut": return t.prospek ? { t: angka(t.prospek.pernahProspekAtauLanjut), sub: `+${angka(t.prospek.selisihAtauLanjutMinusEksplisit)} lanjut tanpa catatan PROSPECT`, title: `Total prospek atau lanjut (definisi lama); langsung ke transaksi ${t.prospek.langsungKeTransaksiTanpaProspect}.` } : { t: "—", kosong: true };
+    case "biayaProspek": return { t: "—", kosong: true, sub: "hanya per sumber" };
     case "spam": return { t: formatPersen(t.lead ? Math.round((t.spam / t.lead) * 10000) / 100 : null), sub: `${angka(t.spam)} lead` };
     case "berOrder": return { t: angka(t.berOrder) };
     case "membayar": return { t: angka(t.membayar) };
