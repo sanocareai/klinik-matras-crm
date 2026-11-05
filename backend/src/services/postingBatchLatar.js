@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import { KoreksiError } from "./warehouseCorrection.js";
 import { kunciEvaluasiCatatan, terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { rencanakanPosting, postingSatuUnit } from "./postingPemakaianHistoris.js";
+import { wajibBukanPenyatakan } from "./pengamanHistorisPascaSO.js";
 import { wajibKonfirmasiManifest, wajibOwnerMemulai, wajibAdaKonfirmasi, periksaPercobaanUlang } from "./postingKonfirmasiManifest.js";
 
 export const ENTITAS_BATCH = "posting_historis_batch";
@@ -102,6 +103,7 @@ export async function ajukanBatch(prisma, { persetujuan, aktor, jurnalHPP = fals
   if (/^[0-9a-f]{64}$/.test(persetujuan.hashDisetujui)) { const ev = await bacaPeristiwa(prisma, persetujuan.hashDisetujui); const ada = ringkas(persetujuan.hashDisetujui, ev); if (ada) { await periksaPercobaanUlang(prisma, { aktor, tersimpan: ev.find((e) => e.eventType === "BATCH_DIAJUKAN")?.metadata?.konfirmasiManifest ?? null, persetujuan }); return { ...ada, baru: false }; } }
   const rencana = await rencanakanPosting(prisma, { unitIds });
   if (rencana.hash !== persetujuan.hashDisetujui) throw new KoreksiError("Rencana posting saat ini BERBEDA dari yang disetujui — batch tidak dibuat. Minta persetujuan ulang atas daftar terbaru.", 409, "RENCANA_BERUBAH", { hashSekarang: rencana.hash });
+  wajibBukanPenyatakan(rencana, aktor);
   if (!rencana.jumlah) throw new KoreksiError("Rencana kosong — tidak ada yang diposting", 409, "RENCANA_KOSONG");
   const konfirmasi = await wajibKonfirmasiManifest(prisma, { rencana, persetujuan, aktor }); // selisih → ditolak di sini, SEBELUM batch dibuat
   const batchId = rencana.hash;

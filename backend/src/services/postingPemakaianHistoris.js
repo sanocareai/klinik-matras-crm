@@ -13,6 +13,7 @@ import { KoreksiError } from "./warehouseCorrection.js";
 import { evaluasiUlang, kunciEvaluasiCatatan, keadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { STATE, r4 } from "../lib/domain/pemakaianHistoris.js";
 import { wajibKonfirmasiManifest, wajibOwnerMemulai, wajibAdaKonfirmasi } from "./postingKonfirmasiManifest.js";
+import { klasifikasiPengaman, hashDenganPengaman, wajibBukanPenyatakan, wajibTidakTerkenaPengaman, KEADAAN_PENGAMAN } from "./pengamanHistorisPascaSO.js";
 
 export const AWAL_NOTE_POSTING = "Impor pemakaian historis Sep–Okt 2026";
 const kunciPosting = (orderNumber, kodeBahan) => `PH2610:${orderNumber}:${kodeBahan}`;
@@ -29,15 +30,20 @@ export async function rencanakanPosting(db, { unitIds = null } = {}) {
     where: { id: { in: idSiap } },
     include: { material: { select: { id: true, code: true, name: true, unit: true } }, unit: { select: { id: true, unitCode: true, status: true } } }, orderBy: [{ orderNumber: "asc" }, { sourceRow: "asc" }],
   });
+  // PENGAMAN PASCA-SO: catatan bahan ber-hasil-SO sah yang bertanggal ≤ posting SO ditahan/tercermin dan TIDAK ikut rencana (bahan tanpa hasil SO: tidak ada perubahan).
+  const pengaman = await klasifikasiPengaman(db, notes); const tertahan = []; const tercermin = [];
   const grup = new Map();
   for (const n of notes) {
+    const pv = pengaman.get(n.id);
+    if (pv) { const baris = { catatanId: n.id, order: n.orderNumber, kodeBahan: n.material.code, qty: Number(n.qty), tanggal: wibTgl(n.usedAt), hasilSO: pv.so.nomor }; if (pv.keadaan === KEADAAN_PENGAMAN.TERCERMIN_DI_SO) tercermin.push({ ...baris, pernyataanId: pv.pernyataan.id, pelakuId: pv.pernyataan.pelakuId }); else tertahan.push(baris); continue; }
     const k = `${n.unitId}|${n.materialId}`; const g = grup.get(k) ?? { unitId: n.unitId, unitCode: n.unit.unitCode, statusUnit: n.unit.status, orderNumber: n.orderNumber, materialId: n.materialId, kodeBahan: n.material.code, satuan: n.material.unit, qty: 0, tanggal: wibTgl(n.usedAt), usedAt: n.usedAt, catatanIds: [], barisSumber: [] };
     g.qty = r4(g.qty + Number(n.qty)); g.catatanIds.push(n.id); g.barisSumber.push(n.sourceRow); if (new Date(n.usedAt) < new Date(g.usedAt)) { g.usedAt = n.usedAt; g.tanggal = wibTgl(n.usedAt); } grup.set(k, g);
   }
   const transaksi = [...grup.values()].sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.orderNumber.localeCompare(b.orderNumber) || a.kodeBahan.localeCompare(b.kodeBahan))
     .map((g, i) => ({ no: i + 1, kunci: kunciPosting(g.orderNumber, g.kodeBahan), ...g, createdAtUTC: new Date(g.usedAt).toISOString() }));
-  const hash = crypto.createHash("sha256").update(JSON.stringify(transaksi.map((t) => [t.kunci, t.unitId, t.materialId, t.qty, t.createdAtUTC, [...t.catatanIds].sort()]))).digest("hex");
-  return { hash, jumlah: transaksi.length, orderUnik: new Set(transaksi.map((t) => t.orderNumber)).size, transaksi };
+  const hashDasar = crypto.createHash("sha256").update(JSON.stringify(transaksi.map((t) => [t.kunci, t.unitId, t.materialId, t.qty, t.createdAtUTC, [...t.catatanIds].sort()]))).digest("hex");
+  const hash = hashDenganPengaman(hashDasar, tertahan, tercermin);
+  return { hash, jumlah: transaksi.length, orderUnik: new Set(transaksi.map((t) => t.orderNumber)).size, transaksi, tertahan, tercermin };
 }
 
 async function garisWaktuBahan(tx, materialId) {
@@ -66,6 +72,7 @@ export async function postingSatuUnit(prisma, { unitId, daftar, persetujuan, akt
       const ada = await tx.stockMovement.findFirst({ where: { unitId, materialId: t.materialId, note: { contains: `[${t.kunci}]` } }, select: { id: true } });
       if (notes.every((n) => n.state === STATE.DIPOSTING) && ada) { lewat.push({ kunci: t.kunci, alasan: "SUDAH_DIPOSTING" }); continue; }
       if (!notes.every((n) => n.state === STATE.SIAP_POSTING && !n.stockMovementId)) throw new KoreksiError(`Catatan ${t.kunci} tidak lagi siap posting`, 409, "CATATAN_BERUBAH");
+      if (!ada) await wajibTidakTerkenaPengaman(tx, notes); // fail-closed di DALAM transaksi: hasil SO sah yang baru diposting sesudah rencana disetujui tetap menahan catatan
       let mv = ada;
       if (!mv) {
         // garis waktu: pemakaian bertanggal historis tidak boleh membuat saldo negatif di titik waktu mana pun
@@ -105,6 +112,7 @@ export async function jalankanPosting(prisma, { persetujuan, aktor, jurnalHPP = 
   await wajibAdaKonfirmasi(prisma, aktor, persetujuan);
   const rencana = await rencanakanPosting(prisma, { unitIds });
   if (rencana.hash !== persetujuan.hashDisetujui) throw new KoreksiError("Rencana posting saat ini BERBEDA dari yang disetujui — tidak dijalankan. Minta persetujuan ulang atas daftar terbaru.", 409, "RENCANA_BERUBAH", { hashSekarang: rencana.hash });
+  wajibBukanPenyatakan(rencana, aktor);
   if (rencana.jumlah) await wajibKonfirmasiManifest(prisma, { rencana, persetujuan, aktor }); // selisih dengan konfirmasi manifest → ditolak SEBELUM movement apa pun
   const perUnit = new Map(); for (const t of rencana.transaksi) (perUnit.get(t.unitId) ?? perUnit.set(t.unitId, []).get(t.unitId)).push(t);
   const diposting = []; const dilewati = []; const gagal = [];

@@ -18,6 +18,7 @@ import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiP
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
 import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
 import { pratinjauPosting } from "../services/postingPratinjau.js";
+import { daftarPengaman, nyatakanTercermin, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
 import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
 import { pratinjauPerubahan, terapkanPerubahanPemakaian } from "../services/perubahanPemakaianUnit.js";
 
@@ -100,7 +101,17 @@ pemakaianKoreksiRouter.post("/catatan-historis/koreksi-kiloan/terapkan", require
   try { const h = await terapkanKoreksiKiloan(prisma, { manifest: req.body?.manifest, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user }); res.status(h.dikoreksi.length ? 201 : 200).json(h); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.get("/posting-historis/rencana", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
-  try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi }); } catch (e) { handleErr(e, res); }
+  try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi, tertahanPascaSO: r.tertahan.length, tercerminDiSO: r.tercermin.length }); } catch (e) { handleErr(e, res); }
+});
+// PENGAMAN PASCA-SO: catatan historis bahan ber-hasil-SO sah yang ditahan (TERTAHAN_PASCA_SO) / dinyatakan tercermin (TERCERMIN_DI_SO). Pernyataan per bahan oleh penyetuju; tidak menulis stok.
+pemakaianKoreksiRouter.get("/posting-historis/pengaman", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
+  try { res.json(await daftarPengaman(prisma, { materialId: req.query?.materialId ? String(req.query.materialId) : null })); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/posting-historis/pengaman/nyatakan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { const h = await nyatakanTercermin(prisma, { aktor: req.user, materialId: req.body?.materialId, catatanIds: req.body?.catatanIds, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/posting-historis/pengaman/:id/batalkan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
+  try { res.status(201).json(await batalkanPernyataan(prisma, { aktor: req.user, pernyataanId: req.params.id, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
 });
 // Pratinjau manifest + dampak (stok, HPP berbukti, tanpa harga, tertahan, selisih belum dijurnal). BACA-SAJA; hash = pin persetujuan untuk jalankan/batch.
 pemakaianKoreksiRouter.get("/posting-historis/pratinjau", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
