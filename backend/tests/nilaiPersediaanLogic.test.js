@@ -95,7 +95,7 @@ test("N20. STOK_BELUM_DIKETAHUI dipecah: nol dikonfirmasi Owner ≠ tanpa catata
   assert.equal(tanpa.status, STATUS.STOK_BELUM_DIKETAHUI); assert.equal(tanpa.subStatus, SUB.TANPA_CATATAN_STOK);
   const c = ringkasCakupan([K({}), nolOwner, tanpa]);
   assert.equal(c.relevan, 3); assert.equal(c.dinilai, 1); assert.equal(c.persenDinilai, 33.3, "nol Owner TIDAK dikeluarkan dari penyebut untuk menaikkan persen");
-  assert.deepEqual(c.perSubStatus, { NOL_DIKONFIRMASI_OWNER: 1, TANPA_CATATAN_STOK: 1 });
+  assert.deepEqual(c.perSubStatus, { NOL_DIKONFIRMASI_OWNER: 1, TANPA_CATATAN_STOK: 1, NOL_KOREKSI_RESMI: 0, NOL_MENURUT_PERGERAKAN: 0 });
 });
 test("N21. cakupan kuantitas (ledger) dan cakupan harga dihitung TERPISAH; nol Owner tidak dihitung sebagai kuantitas ledger maupun 'berharga'", () => {
   const nolOwner = K({ jumlahPergerakan: 0, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) });
@@ -105,6 +105,18 @@ test("N21. cakupan kuantitas (ledger) dan cakupan harga dihitung TERPISAH; nol O
   assert.equal(c.kuantitas.nolDikonfirmasiOwnerBelumDiLedger, 1); assert.equal(c.kuantitas.tidakDiketahui, 1);
   assert.equal(c.harga.bahanBersaldoPositif, 2); assert.equal(c.harga.denganHargaSatuanCocok, 1); assert.equal(c.harga.persenDenganHarga, 50); assert.equal(c.harga.tanpaHarga, 1);
   assert.equal(baris.filter((b) => b.status === STATUS.DINILAI).length, 1, "nol Owner bukan DINILAI");
+});
+test("N23. empat jenis nol/tidak-diketahui dibedakan per baris: nol koreksi resmi, nol menurut pergerakan, nol dikonfirmasi Owner, tanpa catatan stok", () => {
+  const resmi = K({ saldo: 0, jumlahPergerakan: 4, nolTerverifikasi: true, verifikasiNol: { sumber: "KOREKSI_SALDO", nomor: "ADJ-1", waktu: new Date("2026-11-05T09:40:00Z"), soTanggal: "2026-11-04" } });
+  const gerak = K({ saldo: 0, jumlahPergerakan: 3 });
+  const nolOwner = K({ jumlahPergerakan: 0, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) });
+  const tanpa = K({ jumlahPergerakan: 0, saldo: 0 });
+  assert.deepEqual([resmi, gerak, nolOwner, tanpa].map((b) => b.subStatus), [SUB.NOL_KOREKSI_RESMI, SUB.NOL_MENURUT_PERGERAKAN, SUB.NOL_DIKONFIRMASI_OWNER, SUB.TANPA_CATATAN_STOK]);
+  assert.deepEqual([resmi, gerak, nolOwner, tanpa].map((b) => b.status), [STATUS.SALDO_NOL, STATUS.SALDO_NOL, STATUS.STOK_BELUM_DIKETAHUI, STATUS.STOK_BELUM_DIKETAHUI]);
+  assert.equal(resmi.nilai, 0); assert.equal(nolOwner.nilai, null, "nol Owner tidak pernah Rp0"); assert.equal(K({}).subStatus, undefined, "bahan dinilai tidak punya sub-status");
+  const c = ringkasCakupan([resmi, gerak, nolOwner, tanpa, K({})]);
+  assert.deepEqual(c.perSubStatus, { NOL_DIKONFIRMASI_OWNER: 1, TANPA_CATATAN_STOK: 1, NOL_KOREKSI_RESMI: 1, NOL_MENURUT_PERGERAKAN: 1 });
+  assert.equal(c.kuantitas.diketahuiDiLedger, 3, "ledger: 2 nol + 1 dinilai; nol Owner dan tanpa catatan tidak ikut"); assert.equal(c.kuantitas.nolDikonfirmasiOwnerBelumDiLedger, 1);
 });
 test("N22. dokumenHarga: PO (nomor+baris), CSV (+baris), manual; selalu belum diverifikasi dan bukan bukti biaya perolehan", () => {
   assert.deepEqual(dokumenHarga({ idempotencyKey: "po-harga:x:y:r0", reason: "Otomatis dari PO PO-03112026-003 (baris 6, revisi 0) — draf PO dibuat", note: "", impact: { barisPO: 6 } }), { tipe: "PO", teks: "PO PO-03112026-003, baris 6" });

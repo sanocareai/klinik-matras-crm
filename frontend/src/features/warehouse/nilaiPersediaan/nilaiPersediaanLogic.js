@@ -6,6 +6,15 @@ export const STATUS_TEKS = Object.freeze({
 export const STATUS_NADA = Object.freeze({ DINILAI: "ok", SALDO_NOL: "netral", STOK_BELUM_DIKETAHUI: "waspada", HARGA_KOSONG: "waspada", SALDO_MINUS: "bahaya", SATUAN_TIDAK_COCOK: "bahaya", PENGAMATAN_FISIK: "info" });
 export const URUT_STATUS = Object.freeze(["DINILAI", "SALDO_MINUS", "SATUAN_TIDAK_COCOK", "HARGA_KOSONG", "PENGAMATAN_FISIK", "STOK_BELUM_DIKETAHUI", "SALDO_NOL"]);
 export const STATUS_PENGECUALIAN = Object.freeze(["STOK_BELUM_DIKETAHUI", "HARGA_KOSONG", "SALDO_MINUS", "SATUAN_TIDAK_COCOK", "PENGAMATAN_FISIK"]);
+/** Sub-status (server: row.subStatus). Status induk tidak diubah; sub-status MENAMPILKAN pembeda agar 178 nol Owner tidak tersembunyi di bawah "stok belum diketahui". */
+export const SUB_TEKS = Object.freeze({ NOL_DIKONFIRMASI_OWNER: "Fisik nol dikonfirmasi Owner", TANPA_CATATAN_STOK: "Tanpa catatan stok", NOL_KOREKSI_RESMI: "Nol melalui koreksi resmi", NOL_MENURUT_PERGERAKAN: "Nol menurut pergerakan" });
+export const SUB_NADA = Object.freeze({ NOL_DIKONFIRMASI_OWNER: "info", TANPA_CATATAN_STOK: "waspada", NOL_KOREKSI_RESMI: "netral", NOL_MENURUT_PERGERAKAN: "netral" });
+export const SUB_INDUK = Object.freeze({ NOL_DIKONFIRMASI_OWNER: "STOK_BELUM_DIKETAHUI", TANPA_CATATAN_STOK: "STOK_BELUM_DIKETAHUI", NOL_KOREKSI_RESMI: "SALDO_NOL", NOL_MENURUT_PERGERAKAN: "SALDO_NOL" });
+export const URUT_SUB = Object.freeze(["TANPA_CATATAN_STOK", "NOL_DIKONFIRMASI_OWNER", "NOL_MENURUT_PERGERAKAN", "NOL_KOREKSI_RESMI"]);
+/** Kunci tampilan satu baris: sub-status bila ada, selain itu status. */
+export const kunciTampil = (b) => (b?.subStatus && SUB_TEKS[b.subStatus] ? b.subStatus : b?.status);
+export const teksKunci = (k) => SUB_TEKS[k] ?? STATUS_TEKS[k] ?? "";
+export const nadaKunci = (k) => SUB_NADA[k] ?? STATUS_NADA[k] ?? "netral";
 export const FILTER_SEMUA = "SEMUA"; export const FILTER_PENGECUALIAN = "PENGECUALIAN";
 export const SUMBER_HARGA_TEKS = Object.freeze({ MANUAL: "Manual", KOREKSI: "Koreksi manual", PO: "Dari PO (otomatis; belum tentu diterima)" });
 export const STATUS_REKON_TEKS = Object.freeze({ BELUM_DIREKONSILIASI: "Belum direkonsiliasi" });
@@ -28,7 +37,12 @@ export const TEKS_DOKUMEN_BUKAN_BUKTI = "Dokumen sumber (CSV/PO) adalah jejak pe
 export function kalimatKuantitas(k) {
   if (!k) return "";
   const p = k.persenDiketahuiDiLedger === null || k.persenDiketahuiDiLedger === undefined ? "" : ` (${String(k.persenDiketahuiDiLedger).replace(".", ",")}%)`;
-  return `Kuantitas diketahui menurut ledger: ${k.diketahuiDiLedger} dari ${k.universe} bahan${p} · fisik nol dikonfirmasi Owner (belum di ledger): ${k.nolDikonfirmasiOwnerBelumDiLedger} · tanpa catatan stok: ${k.tidakDiketahui}`;
+  return `Kuantitas menurut ledger: ${k.diketahuiDiLedger} dari ${k.universe} bahan${p}`;
+}
+/** Informasi TERPISAH (tidak dijumlahkan ke persentase ledger, tidak dinilai, tidak dihitung berharga). */
+export function kalimatNolOwner(k) {
+  if (!k) return "";
+  return `Informasi terpisah: ${k.nolDikonfirmasiOwnerBelumDiLedger} pengamatan fisik nol dikonfirmasi Owner (belum di ledger, belum disahkan Stock Count) · ${k.tidakDiketahui} bahan tanpa catatan stok. Tidak dijumlahkan ke persentase ledger dan tidak dihitung berharga.`;
 }
 export function kalimatHarga(h) {
   if (!h) return "";
@@ -50,18 +64,29 @@ export function kalimatCakupan(c) {
 }
 export function saringBaris(baris, { filter = FILTER_PENGECUALIAN, cari = "" } = {}) {
   const q = String(cari ?? "").trim().toLowerCase();
-  return (baris ?? []).filter((b) => (filter === FILTER_SEMUA ? true : filter === FILTER_PENGECUALIAN ? STATUS_PENGECUALIAN.includes(b.status) : b.status === filter))
+  return (baris ?? []).filter((b) => (filter === FILTER_SEMUA ? true : filter === FILTER_PENGECUALIAN ? STATUS_PENGECUALIAN.includes(b.status) : (b.status === filter || b.subStatus === filter)))
     .filter((b) => !q || `${b.kode} ${b.nama}`.toLowerCase().includes(q));
 }
 /** Hitungan per status untuk tombol penyaring: SEMUA, PENGECUALIAN (gabungan), lalu status yang ada. */
 export function opsiFilter(cakupan) {
   const per = cakupan?.perStatus ?? {}; const ada = URUT_STATUS.filter((s) => (per[s] ?? 0) > 0);
-  return [{ kode: FILTER_PENGECUALIAN, teks: "Semua pengecualian", jumlah: cakupan?.pengecualian ?? 0 }, { kode: FILTER_SEMUA, teks: "Semua bahan", jumlah: cakupan?.universe ?? 0 }, ...ada.map((s) => ({ kode: s, teks: STATUS_TEKS[s], jumlah: per[s] }))];
+  return [{ kode: FILTER_PENGECUALIAN, teks: "Semua pengecualian", jumlah: cakupan?.pengecualian ?? 0 }, { kode: FILTER_SEMUA, teks: "Semua bahan", jumlah: cakupan?.universe ?? 0 }, ...ada.map((s) => ({ kode: s, teks: STATUS_TEKS[s], jumlah: per[s] })), ...URUT_SUB.filter((s) => (cakupan?.perSubStatus?.[s] ?? 0) > 0).map((s) => ({ kode: s, teks: `${SUB_TEKS[s]} (dalam ${STATUS_TEKS[SUB_INDUK[s]].toLowerCase()})`, jumlah: cakupan.perSubStatus[s], sub: true }))];
 }
 /** Segmen strip cakupan (persen lebar) — urut risiko, tanpa menyembunyikan status apa pun. */
 export function segmenCakupan(cakupan) {
   const per = cakupan?.perStatus ?? {}; const total = cakupan?.universe || 0; if (!total) return [];
-  return URUT_STATUS.filter((s) => per[s] > 0).map((s) => ({ status: s, jumlah: per[s], persen: (per[s] / total) * 100, teks: STATUS_TEKS[s], nada: STATUS_NADA[s] }));
+  const sub = cakupan?.perSubStatus; const seg = (k, j) => ({ status: k, jumlah: j, persen: (j / total) * 100, teks: teksKunci(k), nada: nadaKunci(k) });
+  return URUT_STATUS.filter((s) => per[s] > 0).flatMap((s) => { const anak = sub ? URUT_SUB.filter((k) => SUB_INDUK[k] === s && (sub[k] ?? 0) > 0) : []; return anak.length ? anak.map((k) => seg(k, sub[k])) : [seg(s, per[s])]; });
+}
+/** Chip kartu "belum bisa dinilai": stok belum diketahui dipecah (tanpa catatan stok vs fisik nol dikonfirmasi Owner). */
+export function chipPengecualian(belum) {
+  const per = belum?.perStatus ?? {}; const sub = belum?.perSubStatus; const out = [];
+  for (const s of STATUS_PENGECUALIAN) {
+    if (!(per[s] > 0)) continue;
+    if (s === "STOK_BELUM_DIKETAHUI" && sub) { for (const k of ["TANPA_CATATAN_STOK", "NOL_DIKONFIRMASI_OWNER"]) if (sub[k] > 0) out.push({ kunci: k, jumlah: sub[k], teks: SUB_TEKS[k].toLowerCase() }); }
+    else out.push({ kunci: s, jumlah: per[s], teks: STATUS_TEKS[s].toLowerCase() });
+  }
+  return out;
 }
 /** Penjelasan kartu bila nominal tidak diizinkan. */
 export const TEKS_TANPA_NOMINAL = "Nominal hanya untuk Finance/Owner. Jumlah bahan dan status tetap tampil.";

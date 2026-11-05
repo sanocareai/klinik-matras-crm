@@ -81,10 +81,32 @@ test("L9. rincian verifikasi nol: Koreksi Saldo (dokumen + tanggal SO bila ditau
 test("pemisahan: kuantitas ledger, nol Owner, dan harga dinyatakan terpisah; dokumen harga selalu 'belum diverifikasi'", async () => {
   const L = await import("../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js");
   const k = L.kalimatKuantitas({ universe: 384, diketahuiDiLedger: 171, persenDiketahuiDiLedger: 44.5, nolDikonfirmasiOwnerBelumDiLedger: 178, tidakDiketahui: 35 });
-  assert.match(k, /171 dari 384 bahan \(44,5%\)/); assert.match(k, /fisik nol dikonfirmasi Owner \(belum di ledger\): 178/); assert.match(k, /tanpa catatan stok: 35/);
+  assert.equal(k, "Kuantitas menurut ledger: 171 dari 384 bahan (44,5%)"); assert.doesNotMatch(k, /178/, "nol Owner tidak dijumlahkan ke kalimat ledger");
+  const n = L.kalimatNolOwner({ nolDikonfirmasiOwnerBelumDiLedger: 178, tidakDiketahui: 35 }); assert.match(n, /178 pengamatan fisik nol dikonfirmasi Owner/); assert.match(n, /35 bahan tanpa catatan stok/); assert.match(n, /Tidak dijumlahkan ke persentase ledger dan tidak dihitung berharga/);
   const h = L.kalimatHarga({ bahanBersaldoPositif: 88, denganHargaSatuanCocok: 72, persenDenganHarga: 81.8, tanpaHarga: 16 });
   assert.match(h, /72 dari 88 bahan bersaldo/); assert.match(h, /81,8%/);
   assert.equal(L.teksDokumenHarga({ dokumen: { tipe: "CSV", teks: "CSV GILANG, baris 365" } }), "Dokumen: CSV GILANG, baris 365 · belum diverifikasi");
   assert.equal(L.teksDokumenHarga({}), "Dokumen: tidak tercatat · belum diverifikasi"); assert.equal(L.teksDokumenHarga(null), "");
   assert.match(L.TEKS_DOKUMEN_BUKAN_BUKTI, /bukan bukti biaya perolehan/);
+});
+
+test("sub-status: 178 nol Owner dapat dikenali dan difilter langsung; strip dan chip tidak menyembunyikannya di bawah 'stok belum diketahui'", async () => {
+  const L = await import("../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js");
+  const cak = { universe: 10, perStatus: { DINILAI: 2, HARGA_KOSONG: 1, STOK_BELUM_DIKETAHUI: 5, SALDO_NOL: 2 }, perSubStatus: { NOL_DIKONFIRMASI_OWNER: 3, TANPA_CATATAN_STOK: 2, NOL_KOREKSI_RESMI: 1, NOL_MENURUT_PERGERAKAN: 1 }, pengecualian: 6 };
+  const baris = [
+    { kode: "A", nama: "a", status: "DINILAI" }, { kode: "B", nama: "b", status: "STOK_BELUM_DIKETAHUI", subStatus: "NOL_DIKONFIRMASI_OWNER" }, { kode: "C", nama: "c", status: "STOK_BELUM_DIKETAHUI", subStatus: "NOL_DIKONFIRMASI_OWNER" },
+    { kode: "D", nama: "d", status: "STOK_BELUM_DIKETAHUI", subStatus: "TANPA_CATATAN_STOK" }, { kode: "E", nama: "e", status: "SALDO_NOL", subStatus: "NOL_KOREKSI_RESMI" }, { kode: "F", nama: "f", status: "SALDO_NOL", subStatus: "NOL_MENURUT_PERGERAKAN" } ];
+  assert.deepEqual(L.saringBaris(baris, { filter: "NOL_DIKONFIRMASI_OWNER" }).map((b) => b.kode), ["B", "C"]);
+  assert.deepEqual(L.saringBaris(baris, { filter: "TANPA_CATATAN_STOK" }).map((b) => b.kode), ["D"]);
+  assert.deepEqual(L.saringBaris(baris, { filter: "NOL_KOREKSI_RESMI" }).map((b) => b.kode), ["E"]);
+  assert.deepEqual(L.saringBaris(baris, { filter: "STOK_BELUM_DIKETAHUI" }).map((b) => b.kode), ["B", "C", "D"], "filter status induk tetap berfungsi");
+  const opsi = L.opsiFilter(cak); const o = opsi.find((x) => x.kode === "NOL_DIKONFIRMASI_OWNER"); assert.equal(o.jumlah, 3); assert.match(o.teks, /Fisik nol dikonfirmasi Owner/);
+  const seg = L.segmenCakupan(cak); assert.ok(seg.some((s) => s.status === "NOL_DIKONFIRMASI_OWNER" && s.jumlah === 3 && s.teks === "Fisik nol dikonfirmasi Owner")); assert.ok(!seg.some((s) => s.status === "STOK_BELUM_DIKETAHUI"), "segmen induk dipecah");
+  assert.ok(Math.abs(seg.reduce((a, s) => a + s.persen, 0) - 100) < 1e-6, "total strip tetap 100%");
+  assert.equal(seg.reduce((a, s) => a + s.jumlah, 0), 10);
+  const chip = L.chipPengecualian({ perStatus: { STOK_BELUM_DIKETAHUI: 5, HARGA_KOSONG: 1 }, perSubStatus: cak.perSubStatus }); assert.deepEqual(chip.map((c) => [c.kunci, c.jumlah]), [["TANPA_CATATAN_STOK", 2], ["NOL_DIKONFIRMASI_OWNER", 3], ["HARGA_KOSONG", 1]]);
+  assert.ok(chip.some((c) => c.kunci === "NOL_DIKONFIRMASI_OWNER" && c.jumlah === 3) && chip.some((c) => c.kunci === "TANPA_CATATAN_STOK" && c.jumlah === 2));
+  assert.equal(L.kunciTampil(baris[1]), "NOL_DIKONFIRMASI_OWNER"); assert.equal(L.kunciTampil(baris[0]), "DINILAI");
+  assert.equal(L.saringBaris(baris, { filter: "SEMUA" }).length, 6);
+  const tanpaSub = L.segmenCakupan({ universe: 3, perStatus: { DINILAI: 1, STOK_BELUM_DIKETAHUI: 2 } }); assert.equal(tanpaSub.length, 2, "respons lama tanpa perSubStatus tetap dirender");
 });

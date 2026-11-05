@@ -203,3 +203,29 @@ test("H11. nol dikonfirmasi tidak menjadi 'Nol terverifikasi': tanpa Stock Count
   const w = await dunia(); assert.equal((await so(w.g, [{ materialId: w.D.id, jenis: "NOL_DIKONFIRMASI", jumlah: 0, soTanggal: "2026-11-04", sumber: "uji", alasan: "Sel kosong = sudah dicek" }])).status, 201);
   const d = per((await w.f.get(URL_API)).body).get(w.D.id); assert.equal(d.keadaanSaldo, "BELUM_ADA_CATATAN"); assert.equal(d.hasilSO.status, "BELUM_DISAHKAN_STOCK_COUNT"); assert.match(d.keterangan, /Fisik nol dikonfirmasi Owner/); assert.match(d.keterangan, /belum disahkan melalui Stock Count/); assert.doesNotMatch(JSON.stringify(d), /terverifikasi/i);
 });
+
+test("H12. pemisahan: nol dikonfirmasi Owner ≠ tanpa catatan stok ≠ nol koreksi/pergerakan; cakupan kuantitas ledger terpisah dari cakupan harga; sumber dokumen harga 'belum diverifikasi'; izin nominal; tidak ada tulisan", async () => {
+  const w = await dunia(); const sebelum = await cacah();
+  const r0 = await w.f.get(URL_API); const d0 = per(r0.body).get(w.D.id);
+  assert.equal(d0.status, "STOK_BELUM_DIKETAHUI"); assert.equal(d0.subStatus, "TANPA_CATATAN_STOK");
+  assert.equal(per(r0.body).get(w.E.id).subStatus, "NOL_MENURUT_PERGERAKAN"); assert.equal(per(r0.body).get(w.A.id).subStatus, undefined);
+  const hso = await so(w.g, [{ materialId: w.D.id, jenis: "NOL_DIKONFIRMASI", jumlah: 0, soTanggal: "2026-11-04", sumber: "KIRIM GILANG.xlsx baris 6", alasan: "Sel kosong = sudah dicek, fisik nol" }]); assert.equal(hso.status, 201);
+  const r = await w.f.get(URL_API); const b = per(r.body); const d = b.get(w.D.id);
+  assert.equal(d.status, "STOK_BELUM_DIKETAHUI", "status induk tidak berubah"); assert.equal(d.subStatus, "NOL_DIKONFIRMASI_OWNER"); assert.equal(d.nilai, null); assert.equal(d.saldo, null);
+  const sub = r.body.cakupan.perSubStatus; const hitungSub = {}; for (const x of r.body.baris) if (x.subStatus) hitungSub[x.subStatus] = (hitungSub[x.subStatus] ?? 0) + 1;
+  for (const k of ["NOL_DIKONFIRMASI_OWNER", "TANPA_CATATAN_STOK", "NOL_KOREKSI_RESMI", "NOL_MENURUT_PERGERAKAN"]) assert.equal(sub[k], hitungSub[k] ?? 0, k);
+  assert.equal(sub.NOL_DIKONFIRMASI_OWNER + sub.TANPA_CATATAN_STOK, r.body.cakupan.perStatus.STOK_BELUM_DIKETAHUI, "dua sub-status = seluruh stok belum diketahui");
+  assert.equal(sub.NOL_KOREKSI_RESMI + sub.NOL_MENURUT_PERGERAKAN, r.body.cakupan.perStatus.SALDO_NOL);
+  assert.equal(r.body.kartu.belumDinilai.perSubStatus.NOL_DIKONFIRMASI_OWNER, 1);
+  // cakupan kuantitas (ledger) dan harga — terpisah, nol Owner tidak ikut persentase ledger maupun berharga
+  const k = r.body.cakupan.kuantitas; const diLedger = r.body.baris.filter((x) => x.saldo !== null).length;
+  assert.equal(k.diketahuiDiLedger, diLedger); assert.equal(k.universe, r.body.baris.length); assert.equal(k.persenDiketahuiDiLedger, Math.round((diLedger / k.universe) * 1000) / 10);
+  assert.equal(k.nolDikonfirmasiOwnerBelumDiLedger, 1); assert.match(k.catatan, /informasi terpisah/); assert.equal(r.body.kartu.kuantitas.diketahuiDiLedger, diLedger);
+  const pos = r.body.baris.filter((x) => typeof x.saldo === "number" && x.saldo > 1e-6); const h = r.body.cakupan.harga;
+  assert.equal(h.bahanBersaldoPositif, pos.length); assert.equal(h.denganHargaSatuanCocok, pos.filter((x) => x.status === "DINILAI").length); assert.equal(h.tanpaHarga, pos.filter((x) => x.status === "HARGA_KOSONG").length);
+  assert.equal(r.body.cakupan.persenDinilai, r.body.kartu.estimasi.persen, "persen dinilai lama tidak berubah definisinya");
+  // sumber dokumen harga: terlihat hanya dengan izin nominal; selalu belum diverifikasi
+  const a = b.get(w.A.id); assert.equal(a.harga.statusVerifikasi, "BELUM_DIVERIFIKASI"); assert.match(a.harga.peringatan, /bukan bukti biaya perolehan/); assert.equal(a.harga.dokumen.tipe, "MANUAL"); assert.equal(a.harga.nilai, 6000);
+  const rg = await w.g.get(URL_API); assert.equal(rg.body.izin.nominal, false); assert.equal(per(rg.body).get(w.A.id).harga, null, "tanpa finance:read: harga dan dokumen tersembunyi"); assert.equal(per(rg.body).get(w.D.id).subStatus, "NOL_DIKONFIRMASI_OWNER", "pembeda status tetap tampil tanpa nominal"); assert.equal(rg.body.cakupan.kuantitas.diketahuiDiLedger, diLedger);
+  const sesudah = await cacah(); assert.deepEqual({ ...sesudah, aktivitas: undefined }, { ...sebelum, aktivitas: undefined }, "pencatatan hasil SO tidak menulis stok/harga/jurnal/GR/penyesuaian");
+});
