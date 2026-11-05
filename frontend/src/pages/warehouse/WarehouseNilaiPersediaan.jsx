@@ -9,7 +9,7 @@ import CatatHasilSOModal from "@/features/warehouse/nilaiPersediaan/CatatHasilSO
 import { rolesOf } from "@/lib/roles.js";
 import {
   FILTER_PENGECUALIAN, STATUS_NADA, STATUS_PENGECUALIAN, STATUS_REKON_TEKS, STATUS_TEKS, TEKS_TANPA_NOMINAL, kalimatCakupan, opsiFilter, saringBaris, segmenCakupan,
-  teksHarga, teksRupiah, teksSaldo, teksSumberHarga, teksWaktuWIB, TEKS_BELUM_FINAL, TEKS_NILAI_PARSIAL, ringkasHasilSO,
+  teksHarga, teksRupiah, teksSaldo, teksSumberHarga, teksWaktuWIB, TEKS_BELUM_FINAL, TEKS_NILAI_PARSIAL, ringkasHasilSO, ringkasVerifikasiNol, TEKS_RINCIAN_NOL,
 } from "@/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
 
 // NILAI PERSEDIAAN (kandidat, BACA-SAJA). Tiga kartu: Estimasi nilai stok · Saldo akun persediaan Finance (belum direkonsiliasi) · Bahan belum bisa dinilai.
@@ -89,7 +89,7 @@ export default function WarehouseNilaiPersediaan() {
                     <td className="nip-n" data-label="Saldo">{b.saldo === null ? <span className="nip-belum">belum diketahui</span> : teksSaldo(b.saldo, b.satuan)}{b.status === "PENGAMATAN_FISIK" && <div className="nip-kode" data-testid="np-terukur">terukur: {b.pengamatan} · belum terukur dalam {b.satuan}</div>}</td>
                     <td className="nip-n" data-label="Harga Berlaku">{teksHarga(b.harga, b.satuan) ?? <span className="nip-belum">{nominal ? "belum ada" : "—"}</span>}{b.harga && <div className="nip-kode">{teksSumberHarga(b.harga.sumber)}</div>}</td>
                     <td className="nip-n" data-label="Estimasi nilai">{b.nilai === null || (!nominal && b.status === "DINILAI") ? <span className="nip-belum">{b.status === "DINILAI" ? "—" : "tidak dinilai"}</span> : teksRupiah(b.nilai)}</td>
-                    <td data-label="Status"><Chip status={b.status} />{b.keterangan && <div className="nip-kode nip-ket">{b.keterangan}</div>}{b.hasilSO && (() => { const r = ringkasHasilSO(b.hasilSO); return <div className={`nip-kode nip-so${r.kedaluwarsa ? " nip-so-lama" : ""}`} data-testid="np-so" data-kedaluwarsa={r.kedaluwarsa ? "1" : "0"}>{r.kedaluwarsa && <b>Kedaluwarsa · </b>}{r.teks}</div>; })()}</td>
+                    <td data-label="Status"><Chip status={b.status} />{b.keterangan && <div className="nip-kode nip-ket">{b.keterangan}</div>}{b.verifikasiNol && (() => { const r = ringkasVerifikasiNol(b.verifikasiNol); return <div className="nip-kode nip-so" data-testid="np-verif-nol"><b>{TEKS_RINCIAN_NOL}:</b> {r.label}</div>; })()}{b.hasilSO && (() => { const r = ringkasHasilSO(b.hasilSO); return <div className={`nip-kode nip-so${r.kedaluwarsa ? " nip-so-lama" : ""}`} data-testid="np-so" data-kedaluwarsa={r.kedaluwarsa ? "1" : "0"}>{r.kedaluwarsa && <b>Kedaluwarsa · </b>}{r.teks}</div>; })()}</td>
                     {bisaCatat && <td data-label="Aksi"><button type="button" className="nip-aksi" onClick={() => setPilih(b)} data-testid="np-catat">{b.hasilSO ? "Koreksi hasil SO" : "Catat hasil SO"}</button></td>}
                   </tr>))}</tbody></table></div>)}
             {baris.length > tampil.length && <p className="nip-kecil nip-batas">Menampilkan {tampil.length} dari {baris.length} baris — persempit dengan pencarian atau saringan.</p>}

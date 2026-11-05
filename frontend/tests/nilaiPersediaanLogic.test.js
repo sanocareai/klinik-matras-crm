@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, TEKS_NILAI_PARSIAL, TEKS_BELUM_FINAL, periksaFormHasilSO, bangunBodyHasilSO, ringkasHasilSO, teksTanggalSO,
+  teksSaldo, teksRupiah, teksHarga, teksWaktuWIB, kalimatCakupan, saringBaris, opsiFilter, segmenCakupan, STATUS_PENGECUALIAN, STATUS_TEKS, FILTER_SEMUA, FILTER_PENGECUALIAN, TEKS_NILAI_PARSIAL, TEKS_BELUM_FINAL, periksaFormHasilSO, bangunBodyHasilSO, ringkasHasilSO, teksTanggalSO, ringkasVerifikasiNol, TEKS_RINCIAN_NOL,
 } from "../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
 
 const B = (status, o = {}) => ({ materialId: `${status}-${o.kode ?? 1}`, kode: "K1", nama: "Bahan Satu", satuan: "KG", status, saldo: 1, nilai: null, harga: null, ...o });
@@ -67,4 +67,13 @@ test("L8. sumber SO tidak dianggap mewakili saldo sekarang: tanggal sumber, stat
   assert.equal(lama.kedaluwarsa, true); assert.match(lama.teks, /3 pergerakan sesudahnya \(net 12,5\)/); assert.match(lama.teks, /Tidak lagi mewakili saldo sekarang/);
   assert.equal(ringkasHasilSO({ soTanggal: "2026-11-04", status: "TERBUKA_SATUAN", statusTeks: "Pengecualian satuan masih terbuka", pergerakanSesudah: { jumlah: 0, net: 0 } }).terbuka, true); assert.equal(ringkasHasilSO(null), null);
   const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8"); assert.ok(/data-testid="np-so"/.test(pg) && /Kedaluwarsa/.test(pg) && /pengecualian satuan masih terbuka/.test(pg) && /belum disahkan melalui Stock Count/.test(pg)); assert.ok(!/Nol terverifikasi/.test(pg), "tidak ada badge Nol terverifikasi di halaman");
+});
+
+test("L9. rincian verifikasi nol: Koreksi Saldo (dokumen + tanggal SO bila ditautkan) dibedakan dari Stock Count; tampil di halaman", () => {
+  const ks = ringkasVerifikasiNol({ sumber: "KOREKSI_SALDO", nomor: "ADJ-051126-02", soTanggal: "2026-11-04", label: "Nol terverifikasi — Koreksi Saldo ADJ-051126-02 (diposting 5 Nov 2026; SO 4 Nov 2026)" });
+  assert.equal(ks.sumber, "Koreksi Saldo"); assert.equal(ks.dokumen, "ADJ-051126-02"); assert.equal(ks.tanggalSO, "4 Nov 2026"); assert.match(ks.label, /Koreksi Saldo/);
+  assert.equal(ringkasVerifikasiNol({ sumber: "KOREKSI_SALDO", nomor: "ADJ-1", soTanggal: null }).tanggalSO, "belum ditautkan");
+  const sc = ringkasVerifikasiNol({ sumber: "STOCK_COUNT", nomor: "SC-1" }); assert.equal(sc.sumber, "Stock Count"); assert.equal(sc.tanggalSO, null); assert.equal(ringkasVerifikasiNol(null), null);
+  assert.equal(TEKS_RINCIAN_NOL, "Rincian verifikasi nol");
+  const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8"); assert.ok(/data-testid="np-verif-nol"/.test(pg) && /TEKS_RINCIAN_NOL/.test(pg));
 });

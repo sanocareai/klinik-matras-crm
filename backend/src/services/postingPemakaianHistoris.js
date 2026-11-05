@@ -31,19 +31,22 @@ export async function rencanakanPosting(db, { unitIds = null } = {}) {
     include: { material: { select: { id: true, code: true, name: true, unit: true } }, unit: { select: { id: true, unitCode: true, status: true } } }, orderBy: [{ orderNumber: "asc" }, { sourceRow: "asc" }],
   });
   // PENGAMAN PASCA-SO: catatan bahan ber-hasil-SO sah yang bertanggal ≤ posting SO ditahan/tercermin dan TIDAK ikut rencana (bahan tanpa hasil SO: tidak ada perubahan).
-  const pengaman = await klasifikasiPengaman(db, notes); const tertahan = []; const tercermin = [];
+  const pengaman = await klasifikasiPengaman(db, notes); const tertahan = []; const tercermin = []; const dilepas = [];
   const grup = new Map();
   for (const n of notes) {
     const pv = pengaman.get(n.id);
-    if (pv) { const baris = { catatanId: n.id, order: n.orderNumber, kodeBahan: n.material.code, qty: Number(n.qty), tanggal: wibTgl(n.usedAt), hasilSO: pv.so.nomor }; if (pv.keadaan === KEADAAN_PENGAMAN.TERCERMIN_DI_SO) tercermin.push({ ...baris, pernyataanId: pv.pernyataan.id, pelakuId: pv.pernyataan.pelakuId }); else tertahan.push(baris); continue; }
+    if (pv) { const baris = { catatanId: n.id, order: n.orderNumber, kodeBahan: n.material.code, qty: Number(n.qty), tanggal: wibTgl(n.usedAt), tautanId: pv.tautan.id, soTanggal: pv.tautan.soTanggal };
+      if (pv.keadaan === KEADAAN_PENGAMAN.TERTAHAN_PASCA_SO) { tertahan.push(baris); continue; }
+      if (pv.keadaan === KEADAAN_PENGAMAN.TERCERMIN_DI_SO) { tercermin.push({ ...baris, pernyataanId: pv.pernyataan.id, pelakuId: pv.pernyataan.pelakuId }); continue; }
+      dilepas.push({ ...baris, pernyataanId: pv.pernyataan.id, pelakuId: pv.pernyataan.pelakuId }); } // DILEPAS_BELUM_TERCERMIN: tetap ikut rencana (dicatat agar hash mengikatnya)
     const k = `${n.unitId}|${n.materialId}`; const g = grup.get(k) ?? { unitId: n.unitId, unitCode: n.unit.unitCode, statusUnit: n.unit.status, orderNumber: n.orderNumber, materialId: n.materialId, kodeBahan: n.material.code, satuan: n.material.unit, qty: 0, tanggal: wibTgl(n.usedAt), usedAt: n.usedAt, catatanIds: [], barisSumber: [] };
     g.qty = r4(g.qty + Number(n.qty)); g.catatanIds.push(n.id); g.barisSumber.push(n.sourceRow); if (new Date(n.usedAt) < new Date(g.usedAt)) { g.usedAt = n.usedAt; g.tanggal = wibTgl(n.usedAt); } grup.set(k, g);
   }
   const transaksi = [...grup.values()].sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.orderNumber.localeCompare(b.orderNumber) || a.kodeBahan.localeCompare(b.kodeBahan))
     .map((g, i) => ({ no: i + 1, kunci: kunciPosting(g.orderNumber, g.kodeBahan), ...g, createdAtUTC: new Date(g.usedAt).toISOString() }));
   const hashDasar = crypto.createHash("sha256").update(JSON.stringify(transaksi.map((t) => [t.kunci, t.unitId, t.materialId, t.qty, t.createdAtUTC, [...t.catatanIds].sort()]))).digest("hex");
-  const hash = hashDenganPengaman(hashDasar, tertahan, tercermin);
-  return { hash, jumlah: transaksi.length, orderUnik: new Set(transaksi.map((t) => t.orderNumber)).size, transaksi, tertahan, tercermin };
+  const hash = hashDenganPengaman(hashDasar, { tertahan, tercermin, dilepas });
+  return { hash, jumlah: transaksi.length, orderUnik: new Set(transaksi.map((t) => t.orderNumber)).size, transaksi, tertahan, tercermin, dilepas };
 }
 
 async function garisWaktuBahan(tx, materialId) {

@@ -267,7 +267,9 @@ export const EVENT_TYPES = Object.freeze({
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
   SO_HASIL_DICATAT: "SO_HASIL_DICATAT", // hasil SO per bahan dicatat (TANPA menulis ledger)
   SO_HASIL_DIKOREKSI: "SO_HASIL_DIKOREKSI", // koreksi hasil SO per bahan: peristiwa baru yang menunjuk peristiwa sebelumnya
-  SO_HISTORIS_TERCERMIN: "SO_HISTORIS_TERCERMIN", // penyetuju menyatakan catatan pemakaian historis sudah tercermin di hasil SO (TANPA menulis ledger)
+  SO_DITAUTKAN: "SO_DITAUTKAN", // penyetuju menautkan SO ke BAHAN (tanggal SO = batas pengaman posting historis; TANPA menulis ledger)
+  SO_TAUTAN_DIBATALKAN: "SO_TAUTAN_DIBATALKAN", // tautan SO dibatalkan (peristiwa baru; yang lama tetap)
+  SO_HISTORIS_DINYATAKAN: "SO_HISTORIS_DINYATAKAN", // penyetuju menyatakan per CATATAN: tercermin di hasil SO atau memang belum tercermin
   SO_HISTORIS_DIBATALKAN: "SO_HISTORIS_DIBATALKAN", // pernyataan di atas dibatalkan (peristiwa baru; yang lama tetap)
 
   // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026).
@@ -687,10 +689,14 @@ export function formatActivitySentence(event) {
       const nol = metadata.jenis === "NOL_DIKONFIRMASI";
       return `${eventType === EVENT_TYPES.SO_HASIL_DIKOREKSI ? "Hasil SO dikoreksi" : "Hasil SO dicatat"}: ${nol ? "fisik nol dikonfirmasi" : `terukur ${metadata.jumlah ?? "—"} ${metadata.satuan ?? ""}`.trim()} (SO ${metadata.soTanggal || "—"}) — tidak menulis stok`;
     }
-    case EVENT_TYPES.SO_HISTORIS_TERCERMIN:
-      return `Catatan pemakaian historis dinyatakan tercermin di hasil SO (${metadata.jumlah ?? "—"} catatan, hasil SO ${metadata.rujukanSO?.nomor || "—"}) — tidak menulis stok`;
+    case EVENT_TYPES.SO_DITAUTKAN:
+      return `SO ${metadata.soTanggal || "—"} ditautkan ke bahan${metadata.dokumen?.nomor ? ` (dokumen ${metadata.dokumen.nomor})` : ""} — catatan pemakaian historis sampai tanggal itu ditahan; tidak menulis stok`;
+    case EVENT_TYPES.SO_TAUTAN_DIBATALKAN:
+      return "Tautan SO ke bahan dibatalkan — penahanan catatan pemakaian historis dilepas";
+    case EVENT_TYPES.SO_HISTORIS_DINYATAKAN:
+      return `Catatan pemakaian historis dinyatakan ${metadata.arah === "TERCERMIN" ? "sudah tercermin di hasil SO" : "belum tercermin di hasil SO"} (${metadata.jumlah ?? "—"} catatan, SO ${metadata.soTanggal || "—"}) — tidak menulis stok`;
     case EVENT_TYPES.SO_HISTORIS_DIBATALKAN:
-      return "Pernyataan catatan historis tercermin di SO dibatalkan — catatan kembali ditahan";
+      return "Pernyataan catatan historis terhadap SO dibatalkan — catatan kembali ditahan";
     case EVENT_TYPES.COMPLAINT_CREATED:
       return `Kasus komplain dibuka — ${metadata.categoryLabel || metadata.category || "—"}`;
     case EVENT_TYPES.COMPLAINT_STATUS_CHANGED:

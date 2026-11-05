@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { computeStockSnapshot, lockMaterialBalance } from "./inventoryLedger.js";
 import { keadaanStok, LABEL_KEADAAN } from "./stokLokasi.js";
 import { KEADAAN_SALDO, LABEL_KEADAAN_SALDO, klasifikasiSaldo, nolTerverifikasiPer } from "./keadaanSaldo.js";
+import { peringatanCatatanHistoris } from "./pengamanHistorisPascaSO.js";
 import { validasiAsalKoreksi, ASAL_KOREKSI_TIPE } from "./asalKoreksiSaldo.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
@@ -79,6 +80,7 @@ export async function pratinjauKoreksi(db, user, { materialId, jumlahFisik } = {
   if (d.keadaan === KEADAAN_SALDO.MINUS) peringatan.push(`Catatan saat ini MINUS (${d.saldo}). Koreksi menaikkan saldo catatan menjadi ${fisik} — pastikan ${fisik} adalah hasil hitung fisik, bukan perkiraan.`);
   if (adaSelisih && d.dipesan > EPS && tersediaSesudah < -EPS) peringatan.push(`Setelah koreksi, jumlah Tersedia menjadi ${tersediaSesudah} karena ${d.dipesan} sudah dipesan (Material Issue/reservasi). Pesanan itu tidak ikut berubah.`);
   if (adaSelisih && d.saldo > EPS && Math.abs(selisih) > d.saldo * 0.5) peringatan.push(`Selisih besar (${selisih > 0 ? "+" : ""}${selisih} dari saldo ${d.saldo}). Periksa ulang hitungan sebelum mengajukan.`);
+  { const p = await peringatanCatatanHistoris(db, materialId); if (p) peringatan.push(p); } // catatan pemakaian historis belum diposting: tautkan SO dulu bila koreksi ini hasil SO
   const aktif = await db.koreksiSaldoBahan.findFirst({ where: { materialId, adjustmentRequest: { status: { in: AKTIF } } }, include: { adjustmentRequest: { select: { adjustmentNumber: true, status: true } } } });
   const izin = izinKoreksi(user);
   const dapatDiajukan = izin.bolehMengajukan && adaSelisih && !aktif;

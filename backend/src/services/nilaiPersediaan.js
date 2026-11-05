@@ -7,6 +7,7 @@
 // Nominal hanya untuk pemegang izin finance:read (diputuskan pemanggil: `bolehNominal`).
 import { AWALAN_KUNCI_PO } from "./finance/hargaBerlaku.js";
 import { klasifikasiSaldo, KEADAAN_SALDO, nolTerverifikasiPer } from "./keadaanSaldo.js";
+import { tautanSOAktif } from "./pengamanHistorisPascaSO.js";
 import { hasilSOTerkini, JENIS } from "./hasilSO.js";
 import { ROLE_PERMISSIONS, PERMISSIONS as P } from "../constants/permissions.js";
 
@@ -52,10 +53,19 @@ export function statusHasilSO({ so, keadaan, saldo }) {
 const ringkasSO = (so, st = null) => ({ urutan: so.urutan ?? null, status: st?.status ?? null, statusTeks: st ? STATUS_HASIL_SO[st.status] : null, kedaluwarsa: !!st?.kedaluwarsa, pergerakanSesudah: so.sesudah ?? { padaTanggal: 0, jumlah: 0, net: 0, terakhir: null }, id: so.id, jenis: so.jenis, jumlah: so.jumlah, satuan: so.satuan, soTanggal: so.soTanggal, soWaktu: so.soWaktu, sumber: so.sumber, alasan: so.alasan, pelaku: so.pelaku?.nama ?? null, dicatatPada: so.dicatatPada, revisi: so.revisi ?? 1 });
 
 /** Murni. Satu baris bahan → status + nilai. nilai = null untuk SEMUA yang bukan DINILAI/SALDO_NOL (tidak pernah Rp0 palsu). `nilaiLedger` = estimasi berbasis ledger (juga untuk bahan terukur dalam satuan lain). */
-export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifikasi = false, harga = null, hasilSO = null }) {
+/** Label nol terverifikasi menurut SUMBER bukti resmi: Koreksi Saldo (dokumen + tanggal SO bila ditautkan) ≠ Stock Count. Murni. */
+export function labelNolTerverifikasi(v) {
+  if (!v) return "Nol terverifikasi — sumber bukti belum dirinci.";
+  const tgl = v.waktu ? tglIndo(wibTgl(v.waktu)) : "—";
+  if (v.sumber === "KOREKSI_SALDO") return `Nol terverifikasi — Koreksi Saldo ${v.nomor} (diposting ${tgl}; ${v.soTanggal ? `SO ${tglIndo(v.soTanggal)}` : "tanggal SO belum ditautkan"})`;
+  if (v.sumber === "STOCK_COUNT") return `Nol terverifikasi — Stock Count ${v.nomor} (${tgl})`;
+  return `Nol terverifikasi — ${v.sumber ?? "sumber tidak dikenal"} ${v.nomor ?? ""}`.trim();
+}
+export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifikasi = false, harga = null, hasilSO = null, verifikasiNol = null }) {
   const keadaan = klasifikasiSaldo({ jumlahPergerakan, saldo, nolTerverifikasi }); const so = hasilSO ?? null; const st = so ? statusHasilSO({ so, keadaan, saldo }) : null;
   const dasar = { materialId: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit, kategori: bahan.category ?? null, aktif: bahan.active !== false, keadaanSaldo: keadaan, saldo: keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN ? null : r4(saldo),
-    harga: harga ? { nilai: harga.harga, satuan: harga.satuan, berlakuSejak: harga.berlakuMulai, sumber: harga.sumber, labelBukti: harga.label } : null, nilai: null, nilaiLedger: null, hasilSO: so ? ringkasSO(so, st) : null, hasilSOBermasalah: false, pengamatan: so?.jenis === JENIS.PENGAMATAN_SATUAN ? `${NF.format(so.jumlah)} ${so.satuan}` : null };
+    harga: harga ? { nilai: harga.harga, satuan: harga.satuan, berlakuSejak: harga.berlakuMulai, sumber: harga.sumber, labelBukti: harga.label } : null, nilai: null, nilaiLedger: null, hasilSO: so ? ringkasSO(so, st) : null, hasilSOBermasalah: false, pengamatan: so?.jenis === JENIS.PENGAMATAN_SATUAN ? `${NF.format(so.jumlah)} ${so.satuan}` : null,
+    verifikasiNol: keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? { sumber: verifikasiNol?.sumber ?? null, nomor: verifikasiNol?.nomor ?? null, diposting: verifikasiNol?.waktu ? new Date(verifikasiNol.waktu).toISOString() : null, soTanggal: verifikasiNol?.soTanggal ?? null, soDitautkan: !!verifikasiNol?.soTanggal, label: labelNolTerverifikasi(verifikasiNol) } : null };
   const hargaCocok = harga && String(harga.satuan ?? "").toUpperCase() === String(bahan.unit ?? "").toUpperCase();
   const soTxt = so ? `SO ${tglIndo(so.soTanggal)}${so.pelaku?.nama ? `, dicatat oleh ${so.pelaku.nama}` : ""}` : "";
   const sd = so?.sesudah; const catSesudah = so && sd ? (sd.jumlah > 0 ? ` PERINGATAN: ada ${sd.jumlah} pergerakan sesudah tanggal SO (net ${NF.format(r4(sd.net))}${sd.terakhir ? `, terakhir ${tglIndo(wibTgl(sd.terakhir))}` : ""}) — catatan SO ini tidak lagi mewakili saldo sekarang.` : "") + (sd.padaTanggal > 0 ? ` ${sd.padaTanggal} pergerakan terjadi pada tanggal SO (jam SO belum diketahui).` : "") : "";
@@ -66,7 +76,7 @@ export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifik
   const nol = so?.jenis === JENIS.NOL_DIKONFIRMASI;
   if (keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN) return { ...dasar, status: STATUS.STOK_BELUM_DIKETAHUI, keterangan: nol ? `Fisik nol dikonfirmasi Owner (${soTxt}), belum disahkan melalui Stock Count; belum tercatat sebagai hasil SO di ledger. Saldo sistem belum diketahui — bukan "sudah sesuai".${catSesudah}` : "Belum ada catatan stok — saldo belum diketahui (bukan Rp0)." };
   if (keadaan === KEADAAN_SALDO.MINUS) return { ...dasar, status: STATUS.SALDO_MINUS, hasilSOBermasalah: nol, keterangan: `Saldo catatan minus (${r4(saldo)}) — tidak dinilai; perlu dihitung fisik.${nol ? ` Fisik nol dikonfirmasi (${soTxt}); belum direkonsiliasi dengan ledger dan belum disahkan melalui Stock Count.${catSesudah}` : ""}` };
-  if (keadaan === KEADAAN_SALDO.NOL_MENURUT_PERGERAKAN || keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI) return { ...dasar, status: STATUS.SALDO_NOL, nilai: 0, nilaiLedger: 0, keterangan: (keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? "Nol terverifikasi hitung fisik." : "Nol menurut pergerakan.") + (nol ? ` Sejalan dengan hasil SO nol (${soTxt}); belum disahkan melalui Stock Count.${catSesudah}` : "") };
+  if (keadaan === KEADAAN_SALDO.NOL_MENURUT_PERGERAKAN || keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI) return { ...dasar, status: STATUS.SALDO_NOL, nilai: 0, nilaiLedger: 0, keterangan: (keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? `${labelNolTerverifikasi(verifikasiNol)}.` : "Nol menurut pergerakan.") + (nol ? ` Sejalan dengan hasil SO nol (${soTxt}); belum disahkan melalui Stock Count.${catSesudah}` : "") };
   if (!harga) return { ...dasar, status: STATUS.HARGA_KOSONG, hasilSOBermasalah: nol && st.bermasalah, keterangan: "Belum ada Harga Berlaku pada waktu acuan — tidak dinilai (bukan Rp0)." };
   if (!hargaCocok) return { ...dasar, status: STATUS.SATUAN_TIDAK_COCOK, hasilSOBermasalah: nol && st.bermasalah, keterangan: `Satuan harga ${harga.satuan} ≠ satuan stok ${bahan.unit} — tidak dikonversi otomatis.` };
   const nilai = r4(saldo * harga.harga);
@@ -146,6 +156,7 @@ export async function hitungNilaiPersediaan(db, { waktu = new Date(), bolehNomin
   const hargaPeta = await hargaPada(db, at);
   const penggunaanSekarang = sekarang.getTime() - at.getTime() < 60_000; // verifikasi nol memakai keadaan SEKARANG; untuk waktu lampau tidak diterapkan (tidak ada bukti as-of)
   const nolVer = penggunaanSekarang ? await nolTerverifikasiPer(db) : new Map();
+  const tautanSO = penggunaanSekarang ? await tautanSOAktif(db) : new Map(); // tanggal SO pada rincian nol terverifikasi hanya dari tautan eksplisit (bukan tebakan dari teks alasan)
   const soPeta = await hasilSOTerkini(db);
   { // pergerakan pada/sesudah tanggal SO per bahan (sampai waktu acuan): catatan SO lama tidak boleh dianggap mewakili saldo sekarang
     const ids = [...soPeta.keys()]; if (ids.length) {
@@ -157,7 +168,7 @@ export async function hitungNilaiPersediaan(db, { waktu = new Date(), bolehNomin
   const baris = []; const saldoPerBahan = new Map();
   for (const m of bahan) {
     const l = ledger.get(m.id) ?? { saldo: 0, n: 0 }; if (!m.active && Math.abs(l.saldo) <= EPS) continue; // nonaktif tanpa saldo: di luar universe
-    const h = hargaPeta.get(m.id) ?? null; const b = klasifikasiBaris({ bahan: m, saldo: l.saldo, jumlahPergerakan: l.n, nolTerverifikasi: nolVer.has(m.id), harga: h, hasilSO: soPeta.get(m.id) ?? null });
+    const h = hargaPeta.get(m.id) ?? null; const b = klasifikasiBaris({ bahan: m, saldo: l.saldo, jumlahPergerakan: l.n, nolTerverifikasi: nolVer.has(m.id), verifikasiNol: nolVer.has(m.id) ? { ...nolVer.get(m.id), soTanggal: tautanSO.get(m.id)?.soTanggal ?? null } : null, harga: h, hasilSO: soPeta.get(m.id) ?? null });
     baris.push(b); saldoPerBahan.set(m.id, { saldo: l.saldo, kode: m.code, nama: m.name, satuan: m.unit, hargaBerlaku: h ? h.harga : null });
   }
   const cakupan = ringkasCakupan(baris); const est = hitungEstimasi(baris);

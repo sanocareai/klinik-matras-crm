@@ -18,7 +18,7 @@ import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiP
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
 import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
 import { pratinjauPosting } from "../services/postingPratinjau.js";
-import { daftarPengaman, nyatakanTercermin, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
+import { daftarPengaman, tautkanSO, batalkanTautan, nyatakanCatatan, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
 import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
 import { pratinjauPerubahan, terapkanPerubahanPemakaian } from "../services/perubahanPemakaianUnit.js";
 
@@ -101,14 +101,20 @@ pemakaianKoreksiRouter.post("/catatan-historis/koreksi-kiloan/terapkan", require
   try { const h = await terapkanKoreksiKiloan(prisma, { manifest: req.body?.manifest, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user }); res.status(h.dikoreksi.length ? 201 : 200).json(h); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.get("/posting-historis/rencana", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
-  try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi, tertahanPascaSO: r.tertahan.length, tercerminDiSO: r.tercermin.length }); } catch (e) { handleErr(e, res); }
+  try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi, tertahanPascaSO: r.tertahan.length, tercerminDiSO: r.tercermin.length, dilepasBelumTercermin: r.dilepas.length }); } catch (e) { handleErr(e, res); }
 });
-// PENGAMAN PASCA-SO: catatan historis bahan ber-hasil-SO sah yang ditahan (TERTAHAN_PASCA_SO) / dinyatakan tercermin (TERCERMIN_DI_SO). Pernyataan per bahan oleh penyetuju; tidak menulis stok.
+// PENGAMAN PASCA-SO: tautan SO eksplisit per bahan (tanggal SO = batas) → catatan historis ditahan (TERTAHAN_PASCA_SO) sampai dinyatakan per catatan (TERCERMIN_DI_SO / DILEPAS_BELUM_TERCERMIN). Penyetuju; tidak menulis stok.
 pemakaianKoreksiRouter.get("/posting-historis/pengaman", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
   try { res.json(await daftarPengaman(prisma, { materialId: req.query?.materialId ? String(req.query.materialId) : null })); } catch (e) { handleErr(e, res); }
 });
+pemakaianKoreksiRouter.post("/posting-historis/pengaman/tautan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { const h = await tautkanSO(prisma, { aktor: req.user, materialId: req.body?.materialId, soTanggal: req.body?.soTanggal, sumber: req.body?.sumber, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, dokumenId: req.body?.dokumenId ?? null, menggantikanId: req.body?.menggantikanId ?? null, kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/posting-historis/pengaman/tautan/:id/batalkan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
+  try { res.status(201).json(await batalkanTautan(prisma, { aktor: req.user, tautanId: req.params.id, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
+});
 pemakaianKoreksiRouter.post("/posting-historis/pengaman/nyatakan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
-  try { const h = await nyatakanTercermin(prisma, { aktor: req.user, materialId: req.body?.materialId, catatanIds: req.body?.catatanIds, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+  try { const h = await nyatakanCatatan(prisma, { aktor: req.user, materialId: req.body?.materialId, arah: req.body?.arah, catatanIds: req.body?.catatanIds, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/posting-historis/pengaman/:id/batalkan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
   try { res.status(201).json(await batalkanPernyataan(prisma, { aktor: req.user, pernyataanId: req.params.id, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }

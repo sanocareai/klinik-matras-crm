@@ -73,6 +73,13 @@ export function bangunBodyHasilSO(f, bahan) {
 const BLN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 /** "2026-11-04" → "4 Nov 2026" (tanggal sumber SO apa adanya, tanpa zona). */
 export function teksTanggalSO(t) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(t ?? "")); return m ? `${Number(m[3])} ${BLN[Number(m[2]) - 1]} ${m[1]}` : "—"; }
+export const TEKS_RINCIAN_NOL = "Rincian verifikasi nol";
+/** Rincian nol terverifikasi menurut SUMBER bukti: Koreksi Saldo (dokumen + tanggal SO bila ditautkan) dibedakan dari Stock Count. null bila bukan nol terverifikasi. */
+export function ringkasVerifikasiNol(v) {
+  if (!v) return null;
+  const sumber = v.sumber === "KOREKSI_SALDO" ? "Koreksi Saldo" : v.sumber === "STOCK_COUNT" ? "Stock Count" : (v.sumber ?? "—");
+  return { label: v.label ?? `Nol terverifikasi — ${sumber}`, sumber, dokumen: v.nomor ?? "—", tanggalSO: v.soTanggal ? teksTanggalSO(v.soTanggal) : (v.sumber === "KOREKSI_SALDO" ? "belum ditautkan" : null) };
+}
 /** Satu baris "sumber SO": tanggal sumber, status rekonsiliasi, dan pergerakan sesudahnya. null bila tidak ada hasil SO. */
 export function ringkasHasilSO(h) {
   if (!h) return null; const sd = h.pergerakanSesudah ?? { jumlah: 0, net: 0, padaTanggal: 0 };
