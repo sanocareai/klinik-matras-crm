@@ -553,13 +553,28 @@ if (!/^rehearsal_/.test(nm)) { cek("uji Marketing hanya pada DB rehearsal", fals
 // REHEARSAL "Marketing lengkap": kode BARU dijalankan sebagai SERVER sungguhan (index.js, port 4103, tanpa job latar, variabel eksternal dinetralkan) terhadap SALINAN RESTORE production.
 // Rilis ini TIDAK punya jalur tulis baru: seluruh uji hanya membaca (GET). Bagian A = smoke yang sama dengan fase 8b. Bagian B = rentang tambahan (7 hari, 90 hari, bulan lalu) dibandingkan dengan SQL independen.
 // Bukti "tanpa tulisan": hitungan tabel inti sebelum vs sesudah identik (DB rehearsal tidak menerima aktivitas lain).
-const { neutralizeExternalEnv } = await imp("src/lib/stagingGuard.js"); neutralizeExternalEnv(process.env);
+const { neutralizeExternalEnv } = await imp("src/lib/stagingGuard.js"); const dibuang = neutralizeExternalEnv(process.env);
+// ── BUKTI ISOLASI (SEBELUM aplikasi rehearsal berjalan; fail-closed). Hanya NAMA variabel/DB yang dicetak, tidak ada nilai rahasia. ──
+// neutralizeExternalEnv tidak mencakup token Meta, sinkron spend, dan nomor alert atribusi: dibuang di sini khusus proses rehearsal.
+const EKSTRA = ["META_ADS_ACCESS_TOKEN", "META_ADS_ACCOUNT_ID", "ATRIBUSI_ALERT_NOTIFY_PHONE", "TIKTOK_ADS_ACCESS_TOKEN", "WINDSOR_API_KEY"];
+for (const k of EKSTRA) if (process.env[k] !== undefined) { delete process.env[k]; dibuang.push(k); }
+process.env.SPEND_SYNC_ENABLED = "false"; process.env.DISABLE_BACKGROUND_JOBS = "1";
+const urlDb = (() => { try { return decodeURIComponent(new URL(String(process.env.DATABASE_URL)).pathname.replace(/^\//, "")); } catch { return null; } })();
+cek("isolasi: DATABASE_URL aplikasi rehearsal menunjuk DB sementara rehearsal_* (BUKAN klinik_matras) dan sama dengan koneksi Prisma proses ini", urlDb !== null && urlDb !== "klinik_matras" && /^rehearsal_/.test(urlDb) && urlDb === nm, `db=${urlDb}`);
+const WASPADA = ["WAHA_BASE_URL", "WAHA_API_KEY", "WAHA_SESSION", "WAHA_BUSINESS_NUMBER", "AUTOMATION_WEBHOOK_URL", "AUTOMATION_WEBHOOK_SECRET", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "IG_ACCESS_TOKEN", "SMTP_HOST", "SMTP_URL", "FCM_SERVICE_ACCOUNT", "FCM_SERVICE_ACCOUNT_JSON", "EXPO_ACCESS_TOKEN", "VAPID_PRIVATE_KEY", "MCP_HUB_API_TOKEN", "MCP_API_TOKEN", ...EKSTRA];
+const sisa = WASPADA.filter((k) => process.env[k] !== undefined);
+cek("isolasi: tidak ada konfigurasi integrasi eksternal tersisa (WhatsApp/WAHA, webhook keluar, email, push, AI, Maps, token Meta/TikTok/Windsor, nomor alert)", sisa.length === 0, `variabel dibuang=${dibuang.length}${dibuang.length ? " (" + dibuang.join(",") + ")" : ""}; tersisa=${sisa.join(",") || "tidak ada"}`);
+cek("isolasi: job latar/scheduler dan sinkron spend dimatikan untuk proses rehearsal (DISABLE_BACKGROUND_JOBS=1, SPEND_SYNC_ENABLED=false)", process.env.DISABLE_BACKGROUND_JOBS === "1" && process.env.SPEND_SYNC_ENABLED === "false", "");
+if (gagal > 0) { await prisma.$disconnect(); process.exit(1); }
 const PORT = Number(process.env.REH_PORT ?? 4103); const BASE = `http://127.0.0.1:${PORT}`;
-const child = spawn(process.execPath, ["src/index.js"], { cwd: APP, env: { ...process.env, PORT: String(PORT), DISABLE_BACKGROUND_JOBS: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+const child = spawn(process.execPath, ["src/index.js"], { cwd: APP, env: { ...process.env, PORT: String(PORT), DISABLE_BACKGROUND_JOBS: "1", SPEND_SYNC_ENABLED: "false" }, stdio: ["ignore", "pipe", "pipe"] });
 let log = ""; child.stdout.on("data", (d) => { log += d; }); child.stderr.on("data", (d) => { log += d; });
 const berhenti = () => { try { child.kill("SIGTERM"); } catch { /* sudah mati */ } };
 let sehat = false; for (let i = 0; i < 60 && !sehat; i++) { try { sehat = (await fetch(BASE + "/api/health")).ok; } catch { await new Promise((r) => setTimeout(r, 1000)); } }
 cek("server kode baru hidup pada salinan restore (/api/health)", sehat, sehat ? "" : log.slice(-300)); if (!sehat) { berhenti(); await prisma.$disconnect(); process.exit(1); }
+await new Promise((r) => setTimeout(r, 1500));
+cek("isolasi: server rehearsal sendiri melaporkan job latar & worker pengirim dimatikan", /job latar & worker pengirim dimatikan/.test(log), log.split("\n").filter((l) => /dimatikan/.test(l)).slice(0, 2).join(" | "));
+if (gagal > 0) { berhenti(); await prisma.$disconnect(); process.exit(1); }
 
 const rolesDari = async (u) => new Set([u.role, ...(await prisma.userRole.findMany({ where: { userId: u.id }, select: { role: true } })).map((r) => r.role)]);
 const token = async (u) => jwt.sign({ id: u.id, name: u.name, role: u.role, roles: [...(await rolesDari(u))] }, process.env.JWT_SECRET, { expiresIn: "25m" });

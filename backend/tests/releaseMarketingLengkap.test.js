@@ -86,6 +86,10 @@ test("pustaka smoke/rehearsal: sintaks valid, hanya GET (tanpa POST/PUT/DELETE/I
   const sm = baca(path.join(root, "scripts/lib/smoke-marketing-lengkap.mjs"));
   assert.ok(sm.includes("tanpa token = 401") && sm.includes("= 403 (hanya ADMIN)") && sm.includes("periksaLaporan(d)") && sm.includes("SQL_BANDING") && sm.includes("SMOKE_HASIL"));
   const s = baca(SKRIP);
+  // ISOLASI rehearsal (bukti dicetak SEBELUM aplikasi rehearsal berjalan; fail-closed)
+  for (const p of ["isolasi: DATABASE_URL aplikasi rehearsal menunjuk DB sementara rehearsal_*", "urlDb !== \"klinik_matras\"", "isolasi: tidak ada konfigurasi integrasi eksternal tersisa", "META_ADS_ACCESS_TOKEN", "ATRIBUSI_ALERT_NOTIFY_PHONE", "SPEND_SYNC_ENABLED", "isolasi: server rehearsal sendiri melaporkan job latar & worker pengirim dimatikan", "DISABLE_BACKGROUND_JOBS"]) assert.ok(s.includes(p), `isolasi rehearsal tidak memuat: ${p}`);
+  assert.ok(s.indexOf("isolasi: DATABASE_URL aplikasi rehearsal") < s.indexOf("spawn(process.execPath, [\"src/index.js\"]"), "bukti isolasi harus dicetak sebelum aplikasi rehearsal dijalankan");
+  assert.ok(s.includes("rehearsal TIDAK terisolasi dari direktori data/uploads production"), "isolasi direktori data/uploads hilang");
   assert.ok(s.includes("function periksaLaporan(d)") && s.includes("function banding(d, sql)") && !/^export /m.test(s.split("<<'NODE'")[1] ?? ""), "invarian harus tersisip tanpa kata kunci export pada smoke");
 });
 
