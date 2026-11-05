@@ -9,7 +9,7 @@ import CatatHasilSOModal from "@/features/warehouse/nilaiPersediaan/CatatHasilSO
 import { rolesOf } from "@/lib/roles.js";
 import {
   FILTER_PENGECUALIAN, STATUS_NADA, STATUS_PENGECUALIAN, STATUS_REKON_TEKS, STATUS_TEKS, TEKS_TANPA_NOMINAL, kalimatCakupan, opsiFilter, saringBaris, segmenCakupan,
-  teksHarga, teksRupiah, teksSaldo, teksSumberHarga, teksWaktuWIB, TEKS_BELUM_FINAL, TEKS_NILAI_PARSIAL, ringkasHasilSO, ringkasVerifikasiNol, TEKS_RINCIAN_NOL,
+  teksHarga, teksDokumenHarga, TEKS_DOKUMEN_BUKAN_BUKTI, kalimatKuantitas, kalimatHarga, teksRupiah, teksSaldo, teksSumberHarga, teksWaktuWIB, TEKS_BELUM_FINAL, TEKS_NILAI_PARSIAL, ringkasHasilSO, ringkasVerifikasiNol, TEKS_RINCIAN_NOL,
 } from "@/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js";
 
 // NILAI PERSEDIAAN (kandidat, BACA-SAJA). Tiga kartu: Estimasi nilai stok · Saldo akun persediaan Finance (belum direkonsiliasi) · Bahan belum bisa dinilai.
@@ -63,7 +63,7 @@ export default function WarehouseNilaiPersediaan() {
               <div className="nip-besar" data-testid="np-k3-jumlah">{d.kartu.belumDinilai.jumlah}</div>
               <p className="nip-chips">{STATUS_PENGECUALIAN.filter((s) => d.kartu.belumDinilai.perStatus[s] > 0).map((s) => <Chip key={s} status={s}>{d.kartu.belumDinilai.perStatus[s]} {STATUS_TEKS[s].toLowerCase()}</Chip>)}</p>
               <p className="nip-kecil">{d.kartu.belumDinilai.catatan} Tetap dihitung di cakupan, tidak disembunyikan.</p>
-              {d.kartu.belumDinilai.nolDikonfirmasiBelumDiLedger > 0 && <p className="nip-kecil" data-testid="np-k3-nol">{d.kartu.belumDinilai.nolDikonfirmasiBelumDiLedger} bahan: fisik nol dikonfirmasi Owner, belum disahkan melalui Stock Count; belum tercatat sebagai hasil SO di ledger.</p>}
+              {d.kartu.belumDinilai.perSubStatus && <p className="nip-kecil" data-testid="np-k3-sub">Dari stok belum diketahui: <b>{d.kartu.belumDinilai.perSubStatus.TANPA_CATATAN_STOK}</b> tanpa catatan stok dan tanpa hasil SO · <b>{d.kartu.belumDinilai.perSubStatus.NOL_DIKONFIRMASI_OWNER}</b> fisik nol dikonfirmasi Owner, belum disahkan melalui Stock Count; belum di ledger (bukan saldo nol, tidak dinilai).</p>}
               {(d.cakupan.pengecualianSatuanTerbuka > 0 || d.cakupan.hasilSOKedaluwarsa > 0) && <p className="nip-kecil" data-testid="np-k3-so">{d.cakupan.pengecualianSatuanTerbuka} pengecualian satuan masih terbuka · {d.cakupan.hasilSOKedaluwarsa} catatan SO kedaluwarsa (ada pergerakan sesudah tanggal SO).</p>}
             </section>
           </div>
@@ -71,6 +71,8 @@ export default function WarehouseNilaiPersediaan() {
           <div className="nip-cakupan" data-testid="np-cakupan">
             <div className="nip-strip" role="img" aria-label={kalimatCakupan(d.cakupan)}>{segmenCakupan(d.cakupan).map((s) => <i key={s.status} className={`nip-seg nip-bg-${s.nada}`} style={{ width: `${s.persen}%` }} title={`${s.teks}: ${s.jumlah}`} />)}</div>
             <p className="nip-kalimat"><b>Cakupan:</b> {kalimatCakupan(d.cakupan)}. Saldo nol sah: {d.cakupan.saldoNol}. Seluruh {d.cakupan.universe} bahan dalam laporan.</p>
+            {d.cakupan.kuantitas && <p className="nip-kalimat" data-testid="np-cakupan-kuantitas"><b>Kuantitas:</b> {kalimatKuantitas(d.cakupan.kuantitas)}.</p>}
+            {d.cakupan.harga && <p className="nip-kalimat" data-testid="np-cakupan-harga"><b>Harga:</b> {kalimatHarga(d.cakupan.harga)}. {TEKS_DOKUMEN_BUKAN_BUKTI}</p>}
             <Lipat judul="Definisi dan sumber angka" testid="np-definisi">
               <ul className="nip-def"><li><b>Estimasi nilai stok.</b> {d.definisi.estimasi}</li><li><b>Berdasarkan ledger.</b> {d.definisi.ledger}</li><li><b>Tanpa hasil SO bermasalah.</b> {d.definisi.tanpaBermasalah}</li><li><b>Hasil SO.</b> {d.definisi.hasilSO}</li><li data-testid="np-izin-nominal"><b>Siapa melihat nominal.</b> {d.izin.keterangan} Peran: {d.izin.peranPelihatNominal.join(", ")}.</li><li><b>Saldo akun Finance.</b> {d.definisi.finance}</li><li><b>Bahan relevan.</b> {d.definisi.relevan}</li><li><b>Waktu acuan.</b> {d.definisi.waktu}</li></ul>
             </Lipat>
@@ -87,7 +89,7 @@ export default function WarehouseNilaiPersediaan() {
                   <tr key={b.materialId} data-testid="np-baris" data-status={b.status} data-kode={b.kode}>
                     <td data-label="Bahan"><div className="nip-nama">{b.nama}</div><div className="nip-kode">{b.kode}</div></td>
                     <td className="nip-n" data-label="Saldo">{b.saldo === null ? <span className="nip-belum">belum diketahui</span> : teksSaldo(b.saldo, b.satuan)}{b.status === "PENGAMATAN_FISIK" && <div className="nip-kode" data-testid="np-terukur">terukur: {b.pengamatan} · belum terukur dalam {b.satuan}</div>}</td>
-                    <td className="nip-n" data-label="Harga Berlaku">{teksHarga(b.harga, b.satuan) ?? <span className="nip-belum">{nominal ? "belum ada" : "—"}</span>}{b.harga && <div className="nip-kode">{teksSumberHarga(b.harga.sumber)}</div>}</td>
+                    <td className="nip-n" data-label="Harga Berlaku">{teksHarga(b.harga, b.satuan) ?? <span className="nip-belum">{nominal ? "belum ada" : "—"}</span>}{b.harga && <div className="nip-kode">{teksSumberHarga(b.harga.sumber)}</div>}{b.harga && <div className="nip-kode" data-testid="np-harga-dokumen">{teksDokumenHarga(b.harga)}</div>}</td>
                     <td className="nip-n" data-label="Estimasi nilai">{b.nilai === null || (!nominal && b.status === "DINILAI") ? <span className="nip-belum">{b.status === "DINILAI" ? "—" : "tidak dinilai"}</span> : teksRupiah(b.nilai)}</td>
                     <td data-label="Status"><Chip status={b.status} />{b.keterangan && <div className="nip-kode nip-ket">{b.keterangan}</div>}{b.verifikasiNol && (() => { const r = ringkasVerifikasiNol(b.verifikasiNol); return <div className="nip-kode nip-so" data-testid="np-verif-nol"><b>{TEKS_RINCIAN_NOL}:</b> {r.label}</div>; })()}{b.hasilSO && (() => { const r = ringkasHasilSO(b.hasilSO); return <div className={`nip-kode nip-so${r.kedaluwarsa ? " nip-so-lama" : ""}`} data-testid="np-so" data-kedaluwarsa={r.kedaluwarsa ? "1" : "0"}>{r.kedaluwarsa && <b>Kedaluwarsa · </b>}{r.teks}</div>; })()}</td>
                     {bisaCatat && <td data-label="Aksi"><button type="button" className="nip-aksi" onClick={() => setPilih(b)} data-testid="np-catat">{b.hasilSO ? "Koreksi hasil SO" : "Catat hasil SO"}</button></td>}

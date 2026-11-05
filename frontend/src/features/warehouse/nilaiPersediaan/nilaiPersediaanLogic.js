@@ -17,6 +17,24 @@ export function teksSaldo(saldo, satuan) { return saldo === null || saldo === un
 export function teksRupiah(n) { return n === null || n === undefined || Number.isNaN(Number(n)) ? "—" : `Rp${Math.round(Number(n)).toLocaleString("id-ID")}`; }
 export function teksHarga(harga, satuan) { return harga?.nilai === null || harga?.nilai === undefined ? null : `${teksRupiah(harga.nilai)} / ${harga.satuan || satuan}`; }
 export const teksSumberHarga = (s) => SUMBER_HARGA_TEKS[s] ?? "";
+/** Sumber dokumen harga (PO/CSV/manual) + status verifikasi. Dokumen sumber = jejak penelusuran, BUKAN bukti biaya perolehan. */
+export function teksDokumenHarga(harga) {
+  if (!harga) return "";
+  const dok = harga.dokumen?.teks ? `Dokumen: ${harga.dokumen.teks}` : "Dokumen: tidak tercatat";
+  return `${dok} · belum diverifikasi`;
+}
+export const TEKS_DOKUMEN_BUKAN_BUKTI = "Dokumen sumber (CSV/PO) adalah jejak penelusuran, bukan bukti biaya perolehan. Semua harga masih belum diverifikasi.";
+/** Cakupan KUANTITAS (ledger) terpisah dari fisik nol Owner dan dari cakupan HARGA. Tidak digabung menjadi satu persen. */
+export function kalimatKuantitas(k) {
+  if (!k) return "";
+  const p = k.persenDiketahuiDiLedger === null || k.persenDiketahuiDiLedger === undefined ? "" : ` (${String(k.persenDiketahuiDiLedger).replace(".", ",")}%)`;
+  return `Kuantitas diketahui menurut ledger: ${k.diketahuiDiLedger} dari ${k.universe} bahan${p} · fisik nol dikonfirmasi Owner (belum di ledger): ${k.nolDikonfirmasiOwnerBelumDiLedger} · tanpa catatan stok: ${k.tidakDiketahui}`;
+}
+export function kalimatHarga(h) {
+  if (!h) return "";
+  const p = h.persenDenganHarga === null || h.persenDenganHarga === undefined ? "" : ` (${String(h.persenDenganHarga).replace(".", ",")}%)`;
+  return `Cakupan harga: ${h.denganHargaSatuanCocok} dari ${h.bahanBersaldoPositif} bahan bersaldo punya Harga Berlaku bersatuan cocok${p} · ${h.tanpaHarga} tanpa harga`;
+}
 const pad = (n) => String(n).padStart(2, "0");
 /** "5 Nov 2026 01:10 WIB" dari ISO; selalu WIB (UTC+7) agar tidak bergantung zona peramban. */
 export function teksWaktuWIB(iso) {

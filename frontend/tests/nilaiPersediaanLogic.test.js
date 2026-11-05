@@ -77,3 +77,14 @@ test("L9. rincian verifikasi nol: Koreksi Saldo (dokumen + tanggal SO bila ditau
   assert.equal(TEKS_RINCIAN_NOL, "Rincian verifikasi nol");
   const pg = fs.readFileSync(new URL("../src/pages/warehouse/WarehouseNilaiPersediaan.jsx", import.meta.url), "utf8"); assert.ok(/data-testid="np-verif-nol"/.test(pg) && /TEKS_RINCIAN_NOL/.test(pg));
 });
+
+test("pemisahan: kuantitas ledger, nol Owner, dan harga dinyatakan terpisah; dokumen harga selalu 'belum diverifikasi'", async () => {
+  const L = await import("../src/features/warehouse/nilaiPersediaan/nilaiPersediaanLogic.js");
+  const k = L.kalimatKuantitas({ universe: 384, diketahuiDiLedger: 171, persenDiketahuiDiLedger: 44.5, nolDikonfirmasiOwnerBelumDiLedger: 178, tidakDiketahui: 35 });
+  assert.match(k, /171 dari 384 bahan \(44,5%\)/); assert.match(k, /fisik nol dikonfirmasi Owner \(belum di ledger\): 178/); assert.match(k, /tanpa catatan stok: 35/);
+  const h = L.kalimatHarga({ bahanBersaldoPositif: 88, denganHargaSatuanCocok: 72, persenDenganHarga: 81.8, tanpaHarga: 16 });
+  assert.match(h, /72 dari 88 bahan bersaldo/); assert.match(h, /81,8%/);
+  assert.equal(L.teksDokumenHarga({ dokumen: { tipe: "CSV", teks: "CSV GILANG, baris 365" } }), "Dokumen: CSV GILANG, baris 365 · belum diverifikasi");
+  assert.equal(L.teksDokumenHarga({}), "Dokumen: tidak tercatat · belum diverifikasi"); assert.equal(L.teksDokumenHarga(null), "");
+  assert.match(L.TEKS_DOKUMEN_BUKAN_BUKTI, /bukan bukti biaya perolehan/);
+});

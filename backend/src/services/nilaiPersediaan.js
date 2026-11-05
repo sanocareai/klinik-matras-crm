@@ -14,6 +14,8 @@ import { ROLE_PERMISSIONS, PERMISSIONS as P } from "../constants/permissions.js"
 export const STATUS = Object.freeze({
   DINILAI: "DINILAI", SALDO_NOL: "SALDO_NOL", STOK_BELUM_DIKETAHUI: "STOK_BELUM_DIKETAHUI", HARGA_KOSONG: "HARGA_KOSONG", SALDO_MINUS: "SALDO_MINUS", SATUAN_TIDAK_COCOK: "SATUAN_TIDAK_COCOK", PENGAMATAN_FISIK: "PENGAMATAN_FISIK",
 });
+/** Sub-status STOK_BELUM_DIKETAHUI (status induk tidak berubah). Nol dikonfirmasi Owner BUKAN saldo nol ledger dan TIDAK dinilai; hanya dipisahkan agar tidak tampak sebagai 'tidak diketahui'. */
+export const SUB = Object.freeze({ NOL_DIKONFIRMASI_OWNER: "NOL_DIKONFIRMASI_OWNER", TANPA_CATATAN_STOK: "TANPA_CATATAN_STOK" });
 export const LABEL_STATUS = Object.freeze({
   DINILAI: "Dinilai", SALDO_NOL: "Saldo nol", STOK_BELUM_DIKETAHUI: "Stok belum diketahui", HARGA_KOSONG: "Harga kosong", SALDO_MINUS: "Saldo minus", SATUAN_TIDAK_COCOK: "Satuan tidak cocok", PENGAMATAN_FISIK: "Terukur dalam satuan lain",
 });
@@ -61,10 +63,19 @@ export function labelNolTerverifikasi(v) {
   if (v.sumber === "STOCK_COUNT") return `Nol terverifikasi — Stock Count ${v.nomor} (${tgl})`;
   return `Nol terverifikasi — ${v.sumber ?? "sumber tidak dikenal"} ${v.nomor ?? ""}`.trim();
 }
+/** Murni. Sumber DOKUMEN harga dari jejak riwayat (bukan verifikasi): PO (nomor + baris), CSV (nama berkas + baris), atau manual. Teks ini bukti penelusuran, BUKAN bukti biaya perolehan. */
+export function dokumenHarga({ idempotencyKey = "", reason = "", note = "", impact = null } = {}) {
+  const po = (String(reason).match(/PO-\d+-\d+/) || [])[0] ?? null;
+  if (String(idempotencyKey).startsWith(AWALAN_KUNCI_PO) || po) { const baris = impact?.barisPO ?? (String(reason).match(/baris (\d+)/) || [])[1] ?? null; return { tipe: "PO", teks: `PO ${po ?? "(nomor tidak terbaca)"}${baris ? `, baris ${baris}` : ""}` }; }
+  const csv = /CSV/i.test(`${reason} ${note}`); const barisCsv = (String(note).match(/baris CSV (\d+)/i) || [])[1] ?? null;
+  if (csv) { const nama = /GILANG/i.test(`${reason} ${note}`) ? "CSV GILANG" : "CSV"; return { tipe: "CSV", teks: `${nama}${barisCsv ? `, baris ${barisCsv}` : ""}` }; }
+  return { tipe: "MANUAL", teks: "Input manual (lihat catatan riwayat harga)" };
+}
+export const PERINGATAN_HARGA = "Belum diverifikasi. Dokumen sumber (CSV/PO) adalah jejak penelusuran, bukan bukti biaya perolehan.";
 export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifikasi = false, harga = null, hasilSO = null, verifikasiNol = null }) {
   const keadaan = klasifikasiSaldo({ jumlahPergerakan, saldo, nolTerverifikasi }); const so = hasilSO ?? null; const st = so ? statusHasilSO({ so, keadaan, saldo }) : null;
   const dasar = { materialId: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit, kategori: bahan.category ?? null, aktif: bahan.active !== false, keadaanSaldo: keadaan, saldo: keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN ? null : r4(saldo),
-    harga: harga ? { nilai: harga.harga, satuan: harga.satuan, berlakuSejak: harga.berlakuMulai, sumber: harga.sumber, labelBukti: harga.label } : null, nilai: null, nilaiLedger: null, hasilSO: so ? ringkasSO(so, st) : null, hasilSOBermasalah: false, pengamatan: so?.jenis === JENIS.PENGAMATAN_SATUAN ? `${NF.format(so.jumlah)} ${so.satuan}` : null,
+    harga: harga ? { nilai: harga.harga, satuan: harga.satuan, berlakuSejak: harga.berlakuMulai, sumber: harga.sumber, labelBukti: harga.label, dokumen: harga.dokumen ?? null, statusVerifikasi: "BELUM_DIVERIFIKASI", peringatan: PERINGATAN_HARGA } : null, nilai: null, nilaiLedger: null, hasilSO: so ? ringkasSO(so, st) : null, hasilSOBermasalah: false, pengamatan: so?.jenis === JENIS.PENGAMATAN_SATUAN ? `${NF.format(so.jumlah)} ${so.satuan}` : null,
     verifikasiNol: keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? { sumber: verifikasiNol?.sumber ?? null, nomor: verifikasiNol?.nomor ?? null, diposting: verifikasiNol?.waktu ? new Date(verifikasiNol.waktu).toISOString() : null, soTanggal: verifikasiNol?.soTanggal ?? null, soDitautkan: !!verifikasiNol?.soTanggal, label: labelNolTerverifikasi(verifikasiNol) } : null };
   const hargaCocok = harga && String(harga.satuan ?? "").toUpperCase() === String(bahan.unit ?? "").toUpperCase();
   const soTxt = so ? `SO ${tglIndo(so.soTanggal)}${so.pelaku?.nama ? `, dicatat oleh ${so.pelaku.nama}` : ""}` : "";
@@ -74,7 +85,7 @@ export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifik
     return { ...dasar, status: STATUS.PENGAMATAN_FISIK, hasilSOBermasalah: true, nilaiLedger, keterangan: `Terukur dalam ${so.satuan}: ${NF.format(so.jumlah)} ${so.satuan} (${soTxt}); belum terukur dalam satuan stok (${bahan.unit}). Tidak dikonversi dan tidak dinilai dari pengamatan. Pengecualian satuan masih terbuka.${catSesudah}` };
   }
   const nol = so?.jenis === JENIS.NOL_DIKONFIRMASI;
-  if (keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN) return { ...dasar, status: STATUS.STOK_BELUM_DIKETAHUI, keterangan: nol ? `Fisik nol dikonfirmasi Owner (${soTxt}), belum disahkan melalui Stock Count; belum tercatat sebagai hasil SO di ledger. Saldo sistem belum diketahui — bukan "sudah sesuai".${catSesudah}` : "Belum ada catatan stok — saldo belum diketahui (bukan Rp0)." };
+  if (keadaan === KEADAAN_SALDO.BELUM_ADA_CATATAN) return { ...dasar, status: STATUS.STOK_BELUM_DIKETAHUI, subStatus: nol ? SUB.NOL_DIKONFIRMASI_OWNER : SUB.TANPA_CATATAN_STOK, keterangan: nol ? `Fisik nol dikonfirmasi Owner (${soTxt}), belum disahkan melalui Stock Count; belum tercatat sebagai hasil SO di ledger. Saldo sistem belum diketahui — bukan "sudah sesuai".${catSesudah}` : "Belum ada catatan stok — saldo belum diketahui (bukan Rp0)." };
   if (keadaan === KEADAAN_SALDO.MINUS) return { ...dasar, status: STATUS.SALDO_MINUS, hasilSOBermasalah: nol, keterangan: `Saldo catatan minus (${r4(saldo)}) — tidak dinilai; perlu dihitung fisik.${nol ? ` Fisik nol dikonfirmasi (${soTxt}); belum direkonsiliasi dengan ledger dan belum disahkan melalui Stock Count.${catSesudah}` : ""}` };
   if (keadaan === KEADAAN_SALDO.NOL_MENURUT_PERGERAKAN || keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI) return { ...dasar, status: STATUS.SALDO_NOL, nilai: 0, nilaiLedger: 0, keterangan: (keadaan === KEADAAN_SALDO.NOL_TERVERIFIKASI ? `${labelNolTerverifikasi(verifikasiNol)}.` : "Nol menurut pergerakan.") + (nol ? ` Sejalan dengan hasil SO nol (${soTxt}); belum disahkan melalui Stock Count.${catSesudah}` : "") };
   if (!harga) return { ...dasar, status: STATUS.HARGA_KOSONG, hasilSOBermasalah: nol && st.bermasalah, keterangan: "Belum ada Harga Berlaku pada waktu acuan — tidak dinilai (bukan Rp0)." };
@@ -85,10 +96,15 @@ export function klasifikasiBaris({ bahan, saldo, jumlahPergerakan, nolTerverifik
 
 /** Murni. Cakupan dari daftar baris: universe, relevan, dinilai, pengecualian per status — SATU sumber untuk kartu & strip & tabel. */
 export function ringkasCakupan(baris) {
+  const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
   const per = {}; for (const b of baris) per[b.status] = (per[b.status] ?? 0) + 1;
   const dinilai = baris.filter((b) => b.status === STATUS.DINILAI); const saldoNol = per[STATUS.SALDO_NOL] ?? 0;
   const pengecualian = baris.filter((b) => STATUS_PENGECUALIAN.includes(b.status)); const relevan = dinilai.length + pengecualian.length;
   return { universe: baris.length, saldoNol, relevan, dinilai: dinilai.length, pengecualian: pengecualian.length, persenDinilai: relevan ? Math.round((dinilai.length / relevan) * 1000) / 10 : null, perStatus: per,
+    kuantitas: (() => { const nolOwner = baris.filter((b) => b.subStatus === SUB.NOL_DIKONFIRMASI_OWNER).length; const tanpa = baris.filter((b) => b.subStatus === SUB.TANPA_CATATAN_STOK).length; const diLedger = baris.filter((b) => b.saldo !== null && b.saldo !== undefined).length;
+      return { universe: baris.length, diketahuiDiLedger: diLedger, persenDiketahuiDiLedger: pct(diLedger, baris.length), nolDikonfirmasiOwnerBelumDiLedger: nolOwner, tidakDiketahui: tanpa, catatan: "Kuantitas diketahui menurut ledger dihitung terpisah dari fisik nol dikonfirmasi Owner (belum di ledger, belum disahkan Stock Count). Nol Owner tidak digabung ke angka ledger dan tidak dinilai." }; })(),
+    harga: (() => { const bersaldo = baris.filter((b) => typeof b.saldo === "number" && b.saldo > EPS); const dengan = bersaldo.filter((b) => b.status === STATUS.DINILAI).length; return { bahanBersaldoPositif: bersaldo.length, denganHargaSatuanCocok: dengan, persenDenganHarga: pct(dengan, bersaldo.length), tanpaHarga: bersaldo.filter((b) => b.status === STATUS.HARGA_KOSONG).length, catatan: "Cakupan harga hanya atas bahan yang kuantitasnya diketahui dan positif; semua harga masih BELUM diverifikasi." }; })(),
+    perSubStatus: { NOL_DIKONFIRMASI_OWNER: baris.filter((b) => b.subStatus === SUB.NOL_DIKONFIRMASI_OWNER).length, TANPA_CATATAN_STOK: baris.filter((b) => b.subStatus === SUB.TANPA_CATATAN_STOK).length },
     dariPO: dinilai.filter((b) => b.harga?.sumber === "PO").length, hasilSOBermasalah: baris.filter((b) => b.hasilSOBermasalah).length, nolDikonfirmasiBelumDiLedger: baris.filter((b) => b.status === STATUS.STOK_BELUM_DIKETAHUI && b.hasilSO?.jenis === JENIS.NOL_DIKONFIRMASI).length, hasilSOTercatat: baris.filter((b) => b.hasilSO).length, hasilSOKedaluwarsa: baris.filter((b) => b.hasilSO?.kedaluwarsa).length, pengecualianSatuanTerbuka: baris.filter((b) => b.hasilSO?.status === "TERBUKA_SATUAN").length };
 }
 /** Murni. Dua estimasi dari baris yang sama: berdasarkan ledger vs yang mengecualikan hasil SO bermasalah. */
@@ -103,7 +119,7 @@ export const urutkanRisiko = (baris) => [...baris].sort((a, b) => URUT_RISIKO[a.
 async function hargaPada(db, at) {
   const semua = await db.materialHargaBerlaku.findMany({ orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }, { id: "asc" }] });
   const diganti = new Set(semua.map((x) => x.correctsId).filter(Boolean)); const peta = new Map(); const t = new Date(at);
-  for (const x of semua) { if (diganti.has(x.id) || new Date(x.effectiveFrom) > t) continue; peta.set(x.materialId, { harga: Number(x.unitPrice), satuan: x.satuan, berlakuMulai: x.effectiveFrom, sumber: String(x.idempotencyKey ?? "").startsWith(AWALAN_KUNCI_PO) ? "PO" : x.jenis === "KOREKSI" ? "KOREKSI" : "MANUAL", label: String(x.evidenceNote ?? "").trim() ? "ADA_CATATAN_BUKTI" : "BELUM_DIDUKUNG_BUKTI" }); }
+  for (const x of semua) { if (diganti.has(x.id) || new Date(x.effectiveFrom) > t) continue; peta.set(x.materialId, { harga: Number(x.unitPrice), satuan: x.satuan, berlakuMulai: x.effectiveFrom, sumber: String(x.idempotencyKey ?? "").startsWith(AWALAN_KUNCI_PO) ? "PO" : x.jenis === "KOREKSI" ? "KOREKSI" : "MANUAL", label: String(x.evidenceNote ?? "").trim() ? "ADA_CATATAN_BUKTI" : "BELUM_DIDUKUNG_BUKTI", dokumen: dokumenHarga(x) }); }
   return peta;
 }
 
@@ -179,8 +195,9 @@ export async function hitungNilaiPersediaan(db, { waktu = new Date(), bolehNomin
     kartu: {
       estimasi: { nilaiLedger: bolehNominal ? est.nilaiLedger : null, nilaiTanpaHasilSOBermasalah: bolehNominal ? est.nilaiTanpaHasilSOBermasalah : null, bahanHasilSOBermasalah: est.bahanHasilSOBermasalah, nilaiHasilSOBermasalah: bolehNominal ? est.nilaiHasilSOBermasalah : null,
         bahanDinilai: cakupan.dinilai, bahanRelevan: cakupan.relevan, persen: cakupan.persenDinilai, dariPO: cakupan.dariPO, label: "Estimasi nilai stok", status: "BELUM_DIREKONSILIASI_DENGAN_HASIL_SO", catatan: "Harga kerja Gudang (saldo × Harga Berlaku). Belum direkonsiliasi dengan hasil SO — bukan hasil stok fisik final." },
+      kuantitas: cakupan.kuantitas, cakupanHarga: cakupan.harga,
       finance: { saldo: finance.saldo, status: finance.status, alasan: finance.alasan, label: "Saldo akun persediaan Finance", catatan: "Belum direkonsiliasi dengan stok per bahan." },
-      belumDinilai: { jumlah: cakupan.pengecualian, perStatus: Object.fromEntries(STATUS_PENGECUALIAN.map((s) => [s, cakupan.perStatus[s] ?? 0])), nolDikonfirmasiBelumDiLedger: cakupan.nolDikonfirmasiBelumDiLedger, label: "Bahan belum bisa dinilai", catatan: "Tidak dihitung sebagai Rp0." },
+      belumDinilai: { jumlah: cakupan.pengecualian, perStatus: Object.fromEntries(STATUS_PENGECUALIAN.map((s) => [s, cakupan.perStatus[s] ?? 0])), nolDikonfirmasiBelumDiLedger: cakupan.nolDikonfirmasiBelumDiLedger, perSubStatus: cakupan.perSubStatus, label: "Bahan belum bisa dinilai", catatan: "Tidak dihitung sebagai Rp0." },
     },
     cakupan, finance, baris: tampilBaris, hasilSOTercatat: cakupan.hasilSOTercatat,
   };

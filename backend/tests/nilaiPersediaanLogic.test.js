@@ -85,3 +85,32 @@ test("N10. label nol terverifikasi menurut SUMBER: Koreksi Saldo (dokumen + tang
   const so = K({ jumlahPergerakan: 0, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) }); assert.match(so.keterangan, /Fisik nol dikonfirmasi Owner/); assert.doesNotMatch(so.keterangan, /Nol terverifikasi/); assert.equal(so.verifikasiNol, null, "pengamatan tanpa penyesuaian bukan koreksi yang diposting");
   assert.equal(K({ jumlahPergerakan: 2, saldo: 0 }).verifikasiNol, null);
 });
+
+// ── Pemisahan 178 "fisik nol dikonfirmasi Owner" + cakupan kuantitas vs harga + sumber dokumen harga ──
+import { SUB, dokumenHarga, PERINGATAN_HARGA } from "../src/services/nilaiPersediaan.js";
+test("N20. STOK_BELUM_DIKETAHUI dipecah: nol dikonfirmasi Owner ≠ tanpa catatan stok; status induk, nilai, dan persen dinilai TIDAK berubah", () => {
+  const nolOwner = K({ jumlahPergerakan: 0, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) });
+  const tanpa = K({ jumlahPergerakan: 0, saldo: 0 });
+  assert.equal(nolOwner.status, STATUS.STOK_BELUM_DIKETAHUI); assert.equal(nolOwner.subStatus, SUB.NOL_DIKONFIRMASI_OWNER); assert.equal(nolOwner.nilai, null); assert.equal(nolOwner.saldo, null);
+  assert.equal(tanpa.status, STATUS.STOK_BELUM_DIKETAHUI); assert.equal(tanpa.subStatus, SUB.TANPA_CATATAN_STOK);
+  const c = ringkasCakupan([K({}), nolOwner, tanpa]);
+  assert.equal(c.relevan, 3); assert.equal(c.dinilai, 1); assert.equal(c.persenDinilai, 33.3, "nol Owner TIDAK dikeluarkan dari penyebut untuk menaikkan persen");
+  assert.deepEqual(c.perSubStatus, { NOL_DIKONFIRMASI_OWNER: 1, TANPA_CATATAN_STOK: 1 });
+});
+test("N21. cakupan kuantitas (ledger) dan cakupan harga dihitung TERPISAH; nol Owner tidak dihitung sebagai kuantitas ledger maupun 'berharga'", () => {
+  const nolOwner = K({ jumlahPergerakan: 0, saldo: 0, hasilSO: SO({ jenis: "NOL_DIKONFIRMASI", jumlah: 0, satuan: "KG" }) });
+  const baris = [K({}), K({ harga: null }), K({ saldo: 0, jumlahPergerakan: 3 }), K({ saldo: -2 }), nolOwner, K({ jumlahPergerakan: 0, saldo: 0 })];
+  const c = ringkasCakupan(baris);
+  assert.equal(c.kuantitas.universe, 6); assert.equal(c.kuantitas.diketahuiDiLedger, 4); assert.equal(c.kuantitas.persenDiketahuiDiLedger, 66.7);
+  assert.equal(c.kuantitas.nolDikonfirmasiOwnerBelumDiLedger, 1); assert.equal(c.kuantitas.tidakDiketahui, 1);
+  assert.equal(c.harga.bahanBersaldoPositif, 2); assert.equal(c.harga.denganHargaSatuanCocok, 1); assert.equal(c.harga.persenDenganHarga, 50); assert.equal(c.harga.tanpaHarga, 1);
+  assert.equal(baris.filter((b) => b.status === STATUS.DINILAI).length, 1, "nol Owner bukan DINILAI");
+});
+test("N22. dokumenHarga: PO (nomor+baris), CSV (+baris), manual; selalu belum diverifikasi dan bukan bukti biaya perolehan", () => {
+  assert.deepEqual(dokumenHarga({ idempotencyKey: "po-harga:x:y:r0", reason: "Otomatis dari PO PO-03112026-003 (baris 6, revisi 0) — draf PO dibuat", note: "", impact: { barisPO: 6 } }), { tipe: "PO", teks: "PO PO-03112026-003, baris 6" });
+  assert.deepEqual(dokumenHarga({ idempotencyKey: "gilang-csv-x", reason: "Harga dari CSV GILANG dikonfirmasi Owner", note: "Sumber: ...GILANG.csv (SHA ...); baris CSV 365; satuan sumber PCS" }), { tipe: "CSV", teks: "CSV GILANG, baris 365" });
+  assert.equal(dokumenHarga({ idempotencyKey: "k", reason: "input", note: "" }).tipe, "MANUAL");
+  const b = K({ harga: harga({ dokumen: { tipe: "CSV", teks: "CSV GILANG, baris 365" } }) });
+  assert.equal(b.harga.statusVerifikasi, "BELUM_DIVERIFIKASI"); assert.equal(b.harga.peringatan, PERINGATAN_HARGA); assert.match(b.harga.peringatan, /bukan bukti biaya perolehan/); assert.equal(b.harga.dokumen.teks, "CSV GILANG, baris 365");
+  assert.equal(b.harga.nilai, 5000, "harga TIDAK diubah otomatis");
+});
