@@ -1,0 +1,14 @@
+frontend/qa-harness/nilai-foto-sebelum.cjs
+frontend/qa-harness/nilai-persediaan-browser.cjs
+frontend/qa-harness/nilai-persediaan-foto.cjs
+frontend/src/features/warehouse/beranda/IkonApple.jsx
+frontend/src/features/warehouse/nilaiPersediaan/BagianBawah.jsx
+frontend/src/features/warehouse/nilaiPersediaan/CakupanData.jsx
+frontend/src/features/warehouse/nilaiPersediaan/DrawerBahan.jsx
+frontend/src/features/warehouse/nilaiPersediaan/KartuNilai.jsx
+frontend/src/features/warehouse/nilaiPersediaan/TabelBahan.jsx
+frontend/src/features/warehouse/nilaiPersediaan/nilaiTampilanLogic.js
+frontend/src/pages/warehouse/WarehouseNilaiPersediaan.jsx
+frontend/src/styles/sanss-gudang-nilai.css
+frontend/tests/nilaiPersediaanLogic.test.js
+frontend/tests/nilaiTampilanLogic.test.js
