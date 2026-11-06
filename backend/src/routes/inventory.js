@@ -15,6 +15,7 @@ import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../mi
 import { prisma } from "../db.js";
 import { postStockMovement, computeStockSnapshot, lockMaterialBalance } from "../services/inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
+import { pratinjauTransisi, terapkanTransisi, riwayatSatuan, satuanCatatanPer } from "../services/transisiSatuanBahan.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const inventoryRouter = express.Router();
@@ -106,6 +107,20 @@ inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (
   }
 });
 
+// TRANSISI SATUAN BAHAN (Nov 2026): identitas material tetap; satuan master berganti dalam SATU transaksi bersama penutupan saldo lama dan pembukaan saldo awal satuan baru. Penyetuju + inventory:write.
+//   POST /materials/transisi-satuan/pratinjau  { transisi:[{ materialId, satuanBaru, saldoBaru, kewajibanTerbuka? }] }            — baca-saja, mengembalikan hash per bahan
+//   POST /materials/transisi-satuan/terapkan   { transisi:[{ ..., hashPratinjau }], sumber, alasan, rujukanHash, tautan? } + Idempotency-Key — semua atau tidak satu pun
+//   GET  /materials/:id/riwayat-satuan                                                                                         — periode per satuan + dokumen transisi
+inventoryRouter.post("/materials/transisi-satuan/pratinjau", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { res.json(await pratinjauTransisi(prisma, { aktor: req.user, transisi: req.body?.transisi })); } catch (err) { handleErr(err, res); }
+});
+inventoryRouter.post("/materials/transisi-satuan/terapkan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { const h = await terapkanTransisi(prisma, { aktor: req.user, transisi: req.body?.transisi, sumber: req.body?.sumber, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, tautan: req.body?.tautan ?? null, kunci: req.get("Idempotency-Key") }); res.status(h.ulang ? 200 : 201).json(h); } catch (err) { handleErr(err, res); }
+});
+inventoryRouter.get("/materials/:id/riwayat-satuan", requirePermission(P.INVENTORY_READ), async (req, res) => {
+  try { res.json(await riwayatSatuan(prisma, req.params.id)); } catch (err) { handleErr(err, res); }
+});
+
 // PATCH /api/inventory/materials/:id { name?, active?, reorderPoint?, reorderQty? }
 // TIDAK bisa ubah code/unit setelah dibuat (ledger sudah mengacu ke satuan
 // itu; ganti satuan diam-diam akan membuat riwayat qty tidak bisa
@@ -194,7 +209,9 @@ inventoryRouter.get("/movements", requirePermission(P.INVENTORY_READ), async (re
       orderBy: { createdAt: "desc" },
       take: limit,
     });
-    res.json(movements);
+    // TRANSISI SATUAN: setiap pergerakan menyebut satuan SAAT dicatat (satuanCatat); riwayat sebelum/sesudah transisi terbaca dengan satuan yang benar. Aditif.
+    const satuanDari = await satuanCatatanPer(prisma, movements);
+    res.json(movements.map((m) => ({ ...m, satuanCatat: satuanDari(m) })));
   } catch (err) {
     handleErr(err, res);
   }

@@ -5264,6 +5264,7 @@ enum MaterialCategory {
 
 model Material {
   hargaBerlaku MaterialHargaBerlaku[]
+  unitTransitions MaterialUnitTransition[]
   koreksiSaldo KoreksiSaldoBahan[]
   biayaOperasional StockMovementBiayaOperasional[]
   penerapanBiayaOperasional BiayaOperasionalPenerapan[]
@@ -5465,6 +5466,11 @@ model StockMovement {
   correctsMovement   StockMovement?       @relation("MovementCorrection", fields: [correctsMovementId], references: [id], onDelete: Restrict)
   correctedBy        StockMovement[]      @relation("MovementCorrection")
 
+  // TRANSISI SATUAN (Nov 2026): satuan yang berlaku SAAT pergerakan dicatat. Diisi trigger DB (satuan master saat itu, dengan FOR SHARE) atau eksplisit oleh transisi. NULL = pergerakan SEBELUM migrasi ini:
+  // satuannya adalah satuan_lama transisi pertama bahan itu (bila ada), selain itu satuan master sekarang. Saldo (SUM qty) tetap satu angka dalam satuan master karena transisi menutup saldo lama dan membuka saldo baru.
+  unitAtEntry      MaterialUnit? @map("unit_at_entry")
+  unitTransitionId String?       @map("unit_transition_id") @db.Uuid // dokumen transisi yang menulis pergerakan penutupan/pembukaan (tanpa FK: dokumen ditulis sesudah pergerakannya, append-only)
+
   @@index([correctionId])
   @@index([correctsMovementId])
   @@index([materialId, createdAt]) // saldo & riwayat per material
@@ -5477,6 +5483,38 @@ model StockMovement {
   @@index([returnRecordId])
   @@index([stockAdjustmentRequestId])
   @@map("stock_movements")
+}
+
+/// TRANSISI SATUAN BAHAN (Nov 2026) — dokumen append-only (trigger menolak UPDATE/DELETE). Identitas material TETAP; satuan master berubah dari fromUnit ke toUnit.
+/// Pergerakan lama, PO, GR, harga, dan valuasi tetap memakai satuan asalnya. Saldo lama (dalam fromUnit) ditutup oleh satu ADJUSTMENT dan saldo awal toUnit dibuka oleh satu ADJUSTMENT pada transaksi yang sama.
+model MaterialUnitTransition {
+  id         String   @id @default(uuid()) @db.Uuid
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  fromUnit MaterialUnit @map("from_unit")
+  toUnit   MaterialUnit @map("to_unit")
+
+  balanceOld Decimal @map("balance_old") @db.Decimal(14, 4) // SUM ledger dalam fromUnit tepat sebelum transisi (bisa minus)
+  balanceNew Decimal @map("balance_new") @db.Decimal(14, 4) // saldo awal dalam toUnit (hasil SO)
+  movementCount   Int    @map("movement_count") // jumlah pergerakan sebelum transisi
+  movementsDigest String @map("movements_digest") // sidik jari seluruh pergerakan sebelum transisi (id|qty|waktu)
+  previewHash     String @map("preview_hash") // hash pratinjau yang disetujui; transisi ditolak bila keadaan berubah dari pratinjau
+
+  source          String // sumber hasil SO (berkas/sel)
+  reason          String
+  referenceHash   String @map("reference_hash")
+  openObligations Json   @default("[]") @map("open_obligations") // kewajiban konversi terbuka (mis. penerimaan dalam satuan lama yang belum diterjemahkan); saldo baru = cakupan PARSIAL bila tidak kosong
+
+  closeMovementId String? @map("close_movement_id") @db.Uuid
+  openMovementId  String? @map("open_movement_id") @db.Uuid
+
+  idempotencyKey String   @unique @map("idempotency_key")
+  createdById    String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([materialId, createdAt])
+  @@map("material_unit_transitions")
 }
 
 // ─── GOODS RECEIPT (Warehouse Tahap 2B, 2 Agustus 2026) ────────────────────

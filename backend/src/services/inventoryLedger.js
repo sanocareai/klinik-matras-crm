@@ -125,6 +125,8 @@ export async function postStockMovement(tx, {
   // Melewati SATU pemeriksaan saja — "saldo hasil tidak boleh minus" untuk pergerakan keluar. Jumlah, kunci material, idempotensi, dan validasi lain TIDAK terpengaruh. Tanpa objek ini perilaku TIDAK berubah.
   // Bentuk: { alasan: string (≥10 karakter), aktorId }. Penerimaan/transfer/pengeluaran Gudang/endpoint lain tidak pernah memberikannya.
   pengecualianSaldoMinus,
+  // TRANSISI SATUAN (Nov 2026): HANYA dipakai layanan transisi. Tanpa nilai ini trigger DB mengisi satuan master saat itu.
+  unitAtEntry, unitTransitionId,
 } = {}) {
   if (!tx?.stockMovement) {
     throw new Error("postStockMovement butuh `tx` (klien transaksi Prisma), bukan prisma singleton di luar transaksi");
@@ -177,6 +179,8 @@ export async function postStockMovement(tx, {
       stockAdjustmentRequestId: stockAdjustmentRequestId || null,
       correctionId: correctionId || null,
       correctsMovementId: correctsMovementId || null,
+      ...(unitAtEntry ? { unitAtEntry } : {}),
+      ...(unitTransitionId ? { unitTransitionId } : {}),
       ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
     },
     include: { material: { select: { code: true, name: true, unit: true } } },

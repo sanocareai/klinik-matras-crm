@@ -1,0 +1,18 @@
+gagal_reh() { reh_drop; die "$1"; }
+S_SEBELUM="$(RPSQL "$SKEMA_SQL")"; [ -n "$S_SEBELUM" ] || gagal_reh "sidik jari skema rehearsal kosong"
+[ "$S_SEBELUM" = "$SKEMA_PRA" ] || gagal_reh "skema tabel lama pada RESTORE berbeda dari produksi (backup/restore bermasalah)"
+RH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
+SM_N0="$(RPSQL "select count(*) from stock_movements")"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy di DB rehearsal GAGAL"; }
+  [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-rehearsal.log")" = "1" ] || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy harus menerapkan TEPAT 1 migrasi rilis"; }
+else
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy (LANJUT) di DB rehearsal GAGAL"; }
+  ! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal.log" || gagal_reh "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu (seharusnya tidak ada yang pending)"
+fi
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || gagal_reh "migrate status rehearsal (image baru) TIDAK 'up to date'"
+struktur_baru RPSQL gagal_reh
+[ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || gagal_reh "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"
+[ "$(RPSQL "select count(*) from stock_movements")" = "$SM_N0" ] || gagal_reh "migrasi mengubah jumlah pergerakan stok"
+[ "$(RPSQL "select count(*) from stock_movements where unit_at_entry is not null")" = "0" ] || gagal_reh "migrasi MENGISI ulang pergerakan lama (unit_at_entry harus NULL untuk semua pergerakan sebelum migrasi)"
+ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); tabel dokumen kosong; 2 kolom nullable tanpa isi ulang; FK RESTRICT, CHECK, indeks, 3 fungsi + 3 trigger tervalidasi; skema tabel lama IDENTIK; jumlah pergerakan sama"
