@@ -22,7 +22,7 @@ const LIB_REH = "scripts/lib/rehearsal-transisi-satuan.mjs", LIB_SMOKE = "script
 const GENERATOR = "scripts/gen-release-transisi-satuan.cjs";
 const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
-const CAND_BRANCH = "feat/transisi-satuan-bahan-on-ada5acdb";
+const CAND_BRANCH = "feat/transisi-satuan-bahan-on-5acf24db";
 const BE_WAJIB = ["backend/src/routes/inventory.js", "backend/src/services/inventoryLedger.js", "backend/src/services/nilaiPersediaan.js", "backend/src/services/transisiSatuanBahan.js"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
