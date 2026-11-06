@@ -6,7 +6,7 @@
 #     (tabel dokumen tetap kosong; pergerakan lama TIDAK diisi ulang). Smoke pasca-switch = GET + POST yang DITOLAK sebelum menulis.
 #   • Gate: preflight (keadaan production SEGAR/LANJUT/TOLAK, pin sha256 migrasi + diff schema, pemindai DDL + uji negatif); backup + RESTORE rehearsal (migrate deploy pada salinan restore dari data nyata; skema tabel lama identik; kode baru
 #     berjalan sebagai SERVER terhadap salinan restore dan menjalankan transisi nyata HANYA pada salinan itu); TANPA build web (frontend/dist release aktif DIBAWA APA ADANYA dari disk); migrasi aditif ke production SEBELUM switch
-#     (backend lama tetap melayani); switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
+#     (backend lama tetap melayani; batas tunggu kunci 5 detik: database sibuk = gagal cepat tanpa sisa); switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
 #   • PENGUNCIAN: kunci deploy BERSAMA + kunci sendiri diambil ATOMIK; kepemilikan ditentukan proses (perangkat:inode fd 7/9), BUKAN nama berkas. GERBANG IDENTITAS KODE LIVE (hash blob semua berkas terlacak baseline) di fase 2, 6, dan TEPAT sebelum switch.
 #     Pembersihan release lama DINONAKTIFKAN; gerbang disk minimal 5 GiB tidak diturunkan.
 #
@@ -15,6 +15,6 @@
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/tsbr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA migrasi production dan TANPA switch
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/tsb.out 2>&1 < /dev/null &'   # rilis penuh
 #
-# ROLLBACK: kode aman di-rollback kapan pun. Migrasi ADITIF dibiarkan terpasang (kolom nullable, tabel dokumen, trigger penanda satuan, pagar satuan master); kode lama berjalan normal di atas skema bermigrasi.
-# Transisi yang SUDAH dijalankan lewat rute rilis ini (data) TIDAK dibalik oleh rollback kode; satuan master dan saldo satuan baru tetap. Rollback mengembalikan kode lama saja.
+# ROLLBACK: SEBELUM ada transisi tersimpan, kode aman di-rollback kapan pun (migrasi aditif dibiarkan terpasang; kode lama berjalan normal di atas skema bermigrasi — terbukti pada rehearsal). SESUDAH ada transisi tersimpan,
+# rollback RUTIN DITOLAK oleh scripts/rollback-guard-transisi-satuan.sh (exit 3): kode lama membaca riwayat pergerakan sebelum transisi dengan label satuan baru. Pengecualian hanya atas keputusan Owner beralasan tertulis. Transisi tidak pernah dibalik oleh rollback.
 # (dibangkitkan oleh scripts/gen-release-transisi-satuan.cjs dari scripts/release-master-bertautan.sh + templat scripts/templates/release-transisi-satuan/* + pustaka scripts/lib/{rehearsal,smoke}-transisi-satuan.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)

@@ -1,0 +1,11 @@
+# KODE LAMA setelah transisi tersimpan (DB rehearsal yang SAMA, sesudah semua transisi uji): temuan yang menjadi dasar guard rollback. Saldo tetap benar; riwayat sebelum transisi dibaca dengan label satuan baru → rollback rutin ditolak.
+jalankan_lama dengan-transisi "$RH_URL" "$BK_DIR/rehearsal-kode-lama-dengan.log" || { cat "$BK_DIR/rehearsal-kode-lama-dengan.log"; reh_drop; die "uji KODE LAMA terhadap skema bermigrasi DENGAN transisi GAGAL (lihat rehearsal-kode-lama-dengan.log)"; }
+ok "kode LAMA di atas skema baru DENGAN transisi tersimpan: $(grep -c '^OK' "$BK_DIR/rehearsal-kode-lama-dengan.log") pemeriksaan lulus; temuan: $(grep '^INFO  TEMUAN GUARD' "$BK_DIR/rehearsal-kode-lama-dengan.log" | sed 's/^INFO  //')"
+GR_DENGAN=0; GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-dengan.log" 2>&1 || GR_DENGAN=$?
+[ "$GR_DENGAN" = "3" ] && grep -q 'GUARD DITOLAK' "$BK_DIR/guard-dengan.log" || { cat "$BK_DIR/guard-dengan.log"; reh_drop; die "guard rollback seharusnya MENOLAK (exit 3) bila ada transisi tersimpan (exit ${GR_DENGAN})"; }
+GR_PENDEK=0; ROLLBACK_TRANSISI_IZIN="singkat" GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-pendek.log" 2>&1 || GR_PENDEK=$?
+[ "$GR_PENDEK" = "3" ] || { cat "$BK_DIR/guard-pendek.log"; reh_drop; die "alasan pengecualian terlalu pendek harus tetap DITOLAK (exit ${GR_PENDEK})"; }
+GR_IZIN=0; ROLLBACK_TRANSISI_IZIN="keputusan Owner uji rehearsal: rollback darurat" GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-izin.log" 2>&1 || GR_IZIN=$?
+[ "$GR_IZIN" = "0" ] && grep -q 'PERINGATAN' "$BK_DIR/guard-izin.log" || { cat "$BK_DIR/guard-izin.log"; reh_drop; die "pengecualian Owner dengan alasan tertulis seharusnya exit 0 dengan peringatan (exit ${GR_IZIN})"; }
+[ "$(RPSQL "select count(*) from material_unit_transitions")" -ge 1 ] || { reh_drop; die "guard tidak boleh mengubah data transisi"; }
+ok "guard rollback: ada transisi tersimpan → exit 3 DITOLAK (daftar bahan dicetak); alasan pendek tetap ditolak; pengecualian Owner beralasan tertulis → exit 0 dengan peringatan; transisi tidak dibalik oleh guard"

@@ -18,10 +18,10 @@ const MIG_SUFIKS = "_transisi_satuan_bahan";
 const BASE_SCRIPT = "scripts/release-master-bertautan.sh";
 const OUT = "scripts/release-transisi-satuan.sh";
 const TPL_DIR = "scripts/templates/release-transisi-satuan";
-const LIB_REH = "scripts/lib/rehearsal-transisi-satuan.mjs", LIB_SMOKE = "scripts/lib/smoke-transisi-satuan.mjs";
+const LIB_REH = "scripts/lib/rehearsal-transisi-satuan.mjs", LIB_SMOKE = "scripts/lib/smoke-transisi-satuan.mjs", LIB_LAMA = "scripts/lib/rehearsal-kompat-lama-transisi-satuan.mjs", GUARD = "scripts/rollback-guard-transisi-satuan.sh";
 const GENERATOR = "scripts/gen-release-transisi-satuan.cjs";
-const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
-const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
+const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "rehearsal-lama", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
+const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, LIB_LAMA, GUARD, ...TPL_FILES];
 const CAND_BRANCH = "feat/transisi-satuan-bahan-on-5acf24db";
 const BE_WAJIB = ["backend/src/routes/inventory.js", "backend/src/services/inventoryLedger.js", "backend/src/services/nilaiPersediaan.js", "backend/src/services/transisiSatuanBahan.js"];
 
@@ -52,7 +52,7 @@ function hasilPemindai(gatePrisma, sql) {
   return execFileSync("bash", ["-c", prog], { cwd: REPO, encoding: "utf8", input: sql }).trim();
 }
 
-function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanExpect, rehNode, smokeNode }) {
+function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanExpect, rehNode, smokeNode, lamaJs }) {
   let s = lf(baseScript);
   const r = (a, b) => { must(s.includes(a), "penanda: " + a.slice(0, 90)); s = s.split(a).join(b); };
   const gantiBaris = (awalan, baru) => { const L = s.split("\n"); const i = L.findIndex((l) => l.startsWith(awalan)); must(i >= 0, "baris berawalan: " + awalan.slice(0, 70)); L[i] = baru; s = L.join("\n"); };
@@ -91,7 +91,8 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanExpect, 
   // 6. struktur + keadaan production
   r('ok "prasyarat: rilis ini tidak bergantung pada migrasi baru dan tidak menulis data bisnis"', lf(blok.struktur).trimEnd() + "\n" + lf(blok.keadaan).trimEnd());
   // 7. rehearsal: migrate deploy pada salinan restore (menggantikan 'migrate status' tanpa migrasi)
-  potong('dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status', 'RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt"', lf(blok["rehearsal-migrasi"]).trimEnd() + "\n");
+  potong('dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status', 'RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt"', lf(blok["rehearsal-migrasi"]).replace("@@LAMA_JS@@", () => lf(lamaJs).trimEnd()).trimEnd() + "\n");
+  r("reh_drop\n# direktori sementara dibuat root oleh kontainer", lf(blok["rehearsal-lama"]).trimEnd() + "\nreh_drop\n# direktori sementara dibuat root oleh kontainer");
   gantiBaris("# UJI APLIKASI pada SALINAN RESTORE (kode BARU sebagai server, data produksi nyata, DB sementara): ", "# UJI APLIKASI pada SALINAN RESTORE (kode BARU sebagai server, data produksi nyata, DB sementara): rute transisi satuan (pratinjau, hash, atomik, riwayat per satuan, harga lama tidak dibawa, pengaman historis, izin, idempotensi) — hanya pada salinan restore, dibuang sesudahnya.");
   { const i = s.indexOf("<<'REHNODE' > \"$BK_DIR/rehearsal-koreksi.log\""); must(i >= 0, "REHNODE"); const awalIsi = s.indexOf("\n", i) + 1; const j = s.indexOf("\nREHNODE\n", awalIsi); must(j > 0, "akhir REHNODE");
     s = s.slice(0, awalIsi) + lf(rehNode).replace('"@@SMOKE_SRC@@"', () => JSON.stringify(lf(smokeNode))).trimEnd() + s.slice(j); }
@@ -137,7 +138,7 @@ function main() {
   must(!/^TERLARANG/.test(scanExpect) && /^add_col=2\|/.test(scanExpect), "pemindai DDL menolak migrasi rilis / hitungan tak terduga: " + scanExpect);
   const hasil = bangkitkan({
     baseScript: git(["show", `HEAD:${BASE_SCRIPT}`]), blok, berkasList: list, mig, schemaSha: schemaDiffSha(ref), scanExpect,
-    rehNode: fs.readFileSync(path.join(REPO, LIB_REH), "utf8"), smokeNode: fs.readFileSync(path.join(REPO, LIB_SMOKE), "utf8"),
+    rehNode: fs.readFileSync(path.join(REPO, LIB_REH), "utf8"), smokeNode: fs.readFileSync(path.join(REPO, LIB_SMOKE), "utf8"), lamaJs: fs.readFileSync(path.join(REPO, LIB_LAMA), "utf8"),
   });
   const keluar = path.join(REPO, OUT);
   if (cek) {

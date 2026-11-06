@@ -8,6 +8,11 @@
 -- (4) materials.unit hanya boleh berubah untuk bahan yang SUDAH punya pergerakan bila transaksinya mengaktifkan penanda transisi (SET LOCAL app.transisi_satuan) — tidak ada jalan diam-diam lain.
 -- Pergerakan sebelum migrasi tetap NULL (tidak diisi ulang): satuannya = satuan_lama transisi pertama bahan itu bila ada, selain itu satuan master sekarang.
 
+-- BATAS TUNGGU (aman bila database sibuk): DDL di bawah memerlukan kunci singkat pada stock_movements dan materials. Bila kunci tidak didapat dalam 5 detik, migrasi GAGAL CEPAT dan TIDAK menyisakan apa pun
+-- (bukan menggantung dan memblokir lalu lintas di belakangnya). Pemulihan: prisma migrate resolve --rolled-back <nama migrasi>, lalu ulangi saat database lengang.
+SET lock_timeout = '5s';
+SET statement_timeout = '120s';
+
 ALTER TABLE "stock_movements" ADD COLUMN "unit_at_entry" "MaterialUnit";
 ALTER TABLE "stock_movements" ADD COLUMN "unit_transition_id" UUID;
 

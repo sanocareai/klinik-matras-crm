@@ -15,7 +15,7 @@ sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
 pindai_migrasi() {
   local t terlarang
   t="$(sql_bersih)"
-  terlarang="$(printf '%s\n' "$t" | grep -E 'DROP |DELETE FROM|UPDATE "|INSERT INTO|TRUNCATE|GRANT |REVOKE |CREATE EXTENSION|ALTER TYPE|RENAME |DISABLE TRIGGER|ON DELETE CASCADE|ON DELETE SET NULL' || true)"
+  terlarang="$(printf '%s\n' "$t" | grep -E 'DROP |DELETE FROM|UPDATE "|INSERT INTO|TRUNCATE|GRANT |REVOKE |CREATE EXTENSION|ALTER TYPE|RENAME |DISABLE TRIGGER|session_replication_role|SET ROLE|SET SESSION AUTHORIZATION|RESET ALL|ON DELETE CASCADE|ON DELETE SET NULL' || true)"
   if [ -n "$terlarang" ]; then echo "TERLARANG"; return 0; fi
   echo "add_col=$(printf '%s\n' "$t" | grep -c '^ALTER TABLE "stock_movements" ADD COLUMN')|alter_lain=$(printf '%s\n' "$t" | grep '^ALTER TABLE' | grep -vc '^ALTER TABLE "stock_movements" ADD COLUMN\|ADD CONSTRAINT')|create_table=$(printf '%s\n' "$t" | grep -c '^CREATE TABLE ')|index=$(printf '%s\n' "$t" | grep -c '^CREATE \(UNIQUE \)\?INDEX')|fk=$(printf '%s\n' "$t" | grep -c 'FOREIGN KEY')|fungsi=$(printf '%s\n' "$t" | grep -c '^CREATE OR REPLACE FUNCTION')|trigger=$(printf '%s\n' "$t" | grep -c '^CREATE TRIGGER')"
 }
@@ -41,6 +41,8 @@ harus_ditolak "FK CASCADE" "$(printf '%s\n' "$ALL_SQL" | sed 's/ON DELETE RESTRI
 harus_ditolak "trigger tambahan" "$(tambah_stmt 'CREATE TRIGGER "x_trg" BEFORE INSERT ON "units" FOR EACH ROW EXECUTE FUNCTION stock_movements_stamp_unit();')"
 harus_ditolak "fungsi tambahan" "$(tambah_stmt 'CREATE OR REPLACE FUNCTION evil() RETURNS trigger AS $$ BEGIN RETURN NEW; END $$ LANGUAGE plpgsql;')"
 harus_ditolak "DISABLE TRIGGER" "$(tambah_stmt 'ALTER TABLE "stock_movements" DISABLE TRIGGER ALL;')"
+harus_ditolak "SET session_replication_role" "$(tambah_stmt "SET session_replication_role = replica;")"
+harus_ditolak "SET ROLE" "$(tambah_stmt "SET ROLE postgres;")"
 harus_ditolak "CREATE EXTENSION" "$(tambah_stmt 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";')"
 harus_ditolak "GRANT" "$(tambah_stmt 'GRANT ALL ON "materials" TO PUBLIC;')"
 harus_ditolak "RENAME" "$(tambah_stmt 'ALTER TABLE "materials" RENAME COLUMN "unit" TO "u";')"

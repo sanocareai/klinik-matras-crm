@@ -1,4 +1,8 @@
-Rilis ini membawa 1 migrasi ADITIF dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Rilis ini membawa 1 migrasi ADITIF dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch, JALANKAN GUARD DULU (baca-saja):
+   bash ${NEW_DIR}/scripts/rollback-guard-transisi-satuan.sh
+   - exit 0 = belum ada transisi tersimpan: rollback kode rutin aman. exit 3 = DITOLAK: ada transisi tersimpan; kode lama akan membaca riwayat pergerakan sebelum transisi dengan label satuan baru (saldo tetap benar). Jangan rollback rutin; perbaiki ke depan.
+   - Pengecualian HANYA atas keputusan Owner, dengan alasan tertulis: ROLLBACK_TRANSISI_IZIN="<alasan>" bash ${NEW_DIR}/scripts/rollback-guard-transisi-satuan.sh. exit 2 = guard gagal membaca: periksa dulu.
+Langkah rollback (hanya bila guard exit 0 atau ada izin Owner):
 Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT kode live lain (gerbang kode live membuktikan kode di container == folder == baseline diset sebelum rilis).
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
