@@ -103,10 +103,11 @@ test("Stok & Lokasi: saldo '—' (belum ada catatan) berbeda dari 0; minimum 'be
 
 test("Beranda (Tahap 4: Pusat Kerja): satu halaman kerja dari server, tanpa angka stok/KPI ala dashboard kedua; kartu membuka jendela fokus; Beranda lama tetap untuk badge sidebar", () => {
   const s = baca("pages/warehouse/WarehouseDashboard.jsx");
-  assert.match(s, /api\.getPusatKerja\(\)/);
+  assert.match(s, /api\.getPusatKerja\(BATAS_MUAT\)/);
   assert.match(s, /Beranda Gudang/);
   assert.doesNotMatch(s, /KpiCard|warehouseMock|getWarehouseReportSummary|Akurasi Stok/);
-  for (const k of ["Perlu dikerjakan sekarang", "Terlambat atau tertahan", "Selesai terbaru"]) assert.ok(s.includes(k), k);
+  for (const k of ["Perlu dikerjakan", "Selesai terbaru"]) assert.ok(s.includes(k), k);
+  assert.match(baca("features/warehouse/beranda/berandaLogika.js"), /Terlambat atau tertahan/);
   assert.match(baca("lib/gudangNav.js"), /antreanDariBeranda/, "badge sidebar tetap memakai /inventory/beranda");
 });
 

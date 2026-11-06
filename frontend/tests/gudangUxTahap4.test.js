@@ -59,7 +59,7 @@ test("rute: daftar + /:id? (jendela di atas daftar); Beranda & Perlu Perhatian m
 });
 
 test("Beranda & Perlu Perhatian BACA-SAJA: hanya endpoint GET pusat-kerja; tidak memanggil API tulis; tombol aksi hanya membuka jendela dengan ?aksi=", () => {
-  for (const f of ["pages/warehouse/WarehouseDashboard.jsx", "pages/warehouse/WarehousePerluPerhatian.jsx", "features/warehouse/pusatkerja/PencarianGudang.jsx", "features/warehouse/pusatkerja/BagianAntrean.jsx", "features/warehouse/pusatkerja/KartuPekerjaan.jsx"]) {
+  for (const f of ["pages/warehouse/WarehouseDashboard.jsx", "pages/warehouse/WarehousePerluPerhatian.jsx", "features/warehouse/pusatkerja/PencarianGudang.jsx", "features/warehouse/pusatkerja/BagianAntrean.jsx", "features/warehouse/pusatkerja/KartuPekerjaan.jsx", "features/warehouse/beranda/DaftarKerja.jsx", "features/warehouse/beranda/ToolbarBeranda.jsx", "features/warehouse/beranda/KartuRingkasan.jsx", "features/warehouse/beranda/HasilCariServer.jsx", "features/warehouse/beranda/PanelPendukung.jsx", "features/warehouse/beranda/berandaLogika.js"]) {
     const s = baca(f); assert.doesNotMatch(s, /api\.(post|put|patch|delete|update|create|setujui|tolak|batal|kirim|terima|simpan|jalankan|putaway|issue|mulai)\w*\(/i, `${f}: tidak boleh menulis`); assert.doesNotMatch(s, /method: "(POST|PUT|PATCH|DELETE)"/, f);
   }
   const a = baca("api.js"); for (const e of ["getPusatKerja", "getAntreanPusatKerja", "getTertahanPusatKerja", "getPerluPerhatianGudang", "cariGudang"]) assert.match(a, new RegExp(`${e}:[^\\n]*request\\(\`/inventory/pusat-kerja`), e);
@@ -74,11 +74,15 @@ test("AksiDokumen: ?aksi= hanya MEMBUKA panel/konfirmasi/formulir atau MENYOROT 
   assert.match(s, /data-sorot=/);
 });
 
-test("Beranda: bagian Perlu dikerjakan sekarang / Terlambat atau tertahan / Selesai terbaru; definisi antrean; baca-saja; sisa selalu disebut; jendela di atas Beranda", () => {
+test("Beranda (redesain 7 Nov 2026): satu daftar Perlu dikerjakan (satu dokumen satu baris), kartu ringkasan, Selesai terbaru, definisi di Tentang angka, baca-saja, sisa selalu disebut, jendela di atas Beranda", () => {
   const s = baca("pages/warehouse/WarehouseDashboard.jsx");
-  for (const k of ["Perlu dikerjakan sekarang", "Terlambat atau tertahan", "Selesai terbaru", 'data-testid="baca-saja"', 'data-testid="galat-beranda"', 'data-testid="tidak-ada-tugas"', 'data-testid="tidak-ada-tertahan"', "<DokumenFokus", "<PencarianGudang", "tidakDihitung", "bukan SLA"]) assert.ok(s.includes(k), k);
-  assert.match(s, /api\.getPusatKerja\(\)/); assert.match(s, /onBerubah=\{\(\) => muat\(true\)\}/, "segarkan tenang setelah jendela memberi kabar");
-  const b = baca("features/warehouse/pusatkerja/BagianAntrean.jsx"); assert.match(b, /data-testid="tampilkan-lagi"/); assert.match(b, /data-testid="definisi-antrean"/); assert.match(b, /barisDefinisi/);
+  for (const k of ["Perlu dikerjakan", "Selesai terbaru", 'data-testid="baca-saja"', 'data-testid="galat-beranda"', 'data-testid="sisa-belum-dimuat"', "<DokumenFokus", "<KartuRingkasan", "<DaftarKerja", "<ToolbarBeranda", "<HasilCariServer", "<PanelPerhatian", "<TentangAngka", "susunPekerjaan"]) assert.ok(s.includes(k), k);
+  assert.match(s, /api\.getPusatKerja\(BATAS_MUAT\)/); assert.match(s, /onBerubah=\{\(\) => muat\(true\)\}/, "segarkan tenang setelah jendela memberi kabar");
+  assert.match(s, /api\.getAntreanPusatKerja/); assert.match(s, /api\.getTertahanPusatKerja/);
+  const d = baca("features/warehouse/beranda/DaftarKerja.jsx"); for (const k of ["tampilkan-lagi", "daftar-kosong", "rincian-toggle", "aksi-kartu", "aria-expanded"]) assert.ok(d.includes(k), k);
+  const p = baca("features/warehouse/beranda/PanelPendukung.jsx"); assert.match(p, /data-testid="definisi-antrean"/); assert.match(p, /barisDefinisi/); assert.match(p, /bukan SLA/);
+  const cssB = baca("styles/sanss-gudang-beranda.css"); assert.match(cssB, /\.gud-br\b/);
+  for (const l of cssB.split("\n")) { const t = l.trim(); if (/^\.gud-/.test(t)) assert.match(t, /^\.gud-br/, `selektor Beranda harus berawalan .gud-br: ${t.slice(0, 60)}`); }
 });
 
 test("Perlu Perhatian: tiap masalah memuat apa, dampak, cakupan, pemilik, tindakan resmi; jendela fokus di atas halaman; sidebar Kontrol memuat menu", () => {
@@ -92,4 +96,5 @@ test("mobile: target sentuh ≥ 44px pada kartu/tombol/hasil pencarian; tanpa ta
   for (const f of ["features/warehouse/pusatkerja/KartuPekerjaan.jsx", "features/warehouse/pusatkerja/BagianAntrean.jsx", "features/warehouse/pusatkerja/PencarianGudang.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
   assert.match(baca("features/warehouse/pusatkerja/KartuPekerjaan.jsx"), /\[overflow-wrap:anywhere\]/);
   assert.doesNotMatch(baca("pages/warehouse/WarehouseDashboard.jsx"), /<Table|<TableWrap/);
+  const css = baca("styles/sanss-gudang-beranda.css"); assert.match(css, /@media \(max-width: 767px\)[^}]*min-height: 44px/s, "Beranda: area sentuh 44px di HP"); assert.match(css, /overflow-wrap: anywhere/);
 });

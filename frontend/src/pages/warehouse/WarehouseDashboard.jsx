@@ -1,98 +1,163 @@
-import React from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChevronRight, RefreshCw } from "lucide-react";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { Card } from "@/components/ui/card.jsx";
-import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Loader2 } from "lucide-react";
+import { PageContainer } from "@/components/ui/page.jsx";
 import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { api } from "@/api.js";
+import { IkMuatUlang, IkInfo } from "@/components/gudangIcons.jsx";
+import "@/styles/sanss-gudang-beranda.css";
 import { useJendelaFokus } from "@/features/warehouse/dokumen/useJendelaFokus.js";
 import { waktuTeks } from "@/features/warehouse/dokumen/dokumenLogic.js";
-import BagianAntrean from "@/features/warehouse/pusatkerja/BagianAntrean.jsx";
 import DokumenFokus from "@/features/warehouse/pusatkerja/DokumenFokus.jsx";
-import PencarianGudang from "@/features/warehouse/pusatkerja/PencarianGudang.jsx";
 import { useSumberPusatKerja } from "@/features/warehouse/pusatkerja/usePusatKerja.js";
 import { dalamHalaman, urlItem } from "@/features/warehouse/pusatkerja/urlFokus.js";
+import KartuRingkasan from "@/features/warehouse/beranda/KartuRingkasan.jsx";
+import ToolbarBeranda from "@/features/warehouse/beranda/ToolbarBeranda.jsx";
+import DaftarKerja from "@/features/warehouse/beranda/DaftarKerja.jsx";
+import HasilCariServer from "@/features/warehouse/beranda/HasilCariServer.jsx";
+import { PanelPerhatian, AksesCepat, TentangAngka } from "@/features/warehouse/beranda/PanelPendukung.jsx";
+import {
+  susunPekerjaan, saringPekerjaan, pilihanFilter, hitungKelompok, sisaBelumDimuat, kartuRingkasan, jumlahFilterAktif, adaFilter, waktuPembaruan,
+} from "@/features/warehouse/beranda/berandaLogika.js";
 
-// BERANDA GUDANG = PUSAT KERJA HARIAN (UX Gudang Tahap 4). Bukan dashboard angka: setiap baris adalah dokumen yang perlu ditindak, dengan alasan mengapa ia muncul, satu tindakan utama,
-// dan siapa yang bertindak berikutnya. Semua hitungan datang dari GET /inventory/pusat-kerja (definisi tiap antrean ikut di respons — tombol "Definisi"); halaman ini tidak menghitung ulang
-// dan BACA-SAJA: mengetuk kartu atau tombol hanya membuka jendela fokus dokumen (URL /warehouse/dashboard/<jenis>/<id>), Beranda tetap terpasang di belakangnya dengan posisi gulirnya.
+// BERANDA GUDANG = PUSAT KERJA HARIAN (redesain Beranda, 7 Nov 2026). Satu daftar padat "Perlu dikerjakan": satu dokumen satu baris, keterlambatan/hambatan sebagai penanda pada baris itu.
+// Semua hitungan datang dari GET /inventory/pusat-kerja (definisi ikut di respons); halaman ini BACA-SAJA dan tidak menghitung ulang: mengetuk baris/tombol hanya membuka jendela fokus dokumen
+// (URL /warehouse/dashboard/<jenis>/<id>), Beranda tetap terpasang di belakangnya. Endpoint, izin, status, dan arti angka tidak berubah.
 const PATH = "/warehouse/dashboard";
+const BATAS_MUAT = 50; // batas maksimum per antrean/sebab yang diizinkan server (?batas=); sisanya dimuat lewat "Muat sisanya"
+const TAMPIL_AWAL = 12;
+const F0 = { q: "", kelompok: "semua", jenis: [], tahap: [], antrean: [], penanda: "semua" };
+const KARTU_ANTREAN = { PENERIMAAN_AKAN_DATANG: "kedatangan", PENERIMAAN_PERIKSA: "periksa", PENERIMAAN_SIAP_STOK: "siap" };
 
 export default function WarehouseDashboard() {
   const navigate = useNavigate(); const { jenis, id } = useParams();
-  const { data, galat, memuat, muat } = useSumberPusatKerja(() => api.getPusatKerja());
+  const { data, galat, memuat, muat } = useSumberPusatKerja(() => api.getPusatKerja(BATAS_MUAT));
   const { bukaUrl, tutup } = useJendelaFokus(PATH);
+  const [f, setF] = useState(F0); const [tampil, setTampil] = useState(TAMPIL_AWAL);
+  const [ekstra, setEkstra] = useState({ antrean: {}, tertahan: {} }); const [memuatSisa, setMemuatSisa] = useState(false); const [galatSisa, setGalatSisa] = useState("");
+  const [tentang, setTentang] = useState(false);
+  const panelRef = useRef(null);
+  useEffect(() => { setEkstra({ antrean: {}, tertahan: {} }); setGalatSisa(""); }, [data?.dihitungPada]);
+  useEffect(() => { setTampil(TAMPIL_AWAL); }, [f]);
+
   const buka = (item, kodeAksi = null) => { const url = urlItem(PATH, item, kodeAksi); if (!url) return; if (dalamHalaman(PATH, url)) bukaUrl(url); else navigate(url); };
-  const versi = data?.dihitungPada;
-  const antreanAda = (data?.antrean ?? []).filter((a) => a.jumlah > 0);
-  const antreanKosong = (data?.antrean ?? []).filter((a) => a.jumlah === 0);
-  const tertahanAda = (data?.tertahan ?? []).filter((s) => s.jumlah > 0);
-  const tertahanKosong = (data?.tertahan ?? []).filter((s) => s.jumlah === 0);
+
+  const pekerjaan = useMemo(() => susunPekerjaan(data, ekstra), [data, ekstra]);
+  const sisa = useMemo(() => sisaBelumDimuat(data, ekstra), [data, ekstra]);
+  const lengkap = !!data && !sisa.ada;
+  const disaring = useMemo(() => saringPekerjaan(pekerjaan, f), [pekerjaan, f]);
+  const pilihan = useMemo(() => pilihanFilter(pekerjaan), [pekerjaan]);
+  const hitung = useMemo(() => hitungKelompok(pekerjaan), [pekerjaan]);
+  const kartu = useMemo(() => kartuRingkasan(data, pekerjaan, lengkap), [data, pekerjaan, lengkap]);
+  const kunciAda = useMemo(() => new Set(disaring.map((r) => `${r.jenis}:${r.id}`)), [disaring]);
+  const penandaTersedia = (data?.tertahan ?? []).filter((s) => s.jumlah > 0);
+  const jumlahLewat = (data?.tertahan ?? []).find((s) => s.kode === "JADWAL_LEWAT")?.jumlah ?? 0;
+  const aktifKartu = f.penanda === "ada" && !f.antrean.length ? "tertahan" : f.antrean.length === 1 ? KARTU_ANTREAN[f.antrean[0]] ?? null : null;
+  const labelAntrean = (kode) => (data?.antrean ?? []).find((a) => a.kode === kode)?.judul ?? kode;
+  const adaSaringan = adaFilter(f);
+
+  const pilihKartu = (k) => {
+    if (aktifKartu === k.kode) { setF(F0); return; }
+    setF((s) => ({ ...s, kelompok: "semua", jenis: [], tahap: [], antrean: k.filter.antrean ?? [], penanda: k.filter.penanda ?? "semua" }));
+    requestAnimationFrame(() => panelRef.current?.scrollIntoView({ block: "nearest" }));
+  };
+  const pilihPenanda = (kode) => { setF((s) => ({ ...s, kelompok: "semua", jenis: [], tahap: [], antrean: [], penanda: kode === "JADWAL_LEWAT" ? "lewat" : kode })); requestAnimationFrame(() => panelRef.current?.scrollIntoView({ block: "nearest" })); };
+
+  async function muatSisa() {
+    if (!data) return; setMemuatSisa(true); setGalatSisa("");
+    try {
+      const baru = { antrean: { ...ekstra.antrean }, tertahan: { ...ekstra.tertahan } };
+      const halaman = async (daftar, peta, ambil) => {
+        for (const a of daftar) {
+          let ada = [...(peta[a.kode] ?? [])]; let lebih = Math.max(0, (a.lebih ?? 0) - ada.length);
+          while (lebih > 0) {
+            const d = await ambil(a.kode, { offset: a.item.length + ada.length, limit: 100 });
+            if (!d.item.length) break; ada = [...ada, ...d.item]; lebih = d.lebih;
+          }
+          peta[a.kode] = ada;
+        }
+      };
+      await halaman(data.antrean, baru.antrean, api.getAntreanPusatKerja);
+      await halaman(data.tertahan, baru.tertahan, api.getTertahanPusatKerja);
+      setEkstra(baru);
+    } catch (e) { setGalatSisa(e.message || "Gagal memuat sisa pekerjaan"); } finally { setMemuatSisa(false); }
+  }
+
+  const hasilTeks = !data ? "" : !lengkap
+    ? `Menampilkan ${disaring.length.toLocaleString("id-ID")} dari ${pekerjaan.length.toLocaleString("id-ID")} baris yang sudah dimuat · masih ada ${(sisa.antrean + sisa.tertahan).toLocaleString("id-ID")} di server`
+    : adaSaringan ? `${disaring.length.toLocaleString("id-ID")} dari ${pekerjaan.length.toLocaleString("id-ID")} pekerjaan` : `${pekerjaan.length.toLocaleString("id-ID")} pekerjaan`;
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Beranda Gudang"
-        subtitle="Yang perlu dikerjakan sekarang, dengan alasan dan pemilik tindakannya."
-        actions={<Button variant="ghost" size="sm" onClick={() => muat()} disabled={memuat} className="max-sm:min-h-11" data-testid="muat-ulang-beranda"><RefreshCw size={14} className={memuat ? "animate-spin" : ""} /> Muat Ulang</Button>}
-      />
-      <PageBody>
-        <PencarianGudang onBuka={buka} />
-        {galat && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red" data-testid="galat-beranda">{galat}<Button variant="ghost" size="sm" onClick={() => muat()} className="max-sm:min-h-11">Coba lagi</Button></div>}
-        {memuat && !data && <div className="space-y-2" aria-busy="true" data-testid="memuat-beranda">{[0, 1, 2].map((n) => <div key={n} className="h-20 animate-pulse rounded-btn bg-inset" />)}</div>}
+    <PageContainer fluid className="gud-halaman">
+      <div className="gud-br" data-testid="beranda-gudang">
+        <header className="gud-kepala">
+          <div className="gud-judul">
+            <h1 className="page-title">Beranda Gudang</h1>
+            <p className="page-subtitle">Lihat antrean dan lanjutkan pekerjaan.</p>
+          </div>
+          <div className="gud-aksi-kepala gud-br-kepala-aksi">
+            {data && <span className="gud-br-diperbarui" data-testid="catatan-beranda" title={`Dihitung ${waktuTeks(data.dihitungPada)}`}>Diperbarui {waktuPembaruan(data.dihitungPada) ?? "—"}</span>}
+            <button type="button" className="gud-tombol" aria-expanded={tentang} onClick={() => setTentang((v) => !v)} data-testid="tentang-angka-tombol"><IkInfo size={16} /> Tentang angka</button>
+            <button type="button" className="gud-tombol" onClick={() => muat()} disabled={memuat} data-testid="muat-ulang-beranda"><IkMuatUlang size={16} className={memuat ? "animate-spin" : ""} /> Muat ulang</button>
+          </div>
+        </header>
+
+        {galat && <div role="alert" className="gud-br-galat" data-testid="galat-beranda"><span>{galat}</span><button type="button" className="gud-tombol" onClick={() => muat()}>Coba lagi</button></div>}
+        {memuat && !data && <div className="gud-br-memuat" aria-busy="true" data-testid="memuat-beranda"><div className="gud-br-rangka" /><div className="gud-br-rangka gud-br-rangka-tinggi" /></div>}
+
         {data && (
           <>
-            <div className="flex flex-wrap items-center gap-2 text-[12.5px]" data-testid="ringkasan-beranda">
-              <Badge variant="accent" data-testid="ringkas-kerja">{data.ringkasan.perluDikerjakan} perlu dikerjakan</Badge>
-              <Badge variant={data.ringkasan.tertahan > 0 ? "orange" : "neutral"} data-testid="ringkas-tertahan">{data.ringkasan.tertahan} dokumen terlambat/tertahan</Badge>
-              <Link to="/warehouse/perlu-perhatian" className="inline-flex items-center gap-1 font-semibold text-accent max-sm:min-h-11 max-sm:items-center" data-testid="ke-perlu-perhatian"><AlertTriangle size={13} aria-hidden /> Perlu Perhatian <ChevronRight size={13} aria-hidden /></Link>
-              <span className="text-[11.5px] text-ink3" data-testid="catatan-beranda">Dihitung {waktuTeks(data.dihitungPada)}. {data.umurDefinisi}</span>
+            <TentangAngka data={data} buka={tentang} onTutup={() => setTentang(false)} />
+            {!data.izin.tulis && <div className="gud-br-strip" data-testid="baca-saja">Akun Anda hanya dapat melihat. Tombol tindakan tidak ditampilkan; dokumen tetap bisa dibuka.</div>}
+            <KartuRingkasan kartu={kartu} aktif={aktifKartu} onPilih={pilihKartu} />
+            <p className="gud-br-catatan-kartu">Kategori dapat tumpang tindih dengan penanda terlambat.</p>
+
+            <div className="gud-br-grid">
+              <section className="gud-br-panel gud-panel" aria-label="Perlu dikerjakan" data-testid="bagian-kerja" ref={panelRef}>
+                <div className="gud-br-panel-kepala">
+                  <h2 className="gud-br-judul-panel">Perlu dikerjakan</h2>
+                  <span className="gud-br-badge" data-testid="ringkas-kerja" title={lengkap ? "Jumlah baris pekerjaan" : "Jumlah baris yang sudah dimuat; masih ada sisa di server"}>{pekerjaan.length.toLocaleString("id-ID")}{lengkap ? "" : "+"}</span>
+                </div>
+                <p className="gud-br-sekunder gud-br-panel-sub">Satu dokumen, satu baris. Yang lewat jadwal di atas, lalu yang paling lama tidak diubah.</p>
+                <ToolbarBeranda
+                  f={f} setF={setF} onReset={() => setF(F0)} pilihan={pilihan} penandaTersedia={penandaTersedia} hitung={hitung} lengkap={lengkap} jumlahLewat={jumlahLewat}
+                  labelAntrean={labelAntrean} jumlahAktif={jumlahFilterAktif(f)} hasil={hasilTeks} dimuat={!!data}
+                />
+                {!lengkap && (
+                  <div className="gud-br-strip gud-br-strip-sisa" data-testid="sisa-belum-dimuat">
+                    <span>Daftar memuat hingga {BATAS_MUAT} baris per antrean; hitungan dan filter di bawah hanya mencakup baris yang sudah dimuat.</span>
+                    <button type="button" className="gud-tombol" onClick={muatSisa} disabled={memuatSisa} data-testid="muat-sisa">{memuatSisa ? <Loader2 size={14} className="animate-spin" /> : null} Muat sisanya</button>
+                  </div>
+                )}
+                {galatSisa && <p role="alert" className="gud-br-galat-kecil">{galatSisa}</p>}
+                <HasilCariServer q={f.q} kunciAda={kunciAda} onBuka={buka} />
+                <DaftarKerja
+                  baris={disaring} onBuka={buka} tampil={tampil} onLagi={() => setTampil((n) => n + TAMPIL_AWAL)}
+                  kosongTeks={pekerjaan.length === 0 ? "Tidak ada pekerjaan yang menunggu saat ini." : "Tidak ada pekerjaan yang cocok dengan pencarian atau filter ini."}
+                  kosongAksi={pekerjaan.length > 0 ? <button type="button" className="gud-tombol" onClick={() => setF(F0)} data-testid="reset-kosong">Reset filter</button> : null}
+                />
+              </section>
+
+              <aside className="gud-br-sisi" aria-label="Panel pendukung">
+                <PanelPerhatian data={data} onPilih={pilihPenanda} />
+                <AksesCepat />
+              </aside>
             </div>
-            {!data.izin.tulis && <div className="rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="baca-saja">Akun Anda hanya dapat melihat. Tombol tindakan tidak ditampilkan; dokumen tetap bisa dibuka.</div>}
 
-            <section aria-label="Perlu dikerjakan sekarang" className="space-y-4" data-testid="bagian-kerja">
-              <h2 className="m-0 text-[15px] font-semibold text-ink">Perlu dikerjakan sekarang</h2>
-              {antreanAda.length === 0 && <div className="flex items-center gap-2 rounded-btn bg-greenbg px-3 py-2.5 text-[13px] text-green" data-testid="tidak-ada-tugas"><CheckCircle2 size={15} aria-hidden /> Tidak ada pekerjaan yang menunggu saat ini.</div>}
-              {antreanAda.map((a) => <BagianAntrean key={a.kode} antrean={a} versi={versi} ambilLagi={api.getAntreanPusatKerja} onBuka={buka} />)}
-              {antreanKosong.length > 0 && antreanAda.length > 0 && <p className="m-0 text-[12px] text-ink3" data-testid="antrean-kosong">Tidak ada pekerjaan di: {antreanKosong.map((a) => a.judul).join(" · ")}.</p>}
-              {data.ringkasan.produksiV2 !== "AKTIF" && <p className="m-0 text-[12px] text-ink3" data-testid="catatan-produksi-v2">Antrean Produksi (bahan, unit masuk, barang jadi, kekurangan) tidak dihitung di sini karena pembaca Produksi V2 belum aktif; lihat menu Produksi bila sudah diaktifkan.</p>}
-            </section>
-
-            <section aria-label="Terlambat atau tertahan" className="space-y-4" data-testid="bagian-tertahan">
-              <h2 className="m-0 text-[15px] font-semibold text-ink">Terlambat atau tertahan</h2>
-              <p className="m-0 text-[12px] text-ink3">Dipisah menurut penyebab nyata. “Terlambat” hanya dipakai bila ada tanggal sah yang sudah lewat; umur antrean bukan SLA.</p>
-              {tertahanAda.length === 0 && <div className="flex items-center gap-2 rounded-btn bg-greenbg px-3 py-2.5 text-[13px] text-green" data-testid="tidak-ada-tertahan"><CheckCircle2 size={15} aria-hidden /> Tidak ada dokumen yang terlambat atau tertahan.</div>}
-              {tertahanAda.map((s) => <BagianAntrean key={s.kode} antrean={s} versi={versi} ambilLagi={api.getTertahanPusatKerja} onBuka={buka} tampilSebab />)}
-              {tertahanKosong.length > 0 && tertahanAda.length > 0 && <p className="m-0 text-[12px] text-ink3">Tidak ada: {tertahanKosong.map((s) => s.judul).join(" · ")}.</p>}
-              {(data.tidakDihitung ?? []).map((t) => <p key={t.kode} className="m-0 text-[11.5px] text-ink3" data-testid={`tidak-dihitung-${t.kode}`}>Tidak dihitung — {t.kode === "KONFLIK_REVISI" ? "konflik revisi" : t.kode}: {t.alasan}</p>)}
-            </section>
-
-            <section aria-label="Selesai terbaru" className="space-y-2" data-testid="bagian-selesai">
-              <h2 className="m-0 text-[15px] font-semibold text-ink">Selesai terbaru</h2>
-              {data.selesaiTerbaru.length === 0 ? <p className="m-0 text-[12.5px] text-ink3">Belum ada dokumen yang selesai dalam 7 hari terakhir.</p> : (
-                <Card className="p-0">
-                  <ul className="m-0 list-none divide-y divide-line p-0">
-                    {data.selesaiTerbaru.map((s) => (
-                      <li key={s.kunci}>
-                        <button type="button" onClick={() => buka(s, null)} className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3.5 py-2.5 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-sm:min-h-11" data-testid="baris-selesai">
-                          <span className="text-[13px] font-semibold text-ink">{s.nomor}</span>
-                          <span className="text-[12.5px] text-ink2">{s.teks}{s.oleh ? ` · ${s.oleh}` : ""}</span>
-                          <span className="ml-auto text-[11.5px] text-ink3">{waktuTeks(s.waktu)}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
+            <details className="gud-br-selesai gud-panel" data-testid="bagian-selesai">
+              <summary>Selesai terbaru <span className="gud-br-sekunder">· 7 hari terakhir ({data.selesaiTerbaru.length})</span></summary>
+              {data.selesaiTerbaru.length === 0 ? <p className="gud-br-sekunder">Belum ada dokumen yang selesai dalam 7 hari terakhir.</p> : (
+                <ul className="gud-br-selesai-daftar">
+                  {data.selesaiTerbaru.map((s) => (
+                    <li key={s.kunci}><button type="button" onClick={() => buka(s, null)} data-testid="baris-selesai"><span className="gud-br-nomor-teks">{s.nomor}</span><span className="gud-br-sekunder">{s.teks}{s.oleh ? ` · ${s.oleh}` : ""}</span><span className="gud-br-sekunder gud-br-waktu">{waktuTeks(s.waktu)}</span></button></li>
+                  ))}
+                </ul>
               )}
-            </section>
-
+            </details>
             <ActiveComplaintsWidget currentOwner="WAREHOUSE" title="Kasus Komplain Butuh Material" />
-            <p className="m-0 text-[11.5px] text-ink3">Angka stok per bahan, bahan tanpa catatan, dan batas minimum ada di <Link to="/warehouse/inventory" className="font-semibold text-accent">Stok bahan</Link>.</p>
           </>
         )}
-      </PageBody>
+      </div>
       <DokumenFokus jenis={jenis} id={id} onTutup={tutup} onBerubah={() => muat(true)} />
     </PageContainer>
   );
