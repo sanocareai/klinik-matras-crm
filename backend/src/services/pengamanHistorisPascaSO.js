@@ -15,6 +15,7 @@
 //   • Hash rencana mengikat himpunan tertahan/tercermin/dilepas + tautan; persetujuan atas rencana lama tidak bisa dipakai untuk rencana berbeda. Pemosting historis tidak boleh pelaku pernyataan pada rencananya.
 //   Tidak ada jalur baru menulis stok, harga, valuasi, jurnal, PSA, atau GR. Aditif, tanpa migrasi.
 import crypto from "node:crypto";
+import { MaterialUnit, MaterialCategory } from "@prisma/client";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
@@ -131,6 +132,60 @@ export async function tautkanSO(prisma, { aktor, materialId, soTanggal, sumber, 
     const e = await recordActivity(tx, { entityType: ENTITY_TYPES.PERNYATAAN_HISTORIS_SO, entityId: materialId, eventType: EVENT_TYPES.SO_DITAUTKAN, actorId: aktor.id,
       metadata: { materialId, kode: bahan.code, soTanggal, batasUTC: batasDariTanggal(soTanggal).toISOString(), sumber: s, alasan: a, rujukanHash: r, dokumen, menggantikanId: menggantikanId ?? null, idempotencyKey: k } });
     return { ulang: false, id: e.id, materialId, soTanggal, batas: batasDariTanggal(soTanggal).toISOString(), dokumen };
+  }, { timeout: 30_000, maxWait: 10_000 });
+}
+
+/**
+ * MASTER BARU + TAUTAN SO DALAM SATU TRANSAKSI (atomik; semua berhasil bersama atau gagal tanpa sisa).
+ * Mengapa: sistem memetakan catatan historis ke master baru bila nama/kode persis sama (evaluasi ulang, juga dipicu pembacaan daftar). Bila master dibuat dulu lalu ditautkan kemudian, ada jendela
+ * ketika catatan lama bisa terpetakan tanpa pengaman. Di sini master dan tautan SO baru terlihat oleh transaksi lain pada COMMIT yang SAMA, jadi pemetaan/posting yang muncul sesudahnya
+ * selalu menemukan tautan aktif (TERTAHAN_PASCA_SO, fail-closed). Tidak memetakan catatan, tidak menulis stok/harga/valuasi/jurnal/PSA/GR, tidak membuat deklarasi.
+ * Hanya MEMBUAT master baru: kode atau nama yang sudah ada menggagalkan seluruh permintaan (tidak pernah menautkan ke bahan lama lewat jalur ini). Penyetuju + izin inventory:write.
+ */
+export async function buatMasterBertautan(prisma, { aktor, bahan, soTanggal, sumber, alasan, rujukanHash, kunci }) {
+  wajibPenyetuju(aktor, "membuat master baru beserta tautan SO"); wajib(hasPermission(aktor, P.INVENTORY_WRITE), "Membuat master wajib izin inventory:write", "TANPA_IZIN_MASTER", 403);
+  const k = wajibKunci(kunci);
+  const daftar = Array.isArray(bahan) ? bahan : []; wajib(daftar.length >= 1 && daftar.length <= 10, "bahan wajib 1–10 master", "BAHAN_TIDAK_VALID");
+  const unitSah = Object.values(MaterialUnit); const kategoriSah = Object.values(MaterialCategory);
+  const baru = daftar.map((b) => {
+    const code = String(b?.code ?? "").trim().toUpperCase(); const name = norm(b?.name);
+    wajib(code.length >= 3 && code.length <= 80 && /^[A-Z0-9][A-Z0-9._-]*$/.test(code), "kode master tidak valid (huruf besar, angka, titik, strip, garis bawah)", "KODE_TIDAK_VALID");
+    wajib(name.length >= 3 && name.length <= 200, "nama master wajib (3–200 karakter)", "NAMA_TIDAK_VALID");
+    wajib(unitSah.includes(b?.unit), "satuan tidak valid", "SATUAN_TIDAK_VALID"); wajib(kategoriSah.includes(b?.category), "kategori wajib dan harus valid", "KATEGORI_TIDAK_VALID");
+    return { code, name, unit: b.unit, category: b.category };
+  });
+  wajib(new Set(baru.map((b) => b.code)).size === baru.length && new Set(baru.map((b) => b.name.toUpperCase())).size === baru.length, "kode atau nama ganda dalam satu permintaan", "MASTER_GANDA");
+  wajib(/^\d{4}-\d{2}-\d{2}$/.test(String(soTanggal ?? "")) && !Number.isNaN(Date.parse(`${soTanggal}T00:00:00Z`)), "tanggal SO wajib (YYYY-MM-DD)", "TANGGAL_SO_WAJIB");
+  wajib(String(soTanggal) <= wibTgl(new Date()), "tanggal SO tidak boleh di masa depan", "TANGGAL_SO_MASA_DEPAN");
+  const s = norm(sumber); wajib(s.length >= 3 && s.length <= 300, "sumber wajib (3–300 karakter)", "SUMBER_WAJIB");
+  const a = norm(alasan); wajib(a.length >= 10 && a.length <= 500, "alasan wajib (10–500 karakter)", "ALASAN_WAJIB");
+  const r = norm(rujukanHash); wajib(r.length >= 8 && r.length <= 200, "rujukan hash manifest wajib (≥8 karakter)", "RUJUKAN_WAJIB");
+  return prisma.$transaction(async (tx) => {
+    for (const b of [...baru].sort((x, y) => x.code.localeCompare(y.code))) await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))", `master_baru:${b.code}`);
+    // ulang (idempoten): SEMUA master sudah ada DAN masing-masing membawa tautan dengan kunci + isi sama → kembalikan hasil lama tanpa menulis
+    const ada = await tx.material.findMany({ where: { code: { in: baru.map((b) => b.code) } }, select: { id: true, code: true, name: true, unit: true, category: true } });
+    if (ada.length) {
+      wajib(ada.length === baru.length, "sebagian master sudah ada — seluruh permintaan ditolak (tidak ada yang dibuat)", "MASTER_SUDAH_ADA", 409);
+      const hasil = [];
+      for (const m of ada) {
+        const b = baru.find((x) => x.code === m.code); const e = await tx.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.PERNYATAAN_HISTORIS_SO, entityId: m.id, eventType: EVENT_TYPES.SO_DITAUTKAN, metadata: { path: ["idempotencyKey"], equals: k } } });
+        wajib(e && m.name === b.name && m.unit === b.unit && m.category === b.category && e.metadata?.soTanggal === soTanggal && e.metadata?.sumber === s && e.metadata?.alasan === a && e.metadata?.rujukanHash === r, "Master dengan kode ini sudah ada dan bukan hasil permintaan ini", "MASTER_SUDAH_ADA", 409);
+        hasil.push({ materialId: m.id, kode: m.code, tautanId: e.id });
+      }
+      return { ulang: true, soTanggal, bahan: hasil };
+    }
+    for (const b of baru) {
+      const kembar = await tx.material.findFirst({ where: { name: { equals: b.name, mode: "insensitive" } }, select: { code: true } });
+      wajib(!kembar, `nama master sudah dipakai oleh ${kembar?.code} — seluruh permintaan ditolak (tidak ada yang dibuat)`, "NAMA_SUDAH_ADA", 409);
+    }
+    const hasil = [];
+    for (const b of baru) {
+      const m = await tx.material.create({ data: { code: b.code, name: b.name, unit: b.unit, category: b.category, serviceLine: null }, select: { id: true } });
+      const e = await recordActivity(tx, { entityType: ENTITY_TYPES.PERNYATAAN_HISTORIS_SO, entityId: m.id, eventType: EVENT_TYPES.SO_DITAUTKAN, actorId: aktor.id,
+        metadata: { materialId: m.id, kode: b.code, soTanggal, batasUTC: batasDariTanggal(soTanggal).toISOString(), sumber: s, alasan: a, rujukanHash: r, dokumen: null, menggantikanId: null, idempotencyKey: k, dibuatBersamaMaster: true } });
+      hasil.push({ materialId: m.id, kode: b.code, tautanId: e.id });
+    }
+    return { ulang: false, soTanggal, batas: batasDariTanggal(soTanggal).toISOString(), bahan: hasil };
   }, { timeout: 30_000, maxWait: 10_000 });
 }
 

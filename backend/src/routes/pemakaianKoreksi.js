@@ -18,7 +18,7 @@ import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiP
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
 import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
 import { pratinjauPosting } from "../services/postingPratinjau.js";
-import { daftarPengaman, tautkanSO, batalkanTautan, nyatakanCatatan, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
+import { daftarPengaman, tautkanSO, buatMasterBertautan, batalkanTautan, nyatakanCatatan, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
 import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
 import { pratinjauPerubahan, terapkanPerubahanPemakaian } from "../services/perubahanPemakaianUnit.js";
 
@@ -109,6 +109,10 @@ pemakaianKoreksiRouter.get("/posting-historis/pengaman", requireAnyPermission(P.
 });
 pemakaianKoreksiRouter.post("/posting-historis/pengaman/tautan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
   try { const h = await tautkanSO(prisma, { aktor: req.user, materialId: req.body?.materialId, soTanggal: req.body?.soTanggal, sumber: req.body?.sumber, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, dokumenId: req.body?.dokumenId ?? null, menggantikanId: req.body?.menggantikanId ?? null, kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+});
+// Master baru + tautan SO dalam SATU transaksi (atomik): menutup jendela pemetaan otomatis sebelum tautan ada. Penyetuju + inventory:write.
+pemakaianKoreksiRouter.post("/posting-historis/pengaman/master-bertautan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { const h = await buatMasterBertautan(prisma, { aktor: req.user, bahan: req.body?.bahan, soTanggal: req.body?.soTanggal, sumber: req.body?.sumber, alasan: req.body?.alasan, rujukanHash: req.body?.rujukanHash, kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/posting-historis/pengaman/tautan/:id/batalkan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
   try { res.status(201).json(await batalkanTautan(prisma, { aktor: req.user, tautanId: req.params.id, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
