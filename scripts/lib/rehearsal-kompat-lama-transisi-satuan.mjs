@@ -42,7 +42,7 @@ const lap = await http("/api/inventory/nilai-persediaan"); cek(`[${MODE}] kode l
 // 2. jalur tulis stok yang ada (penulis resmi kode LAMA) tetap berfungsi dan DIBERI PENANDA SATUAN oleh trigger DB
 const { postStockMovement } = await imp("src/services/inventoryLedger.js");
 const bertransisi = (await prisma.$queryRawUnsafe("select distinct material_id::text id from material_unit_transitions")).map((r) => r.id);
-const biasa = (await prisma.$queryRawUnsafe("select m.id::text id, m.code, m.unit::text unit from materials m where m.active and m.id::text <> all($1::text[]) and exists (select 1 from stock_movements s where s.material_id = m.id) order by m.code limit 1", bertransisi))[0];
+const biasa = (await prisma.$queryRawUnsafe("select m.id::text id, m.code, m.unit::text unit from materials m where m.active and m.id::text <> all($1::text[]) and (select coalesce(sum(qty),0) from stock_movements s where s.material_id = m.id) >= 1 order by m.code limit 1", bertransisi))[0];
 if (biasa) {
   const s0 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", biasa.id);
   const a = await prisma.$transaction(async (tx) => postStockMovement(tx, { materialId: biasa.id, type: "RECEIPT", qty: 1, note: "uji rollback kode lama", createdById: aktor.id }));
