@@ -1,12 +1,11 @@
 import React, { useId, useState } from "react";
-import { IkDokumen, IkKeluar, IkTransfer, IkOpname, IkRestok, IkRusak, IkRetur, IkKoreksi, IkProduksi, IkTruk, IkBawah, IkAwas, IkCentang } from "@/components/gudangIcons.jsx";
+import { Glif, Ubin, UBIN_JENIS } from "./IkonApple.jsx";
 import { gayaAksi, ringkasHambatan, LABEL_SEBAB_PENDEK } from "./berandaLogika.js";
 
 // Daftar padat "Perlu dikerjakan": SATU dokumen = SATU baris. Kolom: Dokumen & supplier/unit · Tahap · Jadwal/masalah · Tindakan.
 // Keterlambatan dan hambatan adalah penanda pada baris yang sama (bukan baris kedua di kelompok lain). Umur dokumen (sejak terakhir diubah) hanya di rincian baris dan BUKAN SLA.
 // Baca-saja: tombol hanya MEMBUKA dokumen (jendela fokus) dengan aksi itu disorot; tidak ada transaksi yang dikirim dari sini. Tombol hanya ada bila server menyatakan pengguna berizin.
-const IKON_JENIS = { penerimaan: IkDokumen, po: IkTruk, "pengeluaran-material": IkKeluar, transfer: IkTransfer, opname: IkOpname, restok: IkRestok, rusak: IkRusak, retur: IkRetur, "retur-supplier": IkRetur, koreksi: IkKoreksi, penyesuaian: IkKoreksi, bahan: IkProduksi };
-const NADA_TAHAP = { PENERIMAAN_AKAN_DATANG: "biru", PENERIMAAN_PERIKSA: "kuning", PENERIMAAN_SIAP_STOK: "lavender" };
+const NADA_TAHAP = { PENERIMAAN_AKAN_DATANG: "biru", PENERIMAAN_PERIKSA: "kuning", PENERIMAAN_SIAP_STOK: "lavender" }; // titik warna di depan nama tahap
 const LABEL_CAKUPAN = { DOKUMEN: "hanya dokumen ini", BAHAN: "bahan yang bersangkutan", FITUR: "satu fitur", PROSES: "seluruh proses" };
 
 // Klik di area baris membuka dokumen; klik pada tombol/tautan di dalamnya tidak ikut memicu pembukaan.
@@ -25,7 +24,7 @@ function Jadwal({ r }) {
           <span key={h.sebab} className={`gud-br-hambatan${h.sebab === "JADWAL_LEWAT" ? " gud-br-hambatan-lewat" : ""}`} data-testid={`hambatan-${h.sebab}`} title={h.teks}>
             {h.sebab === "JADWAL_LEWAT"
               ? <><span className="gud-br-hambatan-judul">{s.judul}</span><span className="gud-br-hambatan-ket gud-br-merah">{s.ket}</span></>
-              : <><span className="gud-br-hambatan-judul"><IkAwas size={15} aria-hidden="true" /> {s.judul}</span>{s.ket && s.ket !== s.judul && <span className="gud-br-hambatan-ket">{s.ket}</span>}</>}
+              : <><span className="gud-br-hambatan-judul"><Glif nama="awas" size={15} /> {s.judul}</span>{s.ket && s.ket !== s.judul && <span className="gud-br-hambatan-ket">{s.ket}</span>}</>}
           </span>
         );
       })}
@@ -58,25 +57,25 @@ function Rincian({ r, id, onBuka }) {
 
 function Baris({ r, onBuka }) {
   const [buka, setBuka] = useState(false); const id = useId();
-  const Ikon = IKON_JENIS[r.jenis] ?? IkDokumen;
+  const ub = UBIN_JENIS[r.jenis] ?? UBIN_JENIS.penerimaan;
   const menungguLain = !r.aksi && r.pemilikLabel && r.pemilikLabel !== "Gudang";
   return (
     <li className="gud-br-baris" data-testid="baris-kerja" data-jenis={r.jenis} data-nomor={r.nomor} data-terblokir={String(r.terblokirSimpan)} data-lewat={String(!!r.lewat)} {...klikBaris(() => onBuka(r, null))}>
       <div className="gud-br-dok">
-        <span className="gud-br-ikon" aria-hidden="true"><Ikon size={20} /></span>
+        <Ubin nada={ub.nada} nama={ub.nama} ukuran={40} className="gud-br-ikon" />
         <div className="gud-br-dok-teks">
           <button type="button" className="gud-br-nomor" onClick={() => onBuka(r, null)} data-testid="buka-pekerjaan" aria-label={`Buka ${r.jenisLabel} ${r.nomor}`}>{r.nomor}</button>
           {r.terkait && <span className="gud-br-terkait" title={r.terkait}>{r.terkait}</span>}
           <span className="gud-br-jenis">{r.jenisLabel}</span>
         </div>
       </div>
-      <div className="gud-br-tahap"><span className="gud-br-label-kecil">Tahap</span><span className={`gud-br-pil gud-br-pil-${NADA_TAHAP[r.antreanKode] ?? "netral"}`} data-testid="status-pekerjaan">{r.status}</span></div>
+      <div className="gud-br-tahap"><span className="gud-br-label-kecil">Tahap</span><span className={`gud-br-pil gud-br-pil-${NADA_TAHAP[r.antreanKode] ?? "netral"}`} data-testid="status-pekerjaan"><i className="gud-br-titik" aria-hidden="true" />{r.status}</span></div>
       <div className="gud-br-jadwal"><span className="gud-br-label-kecil">Jadwal / masalah</span><Jadwal r={r} /></div>
       <div className="gud-br-aksi" data-tanpa-detail>
         {r.aksi
           ? <button type="button" className={`gud-br-tombol gud-br-tombol-${gayaAksi(r.aksi.kode)}`} onClick={() => onBuka(r, r.aksi.kode)} data-testid="aksi-kartu" data-kode={r.aksi.kode} title={r.terblokirSimpan ? "Simpan ke stok akan ditolak karena tidak ada jumlah baik; lengkapi pemeriksaan dulu." : undefined}>{r.aksi.label}</button>
           : <button type="button" className="gud-br-tombol gud-br-tombol-garis" onClick={() => onBuka(r, null)} data-testid="buka-tanpa-aksi">Buka dokumen</button>}
-        <button type="button" className="gud-br-chevron" aria-expanded={buka} aria-controls={buka ? id : undefined} aria-label={`${buka ? "Tutup" : "Buka"} rincian ${r.nomor}`} onClick={() => setBuka((v) => !v)} data-testid="rincian-toggle"><IkBawah size={18} /></button>
+        <button type="button" className="gud-br-chevron" aria-expanded={buka} aria-controls={buka ? id : undefined} aria-label={`${buka ? "Tutup" : "Buka"} rincian ${r.nomor}`} onClick={() => setBuka((v) => !v)} data-testid="rincian-toggle"><Glif nama="bawah" size={18} /></button>
         {menungguLain && <span className="gud-br-menunggu">Menunggu {r.pemilikLabel}</span>}
       </div>
       {buka && <Rincian r={r} id={id} onBuka={onBuka} />}
@@ -89,7 +88,7 @@ export default function DaftarKerja({ baris, onBuka, tampil, onLagi, kosongTeks,
   if (baris.length === 0) {
     return (
       <div className="gud-br-kosong" data-testid="daftar-kosong">
-        <span className="gud-br-kosong-ikon" aria-hidden="true"><IkCentang size={22} /></span>
+        <Ubin nada="hijau" nama="centang" ukuran={48} className="gud-br-kosong-ikon" />
         <p className="gud-br-kosong-judul">{kosongTeks}</p>
         {kosongAksi}
       </div>

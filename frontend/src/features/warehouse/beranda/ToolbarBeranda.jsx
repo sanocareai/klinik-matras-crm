@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from "react";
-import { IkCari, IkSaring, IkTutup } from "@/components/gudangIcons.jsx";
+import { Glif } from "./IkonApple.jsx";
 import { KELOMPOK, LABEL_SEBAB_PENDEK } from "./berandaLogika.js";
 
 // SATU toolbar: pencarian + tombol Filter (popover di desktop, lembar bawah di HP — memakai kelas .gud-filter-* yang sama dengan Stok bahan) + tab kelompok + saklar "Lewat jadwal".
@@ -18,7 +18,7 @@ function FilterPopover({ jumlah, onReset, children }) {
   return (
     <div className="gud-filter gud-br-filter" ref={akar}>
       <button ref={tombol} type="button" className="gud-tombol gud-filter-tombol" aria-expanded={buka} aria-controls={buka ? id : undefined} aria-haspopup="dialog" onClick={() => setBuka((v) => !v)} data-testid="buka-filter">
-        <IkSaring size={16} /> Filter{jumlah > 0 && <span className="gud-filter-hitung" data-testid="hitung-filter">{jumlah}</span>}
+        <Glif nama="saring" size={17} /> Filter{jumlah > 0 && <span className="gud-filter-hitung" data-testid="hitung-filter">{jumlah}</span>}
       </button>
       {buka && (
         <>
@@ -58,9 +58,9 @@ export default function ToolbarBeranda({ f, setF, onReset, pilihan, penandaTerse
     <div className="gud-br-toolbar" data-testid="toolbar-beranda">
       <div className="gud-br-baris-cari">
         <label className="gud-br-cari">
-          <IkCari size={17} />
+          <Glif nama="cari" size={17} />
           <input type="search" value={f.q} onChange={(e) => setIni({ q: e.target.value })} onKeyDown={(e) => { if (e.key === "Escape") setIni({ q: "" }); }} aria-label="Cari dokumen, supplier, atau unit" data-testid="cari-gudang" placeholder="Cari dokumen, supplier, atau unit…" autoComplete="off" />
-          {f.q && <button type="button" className="gud-br-hapus-cari" onClick={() => setIni({ q: "" })} aria-label="Hapus pencarian"><IkTutup size={14} /></button>}
+          {f.q && <button type="button" className="gud-br-hapus-cari" onClick={() => setIni({ q: "" })} aria-label="Hapus pencarian"><Glif nama="tutup" size={14} /></button>}
         </label>
         <FilterPopover jumlah={jumlahAktif} onReset={onReset}>
           <Pilihan judul="Jenis pekerjaan" testid="filter-jenis">
@@ -93,7 +93,7 @@ export default function ToolbarBeranda({ f, setF, onReset, pilihan, penandaTerse
       </div>
       {(chips.length > 0 || f.q.trim() || f.kelompok !== "semua") && (
         <div className="gud-chip-baris gud-br-chip-baris" data-testid="chip-aktif">
-          {chips.map((c) => <span key={c.k} className="gud-chip">{c.teks}<button type="button" onClick={c.hapus} aria-label={`Hapus filter ${c.teks}`}><IkTutup size={12} /></button></span>)}
+          {chips.map((c) => <span key={c.k} className="gud-chip">{c.teks}<button type="button" onClick={c.hapus} aria-label={`Hapus filter ${c.teks}`}><Glif nama="tutup" size={12} /></button></span>)}
           <button type="button" className="gud-tautan" onClick={onReset} data-testid="reset-filter">Reset</button>
         </div>
       )}

@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { IkAwas, IkPanah, IkTruk, IkKotak, IkTutup } from "@/components/gudangIcons.jsx";
+import { Glif, Ubin } from "./IkonApple.jsx";
 import { ringkasPerhatian, waktuPembaruan } from "./berandaLogika.js";
 import { barisDefinisi } from "@/features/warehouse/pusatkerja/urlFokus.js";
 
@@ -14,31 +14,32 @@ export function PanelPerhatian({ data, onPilih }) {
         <ul className="gud-br-perhatian">
           {daftar.map((p) => (
             <li key={p.kode} className="gud-br-perhatian-item" data-testid={`perhatian-${p.kode}`}>
-              <span className="gud-br-perhatian-garis" aria-hidden="true" />
+              <Ubin nada={UBIN_PERHATIAN[p.kode]?.nada ?? "oranye"} nama={UBIN_PERHATIAN[p.kode]?.nama ?? "awas"} ukuran={34} className="gud-br-perhatian-ikon" />
               <div>
                 <p className="gud-br-perhatian-judul">{p.jumlah.toLocaleString("id-ID")} {p.satuan} · {p.judul.toLowerCase()}</p>
                 <p className="gud-br-sekunder">{p.ket}</p>
-                <button type="button" className="gud-br-taut" onClick={() => onPilih(p.kode)} data-testid={`pilih-${p.kode}`}>Lihat di daftar <IkPanah size={14} /></button>
+                <button type="button" className="gud-br-taut" onClick={() => onPilih(p.kode)} data-testid={`pilih-${p.kode}`}>Lihat di daftar <Glif nama="kanan" size={14} /></button>
               </div>
             </li>
           ))}
         </ul>
       )}
-      <Link to="/warehouse/perlu-perhatian" className="gud-br-taut gud-br-taut-sendiri" data-testid="ke-perlu-perhatian"><IkAwas size={15} /> Buka Perlu Perhatian (stok &amp; data bahan) <IkPanah size={14} /></Link>
+      <Link to="/warehouse/perlu-perhatian" className="gud-br-taut gud-br-taut-sendiri" data-testid="ke-perlu-perhatian"><Glif nama="awas" size={15} /> Buka Perlu Perhatian (stok &amp; data bahan) <Glif nama="kanan" size={14} /></Link>
     </section>
   );
 }
 
+const UBIN_PERHATIAN = { JADWAL_LEWAT: { nada: "oranye", nama: "jam" }, DATA_WAJIB: { nada: "oranye", nama: "dokumen" }, MENUNGGU_WORKSPACE: { nada: "abu", nama: "jam" } };
 const AKSES = [
-  { to: "/warehouse/barang-akan-datang", label: "Barang akan datang", Ikon: IkTruk },
-  { to: "/warehouse/goods-receipt", label: "Penerimaan barang", Ikon: IkKotak },
-  { to: "/warehouse/inventory", label: "Stok bahan", Ikon: IkKotak },
+  { to: "/warehouse/barang-akan-datang", label: "Barang akan datang", nada: "biru", nama: "truk" },
+  { to: "/warehouse/goods-receipt", label: "Penerimaan barang", nada: "hijau", nama: "dokumen" },
+  { to: "/warehouse/inventory", label: "Stok bahan", nada: "ungu", nama: "kotak" },
 ];
 export function AksesCepat() {
   return (
     <section className="gud-br-samping gud-panel" aria-label="Akses cepat" data-testid="akses-cepat">
       <h2 className="gud-br-judul-samping">Akses cepat</h2>
-      <ul className="gud-br-akses">{AKSES.map((a) => <li key={a.to}><Link to={a.to}><span className="gud-br-akses-ikon" aria-hidden="true"><a.Ikon size={18} /></span><span>{a.label}</span><IkPanah size={15} aria-hidden="true" /></Link></li>)}</ul>
+      <ul className="gud-br-akses">{AKSES.map((a) => <li key={a.to}><Link to={a.to}><Ubin nada={a.nada} nama={a.nama} ukuran={36} className="gud-br-akses-ikon" /><span>{a.label}</span><Glif nama="kanan" size={15} className="gud-br-akses-panah" /></Link></li>)}</ul>
     </section>
   );
 }
@@ -48,7 +49,7 @@ export function TentangAngka({ data, buka, onTutup }) {
   if (!buka) return null;
   return (
     <section className="gud-br-tentang gud-panel" aria-label="Tentang angka Beranda" data-testid="tentang-angka">
-      <div className="gud-br-tentang-kepala"><h2 className="gud-br-judul-samping">Tentang angka di Beranda</h2><button type="button" className="gud-tombol-ikon" onClick={onTutup} aria-label="Tutup penjelasan"><IkTutup size={16} /></button></div>
+      <div className="gud-br-tentang-kepala"><h2 className="gud-br-judul-samping">Tentang angka di Beranda</h2><button type="button" className="gud-tombol-ikon" onClick={onTutup} aria-label="Tutup penjelasan"><Glif nama="tutup" size={16} /></button></div>
       <ul className="gud-br-tentang-daftar">
         <li>Angka di kartu adalah jumlah <b>dokumen</b> per antrean dari server (satu dokumen satu hitungan). Kartu dapat tumpang tindih dan tidak dijumlahkan menjadi total pekerjaan.</li>
         <li>“Lewat jadwal” hanya dipakai bila ada tanggal yang sah (jadwal penerimaan, estimasi PO, tanggal dibutuhkan, jadwal hitung) dan tanggal itu sudah lewat. Dokumen tanpa tanggal tidak pernah disebut terlambat.</li>

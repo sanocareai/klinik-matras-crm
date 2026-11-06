@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { PageContainer } from "@/components/ui/page.jsx";
 import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { api } from "@/api.js";
-import { IkMuatUlang, IkInfo } from "@/components/gudangIcons.jsx";
+import { Glif } from "@/features/warehouse/beranda/IkonApple.jsx";
 import "@/styles/sanss-gudang-beranda.css";
 import { useJendelaFokus } from "@/features/warehouse/dokumen/useJendelaFokus.js";
 import { waktuTeks } from "@/features/warehouse/dokumen/dokumenLogic.js";
@@ -97,8 +97,8 @@ export default function WarehouseDashboard() {
           </div>
           <div className="gud-aksi-kepala gud-br-kepala-aksi">
             {data && <span className="gud-br-diperbarui" data-testid="catatan-beranda" title={`Dihitung ${waktuTeks(data.dihitungPada)}`}>Diperbarui {waktuPembaruan(data.dihitungPada) ?? "—"}</span>}
-            <button type="button" className="gud-tombol" aria-expanded={tentang} onClick={() => setTentang((v) => !v)} data-testid="tentang-angka-tombol"><IkInfo size={16} /> Tentang angka</button>
-            <button type="button" className="gud-tombol" onClick={() => muat()} disabled={memuat} data-testid="muat-ulang-beranda"><IkMuatUlang size={16} className={memuat ? "animate-spin" : ""} /> Muat ulang</button>
+            <button type="button" className="gud-tombol" aria-expanded={tentang} onClick={() => setTentang((v) => !v)} data-testid="tentang-angka-tombol"><Glif nama="info" size={16} /> Tentang angka</button>
+            <button type="button" className="gud-tombol" onClick={() => muat()} disabled={memuat} data-testid="muat-ulang-beranda"><Glif nama="muatUlang" size={16} className={memuat ? "animate-spin" : ""} /> Muat ulang</button>
           </div>
         </header>
 

@@ -151,9 +151,9 @@ export function kartuRingkasan(data, baris, lengkap) {
   const lewatPenerimaan = baris.filter((r) => r.antreanKode === "PENERIMAAN_AKAN_DATANG" && r.lewat).length;
   return [
     { kode: "kedatangan", label: "Menunggu kedatangan", nilai: j("PENERIMAAN_AKAN_DATANG"), satuan: "dokumen", nada: "biru", ket: lengkap && lewatPenerimaan > 0 ? `${lewatPenerimaan} lewat jadwal` : null, filter: { antrean: ["PENERIMAAN_AKAN_DATANG"] } },
-    { kode: "periksa", label: "Perlu diperiksa", nilai: j("PENERIMAAN_PERIKSA"), satuan: "dokumen", nada: "muda", ket: lengkap && blokir("PENERIMAAN_PERIKSA") > 0 ? `${blokir("PENERIMAAN_PERIKSA")} perlu dilengkapi` : null, filter: { antrean: ["PENERIMAAN_PERIKSA"] } },
-    { kode: "siap", label: "Siap disimpan", nilai: j("PENERIMAAN_SIAP_STOK"), satuan: "dokumen", nada: "lavender", ket: lengkap && blokir("PENERIMAAN_SIAP_STOK") > 0 ? `${blokir("PENERIMAAN_SIAP_STOK")} perlu dilengkapi` : null, filter: { antrean: ["PENERIMAAN_SIAP_STOK"] } },
-    { kode: "tertahan", label: "Terlambat atau tertahan", nilai: data?.ringkasan?.tertahan ?? 0, satuan: "dokumen", nada: "lime", ket: null, filter: { penanda: "ada" } },
+    { kode: "periksa", label: "Perlu diperiksa", nilai: j("PENERIMAAN_PERIKSA"), satuan: "dokumen", nada: "langit", ket: lengkap && blokir("PENERIMAAN_PERIKSA") > 0 ? `${blokir("PENERIMAAN_PERIKSA")} perlu dilengkapi` : null, filter: { antrean: ["PENERIMAAN_PERIKSA"] } },
+    { kode: "siap", label: "Siap disimpan", nilai: j("PENERIMAAN_SIAP_STOK"), satuan: "dokumen", nada: "ungu", ket: lengkap && blokir("PENERIMAAN_SIAP_STOK") > 0 ? `${blokir("PENERIMAAN_SIAP_STOK")} perlu dilengkapi` : null, filter: { antrean: ["PENERIMAAN_SIAP_STOK"] } },
+    { kode: "tertahan", label: "Terlambat atau tertahan", nilai: data?.ringkasan?.tertahan ?? 0, satuan: "dokumen", nada: "jingga", ket: null, filter: { penanda: "ada" } },
   ];
 }
 
