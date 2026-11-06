@@ -22,6 +22,8 @@ const P = {
   opname: <><path d="M7 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1" fill="currentColor" fillOpacity=".22" /><path d="M9 3.4h6v3.2H9zM8.6 14l2.5 2.5 4.4-5" /></>,
   restok: <><circle cx="12" cy="12" r="9" fill="currentColor" fillOpacity=".22" /><path d="M12 8v8M8 12h8" /></>,
   retur: <path d="M9 7l-4.5 4.5L9 16M4.5 11.5H15a4.5 4.5 0 0 1 0 9h-3" />,
+  bank: <><path d="M3.2 9.4L12 4l8.8 5.4z" fill="currentColor" fillOpacity=".22" /><path d="M5.4 10.6v6.2M9.8 10.6v6.2M14.2 10.6v6.2M18.6 10.6v6.2M3.4 20h17.2" /></>,
+  riwayat: <><circle cx="12" cy="12" r="9" fill="currentColor" fillOpacity=".22" /><path d="M12 7.2V12l3.4 2M3.6 12H6.4M17.6 12h2.8" /></>,
   koreksi: <><path d="M4 20l1-4.2L16.6 4.6a2 2 0 0 1 2.8 2.8L7.8 19z" fill="currentColor" fillOpacity=".22" /><path d="M14.6 6.6l2.8 2.8" /></>,
 };
 
