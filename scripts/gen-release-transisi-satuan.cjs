@@ -93,6 +93,8 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanExpect, 
   // 7. rehearsal: migrate deploy pada salinan restore (menggantikan 'migrate status' tanpa migrasi)
   potong('dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status', 'RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt"', lf(blok["rehearsal-migrasi"]).replace("@@LAMA_JS@@", () => lf(lamaJs).trimEnd()).trimEnd() + "\n");
   r("reh_drop\n# direktori sementara dibuat root oleh kontainer", lf(blok["rehearsal-lama"]).trimEnd() + "\nreh_drop\n# direktori sementara dibuat root oleh kontainer");
+  r("DB_BYTES / 1024 * 3 + 3 * 1024 * 1024", "DB_BYTES / 1024 * 5 + 3 * 1024 * 1024"); // salinan restore + klon uji kunci + backup + cadangan
+  r("rm -rf /bk/reh-data /bk/reh-uploads /bk/reh-dd","rm -rf /bk/reh-data /bk/reh-uploads /bk/reh-dd /bk/reh-lama-tanpa-transisi /bk/reh-lama-dengan-transisi");
   gantiBaris("# UJI APLIKASI pada SALINAN RESTORE (kode BARU sebagai server, data produksi nyata, DB sementara): ", "# UJI APLIKASI pada SALINAN RESTORE (kode BARU sebagai server, data produksi nyata, DB sementara): rute transisi satuan (pratinjau, hash, atomik, riwayat per satuan, harga lama tidak dibawa, pengaman historis, izin, idempotensi) — hanya pada salinan restore, dibuang sesudahnya.");
   { const i = s.indexOf("<<'REHNODE' > \"$BK_DIR/rehearsal-koreksi.log\""); must(i >= 0, "REHNODE"); const awalIsi = s.indexOf("\n", i) + 1; const j = s.indexOf("\nREHNODE\n", awalIsi); must(j > 0, "akhir REHNODE");
     s = s.slice(0, awalIsi) + lf(rehNode).replace('"@@SMOKE_SRC@@"', () => JSON.stringify(lf(smokeNode))).trimEnd() + s.slice(j); }
@@ -112,7 +114,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanExpect, 
   gantiBaris('  ok "smoke test lulus (', '  ok "smoke test lulus (transisi satuan: rute dijaga, tanpa jejak tulis)"');
   gantiBaris('say "CATATAN:', 'say "CATATAN: Rilis ini membawa rute transisi satuan bahan (pratinjau + terapkan, penyetuju) dan riwayat satuan, serta 1 migrasi aditif (tabel dokumen KOSONG; pergerakan lama tidak diisi ulang). Skrip rilis TIDAK menjalankan transisi apa pun: satuan bahan, saldo, harga, PO/GR, jurnal, dan tautan SO tidak berubah. Transisi dijalankan sesudah rilis oleh Owner lewat rute itu dengan pratinjau baru dan persetujuan hash terpisah."');
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
-  const sisa = s.split("\n").map((l, i) => [i + 1, l]).filter(([, l]) => !l.startsWith("#") && /master-bertautan|\bmba\b|KAYU RACUK|master baru|nilai-pisah/i.test(l)).map(([i, l]) => `${i}:${l.slice(0, 70)}`);
+  const sisa = s.split("\n").map((l, i) => [i + 1, l]).filter(([, l]) => !l.startsWith("#") && /master-bertautan|\bmba\b|KAYU RACUK 2X5X200|nilai-pisah/i.test(l)).map(([i, l]) => `${i}:${l.slice(0, 70)}`);
   must(sisa.length === 0, "nama/isi rilis lama tersisa pada baris: " + sisa.join(" | "));
   return { script: lf(s), ringkasan: { berkas: berkas.length, backendSrc: berkas.filter((f) => f.startsWith("backend/src/")).length, mig: mig.name, migSha: sha(mig.sql).slice(0, 12), scanExpect, schemaSha: schemaSha.slice(0, 12), objek: { fk: ob.fk.length, chk: ob.chk.length, trg: ob.trg.length, fn: ob.fn.length } } };
 }

@@ -11,7 +11,7 @@ NET_PROD="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}
 [ -n "$NET_PROD" ] || gagal_reh "jaringan docker produksi tidak terbaca (uji kode lama)"
 # KODE LAMA (image yang sedang melayani production) dijalankan sebagai SERVER terhadap skema bermigrasi: $1 = mode (tanpa-transisi|dengan-transisi), $2 = URL DB rehearsal, $3 = berkas log. Folder data/uploads TERISOLASI (BUKAN folder data production); env eksternal dinetralkan di dalam kode uji.
 jalankan_lama() {
-  local mode="$1" url="$2" log="$3" vd="$BK_DIR/reh-data/lama-$1"
+  local mode="$1" url="$2" log="$3" vd="$BK_DIR/reh-lama-$1"
   mkdir -p "$vd/data" "$vd/uploads" "$vd/dd"
   docker run --rm -i --network "$NET_PROD" --env-file "$PERSIST/backend/.env" -e DATABASE_URL="$url" -e LAMA_MODE="$mode" -e REH_PORT=4104 -v "$vd/data:/app/data" -v "$vd/uploads:/app/uploads" -v "$vd/dd:/frontend/dist-driver" "$ROLLBACK_TAG" node --input-type=module - <<'LAMANODE' > "$log" 2>&1
 @@LAMA_JS@@

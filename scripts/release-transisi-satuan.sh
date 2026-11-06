@@ -7,7 +7,7 @@
 #     (tabel dokumen tetap kosong; pergerakan lama TIDAK diisi ulang). Smoke pasca-switch = GET + POST yang DITOLAK sebelum menulis.
 #   • Gate: preflight (keadaan production SEGAR/LANJUT/TOLAK, pin sha256 migrasi + diff schema, pemindai DDL + uji negatif); backup + RESTORE rehearsal (migrate deploy pada salinan restore dari data nyata; skema tabel lama identik; kode baru
 #     berjalan sebagai SERVER terhadap salinan restore dan menjalankan transisi nyata HANYA pada salinan itu); TANPA build web (frontend/dist release aktif DIBAWA APA ADANYA dari disk); migrasi aditif ke production SEBELUM switch
-#     (backend lama tetap melayani); switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
+#     (backend lama tetap melayani; batas tunggu kunci 5 detik: database sibuk = gagal cepat tanpa sisa); switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
 #   • PENGUNCIAN: kunci deploy BERSAMA + kunci sendiri diambil ATOMIK; kepemilikan ditentukan proses (perangkat:inode fd 7/9), BUKAN nama berkas. GERBANG IDENTITAS KODE LIVE (hash blob semua berkas terlacak baseline) di fase 2, 6, dan TEPAT sebelum switch.
 #     Pembersihan release lama DINONAKTIFKAN; gerbang disk minimal 5 GiB tidak diturunkan.
 #
@@ -16,8 +16,8 @@
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/tsbr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA migrasi production dan TANPA switch
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/tsb.out 2>&1 < /dev/null &'   # rilis penuh
 #
-# ROLLBACK: kode aman di-rollback kapan pun. Migrasi ADITIF dibiarkan terpasang (kolom nullable, tabel dokumen, trigger penanda satuan, pagar satuan master); kode lama berjalan normal di atas skema bermigrasi.
-# Transisi yang SUDAH dijalankan lewat rute rilis ini (data) TIDAK dibalik oleh rollback kode; satuan master dan saldo satuan baru tetap. Rollback mengembalikan kode lama saja.
+# ROLLBACK: SEBELUM ada transisi tersimpan, kode aman di-rollback kapan pun (migrasi aditif dibiarkan terpasang; kode lama berjalan normal di atas skema bermigrasi — terbukti pada rehearsal). SESUDAH ada transisi tersimpan,
+# rollback RUTIN DITOLAK oleh scripts/rollback-guard-transisi-satuan.sh (exit 3): kode lama membaca riwayat pergerakan sebelum transisi dengan label satuan baru. Pengecualian hanya atas keputusan Owner beralasan tertulis. Transisi tidak pernah dibalik oleh rollback.
 # (dibangkitkan oleh scripts/gen-release-transisi-satuan.cjs dari scripts/release-master-bertautan.sh + templat scripts/templates/release-transisi-satuan/* + pustaka scripts/lib/{rehearsal,smoke}-transisi-satuan.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)
 set -Eeuo pipefail
 umask 077
@@ -28,12 +28,12 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-feat/transisi-satuan-bahan-on-5acf24db}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar = berhenti (backend/prisma: hanya migrasi rilis + schema.prisma).
 # Rilis backend + 1 migrasi aditif (diaudit, dipin sha256): apa pun di backend/prisma di luar migrasi rilis + schema.prisma = berhenti; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/prisma/migrations/20261231120000_transisi_satuan_bahan/migration\.sql|backend/prisma/schema\.prisma|backend/src/routes/inventory\.js|backend/src/services/inventoryLedger\.js|backend/src/services/nilaiPersediaan\.js|backend/src/services/transisiSatuanBahan\.js|backend/tests/integration/transisiSatuanBahan\.integration\.test\.js|scripts/gen-release-transisi-satuan\.cjs|scripts/lib/rehearsal-transisi-satuan\.mjs|scripts/lib/smoke-transisi-satuan\.mjs|scripts/release-transisi-satuan\.sh|scripts/templates/release-transisi-satuan/gate-prisma\.txt|scripts/templates/release-transisi-satuan/header\.txt|scripts/templates/release-transisi-satuan/keadaan\.txt|scripts/templates/release-transisi-satuan/rehearsal-migrasi\.txt|scripts/templates/release-transisi-satuan/rollback\.txt|scripts/templates/release-transisi-satuan/step6\.txt|scripts/templates/release-transisi-satuan/struktur\.txt|scripts/templates/release-transisi-satuan/vars\.txt)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261231120000_transisi_satuan_bahan/migration\.sql|backend/prisma/schema\.prisma|backend/src/routes/inventory\.js|backend/src/services/inventoryLedger\.js|backend/src/services/nilaiPersediaan\.js|backend/src/services/transisiSatuanBahan\.js|backend/tests/integration/transisiSatuanBahan\.integration\.test\.js|scripts/gen-release-transisi-satuan\.cjs|scripts/lib/rehearsal-kompat-lama-transisi-satuan\.mjs|scripts/lib/rehearsal-transisi-satuan\.mjs|scripts/lib/smoke-transisi-satuan\.mjs|scripts/release-transisi-satuan\.sh|scripts/rollback-guard-transisi-satuan\.sh|scripts/templates/release-transisi-satuan/gate-prisma\.txt|scripts/templates/release-transisi-satuan/header\.txt|scripts/templates/release-transisi-satuan/keadaan\.txt|scripts/templates/release-transisi-satuan/rehearsal-lama\.txt|scripts/templates/release-transisi-satuan/rehearsal-migrasi\.txt|scripts/templates/release-transisi-satuan/rollback\.txt|scripts/templates/release-transisi-satuan/step6\.txt|scripts/templates/release-transisi-satuan/struktur\.txt|scripts/templates/release-transisi-satuan/vars\.txt)$'
 BACKEND_SRC_EXPECT="backend/src/routes/inventory.js backend/src/services/inventoryLedger.js backend/src/services/nilaiPersediaan.js backend/src/services/transisiSatuanBahan.js"
 FRONTEND_SRC_EXPECT=""
 # Migrasi ADITIF yang SUDAH diaudit (nama + sha256 isi, LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
 MIG_NAME="20261231120000_transisi_satuan_bahan"
-MIG_PIN="089c20dc9387eb5df55b515c259ff76688f50e3de82958880fe693710a9a1219"
+MIG_PIN="156d87c11394609550714e811b582d7b09e8c7cbd65285a3714ba4e051d958c7"
 # Hitungan pernyataan migrasi (hasil pemindai) yang diaudit. Selisih = berhenti.
 SCAN_EXPECT='add_col=2|alter_lain=0|create_table=1|index=2|fk=1|fungsi=3|trigger=3'
 # Diff schema.prisma baseline→kandidat (U0, tanpa baris index dan nomor hunk) yang diaudit: sha256. Selisih = berhenti.
@@ -82,7 +82,11 @@ Release sebelumnya : ${PREV_DIR:-<belum terbaca>} (TIDAK dihapus/ditimpa)
 Image sebelumnya   : ${ROLLBACK_TAG:-<belum ditandai>}
 Backup + checksum  : ${BACKUP_FILE:-<belum dibuat>}
 Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya (bila sudah lewat tahap migrasi: struktur aditif terpasang, tabel dokumen KOSONG, tidak berbahaya bagi kode lama).
-Rilis ini membawa 1 migrasi ADITIF dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Rilis ini membawa 1 migrasi ADITIF dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch, JALANKAN GUARD DULU (baca-saja):
+   bash ${NEW_DIR}/scripts/rollback-guard-transisi-satuan.sh
+   - exit 0 = belum ada transisi tersimpan: rollback kode rutin aman. exit 3 = DITOLAK: ada transisi tersimpan; kode lama akan membaca riwayat pergerakan sebelum transisi dengan label satuan baru (saldo tetap benar). Jangan rollback rutin; perbaiki ke depan.
+   - Pengecualian HANYA atas keputusan Owner, dengan alasan tertulis: ROLLBACK_TRANSISI_IZIN="<alasan>" bash ${NEW_DIR}/scripts/rollback-guard-transisi-satuan.sh. exit 2 = guard gagal membaca: periksa dulu.
+Langkah rollback (hanya bila guard exit 0 atau ada izin Owner):
 Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT kode live lain (gerbang kode live membuktikan kode di container == folder == baseline diset sebelum rilis).
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
@@ -291,7 +295,7 @@ sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
 pindai_migrasi() {
   local t terlarang
   t="$(sql_bersih)"
-  terlarang="$(printf '%s\n' "$t" | grep -E 'DROP |DELETE FROM|UPDATE "|INSERT INTO|TRUNCATE|GRANT |REVOKE |CREATE EXTENSION|ALTER TYPE|RENAME |DISABLE TRIGGER|ON DELETE CASCADE|ON DELETE SET NULL' || true)"
+  terlarang="$(printf '%s\n' "$t" | grep -E 'DROP |DELETE FROM|UPDATE "|INSERT INTO|TRUNCATE|GRANT |REVOKE |CREATE EXTENSION|ALTER TYPE|RENAME |DISABLE TRIGGER|session_replication_role|SET ROLE|SET SESSION AUTHORIZATION|RESET ALL|ON DELETE CASCADE|ON DELETE SET NULL' || true)"
   if [ -n "$terlarang" ]; then echo "TERLARANG"; return 0; fi
   echo "add_col=$(printf '%s\n' "$t" | grep -c '^ALTER TABLE "stock_movements" ADD COLUMN')|alter_lain=$(printf '%s\n' "$t" | grep '^ALTER TABLE' | grep -vc '^ALTER TABLE "stock_movements" ADD COLUMN\|ADD CONSTRAINT')|create_table=$(printf '%s\n' "$t" | grep -c '^CREATE TABLE ')|index=$(printf '%s\n' "$t" | grep -c '^CREATE \(UNIQUE \)\?INDEX')|fk=$(printf '%s\n' "$t" | grep -c 'FOREIGN KEY')|fungsi=$(printf '%s\n' "$t" | grep -c '^CREATE OR REPLACE FUNCTION')|trigger=$(printf '%s\n' "$t" | grep -c '^CREATE TRIGGER')"
 }
@@ -317,6 +321,8 @@ harus_ditolak "FK CASCADE" "$(printf '%s\n' "$ALL_SQL" | sed 's/ON DELETE RESTRI
 harus_ditolak "trigger tambahan" "$(tambah_stmt 'CREATE TRIGGER "x_trg" BEFORE INSERT ON "units" FOR EACH ROW EXECUTE FUNCTION stock_movements_stamp_unit();')"
 harus_ditolak "fungsi tambahan" "$(tambah_stmt 'CREATE OR REPLACE FUNCTION evil() RETURNS trigger AS $$ BEGIN RETURN NEW; END $$ LANGUAGE plpgsql;')"
 harus_ditolak "DISABLE TRIGGER" "$(tambah_stmt 'ALTER TABLE "stock_movements" DISABLE TRIGGER ALL;')"
+harus_ditolak "SET session_replication_role" "$(tambah_stmt "SET session_replication_role = replica;")"
+harus_ditolak "SET ROLE" "$(tambah_stmt "SET ROLE postgres;")"
 harus_ditolak "CREATE EXTENSION" "$(tambah_stmt 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";')"
 harus_ditolak "GRANT" "$(tambah_stmt 'GRANT ALL ON "materials" TO PUBLIC;')"
 harus_ditolak "RENAME" "$(tambah_stmt 'ALTER TABLE "materials" RENAME COLUMN "unit" TO "u";')"
@@ -459,7 +465,7 @@ LQ() { psql_live -At -c "$1"; }
 # Keadaan production SAAT INI terhadap migrasi rilis (membaca production). SEGAR = migrasi belum terpasang dan tepat itu satu-satunya yang pending; LANJUT = migrasi SUDAH terpasang dan terbukti (checksum = berkas kandidat, 1 langkah, tabel kosong).
 # Selain itu = TOLAK (fail-closed). Dipakai di preflight dan diulang sesaat sebelum migrasi.
 keadaan_produksi() {
-  local sfx="$1" terpasang ntab nisi=0 raw row pend solo lama
+  local sfx="$1" gagalrow terpasang ntab nisi=0 raw row pend solo lama
   psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sebelum${sfx}.txt" || { echo "TOLAK: gagal membaca migrasi terpasang"; return 1; }
   sg ls-tree --name-only "$DEPLOY_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u > "$BK_DIR/cand-pra.txt"
   sg ls-tree --name-only "$BASE_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u > "$BK_DIR/base-pra.txt"
@@ -467,6 +473,8 @@ keadaan_produksi() {
   [ -z "$solo" ] || { echo "TOLAK: production memiliki migrasi yang TIDAK ada di kandidat: $(printf '%s' "$solo" | tr '\n' ' ')"; return 1; }
   lama="$(grep -vxF "$MIG_NAME" "$BK_DIR/applied-sebelum${sfx}.txt" || true)"
   [ "$lama" = "$(cat "$BK_DIR/base-pra.txt")" ] || { echo "TOLAK: migrasi terpasang (di luar migrasi rilis) BUKAN tepat himpunan baseline"; return 1; }
+  gagalrow="$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")"
+  [ "$gagalrow" = "0" ] || { echo "TOLAK: ada ${gagalrow} migrasi gagal/setengah jalan yang belum di-resolve (prisma migrate resolve --rolled-back <nama>)"; return 1; }
   terpasang="$(grep -Fxc "$MIG_NAME" "$BK_DIR/applied-sebelum${sfx}.txt" || true)"
   ntab="$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename = '${TBL_BARU}'")"
   [[ "$ntab" =~ ^[0-9]+$ ]] || { echo "TOLAK: hitungan tabel rilis bukan angka"; return 1; }
@@ -542,7 +550,7 @@ ok "dokumen pembanding dibekukan pada T0=${T0} UTC ($(awk -F'|' '{n+=$2} END{pri
 say "2b. Rilis backend-saja: tidak ada build web dan tidak ada node_modules frontend yang disalin; gerbang disk memperhitungkan salinan frontend/dist"
 NM_KB="$(du -sk "$PREV_DIR/frontend/dist" | cut -f1)"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
-[ "$AVAIL_KB" -ge $(( NM_KB * 2 + DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang"
+[ "$AVAIL_KB" -ge $(( NM_KB * 2 + DB_BYTES / 1024 * 5 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang"
 ok "ruang disk cukup"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
@@ -604,15 +612,160 @@ RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sebelum.txt" || { reh_drop; di
 ok "restore nyata IDENTIK dengan dokumen beku produksi (refund & pengeluaran final, baris jurnal, saldo per akun, pembayaran, PKR/unit final, muat, flag)"
 REH_PW="$(sed -n 's/^DATABASE_URL=\"\?postgresql:\/\/[^:]*:\([^@]*\)@.*/\1/p' "$PERSIST/backend/.env" | sed -n 1p)"
 [ -n "$REH_PW" ] || { reh_drop; die "tidak bisa membaca kata sandi DB dari .env untuk rehearsal"; }
-gagal_reh() { reh_drop; die "$1"; }
+KLON_DB="${REH_DB}_kunci"
+reh_drop_klon() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${KLON_DB}' and pid <> pg_backend_pid()" </dev/null >/dev/null 2>&1 || true; dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${KLON_DB}\"" </dev/null >/dev/null 2>&1 || true; }
+gagal_reh() { reh_drop_klon; reh_drop; die "$1"; }
+disk_mb() { df -BM --output=avail "$HOME" | tail -n 1 | tr -dc '0-9'; }
 S_SEBELUM="$(RPSQL "$SKEMA_SQL")"; [ -n "$S_SEBELUM" ] || gagal_reh "sidik jari skema rehearsal kosong"
 [ "$S_SEBELUM" = "$SKEMA_PRA" ] || gagal_reh "skema tabel lama pada RESTORE berbeda dari produksi (backup/restore bermasalah)"
 RH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
+KL_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${KLON_DB}"
+CPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$KLON_DB" -X -At -q -c "$1" </dev/null; }
+NET_PROD="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID_OLD" | awk '{print $1}')"
+[ -n "$NET_PROD" ] || gagal_reh "jaringan docker produksi tidak terbaca (uji kode lama)"
+# KODE LAMA (image yang sedang melayani production) dijalankan sebagai SERVER terhadap skema bermigrasi: $1 = mode (tanpa-transisi|dengan-transisi), $2 = URL DB rehearsal, $3 = berkas log. Folder data/uploads TERISOLASI (BUKAN folder data production); env eksternal dinetralkan di dalam kode uji.
+jalankan_lama() {
+  local mode="$1" url="$2" log="$3" vd="$BK_DIR/reh-lama-$1"
+  mkdir -p "$vd/data" "$vd/uploads" "$vd/dd"
+  docker run --rm -i --network "$NET_PROD" --env-file "$PERSIST/backend/.env" -e DATABASE_URL="$url" -e LAMA_MODE="$mode" -e REH_PORT=4104 -v "$vd/data:/app/data" -v "$vd/uploads:/app/uploads" -v "$vd/dd:/frontend/dist-driver" "$ROLLBACK_TAG" node --input-type=module - <<'LAMANODE' > "$log" 2>&1
+import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
+const require = createRequire(process.cwd() + "/");
+const jwt = require("jsonwebtoken");
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+const APP = process.env.APP_DIR ?? "/app";
+const imp = (p) => import(pathToFileURL(path.join(APP, p)).href);
+let gagal = 0; let n = 0;
+const cek = (nama, ok, d = "") => { n += 1; if (!ok) gagal += 1; console.log(`${ok ? "OK   " : "GAGAL"} ${nama}${d ? " — " + String(d).slice(0, 300) : ""}`); };
+const info = (nama, d = "") => console.log(`INFO  ${nama}${d ? " — " + String(d).slice(0, 300) : ""}`);
+const num = async (q, ...a) => Number((await prisma.$queryRawUnsafe(q, ...a))[0].n);
+// KOMPATIBILITAS ROLLBACK KODE: image LAMA (yang sedang melayani produksi) dijalankan sebagai SERVER terhadap salinan restore yang SUDAH bermigrasi. Prisma client lama TIDAK mengenal kolom/tabel baru.
+// MODE = "tanpa-transisi" (keadaan tepat sesudah migrasi: rollback rutin) atau "dengan-transisi" (sesudah transisi tersimpan: temuan untuk guard). Menulis HANYA pada DB rehearsal_* (dijaga di bawah), tidak pernah ke production.
+const MODE = process.env.LAMA_MODE ?? "tanpa-transisi";
+const nm = (await prisma.$queryRawUnsafe("select current_database() as n"))[0].n;
+if (!/^rehearsal_/.test(nm)) { cek("uji kode lama hanya pada DB rehearsal", false, nm); await prisma.$disconnect(); process.exit(1); }
+const { ROLE_PERMISSIONS, PERMISSIONS: P } = await imp("src/constants/permissions.js");
+const { neutralizeExternalEnv } = await imp("src/lib/stagingGuard.js"); neutralizeExternalEnv(process.env);
+const PORT = Number(process.env.REH_PORT ?? 4104); const BASE = `http://127.0.0.1:${PORT}`;
+const nT = await num("select count(*)::int n from material_unit_transitions");
+cek(`[${MODE}] image LAMA berjalan terhadap DB bermigrasi (tabel rilis ada; transisi tersimpan ${nT})`, MODE === "dengan-transisi" ? nT > 0 : nT === 0, `transisi=${nT}`);
+const child = spawn(process.execPath, ["src/index.js"], { cwd: APP, env: { ...process.env, PORT: String(PORT), DISABLE_BACKGROUND_JOBS: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+let log = ""; child.stdout.on("data", (d) => { log += d; }); child.stderr.on("data", (d) => { log += d; });
+const berhenti = () => { try { child.kill("SIGTERM"); } catch { /* sudah mati */ } };
+let sehat = false; for (let i = 0; i < 60 && !sehat; i++) { try { sehat = (await fetch(BASE + "/api/health")).ok; } catch { await new Promise((r) => setTimeout(r, 1000)); } }
+cek(`[${MODE}] server kode LAMA hidup terhadap skema baru (/api/health)`, sehat, sehat ? "" : log.slice(-300)); if (!sehat) { berhenti(); await prisma.$disconnect(); process.exit(1); }
+const rolesDari = async (u) => new Set([u.role, ...(await prisma.userRole.findMany({ where: { userId: u.id }, select: { role: true } })).map((r) => r.role)]);
+const bisa = (rs, izin) => [...rs].some((r) => (ROLE_PERMISSIONS[r] ?? []).includes(izin));
+const stamp = Date.now().toString(36);
+const semua = await prisma.user.findMany({ where: { active: true }, orderBy: { id: "asc" } }); const infoU = []; for (const u of semua) infoU.push({ u, rs: await rolesDari(u) });
+const aktor = infoU.find((x) => bisa(x.rs, P.INVENTORY_READ) && bisa(x.rs, P.INVENTORY_WRITE) && bisa(x.rs, P.FINANCE_READ))?.u ?? await prisma.user.create({ data: { name: "REH Lama", email: `reh-lama-${stamp}@example.test`, passwordHash: "x", role: "OWNER" } });
+const tok = jwt.sign({ id: aktor.id, name: aktor.name, role: aktor.role, roles: [...(await rolesDari(aktor))] }, process.env.JWT_SECRET, { expiresIn: "25m" });
+const http = async (url) => { const r = await fetch(BASE + url, { headers: { Authorization: "Bearer " + tok } }); let json = null; try { json = await r.json(); } catch { /* bukan JSON */ } return { status: r.status, json }; };
+
+// 1. jalur baca yang ada tetap berfungsi
+const ls = await http("/api/inventory/materials"); cek(`[${MODE}] kode lama: daftar bahan terbaca (200)`, ls.status === 200 && Array.isArray(ls.json?.data ?? ls.json), `${ls.status}`);
+const lap = await http("/api/inventory/nilai-persediaan"); cek(`[${MODE}] kode lama: Laporan Nilai Persediaan terbaca (200)`, lap.status === 200, `${lap.status}`);
+
+// 2. jalur tulis stok yang ada (penulis resmi kode LAMA) tetap berfungsi dan DIBERI PENANDA SATUAN oleh trigger DB
+const { postStockMovement } = await imp("src/services/inventoryLedger.js");
+const bertransisi = (await prisma.$queryRawUnsafe("select distinct material_id::text id from material_unit_transitions")).map((r) => r.id);
+const biasa = (await prisma.$queryRawUnsafe("select m.id::text id, m.code, m.unit::text unit from materials m where m.active and m.id::text <> all($1::text[]) and exists (select 1 from stock_movements s where s.material_id = m.id) order by m.code limit 1", bertransisi))[0];
+if (biasa) {
+  const s0 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", biasa.id);
+  const a = await prisma.$transaction(async (tx) => postStockMovement(tx, { materialId: biasa.id, type: "RECEIPT", qty: 1, note: "uji rollback kode lama", createdById: aktor.id }));
+  const b = await prisma.$transaction(async (tx) => postStockMovement(tx, { materialId: biasa.id, type: "ISSUE", qty: -1, note: "uji rollback kode lama (balik)", createdById: aktor.id }));
+  const ra = (await prisma.$queryRawUnsafe("select unit_at_entry::text u, unit_transition_id from stock_movements where id = $1::uuid", a.id))[0]; const rb = (await prisma.$queryRawUnsafe("select unit_at_entry::text u from stock_movements where id = $1::uuid", b.id))[0];
+  const s1 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", biasa.id);
+  cek(`[${MODE}] kode lama: penerimaan + pengeluaran lewat penulis resmi berfungsi (bahan ${biasa.code}); saldo kembali`, Math.abs(s1 - s0) < 1e-9, `${s0} → ${s1}`);
+  cek(`[${MODE}] pergerakan yang ditulis kode LAMA tetap diberi penanda satuan master oleh trigger DB (${biasa.unit})`, ra?.u === biasa.unit && rb?.u === biasa.unit && ra.unit_transition_id === null, `${ra?.u}/${rb?.u}`);
+} else info(`[${MODE}] uji tulis bahan biasa dilewati`, "tidak ada bahan aktif berpergerakan di luar bahan bertransisi");
+
+// 3. pagar DB: kode lama tidak bisa mengganti satuan bahan berpergerakan (kode lama tidak pernah melakukannya; bila mencoba, ditolak tanpa sisa)
+const ledger = (await prisma.$queryRawUnsafe("select m.id::text id, m.code, m.unit::text unit from materials m where exists (select 1 from stock_movements s where s.material_id = m.id) order by m.code limit 1"))[0];
+let ditolak = false; try { await prisma.material.update({ where: { id: ledger.id }, data: { unit: ledger.unit === "KG" ? "PCS" : "KG" } }); } catch (e) { ditolak = /tidak boleh diubah langsung/.test(String(e.message)); }
+cek(`[${MODE}] kode lama: ubah satuan bahan berpergerakan (${ledger.code}) DITOLAK pagar DB; satuan tidak berubah`, ditolak && (await prisma.$queryRawUnsafe("select unit::text u from materials where id = $1::uuid", ledger.id))[0].u === ledger.unit);
+
+if (MODE === "dengan-transisi") {
+  // 4. TEMUAN untuk guard: apa yang kode lama baca untuk bahan yang SUDAH bertransisi
+  const stokApi = await http("/api/inventory/stock"); cek("kode lama: daftar saldo /stock terbaca (200)", stokApi.status === 200 && Array.isArray(stokApi.json), `${stokApi.status}`);
+  const ids = bertransisi; let salahBaca = 0; let salahSaldo = 0; let dinilai = 0; const ringkas = [];
+  for (const id of ids) {
+    const m = (await prisma.$queryRawUnsafe("select code, unit::text unit from materials where id = $1::uuid", id))[0];
+    const mv = await http(`/api/inventory/movements?materialId=${id}&limit=500`); const rows = mv.json?.data ?? mv.json ?? [];
+    const lamaP = (await prisma.$queryRawUnsafe("select count(*)::int n from stock_movements where material_id = $1::uuid and (unit_at_entry is distinct from $2::\"MaterialUnit\" and (unit_at_entry is not null or created_at < (select min(created_at) from material_unit_transitions t where t.material_id = $1::uuid)))", id, m.unit))[0].n;
+    const sdb = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", id);
+    const sApi = Number((Array.isArray(stokApi.json) ? stokApi.json : []).find((x) => x.materialId === id)?.balance ?? NaN);
+    const b = (lap.json?.baris ?? []).find((x) => x.kode === m.code);
+    if (Array.isArray(rows) && rows.length && lamaP > 0) salahBaca += 1;
+    if (!Number.isFinite(sApi) || Math.abs(sApi - sdb) > 1e-6) salahSaldo += 1;
+    if (b && b.status === "DINILAI") dinilai += 1;
+    ringkas.push(`${m.code}: ${rows.length} baris dibaca kode lama; ${lamaP} di antaranya bersatuan LAMA tetapi berlabel ${m.unit}; status laporan ${b?.status ?? "-"}`);
+  }
+  for (const r of ringkas) info(`temuan kode lama ${r}`);
+  cek("kode lama: saldo bahan bertransisi (jumlah qty) TETAP sama dengan saldo satuan baru (transisi menutup lalu membuka saldo)", salahSaldo === 0, `${salahSaldo} bahan berbeda`);
+  cek("kode lama: Laporan Nilai Persediaan TIDAK menilai bahan bertransisi dengan harga satuan lama (tidak ada status DINILAI)", dinilai === 0, `${dinilai} bahan berstatus DINILAI`);
+  info("TEMUAN GUARD", `${salahBaca} dari ${ids.length} bahan bertransisi akan dibaca kode LAMA dengan riwayat berlabel satuan master baru padahal pergerakan sebelum transisi bersatuan lama → rollback rutin DITOLAK guard`);
+  cek("kode lama menampilkan riwayat bahan bertransisi tanpa membedakan periode satuan (dasar penolakan guard terbukti, bukan dugaan)", salahBaca > 0 || ids.length === 0, `${salahBaca}`);
+}
+console.log(`RINGKAS_LAMA mode=${MODE} cek=${n} gagal=${gagal}`);
+berhenti(); await prisma.$disconnect(); process.exit(gagal ? 1 : 0);
+LAMANODE
+}
 SM_N0="$(RPSQL "select count(*) from stock_movements")"
+DISK_0="$(disk_mb)"; say "disk bebas sebelum migrasi rehearsal: ${DISK_0} MiB (gerbang minimal 5120 MiB)"
 if [ "$KEADAAN" = "SEGAR" ]; then
+  # ── BATAS TUNGGU KUNCI: salinan restore dikloning; satu sesi menahan ACCESS SHARE pada stock_movements dan materials; migrasi HARUS gagal cepat (lock_timeout 5 detik), tanpa menggantung dan tanpa sisa ──
+  dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -X -q -c "CREATE DATABASE \"${KLON_DB}\" TEMPLATE \"${REH_DB}\"" </dev/null || gagal_reh "gagal mengkloning DB rehearsal untuk uji batas tunggu kunci"
+  DISK_1="$(disk_mb)"
+  ( dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$KLON_DB" -X -q -c "BEGIN; SELECT count(*) FROM stock_movements; SELECT count(*) FROM materials; SELECT pg_sleep(60); COMMIT;" </dev/null >/dev/null 2>&1 ) &
+  BLK=$!
+  sleep 4
+  [ "$(CPSQL "select count(*) from pg_stat_activity where datname='${KLON_DB}' and query like '%pg_sleep(60)%' and pid <> pg_backend_pid()")" -ge 1 ] || gagal_reh "sesi penahan kunci uji tidak aktif"
+  SECONDS=0
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$KL_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-kunci.log" 2>&1 &
+  MP=$!
+  for _ in $(seq 1 75); do kill -0 "$MP" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$MP" 2>/dev/null; then kill "$MP" 2>/dev/null || true; gagal_reh "migrasi MENGGANTUNG lebih dari 75 detik saat kunci ditahan (batas tunggu tidak bekerja)"; fi
+  RC_KUNCI=0; wait "$MP" || RC_KUNCI=$?
+  DUR_KUNCI="$SECONDS"
+  [ "$RC_KUNCI" != "0" ] || gagal_reh "migrasi SEHARUSNYA gagal saat kunci ditahan (lock_timeout tidak bekerja)"
+  [ "$DUR_KUNCI" -le 40 ] || gagal_reh "migrasi gagal setelah ${DUR_KUNCI} detik (batas tunggu ~5 detik; terlalu lama)"
+  grep -qi 'lock timeout\|canceling statement due to lock' "$BK_DIR/migrate-kunci.log" || { tail -n 12 "$BK_DIR/migrate-kunci.log"; gagal_reh "kegagalan migrasi BUKAN karena batas tunggu kunci"; }
+  [ "$(CPSQL "select count(*) from information_schema.columns where table_schema='public' and table_name='stock_movements' and column_name in ('unit_at_entry','unit_transition_id')")" = "0" ] || gagal_reh "migrasi gagal tetapi meninggalkan kolom (tidak atomik)"
+  [ "$(CPSQL "select count(*) from pg_tables where schemaname='public' and tablename='material_unit_transitions'")" = "0" ] || gagal_reh "migrasi gagal tetapi meninggalkan tabel (tidak atomik)"
+  [ "$(CPSQL "select count(*) from pg_proc where proname in ('stock_movements_stamp_unit','materials_unit_guard','material_unit_transitions_append_only')")" = "0" ] || gagal_reh "migrasi gagal tetapi meninggalkan fungsi (tidak atomik)"
+  [ "$(CPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || gagal_reh "migrasi gagal tetapi skema tabel lama berubah"
+  CPSQL "select pg_terminate_backend(pid) from pg_stat_activity where datname='${KLON_DB}' and query like '%pg_sleep(60)%' and pid <> pg_backend_pid()" >/dev/null || true
+  wait "$BLK" 2>/dev/null || true
+  ok "batas tunggu kunci: dengan sesi penahan kunci, migrasi GAGAL CEPAT dalam ${DUR_KUNCI} detik (tidak menggantung), tanpa sisa kolom/tabel/fungsi, skema lama tidak berubah"
+  # pemulihan terdokumentasi: tandai gagal-ditarik lalu ulangi saat lengang
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$KL_URL" backend npx prisma migrate resolve --rolled-back "$MIG_NAME" </dev/null > "$BK_DIR/migrate-resolve.log" 2>&1 || { tail -n 8 "$BK_DIR/migrate-resolve.log"; gagal_reh "migrate resolve --rolled-back GAGAL (prosedur pemulihan tidak terbukti)"; }
+  SECONDS=0
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$KL_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-klon.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-klon.log"; gagal_reh "migrasi ulang setelah resolve GAGAL pada klon"; }
+  DUR_KLON="$SECONDS"
+  [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-klon.log")" = "1" ] || gagal_reh "migrasi ulang pada klon harus menerapkan TEPAT 1 migrasi"
+  struktur_baru CPSQL gagal_reh
+  ok "pemulihan terbukti: migrate resolve --rolled-back lalu migrasi ulang pada salinan lengang berhasil dalam ${DUR_KLON} detik (data produksi ${SM_N0} pergerakan); struktur lengkap tervalidasi"
+  # kode LAMA terhadap skema baru TANPA transisi (keadaan tepat sesudah migrasi = rollback rutin)
+  jalankan_lama tanpa-transisi "$KL_URL" "$BK_DIR/rehearsal-kode-lama-tanpa.log" || { cat "$BK_DIR/rehearsal-kode-lama-tanpa.log"; gagal_reh "uji KODE LAMA terhadap skema bermigrasi (tanpa transisi) GAGAL — rollback kode TIDAK terbukti aman"; }
+  ok "rollback kode (tanpa transisi): $(grep -c '^OK' "$BK_DIR/rehearsal-kode-lama-tanpa.log") pemeriksaan lulus — kode LAMA berjalan sebagai server di atas skema baru, jalur stok berfungsi, trigger menandai satuan, ubah satuan bahan berpergerakan ditolak"
+  GR_TANPA=0; GUARD_DB="$KLON_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-tanpa.log" 2>&1 || GR_TANPA=$?
+  [ "$GR_TANPA" = "0" ] && grep -q 'GUARD OK' "$BK_DIR/guard-tanpa.log" || { cat "$BK_DIR/guard-tanpa.log"; gagal_reh "guard rollback seharusnya MENGIZINKAN (exit 0) bila belum ada transisi tersimpan (exit ${GR_TANPA})"; }
+  ok "guard rollback: tanpa transisi tersimpan → exit 0 (rollback rutin boleh)"
+  DISK_2="$(disk_mb)"; reh_drop_klon
+  [ "$(dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -At -q -c "select count(*) from pg_database where datname='${KLON_DB}'" </dev/null)" = "0" ] || gagal_reh "DB klon uji kunci tidak terhapus"
+  ok "disk: bebas awal ${DISK_0} MiB; sesudah klon ${DISK_1} MiB; puncak uji klon ${DISK_2} MiB; klon dihapus"
+  RPSQL "select 1" >/dev/null || gagal_reh "DB rehearsal utama tidak dapat dibaca setelah uji klon"
+  SECONDS=0
   dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy di DB rehearsal GAGAL"; }
+  DUR_REH="$SECONDS"
   [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-rehearsal.log")" = "1" ] || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy harus menerapkan TEPAT 1 migrasi rilis"; }
+  ok "durasi migrasi pada salinan restore (${SM_N0} pergerakan, DB $(RPSQL "select pg_size_pretty(pg_database_size(current_database()))")): ${DUR_REH} detik (sesi lengang)"
 else
+  say "keadaan LANJUT: uji batas tunggu kunci dan kode lama (tanpa transisi) dilewati — production sudah bermigrasi"
   dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy (LANJUT) di DB rehearsal GAGAL"; }
   ! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal.log" || gagal_reh "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu (seharusnya tidak ada yang pending)"
 fi
@@ -693,7 +846,12 @@ if (!ada.length) { info("uji nyata dilewati", "tidak ada bahan rencana yang masi
   const mintaBody = ada.map((m) => ({ materialId: m.id, satuanBaru: m.baru, saldoBaru: m.saldo, kewajibanTerbuka: m.code === "LIST-WIBING-PUTIH" ? [{ rujukan: "GR-051126-02", jumlah: 10, satuan: "ROLL", keterangan: "penerimaan satuan lama belum diterjemahkan" }] : m.code === "BENANG-KATUN-PUTIH" ? [{ rujukan: "GR-051126-02", jumlah: 4, satuan: "PACK", keterangan: "penerimaan satuan lama belum diterjemahkan" }] : [] }));
   const pr = await http("POST", "/api/inventory/materials/transisi-satuan/pratinjau", tA, { transisi: mintaBody });
   cek("pratinjau data nyata: 200, memuat hash untuk setiap bahan, tanpa menulis", pr.status === 200 && pr.json?.transisi?.length === ada.length && (await jejak()) && sama(await jejak(), j0), `${pr.status} bahan=${ada.length} boleh=${pr.json?.bolehDiterapkan}`);
-  for (const t of pr.json?.transisi ?? []) info(`pratinjau ${t.kode}: ${t.satuanLama}→${t.satuanBaru} saldo lama ${t.saldoLama}; gerak ${t.pergerakan.jumlah}; catatan EXCEL ${t.catatanHistoris.excelBelumDiposting} (tautan ${t.catatanHistoris.tautanSOAktif}); penghalang ${t.penghalang.map((p) => p.kode).join(",") || "-"}`);
+  for (const t of pr.json?.transisi ?? []) info(`PRATINJAU-TINJAUAN ${t.kode}: ${t.satuanLama}→${t.satuanBaru}; saldo ${t.saldoLama}→${t.saldoBaru ?? "-"}; pergerakan ${t.pergerakan.jumlah}; catatan EXCEL ${t.catatanHistoris.excelBelumDiposting} (tautan ${t.catatanHistoris.tautanSOAktif}); cakupan ${t.cakupan}; kewajiban terbuka ${(t.kewajibanTerbuka ?? []).length}; harga tidak dibawa ${t.hargaTidakDibawa ? "ya" : "-"}; penghalang ${t.penghalang.map((p) => p.kode).join(",") || "-"}; hash ${String(t.hash).slice(0, 12)}`);
+  { const kayu = await kodeAda("KAYU-RACUK-2X5"); if (!kayu) info("PRATINJAU-TINJAUAN KAYU-RACUK-2X5", "tidak ada di salinan restore"); else {
+    const kp = await http("POST", "/api/inventory/adjustments/koreksi-saldo/pratinjau", tA, { materialId: kayu.id, jumlahFisik: 149 });
+    cek("KAYU-RACUK-2X5 tetap ROD (batang utuh, tanpa faktor): pratinjau Koreksi Saldo menuju 149 terbaca (200), tanpa menulis", kp.status === 200 && kayu.unit === "ROD" && sama(await jejak(), j0), `${kp.status} satuan ${kayu.unit}`);
+    info("PRATINJAU-TINJAUAN KAYU-RACUK-2X5 Koreksi Saldo", JSON.stringify({ satuan: kayu.unit, saldoSebelum: kp.json?.saldoSebelum ?? kp.json?.saldo ?? null, jumlahBaru: kp.json?.jumlahBaru ?? kp.json?.jumlahFisik ?? 149, selisih: kp.json?.selisih ?? null }));
+  } }
   const dasar = { sumber: "Uji rehearsal (salinan restore): hasil SO final", alasan: "Uji rehearsal transisi satuan pada data nyata salinan restore", rujukanHash: "rehearsal-transisi-satuan-0001", tautan: { soTanggal: new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10), sumber: "Uji rehearsal (salinan restore)", alasan: "Tautan SO dipasang bersama transisi satuan (rehearsal)", rujukanHash: "rehearsal-transisi-satuan-0001" } };
   const body = (hashes) => ({ ...dasar, transisi: mintaBody.map((m, i) => ({ ...m, hashPratinjau: hashes[i] })) });
   const hashes = (pr.json?.transisi ?? []).map((t) => t.hash);
@@ -702,6 +860,15 @@ if (!ada.length) { info("uji nyata dilewati", "tidak ada bahan rencana yang masi
   const g1 = await http("POST", "/api/inventory/materials/transisi-satuan/terapkan", tA, body(buruk), { "Idempotency-Key": `reh-tsb-${stamp}-0000` });
   cek("satu hash tidak cocok membatalkan SELURUH batch: 409, tidak ada satuan berubah, tidak ada dokumen/tautan baru", g1.status === 409 && (await num("select count(*)::int n from material_unit_transitions")) === 0 && (await num("select count(*)::int n from activity_events where entity_type = 'pernyataan_historis_so' and event_type = 'SO_DITAUTKAN'")) === tt0 && (await Promise.all(ada.map(async (m) => (await kodeAda(m.code)).unit === m.unit))).every(Boolean), `${g1.status} ${g1.json?.code}`);
   const g2 = await http("POST", "/api/inventory/materials/transisi-satuan/terapkan", tB, body(hashes), { "Idempotency-Key": k1 }); cek("bukan penyetuju: 403, tidak menulis", g2.status === 403 && (await num("select count(*)::int n from material_unit_transitions")) === 0, `${g2.status}`);
+  { // KEGAGALAN DI LANGKAH TERAKHIR pada data nyata (salinan restore): semua bahan dalam batch batal, tanpa sisa
+    const terakhir = ada[ada.length - 1];
+    const sebelum = ({ unit: Object.fromEntries(await Promise.all(ada.map(async (m) => [m.code, (await kodeAda(m.code)).unit]))), gerak: Object.fromEntries(await Promise.all(ada.map(async (m) => [m.code, await num("select count(*)::int n from stock_movements where material_id = $1::uuid", m.id)]))), tautan: await num("select count(*)::int n from activity_events where entity_type = 'pernyataan_historis_so' and event_type = 'SO_DITAUTKAN'"), j: await jejak() });
+    await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION reh_gagal_transisi() RETURNS trigger AS $ BEGIN IF NEW.material_id = '${terakhir.id}'::uuid THEN RAISE EXCEPTION 'gagal uji rehearsal di dokumen terakhir'; END IF; RETURN NEW; END $ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe("CREATE TRIGGER reh_gagal_trg BEFORE INSERT ON material_unit_transitions FOR EACH ROW EXECUTE FUNCTION reh_gagal_transisi()");
+    let gx; try { gx = await http("POST", "/api/inventory/materials/transisi-satuan/terapkan", tA, body(hashes), { "Idempotency-Key": `reh-tsb-${stamp}-gagal` }); } finally { await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS reh_gagal_trg ON material_unit_transitions"); await prisma.$executeRawUnsafe("DROP FUNCTION IF EXISTS reh_gagal_transisi()"); }
+    const sesudah = ({ unit: Object.fromEntries(await Promise.all(ada.map(async (m) => [m.code, (await kodeAda(m.code)).unit]))), gerak: Object.fromEntries(await Promise.all(ada.map(async (m) => [m.code, await num("select count(*)::int n from stock_movements where material_id = $1::uuid", m.id)]))), tautan: await num("select count(*)::int n from activity_events where entity_type = 'pernyataan_historis_so' and event_type = 'SO_DITAUTKAN'"), j: await jejak() });
+    cek("gagal di dokumen TERAKHIR dari batch data nyata: galat (>=400), TIDAK ada satuan/pergerakan/dokumen/tautan/tabel bisnis yang berubah pada bahan mana pun", gx.status >= 400 && JSON.stringify(sebelum.unit) === JSON.stringify(sesudah.unit) && JSON.stringify(sebelum.gerak) === JSON.stringify(sesudah.gerak) && sebelum.tautan === sesudah.tautan && sama(sebelum.j, sesudah.j) && (await num("select count(*)::int n from material_unit_transitions")) === 0, `${gx.status}`);
+  }
   const t1 = await http("POST", "/api/inventory/materials/transisi-satuan/terapkan", tA, body(hashes), { "Idempotency-Key": k1 });
   cek("terapkan batch data nyata: 201, semua bahan bertransisi dalam satu transaksi", t1.status === 201 && t1.json?.transisi?.length === ada.length, `${t1.status} ${JSON.stringify(t1.json).slice(0, 160)}`);
   if (t1.status === 201) {
@@ -729,14 +896,41 @@ if (!ada.length) { info("uji nyata dilewati", "tidak ada bahan rencana yang masi
   }
 }
 const j3 = await jejak(); cek("seluruh uji: tabel bisnis tidak berubah selain pergerakan penutup/pembuka, dokumen transisi, tautan SO, dan pemetaan/evaluasi catatan pada salinan restore", sama(j0, j3), JSON.stringify({ j0, j3 }));
+// ── C. jalur stok resmi tetap berfungsi dan bertanda satuan (setelah semua pembanding jejak di atas) ──
+{ const { postStockMovement } = await imp("src/services/inventoryLedger.js"); const bertransisi = (await prisma.$queryRawUnsafe("select distinct material_id::text id from material_unit_transitions")).map((r) => r.id);
+  const cobaTulis = async (m, label) => { const s0 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", m.id);
+    const a = await prisma.$transaction(async (tx) => postStockMovement(tx, { materialId: m.id, type: "RECEIPT", qty: 1, note: "uji rehearsal jalur stok", createdById: penyetuju.id })); const b = await prisma.$transaction(async (tx) => postStockMovement(tx, { materialId: m.id, type: "ISSUE", qty: -1, note: "uji rehearsal jalur stok (balik)", createdById: penyetuju.id }));
+    const ra = (await prisma.$queryRawUnsafe("select unit_at_entry::text u, unit_transition_id from stock_movements where id = $1::uuid", a.id))[0]; const rb = (await prisma.$queryRawUnsafe("select unit_at_entry::text u from stock_movements where id = $1::uuid", b.id))[0]; const s1 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", m.id);
+    cek(`jalur stok resmi (${label} ${m.code}): penerimaan +1 dan pengeluaran -1 berfungsi, saldo kembali, kedua pergerakan bertanda satuan ${m.unit} oleh trigger`, Math.abs(s1 - s0) < 1e-9 && ra?.u === m.unit && rb?.u === m.unit && ra.unit_transition_id === null, `${s0}→${s1} ${ra?.u}/${rb?.u}`); };
+  const bt = bertransisi.length ? (await prisma.$queryRawUnsafe("select id::text id, code, unit::text unit from materials where id = $1::uuid", bertransisi[0]))[0] : null; if (bt) await cobaTulis(bt, "bertransisi");
+  const bs = (await prisma.$queryRawUnsafe("select m.id::text id, m.code, m.unit::text unit from materials m where m.active and m.id::text <> all($1::text[]) and exists (select 1 from stock_movements s where s.material_id = m.id) order by m.code limit 1", bertransisi))[0]; if (bs) await cobaTulis(bs, "tanpa transisi");
+  const lompat = await http("POST", "/api/inventory/movements/issue", tA, { materialId: bt?.id ?? bs?.id, qty: 1e9, reason: "uji rehearsal: pengeluaran melebihi saldo harus ditolak" });
+  cek("pengaman saldo minus jalur stok yang ada tetap bekerja: pengeluaran melebihi saldo ditolak (>=400), tidak menulis", lompat.status >= 400, `${lompat.status}`); }
+// ── D. TEMUAN BASELINE (bukan dampak kandidat): kebocoran nominal Laporan Nilai Persediaan untuk peran tanpa izin finance:read — hanya dilaporkan (INFO), tanpa mengutip data ──
+{ const peranTanpa = Object.entries(ROLE_PERMISSIONS).filter(([, izin]) => izin.includes(P.INVENTORY_READ) && !izin.includes(P.FINANCE_READ)).map(([r]) => r).sort(); const peranDengan = Object.entries(ROLE_PERMISSIONS).filter(([, izin]) => izin.includes(P.INVENTORY_READ) && izin.includes(P.FINANCE_READ)).map(([r]) => r).sort();
+  if (peranTanpa.length) { const uTanpa = infoU.find((x) => [...x.rs].every((r) => peranTanpa.includes(r)) && bisa(x.rs, P.INVENTORY_READ))?.u ?? await prisma.user.create({ data: { name: "REH Tanpa Finance", email: `reh-tsb-nf-${stamp}@example.test`, passwordHash: "x", role: peranTanpa[0] } });
+    const tNf = await token(uTanpa); const lf = await http("GET", "/api/inventory/nilai-persediaan", tNf); const lo = await http("GET", "/api/inventory/nilai-persediaan", tA); const alasanNf = JSON.stringify(lf.json?.finance?.alasan ?? []); const alasanOwner = JSON.stringify(lo.json?.finance?.alasan ?? []); const rupiah = /Rp\s?[0-9]/;
+    info("TEMUAN-BASELINE kebocoran nominal GET /api/inventory/nilai-persediaan", JSON.stringify({ status: lf.status, izinNominalResponsTanpaFinance: lf.json?.izin?.nominal ?? null, peranTerdampak: peranTanpa, peranPelihatNominal: peranDengan, finance_alasan_memuat_nominal_Rp_tanpaFinance: rupiah.test(alasanNf), finance_alasan_memuat_nominal_Rp_denganFinance: rupiah.test(alasanOwner), saldoAkunNullTanpaFinance: lf.json?.finance?.saldo === null, barisHargaNullTanpaFinance: (lf.json?.baris ?? []).every((b) => b.harga === null) })); }
+  else info("TEMUAN-BASELINE kebocoran nominal", "tidak ada peran inventory:read tanpa finance:read"); }
 berhenti(); await prisma.$disconnect();
 console.log("PEMERIKSAAN=" + n + " gagal=" + gagal);
 process.exit(gagal === 0 ? 0 : 1);
 REHNODE
 ok "uji aplikasi pada SALINAN RESTORE: $(grep -c '^OK' "$BK_DIR/rehearsal-koreksi.log") pemeriksaan lulus ($(grep -c '^SKIP' "$BK_DIR/rehearsal-koreksi.log") dilewati, alasan tercatat); $(tail -n 1 "$BK_DIR/rehearsal-koreksi.log")"
+# KODE LAMA setelah transisi tersimpan (DB rehearsal yang SAMA, sesudah semua transisi uji): temuan yang menjadi dasar guard rollback. Saldo tetap benar; riwayat sebelum transisi dibaca dengan label satuan baru → rollback rutin ditolak.
+jalankan_lama dengan-transisi "$RH_URL" "$BK_DIR/rehearsal-kode-lama-dengan.log" || { cat "$BK_DIR/rehearsal-kode-lama-dengan.log"; reh_drop; die "uji KODE LAMA terhadap skema bermigrasi DENGAN transisi GAGAL (lihat rehearsal-kode-lama-dengan.log)"; }
+ok "kode LAMA di atas skema baru DENGAN transisi tersimpan: $(grep -c '^OK' "$BK_DIR/rehearsal-kode-lama-dengan.log") pemeriksaan lulus; temuan: $(grep '^INFO  TEMUAN GUARD' "$BK_DIR/rehearsal-kode-lama-dengan.log" | sed 's/^INFO  //')"
+GR_DENGAN=0; GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-dengan.log" 2>&1 || GR_DENGAN=$?
+[ "$GR_DENGAN" = "3" ] && grep -q 'GUARD DITOLAK' "$BK_DIR/guard-dengan.log" || { cat "$BK_DIR/guard-dengan.log"; reh_drop; die "guard rollback seharusnya MENOLAK (exit 3) bila ada transisi tersimpan (exit ${GR_DENGAN})"; }
+GR_PENDEK=0; ROLLBACK_TRANSISI_IZIN="singkat" GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-pendek.log" 2>&1 || GR_PENDEK=$?
+[ "$GR_PENDEK" = "3" ] || { cat "$BK_DIR/guard-pendek.log"; reh_drop; die "alasan pengecualian terlalu pendek harus tetap DITOLAK (exit ${GR_PENDEK})"; }
+GR_IZIN=0; ROLLBACK_TRANSISI_IZIN="keputusan Owner uji rehearsal: rollback darurat" GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-izin.log" 2>&1 || GR_IZIN=$?
+[ "$GR_IZIN" = "0" ] && grep -q 'PERINGATAN' "$BK_DIR/guard-izin.log" || { cat "$BK_DIR/guard-izin.log"; reh_drop; die "pengecualian Owner dengan alasan tertulis seharusnya exit 0 dengan peringatan (exit ${GR_IZIN})"; }
+[ "$(RPSQL "select count(*) from material_unit_transitions")" -ge 1 ] || { reh_drop; die "guard tidak boleh mengubah data transisi"; }
+ok "guard rollback: ada transisi tersimpan → exit 3 DITOLAK (daftar bahan dicetak); alasan pendek tetap ditolak; pengecualian Owner beralasan tertulis → exit 0 dengan peringatan; transisi tidak dibalik oleh guard"
 reh_drop
 # direktori sementara dibuat root oleh kontainer: dihapus lewat kontainer (rm biasa ditolak); kegagalan pembersihan tidak menggagalkan rilis
-dcp "$NEW_DIR" run --rm --no-deps -T -v "$BK_DIR:/bk" backend sh -c 'rm -rf /bk/reh-data /bk/reh-uploads /bk/reh-dd' </dev/null >/dev/null 2>&1 || true
+dcp "$NEW_DIR" run --rm --no-deps -T -v "$BK_DIR:/bk" backend sh -c 'rm -rf /bk/reh-data /bk/reh-uploads /bk/reh-dd /bk/reh-lama-tanpa-transisi /bk/reh-lama-dengan-transisi' </dev/null >/dev/null 2>&1 || true
 ok "rehearsal lulus: isi ${FP_N} tabel lama IDENTIK sebelum vs sesudah migrasi; uji tulis transisi satuan dilakukan HANYA pada salinan restore (DB rehearsal_*, dibuang); production hanya dibaca lalu DB sementara dihapus"
 PHASE="5c-uji-pra-switch"; say "5c. Uji fase pra-switch (TANPA switch): kunci sendiri/lain, bagian kritis, baseline bergeser; lalu gerbang yang SAMA dengan fase 7 pada production nyata"
 uji_gerbang_kunci
@@ -768,7 +962,9 @@ cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sebelum2.txt" || die "daft
 [ "$(psql_live -At -c "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema tabel lama produksi berubah sejak preflight"
 SM_NULL0="$(psql_live -At -c "select count(*) from stock_movements")"
 if [ "$KEADAAN" = "SEGAR" ]; then
-  dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null || die "migrate deploy GAGAL; backend baru TIDAK dinyalakan (backend lama tetap melayani)"
+  SECONDS=0
+  dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null || die "migrate deploy GAGAL (bila karena batas tunggu kunci 5 detik: database sibuk; DDL transaksional, tidak ada sisa). Backend baru TIDAK dinyalakan; backend lama tetap melayani. Pemulihan: prisma migrate resolve --rolled-back ${MIG_NAME} (image baru, DATABASE_URL production), lalu ulangi rilis saat database lengang"
+  DUR_MIG="$SECONDS"
 else
   dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | tee "$BK_DIR/migrate-status-lanjut.log" | grep -i 'up to date' >/dev/null || die "keadaan LANJUT: migrate status production tidak 'up to date'"
 fi
@@ -779,7 +975,7 @@ struktur_baru LQ die
 [ "$(psql_live -At -c "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema tabel lama BERUBAH oleh migrasi (jangan switch)"
 [ "$(psql_live -At -c "select count(*) from stock_movements where unit_at_entry is null")" -ge "$SM_NULL0" ] || die "pergerakan lama terisi ulang oleh migrasi (seharusnya tetap NULL)"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "backend lama tidak sehat setelah tahap migrasi"
-ok "migrasi diterapkan (${MIG_SEBELUM} → $(( MIG_SEBELUM + 1 ))); tabel dokumen kosong, struktur lengkap tervalidasi; skema tabel lama identik; pergerakan lama tidak terisi ulang; backend lama tetap sehat (trigger penanda satuan aktif untuk penulisan oleh kode lama)"
+ok "migrasi diterapkan dalam ${DUR_MIG:-0} detik (batas tunggu kunci 5 detik; tanpa menggantung) (${MIG_SEBELUM} → $(( MIG_SEBELUM + 1 ))); tabel dokumen kosong, struktur lengkap tervalidasi; skema tabel lama identik; pergerakan lama tidak terisi ulang; backend lama tetap sehat (trigger penanda satuan aktif untuk penulisan oleh kode lama)"
 COUNT_SQL="select 'stock_movements', count(*) from stock_movements union all select 'biaya_beku', count(*) from stock_movement_biaya_operasional union all select 'harga_berlaku', count(*) from material_harga_berlaku union all select 'jurnal', count(*) from fin_journal_entries union all select 'penyesuaian', count(*) from stock_adjustment_requests union all select 'goods_receipts', count(*) from goods_receipts union all select 'persediaan_awal', count(*) from fin_inventory_openings union all select 'pengaturan_finance', count(*) from fin_settings union all select 'hasil_so', count(*) from activity_events where entity_type = 'hasil_so_bahan' union all select 'materials', count(*) from materials union all select 'tautan_so', count(*) from activity_events where entity_type = 'pernyataan_historis_so' and event_type = 'SO_DITAUTKAN' union all select 'transisi_satuan', count(*) from material_unit_transitions union all select 'gerak_bersatuan', count(*) from stock_movements where unit_at_entry is not null"
 psql_live -At -c "$COUNT_SQL" > "$BK_DIR/hitung-pra-switch.txt" || die "hitung baris pra-switch gagal"; ok "pra-switch: hitung baris stok/biaya beku/harga/penyesuaian/GR/persediaan awal/pengaturan Finance/hasil SO/jurnal/master/tautan SO/transisi satuan/pergerakan bersatuan dicatat"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migrasi setengah jalan di produksi; JANGAN switch"
