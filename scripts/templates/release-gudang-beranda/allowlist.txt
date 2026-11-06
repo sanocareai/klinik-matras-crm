@@ -1,0 +1,11 @@
+frontend/src/features/warehouse/beranda/DaftarKerja.jsx
+frontend/src/features/warehouse/beranda/HasilCariServer.jsx
+frontend/src/features/warehouse/beranda/KartuRingkasan.jsx
+frontend/src/features/warehouse/beranda/PanelPendukung.jsx
+frontend/src/features/warehouse/beranda/ToolbarBeranda.jsx
+frontend/src/features/warehouse/beranda/berandaLogika.js
+frontend/src/pages/warehouse/WarehouseDashboard.jsx
+frontend/src/styles/sanss-gudang-beranda.css
+frontend/tests/gudangBerandaLogika.test.js
+frontend/tests/gudangUxTahap1.test.js
+frontend/tests/gudangUxTahap4.test.js
