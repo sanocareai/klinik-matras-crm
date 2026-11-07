@@ -108,6 +108,8 @@ import "./styles/gudang-tipografi.css";
 import "./styles/sanss-gudang-dok.css";
 // Nilai Persediaan (kandidat laporan baca-saja, Nov 2026) — kelas .nip-*; berdiri sendiri.
 import "./styles/sanss-gudang-nilai.css";
+// Bahasa visual Apple bersama (Gelombang 1: Main Hub, Delivery, All Teams)
+import "./styles/sanss-apple.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

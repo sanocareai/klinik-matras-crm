@@ -80,7 +80,7 @@ test("Mode tempel: hanya di layar lebar, Dialog tetap di bawah itu; satu-lapisan
 test("Kulit Gudang: hanya divisi warehouse; ikon satu keluarga SVG garis tanpa aset luar; font tidak diubah", () => {
   const l = baca("src/components/Layout.jsx");
   assert.ok(l.includes('crmShell && divisionKey === "warehouse" && "gud-skin"'));
-  assert.ok(l.includes('divisionKey === "warehouse") && !IS_DRIVER_APP && !CRM_SKIN_OFF'));
+  assert.ok(l.includes('divisionKey === "warehouse" || apSkin) && !IS_DRIVER_APP && !CRM_SKIN_OFF')); // + apSkin (Main Hub/Delivery/All Teams, Gelombang 1); kelas gud-skin tetap hanya untuk warehouse
   const ik = baca("src/components/gudangIcons.jsx");
   assert.ok(!/https?:|href=|<image|fetch\(/.test(ik.replace(/xmlns|import React from "react";/g, "")), "tanpa aset eksternal");
   assert.match(ik, /stroke="currentColor"/);

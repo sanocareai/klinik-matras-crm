@@ -955,7 +955,10 @@ export default function Layout({ user, onLogout }) {
   // legacy role=ADMIN.
   const isAdmin = isAdminUser(user);
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
-  const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse") && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  // Gelombang 1 redesain Apple (Nov 2026): Main Hub, Delivery (armada), dan All Teams (kendali) ikut kerangka baru; `apSkin` = tipografi Apple/Inter (styles/sanss-apple.css).
+  const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF; // pekerja lapangan (driver/helper) tetap pada tampilan ringkas mereka
+  const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse" || apSkin) && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  useWorkspaceFont(apSkin, "apple");
   useWorkspaceFont(crmShell && divisionKey === "bengkel"); // tipografi Produksi juga untuk portal di <body>; dilepas saat pindah workspace
   useWorkspaceFont(crmShell && divisionKey === "warehouse", "gudang"); // tipografi Gudang (Apple/Inter) juga untuk portal di <body>; dilepas saat pindah workspace
   // Daftar halaman untuk palette pencarian = menu yang BOLEH dilihat pengguna (sumber sama dengan sidebar).
@@ -1072,7 +1075,7 @@ export default function Layout({ user, onLogout }) {
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
     <div
-      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin", crmShell && divisionKey === "bengkel" && "prod-skin", crmShell && divisionKey === "warehouse" && "gud-skin")}
+      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin", crmShell && divisionKey === "bengkel" && "prod-skin", crmShell && divisionKey === "warehouse" && "gud-skin", apSkin && "ap-skin")}
       data-division={divisionKey || "hub"}
       // data-driver-app (9 September 2026) — pagar retheme tipografi APK
       // Driver (styles/driver-app-theme.css). Sama disiplin dgn IS_DRIVER_APP

@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar, Handshake , Landmark } from "lucide-react";
+import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar, Handshake, Landmark } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer } from "@/components/ui/page.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { WORKSPACE_ART } from "@/features/portal/WorkspaceArt.jsx";
-import { cn } from "@/lib/utils.js";
+import { KartuWidget } from "@/components/apple/Apple.jsx";
 import { rolesOf } from "@/lib/roles.js";
 import { landingPathFor, readLastWorkerMode } from "@/lib/landing.js";
 
@@ -61,282 +60,26 @@ export const PORTAL_ICONS = {
   b2b: Handshake,
 };
 
-// Lebar kartu per posisi, meniru `.division-grid` di mockup (12 kolom:
-// 3 kartu span-4 di baris pertama, 2 kartu span-6 di baris kedua).
-//
-// Daftar portal BERGANTUNG ROLE — user bisa melihat 1..5 kartu, bukan selalu
-// 5 seperti di mockup. Hardcode pola 5-kartu saja akan menyisakan kolom
-// menggantung untuk user lain (mis. 2 portal → 2 kartu sempit + sepertiga
-// baris kosong), jadi tiap jumlah punya pola yang menghabiskan 12 kolom.
-const SPAN_BY_COUNT = {
-  1: [12],
-  2: [6, 6],
-  3: [4, 4, 4],
-  4: [6, 6, 6, 6],
-  5: [4, 4, 4, 6, 6],
-};
-const SPAN_CLASS = {
-  4: "xl:col-span-4",
-  6: "xl:col-span-6",
-  12: "xl:col-span-12",
-};
 
-function spanClassFor(index, total) {
-  const pattern = SPAN_BY_COUNT[total];
-  const span = pattern ? pattern[index] : 4;
-  return SPAN_CLASS[span] || SPAN_CLASS[4];
-}
-
-// Latar bergaris halus — dipakai hero, header kartu, dan visual kartu gelap.
-function gridBackground(color, size) {
-  return {
-    backgroundImage: `linear-gradient(${color} 1px, transparent 1px), linear-gradient(90deg, ${color} 1px, transparent 1px)`,
-    backgroundSize: `${size}px ${size}px`,
-  };
-}
+// ── REDESAIN APPLE (Gelombang 1, Nov 2026) ─────────────────────────────────────────────────────────────────────────────
+// Main Hub disederhanakan: sambutan satu baris + dua tombol capsule + kartu widget berwarna per workspace (ubin ikon, angka nyata dari /auth/portal-summary, satu tombol Buka).
+// Deskripsi panjang tiap workspace dipindah ke ikon info "i" (klik/ketuk/keyboard). Hero ilustrasi, chip mengambang, dan paragraf pengantar dihapus.
+// TIDAK berubah: daftar portal & izin (GET /auth/me/portals), auto-skip portal tunggal, tujuan klik (portal.path), angka kartu (hanya dari server; tanpa angka = "Buka workspace").
+const NADA_PORTAL = { growth: "biru", armada: "langit", bengkel: "jingga", warehouse: "ungu", kendali: "indigo", finance: "hijau", b2b: "pink" };
 
 function todayText() {
-  return new Intl.DateTimeFormat("id-ID", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date());
+  return new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
 }
 
-// ── Ilustrasi kasur di hero ────────────────────────────────────────────────
-// Port dari `.mattress` + `.art-orbit` di mockup. Murni dekoratif → seluruh
-// blok aria-hidden, dan disembunyikan di bawah lg persis seperti mockup
-// (`@media(max-width:860px){.hero-art{display:none}}`) supaya di HP ruang
-// terpakai untuk teks, bukan hiasan.
-function HeroArt({ chips }) {
-  return (
-    <div aria-hidden className="relative hidden h-[250px] place-items-center lg:grid">
-      <div className="absolute h-[180px] w-[330px] -rotate-[8deg] rounded-full border border-white/[0.18]" />
-      <div className="absolute h-[260px] w-[260px] rotate-[14deg] rounded-full border border-white/[0.18]" />
-
-      <div
-        className="relative h-[150px] w-[330px] rounded-[32px]"
-        style={{
-          transform: "perspective(800px) rotateX(58deg) rotateZ(-16deg)",
-          background: "linear-gradient(145deg,#fff,#DDE9FF)",
-          boxShadow: "0 36px 50px rgba(4,20,52,.32), inset 0 -18px 26px rgba(56,113,222,.18)",
-        }}
-      >
-        <div className="absolute inset-[13px] rounded-[24px] border-2 border-dashed border-[rgba(20,87,217,.22)]" />
-        <span className="absolute bottom-[26px] right-[42px] rotate-[2deg] text-[20px] font-black tracking-[.12em] text-[#1457D9]">
-          SANO
-        </span>
-      </div>
-
-      {chips.map((chip, i) => (
-        <span
-          key={chip.text}
-          className={cn(
-            "absolute flex items-center gap-2 rounded-[14px] bg-white/[0.93] px-3 py-2.5 text-[10px] font-extrabold text-[#10213D] shadow-[0_16px_35px_rgba(2,15,40,.22)]",
-            i === 0 ? "left-[18px] top-[28px]" : "bottom-[30px] right-[3px]"
-          )}
-        >
-          <span
-            className={cn(
-              "h-[9px] w-[9px] rounded-full",
-              chip.tone === "amber" ? "bg-[#C87912]" : "bg-[#0D9A6C]"
-            )}
-          />
-          {chip.text}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// ── Hero biru ──────────────────────────────────────────────────────────────
-function PortalHero({ summary, onOpenDashboard }) {
-  // Chip mengambang — maksimal 2 (posisinya di mockup memang cuma dua titik).
-  const chips = [];
-  if (summary?.bengkel) chips.push({ tone: "emerald", text: `${summary.bengkel.value} unit dikerjakan` });
-  if (summary?.warehouse) chips.push({ tone: "amber", text: `${summary.warehouse.value} item di bawah minimum` });
-  if (chips.length === 0 && summary?.armada) chips.push({ tone: "emerald", text: `${summary.armada.value} job hari ini` });
-  if (chips.length === 0 && summary?.growth) chips.push({ tone: "emerald", text: `${summary.growth.value} lead dalam proses` });
-
-  return (
-    <section
-      className="relative isolate min-h-[320px] overflow-hidden rounded-[26px] px-6 py-8 text-white sm:px-10 sm:py-[38px] lg:grid lg:grid-cols-[minmax(0,1.02fr)_minmax(420px,.98fr)] lg:items-center"
-      style={{
-        background:
-          "radial-gradient(circle at 9% 18%, rgba(112,164,255,.48), transparent 31%), radial-gradient(circle at 82% 50%, rgba(68,128,246,.48), transparent 36%), linear-gradient(135deg, #071A3A, #1457D9)",
-      }}
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.09]"
-        style={{
-          ...gridBackground("rgba(255,255,255,.5)", 42),
-          maskImage: "linear-gradient(90deg,#000,transparent 82%)",
-          WebkitMaskImage: "linear-gradient(90deg,#000,transparent 82%)",
-        }}
-      />
-
-      <div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.17] bg-white/[0.08] px-2.5 py-[7px] text-[10px] font-extrabold uppercase tracking-[.08em]">
-          <span className="h-[7px] w-[7px] rounded-full bg-[#65EAB9] shadow-[0_0_0_5px_rgba(101,234,185,.11)]" />
-          Platform Operasional SANSS
-        </span>
-
-        <h2 className="mt-[18px] max-w-[620px] text-[35px] font-bold leading-[1.0] tracking-[-.055em] sm:text-[44px] xl:text-[58px]">
-          Satu sistem terintegrasi untuk seluruh operasional SANO.
-        </h2>
-
-        <p className="mt-3 max-w-[560px] text-[15px] leading-[1.6] text-white/[0.72]">
-          Dari lead, produksi, inventory, hingga pengiriman—setiap divisi bekerja dengan data
-          dan alur yang terhubung di SANSS.
-        </p>
-
-        <div className="mt-[25px] flex flex-col gap-2.5 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => onOpenDashboard()}
-            className="rounded-[13px] bg-white px-4 py-3 text-[12px] font-extrabold text-[#0B2454] transition-transform hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-          >
-            Buka Dashboard Terintegrasi
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenDashboard("/orders")}
-            className="inline-flex items-center justify-center gap-1.5 rounded-[13px] border border-white/20 bg-white/[0.08] px-4 py-3 text-[12px] font-extrabold text-white backdrop-blur transition-transform hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-          >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.4} /> Buat order baru
-          </button>
-        </div>
-      </div>
-
-      <HeroArt chips={chips} />
-    </section>
-  );
-}
-
-// ── Kartu satu workspace ───────────────────────────────────────────────────
-function WorkspaceCard({ portal, stat, span, onOpen }) {
+function KartuPortal({ portal, stat, onOpen }) {
   const Icon = PORTAL_ICONS[portal.key] || Users;
-  const Art = WORKSPACE_ART[portal.key];
-
-  // Kartu "All Teams" memakai varian visual GELAP di mockup
-  // (`.division-card.dashboard-card`) — satu-satunya kartu yang beda, sebagai
-  // penanda bahwa ia ringkasan lintas divisi, bukan divisi itu sendiri.
-  const dark = portal.key === "kendali";
-
   return (
-    // Mockup memakai <button> untuk kartu ini. DI SINI SENGAJA div+role:
-    // isi kartu mengandung <h4> dan <p> (flow content), dan menaruh itu di
-    // dalam <button> menghasilkan HTML tidak valid — judul kartu juga hilang
-    // dari daftar heading yang dipakai pengguna screen reader untuk melompat
-    // antar bagian. Perilaku keyboard-nya disamakan manual di onKeyDown
-    // (Enter + Space), jadi tidak ada yang berkurang dibanding <button>.
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(portal)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen(portal);
-        }
-      }}
-      className={cn(
-        // rounded-card (bukan rounded-[24px] custom lama) SENGAJA — supaya
-        // ikut wildcard kaca `[class*="rounded-card"]` (delivery-dark.css/
-        // -light.css) sama seperti panggung pembungkus di atas, D-156.
-        "group flex min-h-[342px] cursor-pointer flex-col overflow-hidden rounded-card border border-line bg-surface text-left",
-        "shadow-card transition-all duration-200",
-        "hover:-translate-y-[5px] hover:border-accent/40 hover:shadow-[0_20px_48px_rgba(15,40,85,.14)]",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2",
-        span
-      )}
-    >
-      {/* Visual atas — ilustrasi SVG per divisi */}
-      <div
-        className={cn(
-          "relative h-[176px] overflow-hidden border-b",
-          dark ? "border-[#0A285F]" : "border-[#E2EAF7]"
-        )}
-        style={
-          dark
-            ? { background: "linear-gradient(140deg,#0A285F,#174DBA 54%,#3768E7)" }
-            : { background: "linear-gradient(145deg,#F8FAFF 0%,#EDF3FF 48%,#DCE8FF 100%)" }
-        }
-      >
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            ...gridBackground(dark ? "rgba(255,255,255,.10)" : "rgba(30,86,190,.065)", 28),
-            maskImage: "linear-gradient(140deg,#000,transparent 82%)",
-            WebkitMaskImage: "linear-gradient(140deg,#000,transparent 82%)",
-          }}
-        />
-        <div
-          aria-hidden
-          className={cn(
-            "absolute -right-[70px] -top-[85px] h-[190px] w-[190px] rounded-full",
-            dark ? "bg-white/[0.08]" : "bg-[rgba(71,126,235,.10)]"
-          )}
-        />
-
-        {Art ? (
-          <div className="relative z-[1] h-full w-full [&>svg]:h-full [&>svg]:w-full">
-            <Art />
-          </div>
-        ) : (
-          // Divisi baru yang belum punya ilustrasi tetap tampil rapi (ikon
-          // besar di tengah), bukan kotak kosong.
-          <div className="relative z-[1] grid h-full w-full place-items-center">
-            <Icon className={cn("h-12 w-12", dark ? "text-white/80" : "text-[#2F73F2]")} strokeWidth={1.6} />
-          </div>
-        )}
-
-        <span
-          className={cn(
-            "absolute right-3.5 top-3.5 z-[3] inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[9px] font-extrabold uppercase tracking-[.06em] backdrop-blur",
-            dark
-              ? "border border-white/[0.18] bg-white/[0.14] text-white"
-              : "border border-white/80 bg-white/[0.82] text-[#0D9A6C] shadow-[0_8px_22px_rgba(16,48,104,.08)]"
-          )}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-current" /> Aktif
-        </span>
+    <KartuWidget nada={NADA_PORTAL[portal.key] || "biru"} Glif={Icon} judul={portal.label} info={portal.description} infoLabel={`Tentang ${portal.label}`} onBuka={() => onOpen(portal)} testid={`portal-${portal.key}`}>
+      <div className="mt-1">
+        {stat ? (<><div className="ap-w-angka" data-testid={`portal-angka-${portal.key}`}>{stat.value}</div><p className="ap-w-label">{stat.label}</p></>) : <p className="ap-w-label">Buka workspace</p>}
       </div>
-
-      {/* Isi kartu — token DS v2 (bg-surface, text-ink, bg-accentbg, text-accent)
-          gantikan bg-white/hex hardcode, D-156, supaya theme dan kaca-aware
-          sama seperti pembungkus di atas. */}
-      <div className="flex min-h-[165px] flex-1 flex-col bg-surface px-5 pb-[18px] pt-[19px]">
-        <h4 className="text-[18px] font-bold leading-[1.18] tracking-[-.035em] text-ink">
-          {portal.label}
-        </h4>
-        <p className="mt-[7px] max-w-[430px] text-[11px] leading-[1.55] text-ink3">
-          {portal.description}
-        </p>
-
-        <div className="mt-auto flex items-end justify-between gap-4 pt-3.5">
-          {stat ? (
-            <div>
-              <strong className="block text-[22px] font-bold leading-none tracking-[-.045em] text-ink">
-                {stat.value}
-              </strong>
-              <span className="mt-[5px] block text-[8px] font-extrabold uppercase tracking-[.09em] text-ink3">
-                {stat.label}
-              </span>
-            </div>
-          ) : (
-            <span className="text-[11px] text-ink3">Buka workspace</span>
-          )}
-
-          <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[13px] bg-accentbg text-accent transition-all group-hover:translate-x-[3px] group-hover:brightness-95">
-            <ArrowRight className="h-[17px] w-[17px]" strokeWidth={2} />
-          </span>
-        </div>
-      </div>
-    </div>
+      <span className="ap-w-aksi">Buka <ArrowRight size={15} strokeWidth={2} aria-hidden="true" /></span>
+    </KartuWidget>
   );
 }
 
@@ -410,74 +153,26 @@ export default function Portal() {
     );
   }
 
+  const awal = (me?.name || "").trim().split(/\s+/)[0];
   return (
-    <PageContainer>
-      {/* Baris sambutan + tanggal — `.welcome-line` di mockup */}
-      <div className="mb-[18px] flex items-center justify-between gap-4">
+    <PageContainer fluid className="gud-halaman">
+      <header className="ap-kepala">
         <div>
-          <h1 className="text-[22px] font-bold tracking-[-.035em] text-ink sm:text-[24px]">
-            Selamat datang di SANSS{me?.name ? `, ${me.name}` : ""} 👋
-          </h1>
-          <p className="mt-[5px] text-[12px] text-ink3">
-            Pilih workspace untuk mulai mengelola operasional.
-          </p>
+          <h1>{awal ? `Halo, ${awal}` : "Selamat datang di SANSS"}</h1>
+          <p>Pilih workspace untuk mulai bekerja.</p>
         </div>
-        <div className="hidden shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3 py-2.5 text-[11px] font-bold text-ink2 sm:inline-flex">
-          <Calendar className="h-[15px] w-[15px]" strokeWidth={1.9} />
-          <span>{todayText()}</span>
+        <div className="ap-kepala-aksi">
+          <span className="ap-pil" data-testid="portal-tanggal"><Calendar size={15} strokeWidth={1.9} aria-hidden="true" /> {todayText()}</span>
+          <button type="button" className="ap-tombol ap-tombol-utama" onClick={() => navigate(portals[0].path)} data-testid="portal-dashboard">Dashboard terintegrasi</button>
+          <button type="button" className="ap-tombol ap-tombol-tint" onClick={() => navigate("/orders")} data-testid="portal-order"><Plus size={15} strokeWidth={2.2} aria-hidden="true" /> Buat order</button>
         </div>
-      </div>
+      </header>
 
-      {/* Panggung yang membungkus hero + grid — `.hub-stage` di mockup.
-          D-156 (13 September 2026, laporan owner: "main hub belum di
-          redesign") — SEBELUMNYA `bg-white`/hex hardcode tetap putih di
-          mode gelap (teks gelap di atas latar gelap = tidak terbaca).
-          Diganti token DS v2 (bg-surface/border-line/text-ink*) yang
-          otomatis ikut tema DAN otomatis ikut kaca lewat wildcard
-          `.glass-division .card`/`[class*="rounded-card"]` — sama pola
-          dengan halaman glass pilot lain, TANPA CSS baru. */}
-      <div className="rounded-card border border-line bg-surface p-3 shadow-card sm:p-5">
-        <PortalHero
-          summary={summary}
-          onOpenDashboard={(path) => navigate(path || portals[0].path)}
-        />
-
-        <div className="mx-1 mb-[15px] mt-[30px] flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h3 className="mb-[5px] text-[20px] font-bold tracking-[-.035em] text-ink">
-              Pilih workspace kamu
-            </h3>
-            <p className="text-[11px] text-ink3">
-              Masuk ke divisi untuk membuka modul dan aktivitas operasional terkait.
-            </p>
-          </div>
-          <span className="text-[10px] font-extrabold text-accent">
-            {portals.length} workspace tersedia
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 gap-[15px] md:grid-cols-2 xl:grid-cols-12">
-          {portals.map((portal, i) => (
-            <WorkspaceCard
-              key={portal.key}
-              portal={portal}
-              stat={summary?.[portal.key]}
-              span={spanClassFor(i, portals.length)}
-              // REVISI 30 Agustus 2026 (owner) — MEMBALIK keputusan 1 Agustus
-              // di komentar atas file ini sekali lagi: klik kartu sekarang
-              // langsung ke halaman kerja workspace (`p.path`, field yang
-              // SAMA dipakai auto-skip role tunggal di atas), BUKAN mampir
-              // command center (/portal/:key) dulu. Alasan: command center
-              // itu extra klik tanpa nilai tambah begitu Recent Activity
-              // (satu-satunya bagian yang dulu tidak ada padanannya di
-              // Dashboard) sudah dipindah ke sana — lihat RecentActivityCard.jsx
-              // & Dashboard.jsx. DivisionPage.jsx (command center) TIDAK
-              // dihapus, cuma sudah tidak ada jalan normal menujunya dari UI;
-              // dibiarkan hidup kalau suatu saat perlu dikembalikan.
-              onOpen={(p) => navigate(p.path)}
-            />
-          ))}
-        </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="portal-kartu">
+        {portals.map((portal) => (
+          // Klik kartu langsung ke halaman kerja workspace (portal.path) — keputusan 30 Agustus 2026 tidak berubah.
+          <KartuPortal key={portal.key} portal={portal} stat={summary?.[portal.key]} onOpen={(p) => navigate(p.path)} />
+        ))}
       </div>
     </PageContainer>
   );

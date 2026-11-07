@@ -6,7 +6,8 @@ import {
   Plus, AlertTriangle, Truck as TruckIcon, Package, CalendarClock, Search, UserPlus, ChevronDown,
   Navigation, CheckCircle2, Users, History, ChevronRight, X, ShieldCheck, Activity,
 } from "lucide-react";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { PageContainer, PageBody } from "@/components/ui/page.jsx";
+import { KartuWidget, InfoI, Ubin } from "@/components/apple/Apple.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -19,7 +20,6 @@ import {
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import Avatar from "@/components/Avatar.jsx";
-import DashboardSnapshot from "@/features/armada/components/DashboardSnapshot.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { toWIB, formatRelatif } from "@/utils/formatDate.js";
@@ -510,32 +510,22 @@ export default function ArmadaDashboard() {
   }, [jobs]);
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="Delivery &amp; Fulfillment"
-        // Subjudul menyebut ANGKA antrean + SLA (redesain Control Tower) —
-        // kalimat generik "kelola jadwal, penugasan…" sama isinya tiap hari
-        // dan berhenti dibaca setelah hari pertama; yang berubah tiap pagi
-        // adalah berapa order menumpuk DAN berapa yang sudah terlambat.
-        subtitle={
-          loading
-            ? "Memuat kondisi operasional…"
-            : `Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman — ${unscheduled?.length ?? 0} job menunggu dijadwalkan` +
-              (overdueJobs.length ? `, ${overdueJobs.length} job terlambat dari jadwal` : "") + "."
-        }
-        actionsBelow
-        actions={
-          <>
-            <DateRangePicker value={range} onChange={setRange} />
-            <Button size="sm" variant="ghost" onClick={() => navigate("/armada/pengaturan?tab=armada&action=tambah")}>
-              <TruckIcon size={14} /> Tambah Kendaraan
-            </Button>
-            <Button size="sm" onClick={() => navigate("/armada/jobs")}>
-              <Plus size={14} /> Buat Job
-            </Button>
-          </>
-        }
-      />
+    <PageContainer fluid className="gud-halaman">
+      {/* REDESAIN APPLE (Gelombang 1): kepala ringkas — judul + angka antrean/SLA satu baris; penjelasan di ikon info. Data, aksi, dan tujuan tombol tidak berubah. */}
+      <header className="ap-kepala">
+        <div>
+          <h1>Delivery &amp; Fulfillment</h1>
+          <p data-testid="armada-subjudul">
+            {loading ? "Memuat…" : `${unscheduled?.length ?? 0} menunggu dijadwalkan${overdueJobs.length ? ` · ${overdueJobs.length} terlambat` : ""}`}
+            <InfoI label="Tentang dashboard Delivery" kiri>Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman. Angka mengikuti rentang tanggal yang dipilih.</InfoI>
+          </p>
+        </div>
+        <div className="ap-kepala-aksi">
+          <DateRangePicker value={range} onChange={setRange} />
+          <button type="button" className="ap-tombol ap-tombol-abu" onClick={() => navigate("/armada/pengaturan?tab=armada&action=tambah")}><TruckIcon size={15} /> Tambah kendaraan</button>
+          <button type="button" className="ap-tombol ap-tombol-utama" onClick={() => navigate("/armada/jobs")} data-testid="armada-buat-job"><Plus size={15} /> Buat job</button>
+        </div>
+      </header>
 
       <PageBody>
         {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
@@ -554,48 +544,33 @@ export default function ArmadaDashboard() {
             {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[120px] animate-pulse rounded-card bg-inset" />)}
           </div>
         ) : (
-          <DashboardSnapshot
-            primary={{
-              label: "Perlu Dijadwalkan", value: unscheduled?.length ?? 0,
-              sub: "Order menunggu driver & tanggal", icon: CalendarClock,
-              onClick: () => navigate("/armada/jobs?status=UNSCHEDULED"),
-            }}
-            secondary={[
-              {
-                key: "jobs", label: "Job — " + formatRangeText(range), value: jobs?.length ?? 0,
-                sub: `${pickupCount} Pengambilan · ${deliveryCount} Pengiriman`, tone: "accent", icon: Package,
-                onClick: () => navigate("/armada/jobs"),
-              },
-              {
-                key: "drivers", label: "Driver Aktif", value: driversActiveCount,
-                sub: `dari ${drivers.length} driver terdaftar`, tone: "accent", icon: Users,
-              },
-              {
-                key: "sla", label: "Terlambat (SLA)", value: overdueJobs.length,
-                sub: overdueJobs.length ? "job lewat dari jadwal" : "Tidak ada keterlambatan",
-                tone: overdueJobs.length ? "red" : "green", icon: AlertTriangle,
-              },
-              {
-                key: "selesai", label: "Selesai", value: completedCount,
-                sub: `dari ${jobs?.length ?? 0} job — ${formatRangeText(range)}`, tone: "green", icon: CheckCircle2,
-                onClick: () => navigate("/armada/jobs?status=COMPLETED"),
-              },
-            ]}
-          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5" data-testid="armada-ringkasan">
+            <KartuWidget nada="jingga" Glif={CalendarClock} judul="Perlu dijadwalkan" info="Order menunggu driver dan tanggal." onBuka={() => navigate("/armada/jobs?status=UNSCHEDULED")} testid="ar-k-perlu">
+              <div className="ap-w-angka" data-testid="ar-n-perlu">{unscheduled?.length ?? 0}</div><p className="ap-w-label">order</p>
+            </KartuWidget>
+            <KartuWidget nada="biru" Glif={Package} judul={"Job · " + formatRangeText(range)} info={`${pickupCount} pengambilan · ${deliveryCount} pengiriman`} onBuka={() => navigate("/armada/jobs")} testid="ar-k-job">
+              <div className="ap-w-angka" data-testid="ar-n-job">{jobs?.length ?? 0}</div><p className="ap-w-label">{pickupCount} ambil · {deliveryCount} kirim</p>
+            </KartuWidget>
+            <KartuWidget nada="langit" Glif={Users} judul="Driver aktif" info={`dari ${drivers.length} driver terdaftar`} testid="ar-k-driver">
+              <div className="ap-w-angka" data-testid="ar-n-driver">{driversActiveCount}</div><p className="ap-w-label">dari {drivers.length} driver</p>
+            </KartuWidget>
+            <KartuWidget nada="pink" Glif={AlertTriangle} judul="Terlambat (SLA)" info={overdueJobs.length ? "Job yang lewat dari jadwal." : "Tidak ada keterlambatan."} testid="ar-k-sla">
+              <div className="ap-w-angka" data-testid="ar-n-sla">{overdueJobs.length}</div><p className="ap-w-label">{overdueJobs.length ? "lewat jadwal" : "tidak ada"}</p>
+            </KartuWidget>
+            <KartuWidget nada="hijau" Glif={CheckCircle2} judul="Selesai" info={`dari ${jobs?.length ?? 0} job — ${formatRangeText(range)}`} onBuka={() => navigate("/armada/jobs?status=COMPLETED")} testid="ar-k-selesai">
+              <div className="ap-w-angka" data-testid="ar-n-selesai">{completedCount}</div><p className="ap-w-label">dari {jobs?.length ?? 0} job</p>
+            </KartuWidget>
+          </div>
         )}
 
         {/* 2. Needs Attention — DIPROMOSIKAN ke atas antrean (brief owner:
             ini yang paling butuh dilihat duluan), gabungan job terlambat +
             dokumen kendaraan + job terjadwal tanpa driver. Lihat
             needsAttention useMemo di atas untuk aturan gabungnya. */}
-        <Card className="p-4">
-          <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
-            <AlertTriangle size={14} className="text-orange" /> Needs Attention
-          </h3>
+        <Card className="ap-panel border-0 !p-5" data-testid="armada-perhatian">
+          <h3 className="ap-judul-kecil"><Ubin nada="oranye" ukuran={30}><AlertTriangle size={16} strokeWidth={1.9} /></Ubin> Perlu perhatian</h3>
           {loading ? <TableSkeletonRows rows={3} cols={1} /> : needsAttention.length === 0 ? (
-            <div className="flex items-center gap-2 rounded-btn bg-greenbg/40 px-3 py-2.5 text-[12.5px] font-semibold text-green">
-              <ShieldCheck size={15} /> Operations Healthy — tidak ada job terlambat, dokumen kadaluarsa, atau job tanpa driver.
-            </div>
+            <p className="ap-pil" data-testid="armada-aman"><ShieldCheck size={15} /> Tidak ada yang perlu perhatian <InfoI label="Yang diperiksa" kiri>Diperiksa: job terlambat dari jadwal, dokumen kendaraan kedaluwarsa, dan job terjadwal tanpa driver.</InfoI></p>
           ) : (
             <div className="flex flex-col gap-2.5">
               {needsAttention.slice(0, 8).map((n) => (
@@ -633,10 +608,10 @@ export default function ArmadaDashboard() {
             justru KARENA belum dijadwalkan, jadi menyalakan warna di situ
             akan mengulang persis kegagalan ambang 3-hari yang sudah pernah
             terjadi — 100% baris menyala, kehilangan makna prioritas). */}
-        <Card className="overflow-hidden border-2 border-accent/30">
+        <Card className="ap-panel overflow-hidden border-0 !p-0" data-testid="armada-antrean">
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
-              <CalendarClock size={14} className="text-accent" /> Perlu Dijadwalkan
+              <Ubin nada="jingga" ukuran={26}><CalendarClock size={14} strokeWidth={1.9} /></Ubin> Perlu dijadwalkan
             </h3>
             {!loading && unscheduled && (
               <span className="rounded-full bg-accentbg px-2.5 py-0.5 text-[12px] font-bold text-accent">
@@ -654,7 +629,7 @@ export default function ArmadaDashboard() {
             </div>
           ) : !unscheduled || unscheduled.length === 0 ? (
             <div className="p-4 text-[12.5px] text-ink3">
-              Tidak ada order menunggu penjadwalan — semua sudah punya driver/tanggal.
+              Semua order sudah terjadwal.
             </div>
           ) : perluDijadwalkanUrut.length === 0 ? (
             <div className="p-4 text-center text-[12.5px] text-ink3">Tidak ada yang cocok "{cariPerlu}".</div>
@@ -725,10 +700,10 @@ export default function ArmadaDashboard() {
             ARRIVED). Jarak/GPS best-effort, lihat estimasiJarak() di atas
             dan catatan trackingError di bawah untuk kegagalan yang tidak
             boleh mem-blank-kan seluruh kartu. */}
-        <Card className="overflow-hidden">
+        <Card className="ap-panel overflow-hidden border-0 !p-0" data-testid="armada-berjalan">
           <div className="border-b border-line px-4 py-3">
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
-              <Navigation size={14} className="text-accent" /> Active Operations
+              <Ubin nada="langit" ukuran={26}><Navigation size={14} strokeWidth={1.9} /></Ubin> Sedang berjalan
             </h3>
           </div>
           {loading ? (
@@ -736,7 +711,7 @@ export default function ArmadaDashboard() {
               {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
             </div>
           ) : activeOps.length === 0 ? (
-            <div className="p-4 text-[12.5px] text-ink3">Tidak ada pengambilan/pengiriman yang sedang berjalan saat ini.</div>
+            <div className="p-4 text-[12.5px] text-ink3">Belum ada yang sedang berjalan.</div>
           ) : (
             <ul className="divide-y divide-line">
               {activeOps.map((j) => {

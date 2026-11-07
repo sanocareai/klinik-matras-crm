@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Loader2, PackageCheck, Truck, Wallet } from "lucide-react";
+import { AlertTriangle, Boxes, Hourglass, Loader2, PackageCheck, RotateCcw, Truck, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { formatRupiah } from "../utils/format.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { PageContainer, PageBody } from "@/components/ui/page.jsx";
+import { KartuWidget, InfoI, Ubin } from "@/components/apple/Apple.jsx";
 import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
-import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -183,26 +183,13 @@ function KesiapanOperasional() {
   }, {});
 
   return (
-    <Card className="border-l-4 border-l-orange">
-      <CardHeader>
-        <CardTitle>
-          {k.siap ? "Siap dipakai — belum ada aktivitas tercatat" : `Kesiapan Operasional — ${k.jumlahBelumSiap} hal belum siap`}
-        </CardTitle>
-      </CardHeader>
+    <Card className="ap-panel border-0 !p-5" data-testid="kendali-kesiapan">
+      <h3 className="ap-judul-kecil"><Ubin nada="oranye" ukuran={30}><AlertTriangle size={16} strokeWidth={1.9} /></Ubin> {k.siap ? "Siap dipakai" : `${k.jumlahBelumSiap} hal belum siap`}
+        <InfoI label="Tentang kesiapan operasional" kiri>{k.siap ? "Semua prasyarat terpenuhi, tetapi belum ada unit produksi, job pengiriman, atau pergerakan stok. Angka nol di dashboard ini wajar untuk sistem yang baru mulai." : "Selama hal di bawah ini belum dibereskan, tombol aksi di modul terkait akan ditolak (403) dan di layar terlihat seperti tidak terjadi apa-apa."}</InfoI>
+      </h3>
 
-      {k.siap ? (
-        <p className="text-[13px] leading-relaxed text-ink2">
-          Semua prasyarat sudah terpenuhi, tapi belum ada satu pun unit yang masuk produksi,
-          job pengiriman, atau pergerakan stok. Angka nol di dashboard ini <strong>wajar</strong> untuk
-          sistem yang baru mau mulai — bukan tanda ada yang rusak.
-        </p>
-      ) : (
+      {k.siap ? null : (
         <>
-          <p className="mb-3 text-[13px] leading-relaxed text-ink2">
-            Selama hal di bawah ini belum dibereskan, tombol aksi di modul terkait akan{" "}
-            <strong>ditolak (403)</strong> — dan di layar gejalanya cuma terlihat seperti
-            “tidak terjadi apa-apa”, bukan pesan error yang jelas.
-          </p>
           <div className="flex flex-col gap-3">
             {Object.entries(perModul).map(([modul, items]) => (
               <div key={modul}>
@@ -275,43 +262,32 @@ export default function Kendali() {
   const { units, cycleTime, jobFailures, rework, driverActivity, unavailable } = data;
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="All Teams Dashboard"
-        subtitle="Executive overview lintas sales, produksi, warehouse, dan delivery."
-      />
+    <PageContainer fluid className="gud-halaman">
+      {/* REDESAIN APPLE (Gelombang 1): kepala ringkas + empat kartu widget menggantikan hero ungu. Angka dan sumbernya (GET /kendali/overview) tidak berubah;
+          "Rework rate" tetap "—" bila data belum cukup (bukan nol). Penjelasan dipindah ke ikon info. */}
+      <header className="ap-kepala">
+        <div>
+          <h1>All Teams Dashboard</h1>
+          <p>Ringkasan lintas tim<InfoI label="Tentang All Teams Dashboard" kiri>Executive overview lintas sales, produksi, warehouse, dan delivery — bengkel, armada, dan kualitas dalam satu tampilan.</InfoI></p>
+        </div>
+        <div className="ap-kepala-aksi">
+          <span className="ap-pil" data-testid="kendali-kesehatan">{units.blocked.length > 0 ? `${units.blocked.length} pekerjaan tertunda` : "Operasional sehat"}</span>
+        </div>
+      </header>
 
-      {/* Command center — KPI yang SEBELUMNYA berupa 4 StatCard polos dipindah
-          ke sini, BUKAN diduplikasi: menampilkan angka yang sama dua kali di
-          satu layar cuma bikin orang ragu mana yang benar. Angka & sumbernya
-          persis sama (endpoint /kendali/overview), hanya wadahnya yang baru.
-          "Rework rate" tetap bisa "—" kalau backend belum punya cukup data —
-          itu perilaku lama yang sengaja dipertahankan, jangan diisi angka. */}
-      <div className="mb-5">
-        <WorkspaceHero
-          tone="violet"
-          title="Dashboard command center"
-          subtitle="Ringkasan lintas divisi — bengkel, armada, dan kualitas — dalam satu tampilan."
-          health={
-            units.blocked.length > 0
-              ? { label: `${units.blocked.length} pekerjaan tertunda`, tone: "warn" }
-              : { label: "Operasional sehat", tone: "ok" }
-          }
-          stats={[
-            { label: "Total unit aktif", value: units.totalUnits, hint: "di seluruh tahap" },
-            { label: "Pekerjaan tertunda", value: units.blocked.length, hint: "butuh tindakan" },
-            {
-              label: "Rework rate QC",
-              value: rework.reworkRate == null ? "—" : `${Math.round(rework.reworkRate * 100)}%`,
-              hint: rework.reworkRate == null ? "data belum cukup" : "dari QC tercatat",
-            },
-            {
-              label: "Job driver hari ini",
-              value: driverActivity.reduce((n, d) => n + d.completed + d.failed, 0),
-              hint: "selesai + gagal",
-            },
-          ]}
-        />
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="kendali-ringkasan">
+        <KartuWidget nada="biru" Glif={Boxes} judul="Total unit aktif" info="Di seluruh tahap produksi." testid="kn-k-unit">
+          <div className="ap-w-angka" data-testid="kn-n-unit">{units.totalUnits}</div><p className="ap-w-label">unit</p>
+        </KartuWidget>
+        <KartuWidget nada="jingga" Glif={Hourglass} judul="Pekerjaan tertunda" info="Pekerjaan yang butuh tindakan." testid="kn-k-tertunda">
+          <div className="ap-w-angka" data-testid="kn-n-tertunda">{units.blocked.length}</div><p className="ap-w-label">butuh tindakan</p>
+        </KartuWidget>
+        <KartuWidget nada="ungu" Glif={RotateCcw} judul="Rework rate QC" info={rework.reworkRate == null ? "Data belum cukup — bukan nol." : "Dari QC yang tercatat."} testid="kn-k-rework">
+          <div className="ap-w-angka" data-testid="kn-n-rework">{rework.reworkRate == null ? "—" : `${Math.round(rework.reworkRate * 100)}%`}</div><p className="ap-w-label">{rework.reworkRate == null ? "data belum cukup" : "dari QC tercatat"}</p>
+        </KartuWidget>
+        <KartuWidget nada="langit" Glif={Truck} judul="Job driver hari ini" info="Job yang selesai ditambah yang gagal." testid="kn-k-driver">
+          <div className="ap-w-angka" data-testid="kn-n-driver">{driverActivity.reduce((n, d) => n + d.completed + d.failed, 0)}</div><p className="ap-w-label">selesai + gagal</p>
+        </KartuWidget>
       </div>
 
       <PageBody>
@@ -328,7 +304,7 @@ export default function Kendali() {
         <KesiapanOperasional />
 
         {/* Unit per status */}
-        <Card>
+        <Card className="ap-panel border-0">
           <CardHeader>
             <CardTitle>Unit per Status</CardTitle>
           </CardHeader>
@@ -347,7 +323,7 @@ export default function Kendali() {
         </Card>
 
         {/* Pekerjaan tertunda */}
-        <Card>
+        <Card className="ap-panel border-0">
           <CardHeader>
             <CardTitle>Pekerjaan Tertunda</CardTitle>
           </CardHeader>
@@ -369,7 +345,7 @@ export default function Kendali() {
         </Card>
 
         {/* Cycle time per tahap */}
-        <Card>
+        <Card className="ap-panel border-0">
           <CardHeader>
             <CardTitle>Waktu Pengerjaan per Tahap</CardTitle>
           </CardHeader>
