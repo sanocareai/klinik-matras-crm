@@ -21,6 +21,10 @@ import {
   deriveRouteProgress, deriveRouteExceptions, deriveRouteCity, canAccessControlTower,
 } from "@/features/armada/controlTowerRules.js";
 import { cn } from "@/lib/utils.js";
+import { useApSkin } from "@/components/apple/Apple.jsx";
+
+// Gaya Apple: kartu ringkasan status = widget berwarna (tetap tombol filter cepat).
+const NADA_RUTE = { DRAFT: "indigo", PUBLISHED: "biru", IN_PROGRESS: "langit", COMPLETED: "hijau", BERMASALAH: "jingga" };
 
 const RINGKASAN_TILES = [
   { key: "DRAFT", label: "Draft", tone: "neutral" },
@@ -59,6 +63,7 @@ export default function ArmadaKendaliRute({ user }) {
 }
 
 function ControlTowerContent() {
+  const apple = useApSkin();
   const [range, setRange] = useState(() => makeRange("today"));
   const [status, setStatus] = useState("");
   const [driverId, setDriverId] = useState("");
@@ -149,19 +154,31 @@ function ControlTowerContent() {
                 <button
                   key={t.key}
                   type="button"
+                  aria-pressed={aktif}
                   onClick={() => {
                     if (t.key === "BERMASALAH") { setOnlyProblem((v) => !v); return; }
                     setStatus((s) => (s === t.key ? "" : t.key));
                   }}
-                  className={cn(
-                    "rounded-card border p-3.5 text-left transition-colors",
-                    aktif ? "border-accent bg-accentbg" : "border-border bg-surface hover:bg-hovertint"
-                  )}
+                  className={apple
+                    ? cn("ap-widget ap-w-ringkas", `ap-w-${NADA_RUTE[t.key] || "biru"}`, aktif && "ap-w-aktif")
+                    : cn(
+                      "rounded-card border p-3.5 text-left transition-colors",
+                      aktif ? "border-accent bg-accentbg" : "border-border bg-surface hover:bg-hovertint"
+                    )}
                 >
-                  <p className={cn("text-[24px] font-bold tabular-nums", t.tone === "red" && ringkasan[t.key] > 0 ? "text-red" : "text-ink")}>
-                    {ringkasan[t.key] ?? 0}
-                  </p>
-                  <p className="mt-0.5 text-[12px] font-semibold text-ink2">{t.label}</p>
+                  {apple ? (
+                    <>
+                      <h3 className="ap-w-kepala-teks">{t.label}</h3>
+                      <div className="ap-w-angka">{ringkasan[t.key] ?? 0}</div>
+                    </>
+                  ) : (
+                    <>
+                      <p className={cn("text-[24px] font-bold tabular-nums", t.tone === "red" && ringkasan[t.key] > 0 ? "text-red" : "text-ink")}>
+                        {ringkasan[t.key] ?? 0}
+                      </p>
+                      <p className="mt-0.5 text-[12px] font-semibold text-ink2">{t.label}</p>
+                    </>
+                  )}
                 </button>
               );
             })}

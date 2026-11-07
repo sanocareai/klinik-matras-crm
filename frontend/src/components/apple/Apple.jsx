@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 
@@ -47,3 +47,11 @@ export function KartuWidget({ nada = "biru", Glif, judul, info, infoLabel, onBuk
     </section>
   );
 }
+
+/** Konteks "halaman ini tampil bergaya Apple". Diisi Layout (Delivery, All Teams, B2B, Main Hub, Komplain); komponen bersama (PageHeader, WorkspaceHero) memilih tampilan barunya dari sini
+ *  sehingga halaman lama ikut berganti tanpa diedit satu per satu. Di luar Layout (atau workspace yang belum bermigrasi) nilainya false → tampilan lama persis. */
+export const ApSkinContext = createContext(false);
+export const useApSkin = () => useContext(ApSkinContext);
+
+/** Penjelasan lebih dari ~70 karakter disembunyikan di ikon info; kalimat pendek / angka dinamis tetap tampil. */
+export function adaPenjelasanPanjang(teks) { return typeof teks === "string" && teks.trim().length > 70; }

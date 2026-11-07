@@ -4,6 +4,10 @@ import { cn } from "@/lib/utils.js";
 import { useCountUp } from "@/hooks/useCountUp.js";
 import Sparkline from "./Sparkline.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
+import { KartuWidget, useApSkin } from "@/components/apple/Apple.jsx";
+
+// Gaya Apple (kerangka Delivery/All Teams/B2B): warna kartu bergilir menurut urutan; angka, label, delta, dan sumber data tidak berubah.
+const NADA_APPLE = ["biru", "langit", "ungu", "hijau", "jingga", "pink"];
 
 // KPI card Laporan Analitik — gaya dashboard SaaS modern (referensi:
 // Ultraleads/Edaca): card bersih TANPA border (DS v2), label+titik menu "..."
@@ -38,6 +42,15 @@ export default function KpiCard({
   const GrowthIcon = growth > 0 ? TrendingUp : growth < 0 ? TrendingDown : Minus;
   const growthLabel = `${growth > 0 ? "+" : ""}${growth}%`;
 
+  const apple = useApSkin();
+  if (apple) {
+    return (
+      <KartuWidget nada={NADA_APPLE[index % NADA_APPLE.length]} Glif={Icon} judul={label} info={tooltip} className="ap-w-ringkas">
+        <div className="ap-w-angka">{displayValue}</div>
+        {(hasGrowth || sub) && <p className="ap-w-label">{hasGrowth ? `${growthLabel}${compareLabel ? ` ${compareLabel}` : ""}` : ""}{hasGrowth && sub ? " · " : ""}{sub}</p>}
+      </KartuWidget>
+    );
+  }
   return (
     <div
       // rounded-card (D-111, bukan rounded-2xl) — pilot kaca Laporan: --r-lg
