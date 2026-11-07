@@ -15,7 +15,7 @@ import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../mi
 import { prisma } from "../db.js";
 import { postStockMovement, computeStockSnapshot, lockMaterialBalance } from "../services/inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
-import { pratinjauTransisi, terapkanTransisi, riwayatSatuan, satuanCatatanPer } from "../services/transisiSatuanBahan.js";
+import { pratinjauTransisi, terapkanTransisi, riwayatSatuan, satuanCatatanPer, labelSatuanBaris } from "../services/transisiSatuanBahan.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const inventoryRouter = express.Router();
@@ -210,8 +210,7 @@ inventoryRouter.get("/movements", requirePermission(P.INVENTORY_READ), async (re
       take: limit,
     });
     // TRANSISI SATUAN: setiap pergerakan menyebut satuan SAAT dicatat (satuanCatat); riwayat sebelum/sesudah transisi terbaca dengan satuan yang benar. Aditif.
-    const satuanDari = await satuanCatatanPer(prisma, movements);
-    res.json(movements.map((m) => ({ ...m, satuanCatat: satuanDari(m) })));
+    res.json(await labelSatuanBaris(prisma, movements));
   } catch (err) {
     handleErr(err, res);
   }

@@ -150,7 +150,7 @@ async function blokFinance(db, { at, saldoPerBahan, bolehNominal }) {
   if (!posted) alasan.push(`Persediaan Awal belum diposting${opening ? ` (${opening.number}: ${opening.status})` : ""} — saldo buku sebelum cutover belum dijembatani.`);
   for (const g of gaps) alasan.push(`${g.n} jurnal tertahan (${g.sumber}: ${g.alasan}).`);
   if (tanpaBukti + sebagian > 0) alasan.push(`${tanpaBukti} bahan bersaldo tanpa bukti harga penerimaan dan ${sebagian} sebagian — nilai bukunya tidak bisa dipastikan per bahan.`);
-  const selisihBukti = Math.round((saldo - totalBukti) * 100) / 100; if (Math.abs(selisihBukti) > 1) alasan.push(`Saldo akun berbeda Rp${Math.abs(selisihBukti).toLocaleString("id-ID")} dari jumlah biaya penerimaan berharga di ledger stok.`);
+  const selisihBukti = Math.round((saldo - totalBukti) * 100) / 100; if (Math.abs(selisihBukti) > 1) alasan.push(bolehNominal ? `Saldo akun berbeda Rp${Math.abs(selisihBukti).toLocaleString("id-ID")} dari jumlah biaya penerimaan berharga di ledger stok.` : "Saldo akun berbeda dari jumlah biaya penerimaan berharga di ledger stok (nominal hanya untuk pemegang izin Finance)."); // NOMINAL TIDAK BOLEH BOCOR ke peran tanpa finance:read lewat teks alasan
   alasan.push("Saldo akun tidak dialokasikan ke bahan; rekonsiliasi per bahan belum tersedia.");
   const kosongNominal = !bolehNominal;
   return { ...dasar, tersedia: true, status: "BELUM_DIREKONSILIASI", alasan, saldo: kosongNominal ? null : saldo, jurnal: jurnalDicek,

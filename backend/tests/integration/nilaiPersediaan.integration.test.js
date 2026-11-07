@@ -229,3 +229,14 @@ test("H12. pemisahan: nol dikonfirmasi Owner ≠ tanpa catatan stok ≠ nol kore
   const rg = await w.g.get(URL_API); assert.equal(rg.body.izin.nominal, false); assert.equal(per(rg.body).get(w.A.id).harga, null, "tanpa finance:read: harga dan dokumen tersembunyi"); assert.equal(per(rg.body).get(w.D.id).subStatus, "NOL_DIKONFIRMASI_OWNER", "pembeda status tetap tampil tanpa nominal"); assert.equal(rg.body.cakupan.kuantitas.diketahuiDiLedger, diLedger);
   const sesudah = await cacah(); assert.deepEqual({ ...sesudah, aktivitas: undefined }, { ...sebelum, aktivitas: undefined }, "pencatatan hasil SO tidak menulis stok/harga/jurnal/GR/penyesuaian");
 });
+
+test("V5b. NOMINAL TIDAK BOCOR lewat teks alasan Finance: peran tanpa finance:read (gudang) tidak menerima 'Rp…' di bagian mana pun; Finance tetap menerima selisih nominalnya", async () => {
+  const w = await dunia(); const rg = await w.g.get(URL_API); const rf = await w.f.get(URL_API); assert.equal(rg.status, 200); assert.equal(rf.status, 200);
+  const RP = /Rp\s?[1-9]/; // nominal bernilai; "Rp0" pada teks definisi statis bukan data
+  assert.ok(RP.test(JSON.stringify(rf.body.finance.alasan)), "Finance melihat selisih nominal (fixture: biaya penerimaan berharga ada, saldo akun belum)");
+  assert.ok(rg.body.finance.alasan.some((x) => /Saldo akun berbeda dari jumlah biaya penerimaan berharga/.test(x)), "gudang tetap diberi tahu ADA selisih, tanpa angka");
+  assert.equal(RP.test(JSON.stringify(rg.body.finance.alasan)), false, "tidak ada Rp pada alasan");
+  { const js = JSON.stringify(rg.body); const mm = RP.exec(js); assert.equal(mm, null, "tidak ada 'Rp<angka>' di seluruh respons peran tanpa finance:read — konteks: " + (mm ? js.slice(Math.max(0, mm.index - 160), mm.index + 60) : "")); }
+  const prod = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const rp = await makeClient(server.baseUrl, prod.token).get(URL_API);
+  assert.equal(rp.status, 200); assert.equal(RP.test(JSON.stringify(rp.body)), false, "PRODUCTION_LEAD (inventory:read tanpa finance:read) juga tidak menerima nominal"); assert.equal(rp.body.izin.nominal, false);
+});

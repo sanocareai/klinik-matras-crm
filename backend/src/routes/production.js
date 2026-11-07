@@ -41,6 +41,7 @@ const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "R
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { listWorkOrders } from "../services/productionOrderList.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
+import { labelSatuanBaris } from "../services/transisiSatuanBahan.js";
 
 export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
@@ -503,7 +504,7 @@ productionRouter.get("/material-usage", requirePermission(P.UNIT_READ), async (r
     const movements = await prisma.stockMovement.findMany({
       where,
       select: {
-        id: true, type: true, qty: true, reason: true, note: true, createdAt: true,
+        id: true, type: true, qty: true, reason: true, note: true, createdAt: true, materialId: true, unitAtEntry: true,
         material: { select: { id: true, code: true, name: true, unit: true } },
         createdBy: { select: { id: true, name: true } },
         unit: {
@@ -516,7 +517,7 @@ productionRouter.get("/material-usage", requirePermission(P.UNIT_READ), async (r
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ movements });
+    res.json({ movements: await labelSatuanBaris(prisma, movements) }); // satuan ASAL tiap baris (transisi satuan)
   } catch (err) {
     handleErr(err, res);
   }

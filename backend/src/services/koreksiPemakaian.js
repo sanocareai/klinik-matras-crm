@@ -14,7 +14,7 @@ import { KoreksiError, STATUS, bentukKoreksi } from "./warehouseCorrection.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { evaluasiUlang, kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
 import { STATE, koma } from "../lib/domain/pemakaianHistoris.js";
-import { tanggalDilaporkan } from "./pembetulanBahanUnit.js";
+import { tanggalDilaporkan, periksaPraSO } from "./pembetulanBahanUnit.js";
 
 const TIPE_DOK = "UNIT_USAGE";
 const EPS = 1e-6;
@@ -154,6 +154,8 @@ export async function ajukanKoreksiPemakaian(prisma, { unitId, materialId, qtyBa
       if (!r.boleh) throw new KoreksiError(`Koreksi diblokir: ${r.penghalang[0].pesan}`, 409, r.penghalang[0].kode, { penghalang: r.penghalang });
       // Tanggal pemakaian yang DILAPORKAN (opsional; dikirim layar Ubah pemakaian): dibawa ke catatan pergerakan saat disetujui sehingga Harga Berlaku HPP operasional mengikuti tanggal itu (aturan yang sama dengan pembetulan langsung).
       const tglLapor = tanggalPemakaian ? tanggalDilaporkan(tanggalPemakaian, { unitDibuat: r.unit.createdAt, sekarang }).tanggal : null;
+      // PRA-SO: penambahan pemakaian (selisih > 0) yang tanggal pakainya pada/sebelum tanggal SO bahan bertautan ditahan; pengurangan/retur dan koreksi tanpa klaim tanggal historis tidak tersentuh.
+      { const tglAcuan = tglLapor ?? (efektif ? new Date(efektif.getTime() + 7 * 3600_000).toISOString().slice(0, 10) : null); if (r.delta > 0 && tglAcuan) { const pra = await periksaPraSO(tx, { materialId, tanggal: tglAcuan, jenis: "TAMBAH" }); if (pra) throw new KoreksiError(pra.teks, 409, "KOREKSI_PRA_SO", { soTanggal: pra.soTanggal }); } }
       const nomor = await nomorKoreksi(tx, sekarang);
       const k = await tx.warehouseCorrection.create({ data: {
         correctionNumber: nomor, docType: TIPE_DOK, docId: unitId, docNumber: r.unit.unitCode, kind: "STOCK", status: STATUS.PENDING, reason,
@@ -188,6 +190,7 @@ export async function setujuiKoreksiPemakaian(prisma, { koreksiId, aktor, catata
     if (r.token !== k.docToken) throw new KoreksiError("Pemakaian unit ini sudah berubah sejak koreksi diajukan — ajukan ulang dengan data terbaru", 409, "KEADAAN_BERUBAH");
     if (!r.boleh) throw new KoreksiError(`Koreksi tidak lagi bisa diterapkan: ${r.penghalang[0].pesan}`, 409, r.penghalang[0].kode, { penghalang: r.penghalang });
     const efektif = k.changes.tanggalEfektif ? new Date(k.changes.tanggalEfektif) : undefined;
+    { const tglAcuan = k.changes.tanggalPemakaian ?? (efektif ? new Date(efektif.getTime() + 7 * 3600_000).toISOString().slice(0, 10) : null); if (r.delta > 0 && tglAcuan) { const pra = await periksaPraSO(tx, { materialId, tanggal: tglAcuan, jenis: "TAMBAH" }); if (pra) throw new KoreksiError(`Koreksi tidak lagi bisa diterapkan: ${pra.teks}`, 409, "KOREKSI_PRA_SO", { soTanggal: pra.soTanggal }); } }
     const mv = await postStockMovement(tx, {
       materialId, type: r.jenis, qty: r.delta > 0 ? -r.delta : Math.abs(r.delta), unitId: k.docId, correctionId: k.id, correctsMovementId: r.pergerakanAsal, createdAt: efektif,
       reason: `Koreksi ${k.correctionNumber}: ${k.reason}`.slice(0, 480), note: `Koreksi pemakaian ${k.correctionNumber}${k.changes.tanggalPemakaian ? ` [dilaporkan ${k.changes.tanggalPemakaian}]` : ""} atas ${r.unit.unitCode} (${koma(r.bersihSebelum)} → ${koma(r.bersihSesudah)} ${r.bahan.unit})`, createdById: aktor.id,

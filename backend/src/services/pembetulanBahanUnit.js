@@ -120,6 +120,18 @@ export function alasanPengecualian(raw) {
   return t;
 }
 /**
+ * PEMAKAIAN BARU PRA-SO (Nov 2026): bahan yang SO-nya ditautkan eksplisit TIDAK boleh menerima PENGELUARAN baru bertanggal pada/sebelum tanggal SO lewat pencatatan langsung — hitung fisik SO sudah mencakup pemakaian itu, sehingga stok berkurang DUA KALI.
+ * Berlaku tanpa memandang kecukupan saldo atau pilihan 'Tetap catat'. Yang diarahkan: penyelesaian historis (Posting Historis: nyatakan tercermin di SO / belum tercermin oleh penyetuju). Pengembalian/koreksi (jenis KURANGI) dan bahan tanpa tautan TIDAK tersentuh.
+ * Mengembalikan null bila tidak berlaku, atau { soTanggal, sumber, teks }. Baca-saja.
+ */
+export async function periksaPraSO(db, { materialId, tanggal, jenis = "TAMBAH" }) {
+  if (jenis !== "TAMBAH" || !tanggal) return null;
+  const t = (await tautanSOAktif(db, [materialId])).get(materialId);
+  if (!t?.soTanggal || !(tanggal <= t.soTanggal)) return null;
+  return { soTanggal: t.soTanggal, sumber: t.sumber ?? null, teks: `Tanggal pemakaian ${tanggal} sama dengan atau sebelum tanggal SO ${t.soTanggal} yang sudah ditautkan ke bahan ini: hitung fisik SO kemungkinan SUDAH mencakup pemakaian itu, jadi pengeluaran baru ditolak agar stok tidak berkurang dua kali (berlaku walau saldo cukup dan walau memilih Tetap catat). Selesaikan lewat Posting Historis: nyatakan catatannya sudah tercermin di SO, atau memang belum tercermin (oleh penyetuju). Pengembalian dan koreksi pemakaian yang sudah tertaut tetap boleh.` };
+}
+
+/**
  * CUTOFF OPNAME untuk satu bahan + tanggal pemakaian yang dilaporkan. BACA-SAJA. Pemakaian yang tanggalnya SAMA DENGAN ATAU SEBELUM acuan opname yang sudah selesai (atau persediaan awal yang sudah diposting) MUNGKIN sudah tercakup
  * hitung fisik; mencatatnya lagi sebagai pengeluaran bisa mengurangi saldo dua kali. Acuan opname = waktu pengamatan fisik baris (observedAt), bila tidak diketahui: waktu diajukan/selesai sesi (tidak diturunkan dari waktu simpan).
  * Tanggal dibandingkan per hari kalender WIB; tanggal SAMA dianggap melintasi (urutan dalam satu hari tidak dapat dibuktikan dari tanggal saja). Sesi opname yang masih BERJALAN hanya diperingatkan.
@@ -252,6 +264,7 @@ export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang 
   if (!m.active) penghalang.push({ kode: "BAHAN_NONAKTIF", pesan: `Bahan ${m.code} nonaktif.` });
   if (jenis === "KURANGI" && q > pemakaianSebelum + 0.00005) penghalang.push({ kode: "UNIT_KOREKSI_MELEBIHI_PEMAKAIAN", pesan: `Pengembalian ${q} melebihi pemakaian bersih bahan ini pada unit (${Math.max(pemakaianSebelum, 0)} ${m.unit}).` });
   const peringatan = []; let pengecualianStok = null;
+  { const pra = selesai ? await periksaPraSO(db, { materialId, tanggal, jenis }) : null; if (pra) penghalang.push({ kode: "PEMAKAIAN_PRA_SO", pesan: pra.teks, bisaDikecualikan: false, soTanggal: pra.soTanggal }); }
   const kurang = jenis === "TAMBAH" && n > 0 && saldoSesudah < -EPS;
   if (jenis === "TAMBAH" && n === 0) penghalang.push({ kode: "STOK_BELUM_DIKETAHUI", pesan: `Bahan ${m.code} belum punya catatan stok sama sekali — pengeluaran ditolak (tidak ada stok yang bisa dikurangi). Saldo BELUM DIKETAHUI berbeda dari saldo nol/minus dan tidak dapat dikecualikan: gunakan "Catat sementara — stok belum diketahui" (hanya catatan), atau minta Gudang mencatat stok awal/opname.` });
   else if (kurang) {
@@ -302,6 +315,7 @@ export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang 
  */
 export async function periksaPembetulanLangsung(tx, { unitId, unitCode, orderId, materialId, rawQty, saldoDilihat, konfirmasiBukanGanda, tanggal, hppSidik }) {
   if (rawQty < 0 && await adaPengeluaranMaterialIssue(tx, unitId, materialId)) { const mm = await tx.material.findUnique({ where: { id: materialId }, select: { code: true } }); wajib(false, PESAN_ASAL_MI(mm?.code ?? "bahan"), "UNIT_ASAL_MATERIAL_ISSUE", 409); }
+  if (rawQty > 0) { const pra = await periksaPraSO(tx, { materialId, tanggal, jenis: "TAMBAH" }); wajib(!pra, pra?.teks ?? "", "UNIT_PEMAKAIAN_PRA_SO", 409, { soTanggal: pra?.soTanggal ?? null }); }
   wajib(saldoDilihat !== undefined && saldoDilihat !== null && Number.isFinite(Number(saldoDilihat)), "Lihat dampak dulu: saldo yang Anda lihat di pratinjau wajib dikirim.", "UNIT_PRATINJAU_WAJIB", 400);
   const saldo = r4(await lockMaterialBalance(tx, materialId));
   wajib(Math.abs(saldo - r4(saldoDilihat)) <= 0.00005, `Saldo bahan sudah bergeser: pratinjau Anda memakai ${r4(saldoDilihat)}, saldo sekarang ${saldo}. Lihat dampak lagi dari saldo terbaru; tidak ada yang tersimpan.`, "UNIT_SALDO_BERGESER", 409, { saldoDilihat: r4(saldoDilihat), saldoSekarang: saldo });

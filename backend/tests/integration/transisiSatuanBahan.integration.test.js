@@ -210,3 +210,19 @@ test("T15. rencana bahan unit produksi yang memuat bahan (jumlah dalam satuan la
   await testPrisma.productionUnitMaterialPlan.create({ data: { unitId: unit.id, lines: [{ materialId: w.m.id, qty: 0.5 }] } });
   const p = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [minta(w)] }); assert.equal(p.bolehDiterapkan, false); assert.ok(p.transisi[0].penghalang.some((x) => x.kode === "RENCANA_PRODUKSI_ADA"), JSON.stringify(p.transisi[0].penghalang));
 });
+
+test("T16. PEMBACA RIWAYAT membaca baris lama dengan SATUAN ASAL: /inventory/movements, /units/:id/materials, /production/material-usage — baris sebelum transisi = ROLL, sesudah = METER; satuan master tetap tersedia; total memakai satuan master", async () => {
+  const w = await dunia(); const { unit } = await createTestUnit({ status: "DELIVERED" });
+  await seedBalance(w.m.id, -3, { type: "ISSUE", unitId: unit.id, createdAt: WIB("2026-09-10"), note: "pemakaian lama (uji)" }); await testPrisma.$executeRawUnsafe("UPDATE stock_movements SET unit_at_entry = NULL WHERE material_id = $1::uuid", w.m.id);
+  const { hash } = await siap(w); await terapkan(w, hash);
+  await testPrisma.$transaction(async (tx) => postStockMovement(tx, { materialId: w.m.id, type: "ISSUE", qty: -4, unitId: unit.id, note: "pemakaian sesudah transisi", createdById: w.owner.user.id }));
+  const periksa = (rows, nama) => {
+    const lama = rows.filter((r) => /pemakaian lama \(uji\)/.test(r.note ?? "")); const baru = rows.filter((r) => /sesudah transisi/.test(r.note ?? ""));
+    assert.equal(lama.length, 1, nama); assert.equal(baru.length, 1, nama);
+    assert.equal(lama[0].material.unit, "ROLL", `${nama}: baris lama berlabel satuan ASAL`); assert.equal(lama[0].satuanCatat, "ROLL"); assert.equal(lama[0].material.satuanMaster, "METER");
+    assert.equal(baru[0].material.unit, "METER", `${nama}: baris baru berlabel METER`); assert.equal(baru[0].satuanCatat, "METER");
+  };
+  const a = await w.co.get(`/api/inventory/movements?materialId=${w.m.id}&limit=100`); assert.equal(a.status, 200); periksa(a.body, "/inventory/movements");
+  const b = await w.co.get(`/api/units/${unit.id}/materials`); assert.equal(b.status, 200); periksa(b.body.movements, "/units/:id/materials"); assert.equal(b.body.totals[0].material.unit, "METER", "total memakai satuan master sekarang");
+  const c = await w.co.get(`/api/production/material-usage?materialId=${w.m.id}`); assert.equal(c.status, 200); periksa(c.body.movements, "/production/material-usage");
+});

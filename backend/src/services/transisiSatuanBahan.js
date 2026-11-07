@@ -200,6 +200,15 @@ export async function satuanCatatanPer(db, rows) {
   return (r) => r.unitAtEntry ?? pertama.get(r.materialId) ?? master.get(r.materialId) ?? null;
 }
 
+/**
+ * Beri tiap baris pergerakan SATUAN ASALNYA: `satuanCatat` + `material.unit` = satuan saat dicatat (bukan satuan master sekarang), `material.satuanMaster` = satuan master sekarang.
+ * Baris harus membawa materialId, unitAtEntry, dan material.{unit}. Baca-saja; mengembalikan salinan.
+ */
+export async function labelSatuanBaris(db, rows) {
+  const satuanDari = await satuanCatatanPer(db, rows);
+  return rows.map((r) => { const u = satuanDari(r); return { ...r, satuanCatat: u, ...(r.material ? { material: { ...r.material, satuanMaster: r.material.unit, unit: u ?? r.material.unit } } : {}) }; });
+}
+
 /** Riwayat satuan satu bahan: periode per satuan (jumlah pergerakan, saldo per satuan, awal/akhir), dokumen transisi, dan pemeriksaan konsistensi. Baca-saja. */
 export async function riwayatSatuan(db, materialId) {
   wajib(UUID.test(String(materialId ?? "")), "bahan tidak valid", "BAHAN_TIDAK_VALID");
