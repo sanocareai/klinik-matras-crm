@@ -3,6 +3,8 @@
 #   • ISI: rute POST /api/inventory/materials/transisi-satuan/{pratinjau,terapkan} (Owner/penyetuju) dan GET /api/inventory/materials/:id/riwayat-satuan. Transisi satuan = SATU transaksi: tutup saldo satuan lama,
 #     ubah satuan master, buka saldo satuan baru, catat dokumen append-only, dan pasang tautan SO bila catatan historis menunggu. Pergerakan baru diberi penanda satuan oleh trigger DB; pagar DB menolak
 #     perubahan satuan master yang punya pergerakan di luar jalur transisi. Laporan Nilai Persediaan menandai bahan bertransisi (harga satuan lama TIDAK dipakai untuk satuan baru; cakupan PARSIAL bila ada kewajiban konversi terbuka).
+#   • Perbaikan pengaman: pencatatan pemakaian historis "Tetap catat meskipun stok tidak cukup" kini menghormati TAUTAN SO eksplisit (pemakaian pada/sebelum tanggal SO ditolak 409, tidak mengurangi stok hasil SO dua kali).
+#     Pratinjau transisi menyertakan setara satuan baru dari faktor satuan pakai yang berlaku (mis. +10 ROLL = 900 METER @90) — informasi, tidak diposting; rencana bahan unit produksi menjadi penghalang.
 #   • Skrip rilis TIDAK menjalankan transisi, TIDAK mengubah satuan bahan, TIDAK membuat/mengubah stok, harga, PO/GR, jurnal, PSA, penyesuaian, hasil SO, tautan, pemetaan, atau deklarasi historis. Migrasi hanya MENAMBAH struktur
 #     (tabel dokumen tetap kosong; pergerakan lama TIDAK diisi ulang). Smoke pasca-switch = GET + POST yang DITOLAK sebelum menulis.
 #   • Gate: preflight (keadaan production SEGAR/LANJUT/TOLAK, pin sha256 migrasi + diff schema, pemindai DDL + uji negatif); backup + RESTORE rehearsal (migrate deploy pada salinan restore dari data nyata; skema tabel lama identik; kode baru
