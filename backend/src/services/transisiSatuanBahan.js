@@ -209,6 +209,19 @@ export async function labelSatuanBaris(db, rows) {
   return rows.map((r) => { const u = satuanDari(r); return { ...r, satuanCatat: u, ...(r.material ? { material: { ...r.material, satuanMaster: r.material.unit, unit: u ?? r.material.unit } } : {}) }; });
 }
 
+/**
+ * Harga referensi (Material.referenceUnitCost, snapshot Agustus) dinyatakan per satuan ASAL (satuan_lama transisi pertama). Mengembalikan fungsi baris → boolean: true bila referensi itu sah dipakai
+ * untuk baris pergerakan tersebut (bahan tanpa transisi, atau baris yang dicatat dalam satuan referensi). Baca-saja.
+ */
+export async function referensiSahPer(db, rows) {
+  const ids = [...new Set(rows.map((r) => r.materialId))]; if (!ids.length) return () => true;
+  const ts = await db.materialUnitTransition.findMany({ where: { materialId: { in: ids } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { materialId: true, fromUnit: true } });
+  if (!ts.length) return () => true;
+  const pertama = new Map(); for (const t of ts) if (!pertama.has(t.materialId)) pertama.set(t.materialId, t.fromUnit);
+  const satuanDari = await satuanCatatanPer(db, rows);
+  return (r) => !pertama.has(r.materialId) || satuanDari(r) === pertama.get(r.materialId);
+}
+
 /** Riwayat satuan satu bahan: periode per satuan (jumlah pergerakan, saldo per satuan, awal/akhir), dokumen transisi, dan pemeriksaan konsistensi. Baca-saja. */
 export async function riwayatSatuan(db, materialId) {
   wajib(UUID.test(String(materialId ?? "")), "bahan tidak valid", "BAHAN_TIDAK_VALID");

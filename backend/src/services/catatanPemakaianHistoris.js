@@ -6,6 +6,7 @@
 //  • Layanan ini TIDAK menulis stock_movements, Material Issue, saldo, biaya, atau jurnal. Perubahan keadaan selalu menulis peristiwa append-only (sebelum–sesudah, alasan, pelaku, waktu).
 //  • Impor ulang berkas yang sama = nol perubahan (kunci sumber = hash isi baris + urutan kemunculan).
 import crypto from "node:crypto";
+import { satuanCatatanPer } from "./transisiSatuanBahan.js";
 import {
   bacaCsvPemakaian, kunciSumber, sha256, angkaId, tanggalId, awalHariWIB, satuanBaku, petakanBahan, FLAG, STATE, SUMBER_EXCEL, flagMemblok, catatanSingkat,
   KOMPONEN_LAMA_RE, KILOAN_RE, buktiPembelianKiloan, petunjukKemasanKg, normNama, r4, labelState,
@@ -28,7 +29,8 @@ async function muatKonteks(db, { orderNumbers, unitIds = [], materialIds = [] })
   const pembelian = db.finPurchase?.findMany ? await db.finPurchase.findMany({ where: { description: { contains: "kiloan", mode: "insensitive" } }, select: { purchaseNumber: true, date: true, amount: true, description: true, status: true } }) : [];
   const idUnit = [...new Set([...unitIds, ...orders.flatMap((o) => o.units.map((u) => u.id))])];
   const pakai = idUnit.length ? await db.stockMovement.findMany({ where: { unitId: { in: idUnit }, type: { in: ["ISSUE", "RETURN"] } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }) : [];
-  const lama = await db.stockMovement.findMany({ where: { type: "ISSUE", note: { startsWith: NOTE_IMPOR_LAMA }, unitId: { not: null } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } } } });
+  const lama = await db.stockMovement.findMany({ where: { type: "ISSUE", note: { startsWith: NOTE_IMPOR_LAMA }, unitId: { not: null } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true, unitAtEntry: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } } } });
+  const satuanLama = await satuanCatatanPer(db, lama); for (const m of lama) m.satuanCatat = satuanLama(m);
   return { orderBy, katalog, pembelian, katalogById: new Map(katalog.map((m) => [m.id, m])), pakai, lama, materialIds };
 }
 async function muatGarisWaktu(db, materialIds) {
@@ -112,7 +114,7 @@ function klasifikasi(items, ctx, garisWaktu, { sekarang = new Date() } = {}) {
     const ordNo = m.unit?.order?.orderNumber ?? null; const mat = ctx.katalogById.get(m.materialId);
     const sudahPunyaExcel = items.some((i) => i.origin === "EXCEL" && i.unitId === m.unitId);
     const net = r4(-(pakaiPer.get(k) ?? []).reduce((s, x) => s + Number(x.qty), 0));
-    ledgerBaru.push({ key: `LEDGER:${m.id}`, origin: "LEDGER", orderNumber: ordNo, unitId: m.unitId, materialId: m.materialId, stockMovementId: m.id, qty: net, uom: mat?.unit, usedAt: m.createdAt, flags: [FLAG.ISSUE_TANPA_PASANGAN({ qty: Number(-Number(m.qty)), satuan: mat?.unit, ordeAdaDiExcel: sudahPunyaExcel })] });
+    ledgerBaru.push({ key: `LEDGER:${m.id}`, origin: "LEDGER", orderNumber: ordNo, unitId: m.unitId, materialId: m.materialId, stockMovementId: m.id, qty: net, uom: m.satuanCatat ?? mat?.unit, usedAt: m.createdAt, flags: [FLAG.ISSUE_TANPA_PASANGAN({ qty: Number(-Number(m.qty)), satuan: m.satuanCatat ?? mat?.unit, ordeAdaDiExcel: sudahPunyaExcel })] });
     unitTertahan.add(m.unitId);
   }
   for (const l of ledgerBaru) { if (!hasil.has(l.key)) hasil.set(l.key, { state: STATE.PERLU_DICEK, flags: l.flags, linkKind: "ISSUE_TANPA_PASANGAN", stockMovementId: l.stockMovementId, ledger: l }); }

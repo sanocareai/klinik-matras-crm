@@ -14,6 +14,7 @@
 
 import { sumMoney, moneyToNumber, toMoney, Decimal } from "../money.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../../utils/wib.js";
+import { referensiSahPer } from "../../transisiSatuanBahan.js";
 
 export const STATUS_MARGIN = Object.freeze({ TIDAK_BERLAKU: "TIDAK_BERLAKU", BELUM_LENGKAP: "BELUM_LENGKAP", LENGKAP: "LENGKAP" });
 export const PESAN_MARGIN = Object.freeze({
@@ -51,7 +52,7 @@ export async function hitungHpp(tx, { fromStr, toStr, baris }) {
 
   // 2. KONSUMSI BAHAN & UNIT TERKIRIM
   const [issue, jobsSelesai] = await Promise.all([
-    tx.stockMovement.findMany({ where: { type: "ISSUE", createdAt: { gte: mulai, lt: selesai } }, select: { id: true, qty: true, unitId: true, materialId: true, material: { select: { code: true, name: true, referenceUnitCost: true } } } }),
+    tx.stockMovement.findMany({ where: { type: "ISSUE", createdAt: { gte: mulai, lt: selesai } }, select: { id: true, qty: true, unitId: true, materialId: true, unitAtEntry: true, material: { select: { code: true, name: true, referenceUnitCost: true } } } }),
     tx.job.findMany({ where: { type: "DELIVERY", status: "COMPLETED", completedAt: { gte: mulai, lt: selesai } }, select: { id: true, orderId: true, units: { select: { unitId: true } }, order: { select: { penjualanKaryawanId: true } } } }),
   ]);
   const unitTerkirim = new Set(); let jobTanpaUnit = 0;
@@ -81,20 +82,22 @@ export async function hitungHpp(tx, { fromStr, toStr, baris }) {
     status = pemakaianTerbukukan > 0 && nBernilai >= nUnitTerkirim && issueTanpaHarga.length === 0 ? STATUS_MARGIN.LENGKAP : STATUS_MARGIN.BELUM_LENGKAP;
   }
 
+  const refSahIssue = await referensiSahPer(tx, issue);
   // 3. ESTIMASI INFORMATIF — tidak pernah masuk laba/jurnal
   const estimasiPeriode = (() => {
-    const dengan = issue.filter((m) => m.material?.referenceUnitCost != null);
+    const dengan = issue.filter((m) => m.material?.referenceUnitCost != null && refSahIssue(m)); // referensi per satuan asal: baris satuan lain (setelah transisi) tidak dinilai
     if (!dengan.length) return null;
     return rp(sumMoney(dengan.map((m) => new Decimal(String(m.qty)).abs().times(new Decimal(String(m.material.referenceUnitCost))).toDecimalPlaces(2))));
   })();
   const awalHistoris = new Date(startOfDayWIB(fromStr).getTime() - BULAN_ENAM * 31 * 86_400_000);
-  const historis = await tx.stockMovement.findMany({ where: { type: "ISSUE", createdAt: { gte: awalHistoris, lt: selesai } }, select: { createdAt: true, qty: true, unitId: true, material: { select: { referenceUnitCost: true } } } });
+  const historis = await tx.stockMovement.findMany({ where: { type: "ISSUE", createdAt: { gte: awalHistoris, lt: selesai } }, select: { createdAt: true, qty: true, unitId: true, materialId: true, unitAtEntry: true, material: { select: { referenceUnitCost: true } } } });
+  const refSahHistoris = await referensiSahPer(tx, historis);
   const perBulan = new Map();
   for (const m of historis) {
     const k = new Date(m.createdAt.getTime() + 7 * 3600e3).toISOString().slice(0, 7);
     const b = perBulan.get(k) ?? { bulan: k, nilai: new Decimal(0), unit: new Set(), nTanpaReferensi: 0, nCatatan: 0 };
     b.nCatatan += 1; if (m.unitId) b.unit.add(m.unitId);
-    if (m.material?.referenceUnitCost != null) b.nilai = b.nilai.plus(new Decimal(String(m.qty)).abs().times(new Decimal(String(m.material.referenceUnitCost)))); else b.nTanpaReferensi += 1;
+    if (m.material?.referenceUnitCost != null && refSahHistoris(m)) b.nilai = b.nilai.plus(new Decimal(String(m.qty)).abs().times(new Decimal(String(m.material.referenceUnitCost)))); else b.nTanpaReferensi += 1;
     perBulan.set(k, b);
   }
   const estimasiHistoris = [...perBulan.values()].sort((a, b) => a.bulan.localeCompare(b.bulan)).map((b) => ({
