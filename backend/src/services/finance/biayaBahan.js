@@ -13,6 +13,7 @@
 import { terapkanKeadaanEfektif } from "../catatanPemakaianHistoris.js";
 import { dasarHargaRataRata } from "./posting/inventory.js";
 import { Decimal, ZERO, toMoney, moneyToNumber } from "./money.js";
+import { labelSatuanBaris } from "../transisiSatuanBahan.js";
 
 export const JENIS_BIAYA = { ISSUE: "PEMAKAIAN", RETURN: "RETUR", WASTE: "SUSUT", ADJUSTMENT: "PENYESUAIAN" };
 export const TIPE_DINILAI = Object.keys(JENIS_BIAYA);
@@ -157,12 +158,12 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   const unit = await db.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, order: { select: { orderNumber: true } } } });
   if (!unit) return null;
 
-  const [pergerakan, runs, retur, dokumenBelumKeluar] = await Promise.all([
+  const [pergerakanMentah, runs, retur, dokumenBelumKeluar] = await Promise.all([
     db.stockMovement.findMany({
       where: { unitId, type: { in: TIPE_DINILAI } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
-        id: true, type: true, qty: true, createdAt: true, note: true, reason: true, materialId: true, materialIssueId: true,
+        id: true, type: true, qty: true, createdAt: true, note: true, reason: true, materialId: true, materialIssueId: true, unitAtEntry: true,
         material: { select: { id: true, code: true, name: true, unit: true } },
         materialIssue: { select: { id: true, issueNumber: true, status: true } },
         createdBy: { select: { name: true } },
@@ -180,6 +181,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     }),
   ]);
 
+  const pergerakan = await labelSatuanBaris(db, pergerakanMentah); // satuan SAAT dicatat
   const evidence = runs.length
     ? await db.productionStepEvidence.findMany({
         where: { runId: { in: runs.map((r) => r.id) }, stepNo: { in: STEP_PEMAKAIAN }, NOT: { stepCode: { startsWith: "DOC_" } } },

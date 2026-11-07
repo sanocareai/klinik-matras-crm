@@ -71,10 +71,15 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
   const k = await ambilKebijakanPersediaan(tx);
   const mulai = k.cutover ? awalCutover(k.cutover) : null;
   const aktif = mulai && (!asOf || asOf >= mulai) ? await pembukaAktif(tx, k.cutover) : null;
+  // TRANSISI SATUAN BAHAN: harga penerimaan SEBELUM transisi terakhir dinyatakan per satuan lama; dirata-rata dengan harga per satuan baru = mencampur satuan. Penilaian mulai dari transisi terakhir;
+  // tanpa penerimaan berharga sesudahnya hasilnya null (gap TANPA_HARGA_PEROLEHAN), bukan angka karangan. Menilai pergerakan lama (asOf sebelum transisi) tetap memakai penerimaan satuan lama.
+  const transisiAkhir = await tx.materialUnitTransition.findFirst({ where: { materialId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { createdAt: true } });
+  const sejakTransisi = transisiAkhir && (!asOf || asOf >= transisiAkhir.createdAt) ? transisiAkhir.createdAt : null;
+  const batasBawah = [aktif ? mulai : null, sejakTransisi].filter(Boolean).sort((a, b) => b - a)[0] ?? null;
   const receipts = await tx.stockMovement.findMany({
     where: {
       materialId, type: "RECEIPT", unitCost: { not: null },
-      ...((asOf || aktif) && { createdAt: { ...(asOf && { lte: asOf }), ...(aktif && { gte: mulai }) } }),
+      ...((asOf || batasBawah) && { createdAt: { ...(asOf && { lte: asOf }), ...(batasBawah && { gte: batasBawah }) } }),
     },
     select: { id: true, qty: true, unitCost: true, unitCostExact: true, goodsReceiptId: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],

@@ -1,0 +1,19 @@
+# RILIS KANDIDAT GABUNGAN "SATUAN BAHAN: PEMBACA + BIAYA + KOREKSI + DRAWER": WEB + BACKEND ADITIF, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA = e45e35f4, rilis transisi satuan). FAIL-CLOSED.
+#   • ISI BACKEND: (1) pembaca riwayat memberi SATUAN ASAL tiap baris (laporan produksi, ekspor order produksi, laporan pelaporan produksi, pemakaian aktual unit, jejak biaya bahan, catatan historis); (2) harga rata-rata Finance TIDAK mencampur harga satuan lama dan baru
+#     (penilaian mulai dari transisi terakhir; tanpa penerimaan baru = null/gap TANPA_HARGA_PEROLEHAN, tidak ada angka karangan); (3) harga referensi Agustus tidak berlaku pada satuan baru (null + penanda satuan tidak cocok di snapshot stok, Harga Berlaku, Persediaan Awal);
+#     harga GR terakhir hanya dari satuan baru; HPP estimasi memakai referensi hanya untuk baris satuan asal; (4) Catatan Historis dibandingkan per periode satuan (lintas satuan = tidak dapat dibandingkan, tidak dijumlahkan); (5) koreksi penambahan atas pemakaian asal pra-SO
+#     tanpa tanggal pemakaian sebenarnya DITAHAN (KOREKSI_PRA_SO); tanggal klaim sesudah SO = tambahan pemakaian nyata bertaut (ISSUE asal tidak ditulis ulang); (6) transfer berjalan / selisih transfer terbuka menahan transisi; saldo transfer lama berlabel satuan saat transfer.
+#   • ISI WEB: drawer riwayat Stok memakai satuan saat dicatat + keterangan satuan lama; harga referensi Agustus tampil "Tidak berlaku pada satuan …" untuk bahan bertransisi.
+#   • Skrip rilis TIDAK menjalankan transisi, TIDAK mengubah satuan, stok, harga, PO/GR, jurnal, penyesuaian, hasil SO, tautan, pemetaan, atau deklarasi historis. Smoke pasca-switch = GET + pratinjau baca-saja. Uji tulis (transisi + uji pembaca/biaya/koreksi) HANYA pada SALINAN RESTORE.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru sebagai SERVER terhadap salinan restore data nyata); build web di release dir; switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
+#   • PENGUNCIAN: kunci deploy BERSAMA + kunci sendiri diambil ATOMIK; kepemilikan ditentukan proses (perangkat:inode fd 7/9), BUKAN nama berkas. GERBANG IDENTITAS KODE LIVE (hash blob semua berkas terlacak baseline) di fase 2, 6, dan TEPAT sebelum switch.
+#     Pembersihan release lama DINONAKTIFKAN; gerbang disk minimal 5 GiB tidak diturunkan. Pencarian teks di dist aktif memakai find|xargs (cari_dist), bukan glob (>21.000 chunk).
+#
+#   cat scripts/release-satuan-gabungan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/sgb.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/sgb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/sgb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/sgbr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata (termasuk build web); TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/sgb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/sgb.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru, tanpa tulisan data bisnis oleh rilis ini). Rollback mengembalikan kode e45e35f4: pembaca kembali memberi label satuan master sekarang, harga rata-rata kembali mencampur satuan, referensi Agustus kembali tampil
+# pada satuan baru, koreksi tanpa tanggal kembali lolos. SESUDAH ada transisi tersimpan, rollback ke e45e35f4 tetap tunduk pada scripts/rollback-guard-transisi-satuan.sh (riwayat berlabel satuan baru pada kode lama).
+# (dibangkitkan oleh scripts/gen-release-satuan-gabungan.cjs dari scripts/release-produksi-stok-minus.sh + scripts/templates/release-satuan-gabungan/* + pustaka scripts/lib/{rehearsal,smoke}-satuan-gabungan.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)

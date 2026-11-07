@@ -16,6 +16,7 @@ import { UNIT_INCLUDE, perkayaBarisUnit } from "./productionOrderList.js";
 import { muatFaktaKelengkapan } from "./productionKelengkapan.js";
 import { hitungKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
 import { loadWorkshopTimelines } from "./workshopTimelineService.js";
+import { labelSatuanBaris } from "./transisiSatuanBahan.js";
 import {
   SUMBER_SELESAI, agregasi, barisPergerakan, gabungAgregasi, hariDalamPeriode, kelompokkanSelesai, klasifikasiSelesai, rataDurasi, seriHarian, statusBiaya, wibKeyDari,
 } from "../lib/domain/laporanProduksi.js";
@@ -42,7 +43,7 @@ async function muatPergerakan(prisma) {
     where: { unitId: { not: null }, type: { in: TIPE_OP } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: {
-      id: true, type: true, qty: true, createdAt: true, note: true, materialId: true, unitId: true, correctsMovementId: true,
+      id: true, type: true, qty: true, createdAt: true, note: true, materialId: true, unitId: true, correctsMovementId: true, unitAtEntry: true,
       material: { select: { code: true, name: true, unit: true } },
       biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { status: true, unitCost: true, value: true, priceEffectiveFrom: true, basisHarga: true, sumber: true, evidenceLabel: true } },
     },
@@ -50,7 +51,7 @@ async function muatPergerakan(prisma) {
   const ids = mv.map((m) => m.id);
   const catatan = ids.length ? await prisma.unitUsageNote.findMany({ where: { stockMovementId: { in: ids }, state: { in: ["DIPOSTING", "TERCATAT_DI_STOK"] }, usedAt: { not: null } }, select: { stockMovementId: true, usedAt: true } }) : [];
   const usedAt = new Map(); for (const c of catatan) if (!usedAt.has(c.stockMovementId)) usedAt.set(c.stockMovementId, c.usedAt);
-  return mv.map((m) => barisPergerakan(
+  return (await labelSatuanBaris(prisma, mv)).map((m) => barisPergerakan(
     { id: m.id, type: m.type, qty: m.qty, createdAt: m.createdAt, note: m.note, materialId: m.materialId, unitId: m.unitId, correctsMovementId: m.correctsMovementId, materialKode: m.material.code, materialNama: m.material.name, materialSatuan: m.material.unit },
     m.biayaOperasional[0] ? { ...m.biayaOperasional[0], unitCost: m.biayaOperasional[0].unitCost, value: m.biayaOperasional[0].value } : null,
     { usedAtCatatan: usedAt.get(m.id) ?? null },

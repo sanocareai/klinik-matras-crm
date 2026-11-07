@@ -141,6 +141,8 @@ export const FLAG = Object.freeze({
     teks: `Stok mencatat ${koma(ledger)} ${satuan}, Excel ${koma(excel)} ${satuan} (selisih ${koma(r4(excel - ledger))}).`, aksi: "Ajukan koreksi pemakaian per order bila Excel yang benar (nilai lama tetap tersimpan)." }),
   ISSUE_LAMA_SATUAN_BEDA: ({ ledger, rawQty, rawUom, masterUom }) => ({ kode: "ISSUE_LAMA_SATUAN_BEDA", tingkat: "BLOK", data: { ledger, rawQty, rawUom, masterUom },
     teks: `Stok mencatat ${koma(ledger)} ${masterUom}; Excel menulis ${rawQty} ${rawUom}. Angka stok kemungkinan memakai satuan Excel, bukan ${masterUom}.`, aksi: "Butuh faktor satuan berbukti sebelum stok lama dikoreksi." }),
+  ISSUE_LAMA_LINTAS_SATUAN: ({ periode, rawQty, rawUom }) => ({ kode: "ISSUE_LAMA_LINTAS_SATUAN", tingkat: "BLOK", data: { periode, rawQty, rawUom },
+    teks: `Pemakaian di stok tercatat dalam lebih dari satu satuan (${periode.join(" dan ")}) atau catatan Excel memakai satuan berbeda (${rawQty} ${rawUom ?? ""}). Jumlahnya TIDAK dijumlahkan lintas satuan: tidak dapat dibandingkan.`, aksi: "Butuh faktor satuan berbukti, atau selesaikan per periode satuan lewat Posting Historis." }),
   ISSUE_TANPA_PASANGAN: ({ qty, satuan, ordeAdaDiExcel }) => ({ kode: "ISSUE_TANPA_PASANGAN", tingkat: "BLOK", data: { qty, satuan, ordeAdaDiExcel },
     teks: ordeAdaDiExcel ? `Pengeluaran stok ${qty} ${satuan} ini tidak punya baris bahan yang sama di Excel untuk order ini.` : `Order ini tidak ada di Excel; pengeluaran stok ${qty} ${satuan} tidak punya catatan pembanding.`,
     aksi: ordeAdaDiExcel ? "Cek apakah bahan tertukar varian; ajukan koreksi/pembatalan pemakaian bila salah." : "Admin Produksi memastikan order ini memang memakai bahan tsb; bila tidak, ajukan pembatalan pemakaian." }),

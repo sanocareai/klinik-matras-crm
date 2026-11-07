@@ -17,6 +17,7 @@ import { applicableStepsFor } from "./productionStepCommandService.js";
 import { BOARD_DEFAULTS, PRIORITY_LABEL, stationLabel } from "../lib/domain/productionBoard.js";
 import { STEP_BY_NO, isSkippedEvidence, stepNoForStage } from "../lib/domain/productionSteps.js";
 import { buildDocumentationMatrix, deriveNextStepNo, isDocumentationRow, LEGACY_PHOTO_PREFIX, parseDocRows } from "../lib/domain/productionDocumentation.js";
+import { labelSatuanBaris } from "./transisiSatuanBahan.js";
 import {
   DATE_BASES, METRICS, MIN_SAMPLE, SLA, SLA_NOTE, STATUS_BUCKETS, activeFilterLabels, bucketKey, computeMetrics, drillRows, formatMinutes, inPeriod, keyInPeriod,
   makeFact, matchesFilters, minutesBetween, normalizeFilters, operatorReport, parsePeriod, periodError, round1, stationReport, statusBucketOf, trendSeries, warehouseReport,
@@ -69,18 +70,19 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
   const serviceIds = [...new Set(runs.map((r) => r.unit.serviceId).filter(Boolean))];
   const buildUnits = await buildTrackUnits(prisma, uIds); // Map unitId -> klasifikasi produk // jalur pengerjaan (pesanan BARU/custom): tahap berlaku berbeda dari restorasi
 
-  const [evidence, stageLogs, routing, issues, diagnoses, returns, moves, photos, buildRecords] = await Promise.all([
+  const [evidence, stageLogs, routing, issues, diagnoses, returns, movesMentah, photos, buildRecords] = await Promise.all([
     prisma.productionStepEvidence.findMany({ where: { runId: { in: runIds } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }], select: { id: true, runId: true, stepNo: true, stepCode: true, version: true, payload: true, media: true, actorId: true, createdAt: true } }),
     prisma.unitStageLog.findMany({ where: { unitId: { in: uIds } }, orderBy: { createdAt: "asc" }, select: { unitId: true, stageId: true, action: true, createdAt: true } }),
     loadStepContextRouting(prisma, serviceIds),
     planIds.length ? prisma.materialIssue.findMany({ where: { productionPlanId: { in: planIds }, status: { not: "CANCELLED" } }, select: { id: true, issueNumber: true, productionPlanId: true, status: true, createdAt: true, issuedAt: true, reworkInspectionId: true, lines: { select: { materialId: true, issuedQty: true, material: { select: { code: true, name: true, unit: true } } } } } }) : [],
     prisma.diagnosisReport.findMany({ where: { runId: { in: runIds } }, orderBy: { createdAt: "asc" }, select: { runId: true, photoUrls: true } }),
     prisma.productionMaterialReturn.findMany({ where: { runId: { in: runIds } }, select: { runId: true, materialId: true, qty: true, status: true, requestedAt: true, receivedAt: true, receivedQty: true, material: { select: { code: true, name: true, unit: true } } } }),
-    prisma.stockMovement.findMany({ where: { unitId: { in: uIds }, type: { in: ["WASTE", "RETURN"] } }, select: { unitId: true, materialId: true, type: true, qty: true, createdAt: true, material: { select: { code: true, name: true, unit: true } } } }),
+    prisma.stockMovement.findMany({ where: { unitId: { in: uIds }, type: { in: ["WASTE", "RETURN"] } }, select: { unitId: true, materialId: true, unitAtEntry: true, type: true, qty: true, createdAt: true, material: { select: { code: true, name: true, unit: true } } } }),
     resolveUnitPhotosBulk(prisma, uIds),
     // Jalur pengerjaan: pemakaian aktual yang dicatat PIC Bahan (versi terbaru per Run = keadaan sekarang).
     prisma.productionBuildMaterialRecord.findMany({ where: { runId: { in: runIds } }, orderBy: [{ runId: "asc" }, { version: "asc" }], select: { runId: true, materials: true } }),
   ]);
+  const moves = await labelSatuanBaris(prisma, movesMentah); // satuan SAAT dicatat
   const latestBuildRecord = new Map(buildRecords.map((r) => [r.runId, r])); // urut naik -> yang terakhir menang
 
   const evByRun = new Map(); for (const e of evidence) (evByRun.get(e.runId) || evByRun.set(e.runId, []).get(e.runId)).push(e);

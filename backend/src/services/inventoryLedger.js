@@ -1,3 +1,4 @@
+import { referensiTidakCocok, TEKS_REFERENSI_TIDAK_COCOK } from "./referensiHargaSatuan.js";
 // Warehouse — SUMBER TUNGGAL untuk (a) menulis stock_movements dan
 // (b) menghitung saldo (on-hand/reserved/available). Ditambahkan saat audit
 // end-to-end 12 Sept 2026 untuk menutup 3 celah nyata yang ditemukan:
@@ -125,6 +126,8 @@ export async function postStockMovement(tx, {
   // Melewati SATU pemeriksaan saja — "saldo hasil tidak boleh minus" untuk pergerakan keluar. Jumlah, kunci material, idempotensi, dan validasi lain TIDAK terpengaruh. Tanpa objek ini perilaku TIDAK berubah.
   // Bentuk: { alasan: string (≥10 karakter), aktorId }. Penerimaan/transfer/pengeluaran Gudang/endpoint lain tidak pernah memberikannya.
   pengecualianSaldoMinus,
+  // TRANSISI SATUAN (Nov 2026): HANYA dipakai layanan transisi. Tanpa nilai ini trigger DB mengisi satuan master saat itu.
+  unitAtEntry, unitTransitionId,
 } = {}) {
   if (!tx?.stockMovement) {
     throw new Error("postStockMovement butuh `tx` (klien transaksi Prisma), bukan prisma singleton di luar transaksi");
@@ -177,6 +180,8 @@ export async function postStockMovement(tx, {
       stockAdjustmentRequestId: stockAdjustmentRequestId || null,
       correctionId: correctionId || null,
       correctsMovementId: correctsMovementId || null,
+      ...(unitAtEntry ? { unitAtEntry } : {}),
+      ...(unitTransitionId ? { unitTransitionId } : {}),
       ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
     },
     include: { material: { select: { code: true, name: true, unit: true } } },
@@ -208,7 +213,7 @@ export async function postStockMovement(tx, {
  * dalam transaksi) — murni SELECT, tidak mengunci apa pun.
  */
 export async function computeStockSnapshot(client) {
-  return client.$queryRaw`
+  const rows = await client.$queryRaw`
     SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active, m.category,
            m.service_line AS "serviceLine",
            m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
@@ -223,6 +228,7 @@ export async function computeStockSnapshot(client) {
            MAX(sm.created_at) AS "lastMovementAt",
            (SELECT sm2.unit_cost FROM stock_movements sm2
             WHERE sm2.material_id = m.id AND sm2.unit_cost IS NOT NULL
+              AND sm2.created_at >= COALESCE((SELECT MAX(t.created_at) FROM material_unit_transitions t WHERE t.material_id = m.id), '-infinity'::timestamptz) -- harga per satuan lama tidak dipakai untuk satuan baru
             ORDER BY sm2.created_at DESC LIMIT 1) AS "latestUnitCost"
     FROM materials m
     LEFT JOIN stock_movements sm ON sm.material_id = m.id
@@ -246,6 +252,9 @@ export async function computeStockSnapshot(client) {
              m.kind, m.created_via, m.specification, m.storage_hint
     ORDER BY m.code ASC
   `;
+  // Referensi Agustus per satuan asal: sesudah transisi satuan TIDAK ditampilkan sebagai angka (ditandai satuan tidak cocok); nilai stok referensi (Rupiah) tidak bergantung satuan.
+  const tdk = await referensiTidakCocok(client);
+  return tdk.size ? rows.map((r) => (tdk.has(r.materialId) ? { ...r, referenceUnitCost: null, referenceUnitCostMonth: null, referensiTidakCocok: { ...tdk.get(r.materialId), teks: TEKS_REFERENSI_TIDAK_COCOK(tdk.get(r.materialId)) } } : r)) : rows;
 }
 
 /** Status stok turunan — SAMA PERSIS dengan deriveStockStatusReal frontend

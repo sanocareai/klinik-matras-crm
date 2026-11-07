@@ -1,0 +1,15 @@
+# Migrasi ADITIF yang SUDAH diaudit (nama + sha256 isi, LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
+MIG_NAME="@@MIG_NAME@@"
+MIG_PIN="@@MIG_PIN@@"
+# Hitungan pernyataan migrasi (hasil pemindai) yang diaudit. Selisih = berhenti.
+SCAN_EXPECT='@@SCAN_EXPECT@@'
+# Diff schema.prisma baseline→kandidat (U0, tanpa baris index dan nomor hunk) yang diaudit: sha256. Selisih = berhenti.
+SCHEMA_DIFF_SHA="@@SCHEMA_DIFF_SHA@@"
+# Objek rilis yang HARUS ada sesudah migrasi (nama persis; dibaca dari migrasi yang dipin).
+TBL_BARU="material_unit_transitions"
+KOL_BARU="unit_at_entry unit_transition_id"
+IDX_BARU="material_unit_transitions_pkey material_unit_transitions_idempotency_key_key material_unit_transitions_material_id_created_at_idx"
+CHK_BARU="material_unit_transitions_beda_satuan_chk material_unit_transitions_saldo_baru_chk material_unit_transitions_gerakan_chk"
+FK_BARU="material_unit_transitions_material_id_fkey"
+TRG_BARU="material_unit_transitions_append_only_trg stock_movements_stamp_unit_trg materials_unit_guard_trg"
+FN_BARU="material_unit_transitions_append_only stock_movements_stamp_unit materials_unit_guard"

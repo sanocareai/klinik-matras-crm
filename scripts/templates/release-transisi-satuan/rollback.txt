@@ -1,0 +1,15 @@
+Rilis ini membawa 1 migrasi ADITIF dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch, JALANKAN GUARD DULU (baca-saja):
+   bash ${NEW_DIR}/scripts/rollback-guard-transisi-satuan.sh
+   - exit 0 = belum ada transisi tersimpan: rollback kode rutin aman. exit 3 = DITOLAK: ada transisi tersimpan; kode lama akan membaca riwayat pergerakan sebelum transisi dengan label satuan baru (saldo tetap benar). Jangan rollback rutin; perbaiki ke depan.
+   - Pengecualian HANYA atas keputusan Owner, dengan alasan tertulis: ROLLBACK_TRANSISI_IZIN="<alasan>" bash ${NEW_DIR}/scripts/rollback-guard-transisi-satuan.sh. exit 2 = guard gagal membaca: periksa dulu.
+Langkah rollback (hanya bila guard exit 0 atau ada izin Owner):
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT kode live lain (gerbang kode live membuktikan kode di container == folder == baseline diset sebelum rilis).
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Web (frontend/dist) tidak diubah oleh rilis ini (dibawa apa adanya) dan dikembalikan bersama folder release sebelumnya. Kode lama: rute transisi-satuan dan riwayat-satuan hilang.
+Migrasi (2 kolom nullable + 1 tabel dokumen + 3 fungsi + 3 trigger) DIBIARKAN terpasang: kode lama tidak mengenal kolom/tabel itu dan tetap berjalan; trigger penanda satuan hanya mengisi kolom nullable baru; pagar satuan master hanya menolak
+perubahan satuan bahan yang sudah punya pergerakan (kode lama tidak melakukannya). Tidak ada yang perlu dibalik di skema.
+Transisi yang SUDAH dijalankan lewat rute rilis ini adalah DATA (pergerakan tutup/buka, satuan master, dokumen append-only, tautan SO): rollback kode TIDAK membalikkannya. Koreksi hanya lewat jalur resmi dengan persetujuan Owner.
+Stok, harga, biaya beku, PO/GR, jurnal, PSA, penyesuaian, hasil SO, dan pengaturan Finance tidak disentuh oleh skrip rilis maupun oleh kode ini sampai Owner menjalankan transisi: tidak ada yang perlu dibalik oleh rollback.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (transaksi sah pengguna); gunakan hanya atas keputusan Owner.

@@ -151,7 +151,7 @@ export function klasifikasiKelengkapan(f = {}) {
  */
 export function uraikanAlasanCatatan(daftarFlags) {
   const KATALOG = new Set(["NAMA_TIDAK_DI_KATALOG", "BAHAN_GANDA", "BAHAN_NONAKTIF"]);
-  const SATUAN = new Set(["SATUAN_BEDA_MASTER", "SATUAN_TAK_DIKENAL", "ISSUE_LAMA_SATUAN_BEDA"]);
+  const SATUAN = new Set(["SATUAN_BEDA_MASTER", "SATUAN_TAK_DIKENAL", "ISSUE_LAMA_SATUAN_BEDA", "ISSUE_LAMA_LINTAS_SATUAN"]);
   const out = { katalog: 0, satuan: 0, lain: [] };
   const lain = new Map();
   for (const flags of daftarFlags || []) {

@@ -1,0 +1,51 @@
+EXPECT_PRISMA="backend/prisma/migrations/${MIG_NAME}/migration.sql"$'\n'"backend/prisma/schema.prisma"
+PRISMA_CHANGED="$(printf '%s\n' "$CHANGED" | grep -E '^backend/prisma/' || true)"
+[ "$(printf '%s\n' "$PRISMA_CHANGED" | LC_ALL=C sort)" = "$(printf '%s\n' "$EXPECT_PRISMA" | LC_ALL=C sort)" ] || { printf '%s\n' "$PRISMA_CHANGED"; die "berkas prisma yang berubah HARUS tepat migrasi rilis ini (1 migrasi + schema.prisma yang diaudit)"; }
+# Migrasi yang sudah ada di baseline TIDAK boleh diubah/dihapus: hanya penambahan.
+[ -z "$(sg diff --name-status "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/migrations | grep -v '^A' || true)" ] || die "ada migrasi baseline yang DIUBAH/DIHAPUS — dilarang"
+[ "$(sg diff -U0 --no-color "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/schema.prisma | grep -v '^index ' | sed -E 's/^@@ [^@]*@@.*$/@@/' | { cat; echo; } | sha256sum | cut -d' ' -f1)" = "$SCHEMA_DIFF_SHA" ] || die "diff schema.prisma BERBEDA dari yang diaudit — audit ulang lalu perbarui pin"
+ok "schema.prisma: diff identik dengan yang diaudit (aditif: 2 kolom nullable di StockMovement + model MaterialUnitTransition + relasi balik)"
+[[ "$MIG_NAME" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || die "nama migrasi tidak valid: $MIG_NAME"
+ALL_SQL="$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${MIG_NAME}/migration.sql" | tr -d '\r')"
+h="$(printf '%s\n' "$ALL_SQL" | sha256sum | cut -d' ' -f1)"
+[ "$MIG_PIN" = "$h" ] || die "isi migrasi ${MIG_NAME} BERBEDA dari yang diaudit (sha256 ${h}) — audit ulang lalu perbarui pin"
+ok "migrasi ${MIG_NAME}: sha256 cocok pin (${h:0:12})"
+# Pemindai migrasi: tanpa pernyataan terlarang (DROP/DELETE/UPDATE/INSERT/TRUNCATE/GRANT/REVOKE/EXTENSION/RENAME/CASCADE-hapus) + hitungan pernyataan sama dengan yang diaudit. Komentar dibuang lebih dulu.
+sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
+pindai_migrasi() {
+  local t terlarang
+  t="$(sql_bersih)"
+  terlarang="$(printf '%s\n' "$t" | grep -E 'DROP |DELETE FROM|UPDATE "|INSERT INTO|TRUNCATE|GRANT |REVOKE |CREATE EXTENSION|ALTER TYPE|RENAME |DISABLE TRIGGER|session_replication_role|SET ROLE|SET SESSION AUTHORIZATION|RESET ALL|ON DELETE CASCADE|ON DELETE SET NULL' || true)"
+  if [ -n "$terlarang" ]; then echo "TERLARANG"; return 0; fi
+  echo "add_col=$(printf '%s\n' "$t" | grep -c '^ALTER TABLE "stock_movements" ADD COLUMN')|alter_lain=$(printf '%s\n' "$t" | grep '^ALTER TABLE' | grep -vc '^ALTER TABLE "stock_movements" ADD COLUMN\|ADD CONSTRAINT')|create_table=$(printf '%s\n' "$t" | grep -c '^CREATE TABLE ')|index=$(printf '%s\n' "$t" | grep -c '^CREATE \(UNIQUE \)\?INDEX')|fk=$(printf '%s\n' "$t" | grep -c 'FOREIGN KEY')|fungsi=$(printf '%s\n' "$t" | grep -c '^CREATE OR REPLACE FUNCTION')|trigger=$(printf '%s\n' "$t" | grep -c '^CREATE TRIGGER')"
+}
+HASIL_SCAN="$(printf '%s\n' "$ALL_SQL" | pindai_migrasi)"
+[ "$HASIL_SCAN" = "$SCAN_EXPECT" ] || die "hitungan/isi pernyataan migrasi BERBEDA dari yang diaudit: ${HASIL_SCAN}"
+ok "migrasi: DDL aditif (2 kolom nullable di stock_movements, 1 tabel dokumen kosong, 2 indeks, 1 FK RESTRICT, 3 fungsi + 3 trigger); tanpa DROP/DELETE/UPDATE/INSERT/TRUNCATE/GRANT/EXTENSION/RENAME/hapus-CASCADE"
+# UJI NEGATIF PEMINDAI: setiap mutan HARUS menghasilkan hasil ≠ SCAN_EXPECT. Mutan yang lolos = pemindai tidak bisa dipercaya → berhenti.
+NEG=0
+harus_ditolak() { local nama="$1" teks="$2" o; o="$(printf '%s\n' "$teks" | pindai_migrasi)"; if [ "$o" = "$SCAN_EXPECT" ]; then die "uji negatif pemindai: mutan '${nama}' LOLOS (seharusnya ditolak)"; fi; NEG=$((NEG+1)); }
+tambah_stmt() { printf '%s\n%s\n' "$ALL_SQL" "$1"; }
+harus_ditolak "DROP TABLE units" "$(tambah_stmt 'DROP TABLE "units";')"
+harus_ditolak "UPDATE stock_movements (backfill)" "$(tambah_stmt 'UPDATE "stock_movements" SET "unit_at_entry" = (SELECT 1);')"
+harus_ditolak "DELETE" "$(tambah_stmt 'DELETE FROM "units";')"
+harus_ditolak "INSERT" "$(tambah_stmt "INSERT INTO \"material_unit_transitions\" (id) VALUES ('x');")"
+harus_ditolak "TRUNCATE" "$(tambah_stmt 'TRUNCATE "stock_movements";')"
+harus_ditolak "ADD COLUMN lain pada stock_movements" "$(tambah_stmt 'ALTER TABLE "stock_movements" ADD COLUMN "x" TEXT;')"
+harus_ditolak "ADD COLUMN pada materials" "$(tambah_stmt 'ALTER TABLE "materials" ADD COLUMN "x" TEXT;')"
+harus_ditolak "DROP COLUMN" "$(tambah_stmt 'ALTER TABLE "materials" DROP COLUMN "unit";')"
+harus_ditolak "ALTER COLUMN tipe" "$(tambah_stmt 'ALTER TABLE "materials" ALTER COLUMN "unit" TYPE TEXT;')"
+harus_ditolak "tabel baru liar" "$(tambah_stmt 'CREATE TABLE "x" ("id" UUID NOT NULL);')"
+harus_ditolak "indeks tambahan" "$(tambah_stmt 'CREATE INDEX "x_idx" ON "units"("status");')"
+harus_ditolak "FK CASCADE" "$(printf '%s\n' "$ALL_SQL" | sed 's/ON DELETE RESTRICT/ON DELETE CASCADE/')"
+harus_ditolak "trigger tambahan" "$(tambah_stmt 'CREATE TRIGGER "x_trg" BEFORE INSERT ON "units" FOR EACH ROW EXECUTE FUNCTION stock_movements_stamp_unit();')"
+harus_ditolak "fungsi tambahan" "$(tambah_stmt 'CREATE OR REPLACE FUNCTION evil() RETURNS trigger AS $$ BEGIN RETURN NEW; END $$ LANGUAGE plpgsql;')"
+harus_ditolak "DISABLE TRIGGER" "$(tambah_stmt 'ALTER TABLE "stock_movements" DISABLE TRIGGER ALL;')"
+harus_ditolak "SET session_replication_role" "$(tambah_stmt "SET session_replication_role = replica;")"
+harus_ditolak "SET ROLE" "$(tambah_stmt "SET ROLE postgres;")"
+harus_ditolak "CREATE EXTENSION" "$(tambah_stmt 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";')"
+harus_ditolak "GRANT" "$(tambah_stmt 'GRANT ALL ON "materials" TO PUBLIC;')"
+harus_ditolak "RENAME" "$(tambah_stmt 'ALTER TABLE "materials" RENAME COLUMN "unit" TO "u";')"
+harus_ditolak "enum diubah" "$(tambah_stmt "ALTER TYPE \"MaterialUnit\" ADD VALUE IF NOT EXISTS 'LIAR';")"
+harus_ditolak "badan fungsi memuat DROP" "$(printf '%s\n' "$ALL_SQL" | sed "s/RAISE EXCEPTION/DROP TABLE units; RAISE EXCEPTION/")"
+ok "uji negatif pemindai: ${NEG} mutan (DROP/UPDATE/DELETE/INSERT/TRUNCATE/ALTER lama/FK CASCADE/trigger+fungsi liar/EXTENSION/GRANT/RENAME/enum) SEMUA ditolak"

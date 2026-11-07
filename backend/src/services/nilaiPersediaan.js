@@ -8,6 +8,7 @@
 import { AWALAN_KUNCI_PO } from "./finance/hargaBerlaku.js";
 import { klasifikasiSaldo, KEADAAN_SALDO, nolTerverifikasiPer } from "./keadaanSaldo.js";
 import { tautanSOAktif } from "./pengamanHistorisPascaSO.js";
+import { transisiTerakhirPer } from "./transisiSatuanBahan.js";
 import { hasilSOTerkini, JENIS } from "./hasilSO.js";
 import { ROLE_PERMISSIONS, PERMISSIONS as P } from "../constants/permissions.js";
 
@@ -149,7 +150,7 @@ async function blokFinance(db, { at, saldoPerBahan, bolehNominal }) {
   if (!posted) alasan.push(`Persediaan Awal belum diposting${opening ? ` (${opening.number}: ${opening.status})` : ""} — saldo buku sebelum cutover belum dijembatani.`);
   for (const g of gaps) alasan.push(`${g.n} jurnal tertahan (${g.sumber}: ${g.alasan}).`);
   if (tanpaBukti + sebagian > 0) alasan.push(`${tanpaBukti} bahan bersaldo tanpa bukti harga penerimaan dan ${sebagian} sebagian — nilai bukunya tidak bisa dipastikan per bahan.`);
-  const selisihBukti = Math.round((saldo - totalBukti) * 100) / 100; if (Math.abs(selisihBukti) > 1) alasan.push(`Saldo akun berbeda Rp${Math.abs(selisihBukti).toLocaleString("id-ID")} dari jumlah biaya penerimaan berharga di ledger stok.`);
+  const selisihBukti = Math.round((saldo - totalBukti) * 100) / 100; if (Math.abs(selisihBukti) > 1) alasan.push(bolehNominal ? `Saldo akun berbeda Rp${Math.abs(selisihBukti).toLocaleString("id-ID")} dari jumlah biaya penerimaan berharga di ledger stok.` : "Saldo akun berbeda dari jumlah biaya penerimaan berharga di ledger stok (nominal hanya untuk pemegang izin Finance)."); // NOMINAL TIDAK BOLEH BOCOR ke peran tanpa finance:read lewat teks alasan
   alasan.push("Saldo akun tidak dialokasikan ke bahan; rekonsiliasi per bahan belum tersedia.");
   const kosongNominal = !bolehNominal;
   return { ...dasar, tersedia: true, status: "BELUM_DIREKONSILIASI", alasan, saldo: kosongNominal ? null : saldo, jurnal: jurnalDicek,
@@ -187,7 +188,9 @@ export async function hitungNilaiPersediaan(db, { waktu = new Date(), bolehNomin
     const h = hargaPeta.get(m.id) ?? null; const b = klasifikasiBaris({ bahan: m, saldo: l.saldo, jumlahPergerakan: l.n, nolTerverifikasi: nolVer.has(m.id), verifikasiNol: nolVer.has(m.id) ? { ...nolVer.get(m.id), soTanggal: tautanSO.get(m.id)?.soTanggal ?? null } : null, harga: h, hasilSO: soPeta.get(m.id) ?? null });
     baris.push(b); saldoPerBahan.set(m.id, { saldo: l.saldo, kode: m.code, nama: m.name, satuan: m.unit, hargaBerlaku: h ? h.harga : null });
   }
-  const cakupan = ringkasCakupan(baris); const est = hitungEstimasi(baris);
+  const transisiPeta = await transisiTerakhirPer(db); // TRANSISI SATUAN: saldo baru bisa CAKUPAN PARSIAL (kewajiban konversi terbuka) — bukan rekonsiliasi tuntas
+  for (const b of baris) { const t = transisiPeta.get(b.materialId); if (t) { b.transisiSatuan = t; if (t.parsial) b.keterangan = `${b.keterangan ?? ""} Cakupan parsial: satuan berganti ${t.dari}→${t.ke} pada ${t.tanggal}; ${t.kewajibanTerbuka.length} kewajiban konversi terbuka (penerimaan satuan lama belum diterjemahkan).`.trim(); } }
+  const cakupan = ringkasCakupan(baris); cakupan.transisiSatuan = { bahan: baris.filter((b) => b.transisiSatuan).length, parsial: baris.filter((b) => b.transisiSatuan?.parsial).length }; const est = hitungEstimasi(baris);
   const finance = await blokFinance(db, { at, saldoPerBahan, bolehNominal });
   const tampilBaris = urutkanRisiko(baris).map((b) => (bolehNominal ? b : { ...b, harga: null, nilai: b.status === STATUS.SALDO_NOL ? 0 : null, nilaiLedger: null }));
   return {

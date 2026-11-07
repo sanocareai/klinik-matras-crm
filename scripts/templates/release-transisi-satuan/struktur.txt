@@ -1,0 +1,22 @@
+
+# Struktur objek rilis (2 kolom nullable di stock_movements; 1 tabel dokumen KOSONG; 1 FK RESTRICT; 3 CHECK; 3 indeks; 3 fungsi + 3 trigger) — SATU definisi dipakai production (sebelum switch) dan rehearsal.
+# $1 = fungsi pembaca SQL (menerima satu argumen SQL, mencetak hasil -At), $2 = fungsi kegagalan (menerima pesan).
+in_list() { local o="" x; for x in $1; do o="${o:+$o,}'$x'"; done; printf '%s' "$o"; }
+struktur_baru() {
+  local Q="$1" G="$2" n
+  [ "$("$Q" "select count(*) from information_schema.columns where table_schema='public' and table_name='stock_movements' and column_name in ($(in_list "$KOL_BARU")) and is_nullable='YES'")" = "2" ] || "$G" "2 kolom nullable (unit_at_entry, unit_transition_id) di stock_movements tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename in ($(in_list "$TBL_BARU"))")" = "1" ] || "$G" "tabel rilis (material_unit_transitions) tidak terpasang"
+  [ "$("$Q" "select count(*) from material_unit_transitions")" = "0" ] || "$G" "tabel rilis TIDAK kosong setelah migrasi (backfill tidak diizinkan)"
+  n="$(printf '%s\n' $FK_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ($(in_list "$FK_BARU")) and contype='f' and confdeltype='r' and convalidated")" = "$n" ] || "$G" "${n} FK ON DELETE RESTRICT tidak terpasang/tervalidasi"
+  n="$(printf '%s\n' $CHK_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ($(in_list "$CHK_BARU")) and contype='c' and convalidated")" = "$n" ] || "$G" "${n} CHECK tidak terpasang/tervalidasi"
+  n="$(printf '%s\n' $IDX_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname in ($(in_list "$IDX_BARU"))")" = "$n" ] || "$G" "${n} indeks tidak terpasang"
+  n="$(printf '%s\n' $TRG_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname in ($(in_list "$TRG_BARU")) and not t.tgisinternal and p.proname in ($(in_list "$FN_BARU"))")" = "$n" ] || "$G" "${n} trigger (penanda satuan, pagar satuan master, dokumen append-only) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_trigger t where t.tgname = 'stock_movements_stamp_unit_trg' and t.tgrelid = 'stock_movements'::regclass and (t.tgtype & 2) = 2 and (t.tgtype & 4) = 4")" = "1" ] || "$G" "trigger penanda satuan bukan BEFORE INSERT pada stock_movements"
+  [ "$("$Q" "select count(*) from pg_trigger t where t.tgname = 'materials_unit_guard_trg' and t.tgrelid = 'materials'::regclass and (t.tgtype & 2) = 2 and (t.tgtype & 16) = 16")" = "1" ] || "$G" "pagar satuan master bukan BEFORE UPDATE pada materials"
+}
+SKEMA_SQL="select md5(coalesce(string_agg(table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema='public' and table_name <> 'material_unit_transitions' and not (table_name = 'stock_movements' and column_name in ('unit_at_entry','unit_transition_id'))"
+LQ() { psql_live -At -c "$1"; }

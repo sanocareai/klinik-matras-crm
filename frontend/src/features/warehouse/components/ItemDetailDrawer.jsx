@@ -71,7 +71,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
   const satuanTeks = UNIT_LABEL[item.unit] || item.unit;
   const ringkasHargaHeader = hargaPeta ? tampilHargaDaftar(hargaPeta, materialId) : null; // sama dengan kolom harga di daftar; tanpa izin Finance = tidak tampil; belum ada = bukan Rp0
   const lokasiTerima = baris ? riwayatLokasi(baris) : null;
-  const adaReferensi = item.referenceUnitCost != null || item.referenceStockValue != null;
+  const adaReferensi = item.referenceUnitCost != null || item.referenceStockValue != null || !!item.referensiTidakCocok;
 
   return (
     <FokusOverlay
@@ -135,7 +135,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
             <div className="gud-bahan-pendukung" data-testid="lipat-referensi-harga">
               <h3 className="gud-bahan-sub">Harga dan nilai stok referensi lama</h3>
               <dl className="gud-dl">
-                <Baris label="Harga referensi">{item.referenceUnitCost != null ? <>{formatRupiah(item.referenceUnitCost)} <span className="gud-redup">({item.referenceUnitCostMonth})</span></> : <em>Tidak tercatat</em>}</Baris>
+                <Baris label="Harga referensi">{item.referensiTidakCocok ? <em data-testid="referensi-satuan-tidak-cocok">Tidak berlaku pada satuan {UNIT_LABEL[item.referensiTidakCocok.satuanSekarang] || item.referensiTidakCocok.satuanSekarang} (referensi per {UNIT_LABEL[item.referensiTidakCocok.satuanReferensi] || item.referensiTidakCocok.satuanReferensi})</em> : item.referenceUnitCost != null ? <>{formatRupiah(item.referenceUnitCost)} <span className="gud-redup">({item.referenceUnitCostMonth})</span></> : <em>Tidak tercatat</em>}</Baris>
                 <Baris label="Nilai stok referensi">{item.referenceStockValue != null ? <>{formatRupiah(item.referenceStockValue)} <span className="gud-redup">({item.referenceStockValueMonth})</span></> : <em>Tidak tercatat</em>}</Baris>
               </dl>
               <p className="gud-petunjuk">{TEKS_DRAWER.referensi}</p>
@@ -153,6 +153,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
               <ul className="gud-gerak" data-testid="daftar-pergerakan">
                 {movements.map((m) => {
                   const dok = dokumenAsal(m); const qty = Number(m.qty);
+                  const satuanBaris = m.satuanCatat || item.unit; // satuan SAAT dicatat (transisi satuan); API lama tanpa field ini = satuan master sekarang
                   return (
                     <li key={m.id} data-testid="baris-pergerakan" data-tipe={m.type}>
                       <div className="gud-gerak-isi">
@@ -162,8 +163,9 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
                         {m.supplier && <span className="gud-sekunder">Supplier {m.supplier}</span>}
                         {m.unit?.unitCode && <span className="gud-sekunder">Unit {m.unit.unitCode}</span>}
                         {m.createdBy?.name && <span className="gud-sekunder">oleh {m.createdBy.name}</span>}
+                        {m.satuanCatat && m.satuanCatat !== item.unit && <span className="gud-sekunder" data-testid="satuan-asal">Dicatat dalam {UNIT_LABEL[m.satuanCatat] || m.satuanCatat} (satuan lama; saldo sekarang dalam {satuanTeks})</span>}
                       </div>
-                      <span className={cn("gud-gerak-qty", qty < 0 ? "gud-minus" : "gud-plus")} data-testid="qty-pergerakan" data-arah={qty < 0 ? "keluar" : "masuk"}>{qty > 0 ? "+" : ""}{formatQty(qty, item.unit).replace(/^-/, "−")}</span>
+                      <span className={cn("gud-gerak-qty", qty < 0 ? "gud-minus" : "gud-plus")} data-testid="qty-pergerakan" data-arah={qty < 0 ? "keluar" : "masuk"} data-satuan={satuanBaris}>{qty > 0 ? "+" : ""}{formatQty(qty, satuanBaris).replace(/^-/, "−")}</span>
                     </li>
                   );
                 })}

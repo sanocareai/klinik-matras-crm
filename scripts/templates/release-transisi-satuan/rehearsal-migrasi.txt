@@ -1,0 +1,80 @@
+KLON_DB="${REH_DB}_kunci"
+reh_drop_klon() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${KLON_DB}' and pid <> pg_backend_pid()" </dev/null >/dev/null 2>&1 || true; dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${KLON_DB}\"" </dev/null >/dev/null 2>&1 || true; }
+gagal_reh() { reh_drop_klon; reh_drop; die "$1"; }
+disk_mb() { df -BM --output=avail "$HOME" | tail -n 1 | tr -dc '0-9'; }
+S_SEBELUM="$(RPSQL "$SKEMA_SQL")"; [ -n "$S_SEBELUM" ] || gagal_reh "sidik jari skema rehearsal kosong"
+[ "$S_SEBELUM" = "$SKEMA_PRA" ] || gagal_reh "skema tabel lama pada RESTORE berbeda dari produksi (backup/restore bermasalah)"
+RH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
+KL_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${KLON_DB}"
+CPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$KLON_DB" -X -At -q -c "$1" </dev/null; }
+NET_PROD="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID_OLD" | awk '{print $1}')"
+[ -n "$NET_PROD" ] || gagal_reh "jaringan docker produksi tidak terbaca (uji kode lama)"
+# KODE LAMA (image yang sedang melayani production) dijalankan sebagai SERVER terhadap skema bermigrasi: $1 = mode (tanpa-transisi|dengan-transisi), $2 = URL DB rehearsal, $3 = berkas log. Folder data/uploads TERISOLASI (BUKAN folder data production); env eksternal dinetralkan di dalam kode uji.
+jalankan_lama() {
+  local mode="$1" url="$2" log="$3" vd="$BK_DIR/reh-lama-$1"
+  mkdir -p "$vd/data" "$vd/uploads" "$vd/dd"
+  docker run --rm -i --network "$NET_PROD" --env-file "$PERSIST/backend/.env" -e DATABASE_URL="$url" -e LAMA_MODE="$mode" -e REH_PORT=4104 -v "$vd/data:/app/data" -v "$vd/uploads:/app/uploads" -v "$vd/dd:/frontend/dist-driver" "$ROLLBACK_TAG" node --input-type=module - <<'LAMANODE' > "$log" 2>&1
+@@LAMA_JS@@
+LAMANODE
+}
+SM_N0="$(RPSQL "select count(*) from stock_movements")"
+DISK_0="$(disk_mb)"; say "disk bebas sebelum migrasi rehearsal: ${DISK_0} MiB (gerbang minimal 5120 MiB)"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  # ── BATAS TUNGGU KUNCI: salinan restore dikloning; satu sesi menahan ACCESS SHARE pada stock_movements dan materials; migrasi HARUS gagal cepat (lock_timeout 5 detik), tanpa menggantung dan tanpa sisa ──
+  dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -X -q -c "CREATE DATABASE \"${KLON_DB}\" TEMPLATE \"${REH_DB}\"" </dev/null || gagal_reh "gagal mengkloning DB rehearsal untuk uji batas tunggu kunci"
+  DISK_1="$(disk_mb)"
+  ( dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$KLON_DB" -X -q -c "BEGIN; SELECT count(*) FROM stock_movements; SELECT count(*) FROM materials; SELECT pg_sleep(60); COMMIT;" </dev/null >/dev/null 2>&1 ) &
+  BLK=$!
+  sleep 4
+  [ "$(CPSQL "select count(*) from pg_stat_activity where datname='${KLON_DB}' and query like '%pg_sleep(60)%' and pid <> pg_backend_pid()")" -ge 1 ] || gagal_reh "sesi penahan kunci uji tidak aktif"
+  SECONDS=0
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$KL_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-kunci.log" 2>&1 &
+  MP=$!
+  for _ in $(seq 1 75); do kill -0 "$MP" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$MP" 2>/dev/null; then kill "$MP" 2>/dev/null || true; gagal_reh "migrasi MENGGANTUNG lebih dari 75 detik saat kunci ditahan (batas tunggu tidak bekerja)"; fi
+  RC_KUNCI=0; wait "$MP" || RC_KUNCI=$?
+  DUR_KUNCI="$SECONDS"
+  [ "$RC_KUNCI" != "0" ] || gagal_reh "migrasi SEHARUSNYA gagal saat kunci ditahan (lock_timeout tidak bekerja)"
+  [ "$DUR_KUNCI" -le 40 ] || gagal_reh "migrasi gagal setelah ${DUR_KUNCI} detik (batas tunggu ~5 detik; terlalu lama)"
+  grep -qi 'lock timeout\|canceling statement due to lock' "$BK_DIR/migrate-kunci.log" || { tail -n 12 "$BK_DIR/migrate-kunci.log"; gagal_reh "kegagalan migrasi BUKAN karena batas tunggu kunci"; }
+  [ "$(CPSQL "select count(*) from information_schema.columns where table_schema='public' and table_name='stock_movements' and column_name in ('unit_at_entry','unit_transition_id')")" = "0" ] || gagal_reh "migrasi gagal tetapi meninggalkan kolom (tidak atomik)"
+  [ "$(CPSQL "select count(*) from pg_tables where schemaname='public' and tablename='material_unit_transitions'")" = "0" ] || gagal_reh "migrasi gagal tetapi meninggalkan tabel (tidak atomik)"
+  [ "$(CPSQL "select count(*) from pg_proc where proname in ('stock_movements_stamp_unit','materials_unit_guard','material_unit_transitions_append_only')")" = "0" ] || gagal_reh "migrasi gagal tetapi meninggalkan fungsi (tidak atomik)"
+  [ "$(CPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || gagal_reh "migrasi gagal tetapi skema tabel lama berubah"
+  CPSQL "select pg_terminate_backend(pid) from pg_stat_activity where datname='${KLON_DB}' and query like '%pg_sleep(60)%' and pid <> pg_backend_pid()" >/dev/null || true
+  wait "$BLK" 2>/dev/null || true
+  ok "batas tunggu kunci: dengan sesi penahan kunci, migrasi GAGAL CEPAT dalam ${DUR_KUNCI} detik (tidak menggantung), tanpa sisa kolom/tabel/fungsi, skema lama tidak berubah"
+  # pemulihan terdokumentasi: tandai gagal-ditarik lalu ulangi saat lengang
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$KL_URL" backend npx prisma migrate resolve --rolled-back "$MIG_NAME" </dev/null > "$BK_DIR/migrate-resolve.log" 2>&1 || { tail -n 8 "$BK_DIR/migrate-resolve.log"; gagal_reh "migrate resolve --rolled-back GAGAL (prosedur pemulihan tidak terbukti)"; }
+  SECONDS=0
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$KL_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-klon.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-klon.log"; gagal_reh "migrasi ulang setelah resolve GAGAL pada klon"; }
+  DUR_KLON="$SECONDS"
+  [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-klon.log")" = "1" ] || gagal_reh "migrasi ulang pada klon harus menerapkan TEPAT 1 migrasi"
+  struktur_baru CPSQL gagal_reh
+  ok "pemulihan terbukti: migrate resolve --rolled-back lalu migrasi ulang pada salinan lengang berhasil dalam ${DUR_KLON} detik (data produksi ${SM_N0} pergerakan); struktur lengkap tervalidasi"
+  # kode LAMA terhadap skema baru TANPA transisi (keadaan tepat sesudah migrasi = rollback rutin)
+  jalankan_lama tanpa-transisi "$KL_URL" "$BK_DIR/rehearsal-kode-lama-tanpa.log" || { cat "$BK_DIR/rehearsal-kode-lama-tanpa.log"; gagal_reh "uji KODE LAMA terhadap skema bermigrasi (tanpa transisi) GAGAL — rollback kode TIDAK terbukti aman"; }
+  ok "rollback kode (tanpa transisi): $(grep -c '^OK' "$BK_DIR/rehearsal-kode-lama-tanpa.log") pemeriksaan lulus — kode LAMA berjalan sebagai server di atas skema baru, jalur stok berfungsi, trigger menandai satuan, ubah satuan bahan berpergerakan ditolak"
+  GR_TANPA=0; GUARD_DB="$KLON_DB" bash "$NEW_DIR/scripts/rollback-guard-transisi-satuan.sh" > "$BK_DIR/guard-tanpa.log" 2>&1 || GR_TANPA=$?
+  [ "$GR_TANPA" = "0" ] && grep -q 'GUARD OK' "$BK_DIR/guard-tanpa.log" || { cat "$BK_DIR/guard-tanpa.log"; gagal_reh "guard rollback seharusnya MENGIZINKAN (exit 0) bila belum ada transisi tersimpan (exit ${GR_TANPA})"; }
+  ok "guard rollback: tanpa transisi tersimpan → exit 0 (rollback rutin boleh)"
+  DISK_2="$(disk_mb)"; reh_drop_klon
+  [ "$(dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -At -q -c "select count(*) from pg_database where datname='${KLON_DB}'" </dev/null)" = "0" ] || gagal_reh "DB klon uji kunci tidak terhapus"
+  ok "disk: bebas awal ${DISK_0} MiB; sesudah klon ${DISK_1} MiB; puncak uji klon ${DISK_2} MiB; klon dihapus"
+  RPSQL "select 1" >/dev/null || gagal_reh "DB rehearsal utama tidak dapat dibaca setelah uji klon"
+  SECONDS=0
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy di DB rehearsal GAGAL"; }
+  DUR_REH="$SECONDS"
+  [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-rehearsal.log")" = "1" ] || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy harus menerapkan TEPAT 1 migrasi rilis"; }
+  ok "durasi migrasi pada salinan restore (${SM_N0} pergerakan, DB $(RPSQL "select pg_size_pretty(pg_database_size(current_database()))")): ${DUR_REH} detik (sesi lengang)"
+else
+  say "keadaan LANJUT: uji batas tunggu kunci dan kode lama (tanpa transisi) dilewati — production sudah bermigrasi"
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; gagal_reh "migrate deploy (LANJUT) di DB rehearsal GAGAL"; }
+  ! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal.log" || gagal_reh "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu (seharusnya tidak ada yang pending)"
+fi
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || gagal_reh "migrate status rehearsal (image baru) TIDAK 'up to date'"
+struktur_baru RPSQL gagal_reh
+[ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || gagal_reh "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"
+[ "$(RPSQL "select count(*) from stock_movements")" = "$SM_N0" ] || gagal_reh "migrasi mengubah jumlah pergerakan stok"
+[ "$(RPSQL "select count(*) from stock_movements where unit_at_entry is not null")" = "0" ] || gagal_reh "migrasi MENGISI ulang pergerakan lama (unit_at_entry harus NULL untuk semua pergerakan sebelum migrasi)"
+ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); tabel dokumen kosong; 2 kolom nullable tanpa isi ulang; FK RESTRICT, CHECK, indeks, 3 fungsi + 3 trigger tervalidasi; skema tabel lama IDENTIK; jumlah pergerakan sama"

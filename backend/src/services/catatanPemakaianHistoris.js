@@ -6,6 +6,7 @@
 //  • Layanan ini TIDAK menulis stock_movements, Material Issue, saldo, biaya, atau jurnal. Perubahan keadaan selalu menulis peristiwa append-only (sebelum–sesudah, alasan, pelaku, waktu).
 //  • Impor ulang berkas yang sama = nol perubahan (kunci sumber = hash isi baris + urutan kemunculan).
 import crypto from "node:crypto";
+import { satuanCatatanPer } from "./transisiSatuanBahan.js";
 import {
   bacaCsvPemakaian, kunciSumber, sha256, angkaId, tanggalId, awalHariWIB, satuanBaku, petakanBahan, FLAG, STATE, SUMBER_EXCEL, flagMemblok, catatanSingkat,
   KOMPONEN_LAMA_RE, KILOAN_RE, buktiPembelianKiloan, petunjukKemasanKg, normNama, r4, labelState,
@@ -27,8 +28,10 @@ async function muatKonteks(db, { orderNumbers, unitIds = [], materialIds = [] })
   // bukti pembelian tertulis untuk bahan berkata KILOAN (baca-saja); dasar menentukan ASAL bahan, bukan penerimaan stok
   const pembelian = db.finPurchase?.findMany ? await db.finPurchase.findMany({ where: { description: { contains: "kiloan", mode: "insensitive" } }, select: { purchaseNumber: true, date: true, amount: true, description: true, status: true } }) : [];
   const idUnit = [...new Set([...unitIds, ...orders.flatMap((o) => o.units.map((u) => u.id))])];
-  const pakai = idUnit.length ? await db.stockMovement.findMany({ where: { unitId: { in: idUnit }, type: { in: ["ISSUE", "RETURN"] } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }) : [];
-  const lama = await db.stockMovement.findMany({ where: { type: "ISSUE", note: { startsWith: NOTE_IMPOR_LAMA }, unitId: { not: null } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } } } });
+  const pakai = idUnit.length ? await db.stockMovement.findMany({ where: { unitId: { in: idUnit }, type: { in: ["ISSUE", "RETURN"] } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true, unitAtEntry: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }) : [];
+  const satuanPakai = await satuanCatatanPer(db, pakai); for (const m of pakai) m.satuanCatat = satuanPakai(m); // periode satuan tiap pergerakan
+  const lama = await db.stockMovement.findMany({ where: { type: "ISSUE", note: { startsWith: NOTE_IMPOR_LAMA }, unitId: { not: null } }, select: { id: true, unitId: true, materialId: true, type: true, qty: true, createdAt: true, note: true, unitAtEntry: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } } } });
+  const satuanLama = await satuanCatatanPer(db, lama); for (const m of lama) m.satuanCatat = satuanLama(m);
   return { orderBy, katalog, pembelian, katalogById: new Map(katalog.map((m) => [m.id, m])), pakai, lama, materialIds };
 }
 async function muatGarisWaktu(db, materialIds) {
@@ -92,15 +95,22 @@ function klasifikasi(items, ctx, garisWaktu, { sekarang = new Date() } = {}) {
     const mat = ctx.katalogById.get(isi[0].materialId);
     const jumlah = r4(isi.reduce((s, i) => s + Number(i.qty ?? 0), 0) + (tetapPosting.get(k) ?? 0));
     if (adaIssue) {
+      // PERIODE SATUAN: ledger dibandingkan HANYA dalam satu periode satuan yang sama dengan catatan Excel; lintas satuan tidak dijumlahkan (tidak dapat dibandingkan).
+      const periode = [...new Set(mv.map((m) => m.satuanCatat ?? mat.unit))]; const uomSet = new Set(isi.map((i) => i.uom).filter(Boolean));
+      const lintas = periode.length > 1 || uomSet.size > 1;
+      const murni = !lintas && uomSet.size === 1 && periode[0] === [...uomSet][0]; // catatan Excel dan seluruh ledger sama-sama dalam satu satuan (master boleh sudah berganti)
       const net = r4(-mv.reduce((s, m) => s + Number(m.qty), 0)); const pertama = mv.find((m) => m.type === "ISSUE");
-      const satuanBeda = isi.some((i) => hasil.get(i.key).flags.some((f) => f.kode === "SATUAN_BEDA_MASTER" || f.kode === "SATUAN_TAK_DIKENAL"));
-      if (!satuanBeda && Math.abs(jumlah - net) <= EPS) {
+      const satuanBeda = !murni && isi.some((i) => hasil.get(i.key).flags.some((f) => f.kode === "SATUAN_BEDA_MASTER" || f.kode === "SATUAN_TAK_DIKENAL"));
+      if (lintas) {
+        const f = FLAG.ISSUE_LAMA_LINTAS_SATUAN({ periode: [...periode, ...[...uomSet].filter((u) => !periode.includes(u))], rawQty: isi.map((i) => i.rawQty).join(" + "), rawUom: isi.map((i) => i.rawUom).filter(Boolean).join("/") || null });
+        for (const i of isi) { const h = hasil.get(i.key); h.flags.push(f); h.linkKind = "ISSUE_LAMA_BEDA"; h.linkIds = mv.map((m) => m.id); }
+      } else if (!satuanBeda && Math.abs(jumlah - net) <= EPS) {
         for (const i of isi) hasil.set(i.key, { state: STATE.TERCATAT_DI_STOK, flags: hasil.get(i.key).flags.filter((f) => f.tingkat === "INFO"), linkKind: "ISSUE_LAMA_SAMA", stockMovementId: pertama.id, linkIds: mv.map((m) => m.id) });
       } else if (satuanBeda) {
-        const f = FLAG.ISSUE_LAMA_SATUAN_BEDA({ ledger: net, rawQty: isi.map((i) => i.rawQty).join(" + "), rawUom: isi[0].rawUom, masterUom: mat.unit });
+        const f = FLAG.ISSUE_LAMA_SATUAN_BEDA({ ledger: net, rawQty: isi.map((i) => i.rawQty).join(" + "), rawUom: isi[0].rawUom, masterUom: periode[0] ?? mat.unit });
         for (const i of isi) { const h = hasil.get(i.key); h.flags.push(f); h.linkKind = "ISSUE_LAMA_BEDA"; h.linkIds = mv.map((m) => m.id); }
       } else {
-        const f = FLAG.ISSUE_LAMA_BERBEDA({ ledger: net, excel: jumlah, satuan: mat.unit });
+        const f = FLAG.ISSUE_LAMA_BERBEDA({ ledger: net, excel: jumlah, satuan: periode[0] ?? mat.unit });
         for (const i of isi) { const h = hasil.get(i.key); h.flags.push(f); h.linkKind = "ISSUE_LAMA_BEDA"; h.linkIds = mv.map((m) => m.id); }
       }
     } else calon.push({ k, isi, mat, jumlah });
@@ -111,8 +121,8 @@ function klasifikasi(items, ctx, garisWaktu, { sekarang = new Date() } = {}) {
     const k = `${m.unitId}|${m.materialId}`; if (adaDiExcel.has(k)) continue;
     const ordNo = m.unit?.order?.orderNumber ?? null; const mat = ctx.katalogById.get(m.materialId);
     const sudahPunyaExcel = items.some((i) => i.origin === "EXCEL" && i.unitId === m.unitId);
-    const net = r4(-(pakaiPer.get(k) ?? []).reduce((s, x) => s + Number(x.qty), 0));
-    ledgerBaru.push({ key: `LEDGER:${m.id}`, origin: "LEDGER", orderNumber: ordNo, unitId: m.unitId, materialId: m.materialId, stockMovementId: m.id, qty: net, uom: mat?.unit, usedAt: m.createdAt, flags: [FLAG.ISSUE_TANPA_PASANGAN({ qty: Number(-Number(m.qty)), satuan: mat?.unit, ordeAdaDiExcel: sudahPunyaExcel })] });
+    const net = r4(-(pakaiPer.get(k) ?? []).filter((x) => (x.satuanCatat ?? mat?.unit) === (m.satuanCatat ?? mat?.unit)).reduce((s, x) => s + Number(x.qty), 0)); // hanya periode satuan baris ini
+    ledgerBaru.push({ key: `LEDGER:${m.id}`, origin: "LEDGER", orderNumber: ordNo, unitId: m.unitId, materialId: m.materialId, stockMovementId: m.id, qty: net, uom: m.satuanCatat ?? mat?.unit, usedAt: m.createdAt, flags: [FLAG.ISSUE_TANPA_PASANGAN({ qty: Number(-Number(m.qty)), satuan: m.satuanCatat ?? mat?.unit, ordeAdaDiExcel: sudahPunyaExcel })] });
     unitTertahan.add(m.unitId);
   }
   for (const l of ledgerBaru) { if (!hasil.has(l.key)) hasil.set(l.key, { state: STATE.PERLU_DICEK, flags: l.flags, linkKind: "ISSUE_TANPA_PASANGAN", stockMovementId: l.stockMovementId, ledger: l }); }
@@ -299,10 +309,10 @@ async function evaluasiDi(prisma, { actorId = null, unitIds: _abaikan = null, se
     berubah++;
   }
   // Catatan LEDGER (pengeluaran stok lama tanpa pasangan): selesai bila pemakaiannya dikoreksi menjadi 0 atau kini punya pasangan di berkas.
-  const net = (u, m) => r4(-ctx.pakai.filter((x) => x.unitId === u && x.materialId === m).reduce((s, x) => s + Number(x.qty), 0));
+  const net = (u, m, uom) => r4(-ctx.pakai.filter((x) => x.unitId === u && x.materialId === m && (!uom || x.satuanCatat === uom)).reduce((s, x) => s + Number(x.qty), 0));
   for (const l of ledgerNotes) {
     const adaPasangan = items.some((i) => i.unitId === l.unitId && i.materialId === l.materialId);
-    const habis = net(l.unitId, l.materialId) <= EPS;
+    const habis = net(l.unitId, l.materialId, l.uom) <= EPS;
     if (!habis && !adaPasangan) continue;
     const alasan = habis ? "Pemakaian bahan ini pada unit sudah dikoreksi menjadi 0" : "Pengeluaran stok ini kini punya pasangan di berkas (dinilai pada catatan Excel)";
     if (!keringSaja) await prisma.unitUsageNote.update({ where: { id: l.id }, data: { state: STATE.DIKOREKSI, evaluatedAt: new Date() } });

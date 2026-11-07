@@ -37,6 +37,7 @@ import { prisma } from "../db.js";
 import { signUnitPhotoUrlsBulk } from "./productionUnitPhoto.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "../services/pkrProduksiGuard.js";
 import { explainProductionServiceForUnit } from "../services/productionSettingsService.js";
+import { labelSatuanBaris } from "../services/transisiSatuanBahan.js";
 
 export const unitRouter = express.Router();
 unitRouter.use(requireAuth);
@@ -634,7 +635,7 @@ unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res
     const movements = await prisma.stockMovement.findMany({
       where: { unitId: req.params.id, type: { in: ["ISSUE", "RETURN", "WASTE"] } },
       select: {
-        id: true, type: true, qty: true, reason: true, note: true, createdAt: true, materialIssueId: true,
+        id: true, type: true, qty: true, reason: true, note: true, createdAt: true, materialIssueId: true, materialId: true, unitAtEntry: true,
         material: { select: { id: true, code: true, name: true, unit: true } },
         createdBy: { select: { id: true, name: true } },
         materialIssue: { select: { id: true, issueNumber: true } }, // dokumen sumber (Material Issue Gudang); null = dicatat langsung oleh Produksi
@@ -652,7 +653,7 @@ unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res
       material: t.material, usedQty: -t.netQty,
     }));
 
-    res.json({ movements, totals });
+    res.json({ movements: await labelSatuanBaris(prisma, movements), totals }); // baris = satuan ASAL (transisi satuan); total tetap satuan master sekarang
   } catch (err) {
     handleEngineError(err, res);
   }

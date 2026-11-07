@@ -11,6 +11,7 @@ const POSISI_LABEL = Object.freeze(Object.fromEntries(POSISI_FILTER.map((p) => [
 import { netralkanRumus } from "./finance/export/excel.js";
 import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM } from "../constants/kelompokBahan.js";
 import { stokLokasi } from "./stokLokasi.js";
+import { labelSatuanBaris } from "./transisiSatuanBahan.js";
 
 const FORMAT_TANGGAL = "dd/mm/yyyy"; const FORMAT_WAKTU = "dd/mm/yyyy hh:mm"; const FORMAT_ANGKA = "#,##0.####";
 const WARNA = Object.freeze({ // fill, teks — nada yang sama dengan badge UI
@@ -53,17 +54,18 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
   const ids = unitIds?.length ? unitIds : rows.map((r) => r.id);
 
   // ── data tambahan (batch)
-  const [rencana, pergerakan, komponenRows, sementaraRows, catatanRows] = await Promise.all([
+  const [rencana, pergerakanMentah, komponenRows, sementaraRows, catatanRows] = await Promise.all([
     ids.length ? prisma.productionUnitMaterialPlan.findMany({ where: { unitId: { in: ids } } }) : [],
     ids.length ? prisma.stockMovement.findMany({
       where: { unitId: { in: ids }, type: { in: ["ISSUE", "RETURN", "WASTE"] } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, unitId: true, type: true, qty: true, note: true, reason: true, createdAt: true, material: { select: { id: true, code: true, name: true, unit: true } }, createdBy: { select: { name: true } }, materialIssue: { select: { issueNumber: true } } },
+      select: { id: true, unitId: true, materialId: true, unitAtEntry: true, type: true, qty: true, note: true, reason: true, createdAt: true, material: { select: { id: true, code: true, name: true, unit: true } }, createdBy: { select: { name: true } }, materialIssue: { select: { issueNumber: true } } },
     }) : [],
     ids.length ? prisma.unitComponentReuseEntry.findMany({ where: { unitId: { in: ids } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }] }) : [],
     ids.length ? prisma.unitProvisionalUsage.findMany({ where: { unitId: { in: ids } }, include: { material: { select: { code: true, name: true } } }, orderBy: [{ recordedAt: "asc" }, { id: "asc" }] }) : [],
     // Catatan pemakaian historis (Excel Admin Sales): nilai ASLI + keadaan + penanda "Perlu dicek"; terpisah dari Pemakaian Aktual (bukan transaksi stok).
     ids.length ? prisma.unitUsageNote.findMany({ where: { unitId: { in: ids }, state: { not: "TIDAK_DIHITUNG" } }, orderBy: [{ orderNumber: "asc" }, { origin: "asc" }, { sourceRow: "asc" }], include: { material: { select: { code: true, name: true, unit: true } } } }).then((rows) => terapkanKeadaanEfektif(prisma, rows)) : [],
   ]);
+  const pergerakan = await labelSatuanBaris(prisma, pergerakanMentah); // satuan SAAT dicatat (bukan satuan master sekarang)
   const matIds = [...new Set(rencana.flatMap((p) => p.lines.map((l) => l.materialId)))];
   const bahan = matIds.length ? new Map((await prisma.material.findMany({ where: { id: { in: matIds } }, select: { id: true, code: true, name: true, unit: true, itemGroup: true } })).map((m) => [m.id, m])) : new Map();
   const katalog = rencana.length ? new Map((await stokLokasi(prisma)).rows.map((r) => [r.materialId, r])) : new Map();

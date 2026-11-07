@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { Decimal, toMoney } from "./money.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { KoreksiError } from "../warehouseCorrection.js";
+import { referensiTidakCocok, TEKS_REFERENSI_TIDAK_COCOK } from "../referensiHargaSatuan.js";
 
 export const JENIS_BIAYA_OP = { ISSUE: "PEMAKAIAN", RETURN: "RETUR", WASTE: "SUSUT", ADJUSTMENT: "PENYESUAIAN" };
 export const TIPE_OP = Object.keys(JENIS_BIAYA_OP);
@@ -209,7 +210,8 @@ export async function ringkasanBahan(db, materialId) {
   const { aktif, semua, diganti } = await barisAktif(db, materialId); const sekarang = new Date(); const berlaku = pilih(aktif, sekarang); const terjadwal = aktif.filter((x) => new Date(x.effectiveFrom) > sekarang);
   const dampak = await hitungDampak(db, materialId, berlaku ? new Date(berlaku.effectiveFrom) : new Date(0));
   const tampilBerlaku = berlaku ? (await perkayaSumber(db, [tampilBaris(berlaku, { diganti, aktifId: berlaku.id, sekarang })]))[0] : null;
-  const rcpt = (await db.$queryRawUnsafe(`select unit_cost, created_at from stock_movements where material_id = $1::uuid and type = 'RECEIPT' and unit_cost > 0 and qty > 0 order by created_at desc limit 1`, materialId))[0];
+  const rcpt = (await db.$queryRawUnsafe(`select unit_cost, created_at from stock_movements where material_id = $1::uuid and type = 'RECEIPT' and unit_cost > 0 and qty > 0 and created_at >= coalesce((select max(t.created_at) from material_unit_transitions t where t.material_id = $1::uuid), '-infinity'::timestamptz) order by created_at desc limit 1`, materialId))[0]; // sesudah transisi satuan: hanya penerimaan satuan baru
+  const refTdk = (await referensiTidakCocok(db, [materialId])).get(materialId) ?? null;
   const aktifApp = await db.biayaOperasionalPenerapan.findFirst({ where: { materialId, status: "DIAJUKAN" }, select: { id: true, previewCount: true, requestedAt: true } });
   return {
     bahan: { id: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit },
@@ -217,7 +219,7 @@ export async function ringkasanBahan(db, materialId) {
     terjadwal: terjadwal.map((x) => tampilBaris(x, { diganti, aktifId: null, sekarang })),
     labelHarga: "HPP operasional per satuan stok — harga kerja, bukan nilai buku dan bukan HPP final Finance.",
     pemisah: PEMISAH,
-    pembanding: { catatan: "Pembanding saja — bukan sumber harga berlaku.", biayaPerolehanGRTerakhir: rcpt ? { harga: Number(rcpt.unit_cost), tanggal: rcpt.created_at } : null, referensiAgustus: bahan.referenceUnitCost != null ? { harga: Number(bahan.referenceUnitCost), bulan: bahan.referenceUnitCostMonth } : null },
+    pembanding: { catatan: "Pembanding saja — bukan sumber harga berlaku.", biayaPerolehanGRTerakhir: rcpt ? { harga: Number(rcpt.unit_cost), tanggal: rcpt.created_at } : null, referensiAgustusTidakCocok: refTdk ? { ...refTdk, teks: TEKS_REFERENSI_TIDAK_COCOK(refTdk) } : null, referensiAgustus: bahan.referenceUnitCost != null && !refTdk ? { harga: Number(bahan.referenceUnitCost), bulan: bahan.referenceUnitCostMonth } : null },
     dampak, jumlahRiwayat: semua.length, penerapanAktif: aktifApp, izinTeks: IZIN_TEKS,
     nilaiPersediaanFinance: await nilaiPersediaanFinanceBahan(db, materialId),
   };
@@ -307,7 +309,8 @@ export async function pratinjauUbahHarga(db, masukan = {}, { lengkap = true } = 
   const selisihPersen = hargaLama && hargaLama.greaterThan(0) ? Number(m.harga.minus(hargaLama).dividedBy(hargaLama).times(100).toDecimalPlaces(1)) : null;
   const peringatan = [];
   if (selisihPersen != null && Math.abs(selisihPersen) >= 30) peringatan.push({ kode: "SELISIH_BESAR", pesan: `Harga berubah ${selisihPersen > 0 ? "naik" : "turun"} ${Math.abs(selisihPersen)}% dari harga sebelumnya — periksa satuan (${bahan.unit}) dan angka nol.` });
-  if (bahan.referenceUnitCost && (m.harga.dividedBy(D(bahan.referenceUnitCost)).greaterThan(5) || m.harga.times(5).lessThan(D(bahan.referenceUnitCost)))) peringatan.push({ kode: "JAUH_DARI_REFERENSI", pesan: "Harga lebih dari 5× atau kurang dari 1/5 harga referensi Agustus (pembanding) — pastikan satuan benar." });
+  const refTdkU = (await referensiTidakCocok(db, [bahan.id])).get(bahan.id) ?? null;
+  if (bahan.referenceUnitCost && !refTdkU && (m.harga.dividedBy(D(bahan.referenceUnitCost)).greaterThan(5) || m.harga.times(5).lessThan(D(bahan.referenceUnitCost)))) peringatan.push({ kode: "JAUH_DARI_REFERENSI", pesan: "Harga lebih dari 5× atau kurang dari 1/5 harga referensi Agustus (pembanding) — pastikan satuan benar." });
   if (!m.bukti) peringatan.push({ kode: "BELUM_ADA_BUKTI", pesan: "Tanpa catatan bukti: harga ini tersimpan dengan label “Belum didukung bukti”. Boleh, tetapi bukan nilai buku dan bukan HPP final Finance." });
   let terkoreksi = null; let dampakK = null;
   if (sasaran) {

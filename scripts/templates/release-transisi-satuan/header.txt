@@ -1,0 +1,23 @@
+# RILIS "TRANSISI SATUAN BAHAN" (satuan operasional mengikuti Excel SO): BACKEND-SAJA + 1 migrasi ADITIF (2 kolom nullable di stock_movements, 1 tabel dokumen KOSONG, 3 fungsi + 3 trigger) — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • ISI: rute POST /api/inventory/materials/transisi-satuan/{pratinjau,terapkan} (Owner/penyetuju) dan GET /api/inventory/materials/:id/riwayat-satuan. Transisi satuan = SATU transaksi: tutup saldo satuan lama,
+#     ubah satuan master, buka saldo satuan baru, catat dokumen append-only, dan pasang tautan SO bila catatan historis menunggu. Pergerakan baru diberi penanda satuan oleh trigger DB; pagar DB menolak
+#     perubahan satuan master yang punya pergerakan di luar jalur transisi. Laporan Nilai Persediaan menandai bahan bertransisi (harga satuan lama TIDAK dipakai untuk satuan baru; cakupan PARSIAL bila ada kewajiban konversi terbuka).
+#   • Pengaman pemakaian PRA-SO (berlaku walau saldo cukup dan walau memilih "Tetap catat"): pengeluaran BARU bertanggal pada/sebelum tanggal SO bahan yang bertautan SO ditolak 409 (pencatatan langsung, ubah-jumlah, pengajuan koreksi penambahan);
+#     pengembalian/koreksi pengurang dan bahan tanpa tautan tidak tersentuh. Pembaca riwayat (/inventory/movements, /units/:id/materials, /production/material-usage) memberi SATUAN ASAL tiap baris.
+#     Perbaikan kebocoran nominal: teks finance.alasan Laporan Nilai Persediaan tidak lagi memuat selisih Rupiah untuk peran tanpa finance:read. Pratinjau transisi menyertakan setara satuan baru dari faktor satuan pakai berlaku (+10 ROLL = 900 METER @90; informasi, tidak diposting).
+#   • Skrip rilis TIDAK menjalankan transisi, TIDAK mengubah satuan bahan, TIDAK membuat/mengubah stok, harga, PO/GR, jurnal, PSA, penyesuaian, hasil SO, tautan, pemetaan, atau deklarasi historis. Migrasi hanya MENAMBAH struktur
+#     (tabel dokumen tetap kosong; pergerakan lama TIDAK diisi ulang). Smoke pasca-switch = GET + POST yang DITOLAK sebelum menulis.
+#   • Gate: preflight (keadaan production SEGAR/LANJUT/TOLAK, pin sha256 migrasi + diff schema, pemindai DDL + uji negatif); backup + RESTORE rehearsal (migrate deploy pada salinan restore dari data nyata; skema tabel lama identik; kode baru
+#     berjalan sebagai SERVER terhadap salinan restore dan menjalankan transisi nyata HANYA pada salinan itu); TANPA build web (frontend/dist release aktif DIBAWA APA ADANYA dari disk); migrasi aditif ke production SEBELUM switch
+#     (backend lama tetap melayani; batas tunggu kunci 5 detik: database sibuk = gagal cepat tanpa sisa); switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
+#   • PENGUNCIAN: kunci deploy BERSAMA + kunci sendiri diambil ATOMIK; kepemilikan ditentukan proses (perangkat:inode fd 7/9), BUKAN nama berkas. GERBANG IDENTITAS KODE LIVE (hash blob semua berkas terlacak baseline) di fase 2, 6, dan TEPAT sebelum switch.
+#     Pembersihan release lama DINONAKTIFKAN; gerbang disk minimal 5 GiB tidak diturunkan.
+#
+#   cat scripts/release-transisi-satuan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/tsb.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/tsbr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA migrasi production dan TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/tsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/tsb.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: SEBELUM ada transisi tersimpan, kode aman di-rollback kapan pun (migrasi aditif dibiarkan terpasang; kode lama berjalan normal di atas skema bermigrasi — terbukti pada rehearsal). SESUDAH ada transisi tersimpan,
+# rollback RUTIN DITOLAK oleh scripts/rollback-guard-transisi-satuan.sh (exit 3): kode lama membaca riwayat pergerakan sebelum transisi dengan label satuan baru. Pengecualian hanya atas keputusan Owner beralasan tertulis. Transisi tidak pernah dibalik oleh rollback.
+# (dibangkitkan oleh scripts/gen-release-transisi-satuan.cjs dari scripts/release-master-bertautan.sh + templat scripts/templates/release-transisi-satuan/* + pustaka scripts/lib/{rehearsal,smoke}-transisi-satuan.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)

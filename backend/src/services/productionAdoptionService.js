@@ -14,6 +14,7 @@ import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM, KELOMPOK, URUTAN_KE
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { stokLokasi } from "./stokLokasi.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { labelSatuanBaris } from "./transisiSatuanBahan.js";
 
 export class AdopsiError extends Error {
   constructor(message, code = "ADOPSI_DITOLAK", statusCode = 409, extra = null) { super(message); this.name = "AdopsiError"; this.code = code; this.statusCode = statusCode; if (extra) this.extra = extra; }
@@ -207,14 +208,14 @@ export async function ambilPemakaianAktual(db, unitId, { izinHarga = false } = {
   const mv = await db.stockMovement.findMany({
     where: { unitId, type: { in: ["ISSUE", "RETURN", "WASTE"] } },
     select: {
-      id: true, type: true, qty: true, note: true, reason: true, createdAt: true, materialIssueId: true,
+      id: true, type: true, qty: true, note: true, reason: true, createdAt: true, materialIssueId: true, materialId: true, unitAtEntry: true,
       material: { select: { id: true, code: true, name: true, unit: true, itemGroup: true } }, createdBy: { select: { id: true, name: true } },
       materialIssue: { select: { id: true, issueNumber: true } },
       biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 },
     },
     orderBy: { createdAt: "desc" },
   });
-  const baris = mv.map((m) => {
+  const baris = (await labelSatuanBaris(db, mv)).map((m) => {
     const dokumen = m.materialIssue ? { jenis: "Material Issue Gudang", nomor: m.materialIssue.issueNumber } : m.type === "WASTE" ? { jenis: "Catatan sisa/rusak", nomor: `MV-${m.id.slice(0, 8).toUpperCase()}` } : { jenis: "Catat langsung (Produksi)", nomor: `MV-${m.id.slice(0, 8).toUpperCase()}` };
     return {
       id: m.id, tanggal: m.createdAt, tipe: m.type, qty: -Number(m.qty), // positif = bahan dipakai; negatif = dikembalikan

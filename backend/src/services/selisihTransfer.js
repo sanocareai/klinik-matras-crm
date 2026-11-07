@@ -4,6 +4,7 @@
 //   • SUSUT     — diakui susut/hilang/rusak di perjalanan: tercatat saja (TANPA pergerakan stok; saldo sudah berkurang), BUKAN pemakaian produksi (tidak ada ISSUE, tidak ada unit, tidak ada HPP).
 // Penyelesaian disimpan sebagai peristiwa aktivitas (append-only) pada transfer — tanpa perubahan skema. Murni di sini; query hanya di `selisihTransfer`/`saldoTransfer`.
 import { ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { satuanCatatanPer } from "./referensiHargaSatuan.js";
 
 const bulat = (n) => Math.round(Number(n) * 10000) / 10000;
 
@@ -29,7 +30,12 @@ const pilihPeristiwa = (events) => events.filter((e) => e.eventType === EVENT_TY
 export async function selisihTransfer(db, transfer) {
   if (!transfer || transfer.status !== "COMPLETED") return [];
   const ev = await db.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: transfer.id, eventType: EVENT_TYPES.DOCUMENT_EDITED }, orderBy: { createdAt: "asc" } });
-  return hitungSelisih(transfer, pilihPeristiwa(ev));
+  const baris = hitungSelisih(transfer, pilihPeristiwa(ev));
+  if (!baris.length) return baris;
+  // jumlah kirim/terima dicatat dalam satuan SAAT transfer berjalan: label mengikuti pergerakan kirim, bukan satuan master sekarang
+  const kirim = await db.stockMovement.findMany({ where: { stockTransferId: transfer.id, materialId: { in: baris.map((b) => b.materialId) }, qty: { lt: 0 } }, orderBy: { createdAt: "asc" }, select: { materialId: true, unitAtEntry: true } });
+  const satuanDari = await satuanCatatanPer(db, kirim); const peta = new Map(); for (const k of kirim) if (!peta.has(k.materialId)) peta.set(k.materialId, satuanDari(k));
+  return baris.map((b) => { const s = peta.get(b.materialId); return s && s !== b.unit ? { ...b, unit: s, satuanMaster: b.unit } : b; });
 }
 
 /** Banyak transfer sekaligus (daftar): { [id]: selisihTerbukaQty } hanya untuk transfer COMPLETED yang punya kekurangan. */
@@ -50,12 +56,13 @@ export async function saldoTransfer(db, transfer) {
   if (!transfer || !["IN_TRANSIT", "COMPLETED"].includes(transfer.status)) return [];
   const hasil = [];
   for (const l of transfer.lines) {
-    const mov = await db.stockMovement.findMany({ where: { stockTransferId: transfer.id, materialId: l.materialId }, orderBy: { createdAt: "asc" }, select: { qty: true, createdAt: true, note: true } });
+    const mov = await db.stockMovement.findMany({ where: { stockTransferId: transfer.id, materialId: l.materialId }, orderBy: { createdAt: "asc" }, select: { qty: true, createdAt: true, note: true, unitAtEntry: true } });
     const kirim = mov.find((m) => Number(m.qty) < 0); if (!kirim) continue;
     const sebelum = await db.stockMovement.aggregate({ where: { materialId: l.materialId, createdAt: { lt: kirim.createdAt } }, _sum: { qty: true } });
     const sekarang = await db.stockMovement.aggregate({ where: { materialId: l.materialId }, _sum: { qty: true } });
+    const satuanKirim = (await satuanCatatanPer(db, [{ materialId: l.materialId, unitAtEntry: kirim.unitAtEntry ?? null }]))({ materialId: l.materialId, unitAtEntry: kirim.unitAtEntry ?? null }) ?? l.material?.unit; const satuanMaster = l.material?.unit; const lintas = !!satuanKirim && satuanKirim !== satuanMaster;
     const jumlah = (awalan) => bulat(mov.filter((m) => Number(m.qty) > 0 && String(m.note ?? "").startsWith(awalan)).reduce((a, m) => a + Number(m.qty), 0));
-    hasil.push({ lineId: l.id, materialId: l.materialId, kode: l.material?.code, unit: l.material?.unit, sebelumKirim: bulat(Number(sebelum._sum.qty ?? 0)), dikirim: bulat(-Number(kirim.qty)), diterima: transfer.status === "COMPLETED" ? jumlah("Receive") : null, ditemukan: jumlah("Selisih ditemukan"), sekarang: bulat(Number(sekarang._sum.qty ?? 0)) });
+    hasil.push({ lineId: l.id, materialId: l.materialId, kode: l.material?.code, unit: lintas ? satuanKirim : l.material?.unit, ...(lintas ? { satuanMaster, sekarangTidakDapatDibandingkan: `Transfer ini dicatat dalam ${satuanKirim}; saldo sekarang dalam ${satuanMaster}. Tidak dapat dibandingkan langsung tanpa faktor satuan.` } : {}), sebelumKirim: bulat(Number(sebelum._sum.qty ?? 0)), dikirim: bulat(-Number(kirim.qty)), diterima: transfer.status === "COMPLETED" ? jumlah("Receive") : null, ditemukan: jumlah("Selisih ditemukan"), sekarang: lintas ? null : bulat(Number(sekarang._sum.qty ?? 0)) });
   }
   return hasil;
 }
