@@ -1,0 +1,15 @@
+frontend/qa-harness/audit-hub-tema.cjs
+frontend/qa-harness/audit-refresh-gaya.cjs
+frontend/qa-harness/audit-semua-workspace.cjs
+frontend/qa-harness/wave1-foto.cjs
+frontend/src/components/Layout.jsx
+frontend/src/components/WorkspaceSwitcher.jsx
+frontend/src/components/apple/Apple.jsx
+frontend/src/main.jsx
+frontend/src/pages/Kendali.jsx
+frontend/src/pages/Portal.jsx
+frontend/src/pages/armada/ArmadaDashboard.jsx
+frontend/src/styles/sanss-apple.css
+frontend/tests/appleGelombang1.test.js
+frontend/tests/gudangRedesainPenerimaan.test.js
+frontend/tests/shellSalesCrm.test.js
