@@ -1,0 +1,7 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (e45e35f4); keduanya MEMUAT transisi satuan dan hotfix performa; gerbang kode live membuktikan kode di container == folder == baseline disetujui sebelum switch.
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   (recreate backend dari folder release sebelumnya dengan image rollback; web = dist folder sebelumnya)
+Rollback mengembalikan perilaku e45e35f4: label satuan pembaca, harga rata-rata, referensi Agustus, aturan koreksi tanpa tanggal, dan drawer Stok kembali seperti sebelumnya. Tidak ada data yang berubah oleh rilis maupun rollback.
+Bila SUDAH ada transisi satuan tersimpan, gunakan scripts/rollback-guard-transisi-satuan.sh sebelum memutuskan rollback (kode lama membaca riwayat sebelum transisi dengan label satuan baru).

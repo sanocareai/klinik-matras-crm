@@ -26,6 +26,7 @@ import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
 import { toMoney, sumMoney, ZERO } from "./money.js";
 import { ambilKebijakanPersediaan, tanggalIndonesia } from "./inventoryMethod.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
+import { referensiTidakCocok, TEKS_REFERENSI_TIDAK_COCOK } from "../referensiHargaSatuan.js";
 
 export class PersediaanError extends Error {
   constructor(message, statusCode = 400, code = null, detail = null) {
@@ -137,6 +138,7 @@ export async function validasiSnapshot(db, opening, lines) {
 
   const perMaterial = new Map();
   for (const l of lines) perMaterial.set(l.materialId, (perMaterial.get(l.materialId) || 0) + 1);
+  const refTdk = await referensiTidakCocok(db, [...perMaterial.keys()]); // referensi Agustus per satuan asal: tidak dipakai sebagai pembanding pada satuan baru
 
   for (const l of lines) {
     const m = l.material || {};
@@ -154,7 +156,8 @@ export async function validasiSnapshot(db, opening, lines) {
     else if (l.priceSource === "LAINNYA" ? !(l.priceNote || "").trim() : !(l.priceReference || "").trim()) {
       blocker.push({ ...ref, kode: "SUMBER_HARGA_KOSONG", pesan: l.priceSource === "LAINNYA" ? `${m.code}: sumber harga "Lainnya" wajib diberi keterangan.` : `${m.code}: nomor dokumen harga (faktur/tagihan/pembelian) wajib diisi.` });
     }
-    const refCost = m.referenceUnitCost ? toMoney(m.referenceUnitCost) : null;
+    const refCost = m.referenceUnitCost && !refTdk.has(m.id) ? toMoney(m.referenceUnitCost) : null;
+    if (m.referenceUnitCost && refTdk.has(m.id)) peringatan.push({ ...ref, kode: "REFERENSI_SATUAN_TIDAK_COCOK", pesan: `${m.code}: ${TEKS_REFERENSI_TIDAK_COCOK(refTdk.get(m.id))}` });
     const tidakWajar = [];
     if (!nol && refCost && refCost.greaterThan(0) && harga.greaterThan(0)) {
       if (harga.greaterThan(refCost.times(AMBANG.rasioReferensi))) tidakWajar.push(`lebih dari ${AMBANG.rasioReferensi}× harga referensi`);
@@ -445,6 +448,7 @@ export async function detailSnapshot(db, openingId) {
   const lines = await barisDengan(db, openingId);
   const v = await validasiSnapshot(db, o, lines);
   const sistem = await qtySistem(db, lines.map((l) => l.materialId), o.countedAt);
+  const refTdkD = await referensiTidakCocok(db, lines.map((l) => l.materialId));
   const users = await db.user.findMany({
     where: { id: { in: [o.createdById, o.financeCheckedById, o.warehouseCheckedById, o.postedById, o.reversedById].filter(Boolean) } },
     select: { id: true, name: true },
@@ -462,7 +466,7 @@ export async function detailSnapshot(db, openingId) {
       id: l.id, materialId: l.materialId, kode: l.material.code, nama: l.material.name, satuanMaterial: l.material.unit,
       qty: toMoney(l.qty).toString(), satuan: l.unit, harga: toMoney(l.unitCost).toFixed(2), nilai: toMoney(l.value).toFixed(2),
       sumber: l.priceSource, sumberLabel: SUMBER_HARGA[l.priceSource] || (l.priceSource === SUMBER_TANPA_STOK ? LABEL_TANPA_STOK : l.priceSource), referensi: l.priceReference, penjelasanHarga: l.priceNote, catatan: l.notes,
-      hargaReferensi: l.material.referenceUnitCost ?? null, qtySistem: (sistem.get(l.materialId) || ZERO).toString(),
+      hargaReferensi: refTdkD.has(l.materialId) ? null : (l.material.referenceUnitCost ?? null), referensiTidakCocok: refTdkD.get(l.materialId) ?? null, qtySistem: (sistem.get(l.materialId) || ZERO).toString(),
     })),
     validasi: v,
   };
@@ -550,6 +554,7 @@ export async function laporanPengecualian(db) {
     db.stockMovement.findFirst({ where: { type: "ISSUE", createdAt: { lte: batas } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
   const byId = new Map(materials.map((m) => [m.id, m]));
+  const refTdkL = await referensiTidakCocok(db);
   const punyaHarga = new Set(receiptsBerharga.map((r) => r.materialId));
 
   const draf = cutover ? await db.finInventoryOpening.findFirst({
@@ -569,8 +574,8 @@ export async function laporanPengecualian(db) {
     const m = byId.get(r.materialId);
     if (!m) continue;
     const qty = toMoney(r._sum.qty || 0);
-    const ref = m.referenceUnitCost ? toMoney(m.referenceUnitCost) : null;
-    const item = { kode: m.code, nama: m.name, satuan: m.unit, qtySistem: qty.toString(), hargaReferensi: m.referenceUnitCost ?? null, nilaiReferensi: ref ? qty.times(ref).toFixed(0) : null };
+    const ref = m.referenceUnitCost && !refTdkL.has(m.id) ? toMoney(m.referenceUnitCost) : null;
+    const item = { kode: m.code, nama: m.name, satuan: m.unit, qtySistem: qty.toString(), hargaReferensi: refTdkL.has(m.id) ? null : (m.referenceUnitCost ?? null), referensiTidakCocok: refTdkL.get(m.id) ?? null, nilaiReferensi: ref ? qty.times(ref).toFixed(0) : null };
     if (qty.lessThan(0)) stokNegatif.push(item);
     if (qty.greaterThan(0) && ref && qty.times(ref).greaterThan(AMBANG.nilaiBarisMaks)) hargaAnomali.push({ ...item, alasan: `Nilai referensi di atas Rp${AMBANG.nilaiBarisMaks / 1e6} jt untuk satu material — kemungkinan salah harga/satuan.` });
     if (qty.greaterThan(0) && !punyaHarga.has(m.id) && !hargaSnapshot.has(m.id)) tanpaHarga.push(item);

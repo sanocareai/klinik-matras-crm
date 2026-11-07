@@ -20,6 +20,8 @@ import { KoreksiError } from "./warehouseCorrection.js";
 import { tautanSOAktif } from "./pengamanHistorisPascaSO.js";
 import { muatAturanSatuanPakai } from "./satuanPakaiService.js";
 import { aturanUntukBahan } from "../lib/domain/satuanPakaiBahan.js";
+import { selisihTransfer } from "./selisihTransfer.js";
+import { satuanCatatanPer } from "./referensiHargaSatuan.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -73,6 +75,8 @@ async function ambilKeadaan(db, materialId, { satuanBaru, saldoBaru, kewajiban }
     reservasi: await n1("SELECT COUNT(*)::int n FROM material_reservations_v2 WHERE material_id = $1::uuid", materialId),
     katalogSupplier: await n1("SELECT COUNT(*)::int n FROM fin_supplier_materials WHERE material_id = $1::uuid", materialId),
     permintaanReplenishment: await n1("SELECT COUNT(*)::int n FROM replenishment_requests WHERE material_id = $1::uuid", materialId),
+    transferBerjalan: await n1("SELECT COUNT(*)::int n FROM stock_transfer_lines l JOIN stock_transfers t ON t.id = l.stock_transfer_id WHERE l.material_id = $1::uuid AND t.status::text IN ('DRAFT','WAITING_APPROVAL','APPROVED','PICKED','IN_TRANSIT')", materialId),
+    selisihTransferTerbuka: await selisihTransferTerbukaBahan(db, materialId),
     poSeluruh: await n1("SELECT COUNT(*)::int n FROM fin_purchase_order_lines WHERE material_id = $1::uuid", materialId),
     grSeluruh: await n1("SELECT COUNT(*)::int n FROM goods_receipt_lines WHERE material_id = $1::uuid", materialId),
   };
@@ -85,6 +89,8 @@ async function ambilKeadaan(db, materialId, { satuanBaru, saldoBaru, kewajiban }
   if (ukur.penyesuaianTerbuka) tambah("PENYESUAIAN_TERBUKA", `${ukur.penyesuaianTerbuka} permintaan penyesuaian belum selesai (berbasis satuan lama)`);
   if (ukur.grTerbuka) tambah("GR_TERBUKA", `${ukur.grTerbuka} baris penerimaan belum selesai (berbasis satuan lama)`);
   if (ukur.poTerbuka) tambah("PO_TERBUKA", `${ukur.poTerbuka} baris PO belum selesai/dibatalkan (berbasis satuan lama)`);
+  if (ukur.transferBerjalan) tambah("TRANSFER_BERJALAN", `${ukur.transferBerjalan} baris transfer stok belum selesai (jumlah kirim/terima berbasis satuan lama)`);
+  if (ukur.selisihTransferTerbuka) tambah("SELISIH_TRANSFER_TERBUKA", `${ukur.selisihTransferTerbuka} baris transfer selesai masih punya selisih kirim/terima yang belum diselesaikan (berbasis satuan lama)`);
   if (ukur.bom) tambah("BOM_ADA", `${ukur.bom} baris BOM merujuk bahan ini`);
   if (ukur.rencanaProduksi) tambah("RENCANA_PRODUKSI_ADA", `${ukur.rencanaProduksi} baris rencana bahan unit produksi merujuk bahan ini (jumlah tersimpan dalam satuan lama)`);
   if (ukur.reservasi) tambah("RESERVASI_ADA", `${ukur.reservasi} reservasi merujuk bahan ini`);
@@ -192,13 +198,14 @@ export async function terapkanTransisi(prisma, { aktor, transisi, sumber, alasan
   }, { timeout: 60_000, maxWait: 15_000 });
 }
 
-/** Satuan yang berlaku untuk tiap pergerakan: penanda eksplisit; pergerakan lama (NULL) = satuan_lama transisi pertama bahan itu, selain itu satuan master sekarang. Baca-saja. */
-export async function satuanCatatanPer(db, rows) {
-  const ids = [...new Set(rows.filter((r) => !r.unitAtEntry).map((r) => r.materialId))]; if (!ids.length) return (r) => r.unitAtEntry;
-  const pertama = new Map((await db.materialUnitTransition.findMany({ where: { materialId: { in: ids } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { materialId: true, fromUnit: true } })).reverse().map((t) => [t.materialId, t.fromUnit]));
-  const master = new Map((await db.material.findMany({ where: { id: { in: ids } }, select: { id: true, unit: true } })).map((m) => [m.id, m.unit]));
-  return (r) => r.unitAtEntry ?? pertama.get(r.materialId) ?? master.get(r.materialId) ?? null;
+/** Jumlah baris transfer SELESAI untuk bahan ini yang masih punya selisih kirim/terima belum diselesaikan (SUSUT/DITEMUKAN belum menutup). Baca-saja. */
+async function selisihTransferTerbukaBahan(db, materialId) {
+  const trf = await db.stockTransfer.findMany({ where: { status: "COMPLETED", lines: { some: { materialId } } }, take: 500, include: { lines: { include: { material: { select: { code: true, name: true, unit: true } } } } } });
+  let n = 0; for (const t of trf) { if (!t.lines.some((l) => l.materialId === materialId && Number(l.qtySent) > Number(l.qtyReceived ?? l.qtySent))) continue; n += (await selisihTransfer(db, t)).filter((b) => b.materialId === materialId && b.sisa > 0).length; }
+  return n;
 }
+
+export { satuanCatatanPer };
 
 /**
  * Beri tiap baris pergerakan SATUAN ASALNYA: `satuanCatat` + `material.unit` = satuan saat dicatat (bukan satuan master sekarang), `material.satuanMaster` = satuan master sekarang.
