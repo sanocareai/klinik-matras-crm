@@ -190,3 +190,23 @@ test("T13. PENGAMAN HISTORIS: catatan EXCEL belum diposting wajib bertaut SO; ta
   const f1 = await jejakFinance(); assert.deepEqual(f1, f0); assert.equal(await testPrisma.activityEvent.count({ where: { eventType: "SO_HISTORIS_DINYATAKAN" } }), 0, "tanpa deklarasi");
   const w2 = await dunia(); const { p: p2, hash: h2 } = await siap(w2); assert.equal(p2.transisi[0].catatanHistoris.excelBelumDiposting, 0); await terapkan(w2, h2); assert.equal(await unitMaster(w2.m.id), "METER");
 });
+
+test("T14. kewajiban +10 ROLL LIST WIBING: pratinjau menyertakan setara METER dari faktor satuan pakai yang BERLAKU (90) dan perkiraan saldo setelah kewajiban; bahan tanpa aturan TIDAK ditebak; saldo tidak berubah", async () => {
+  const w = await dunia(); const lw = await createTestMaterial({ code: `LIST-WIBING-UJI-${++seq}`, name: `LIST WIBING UJI ${seq}`, unit: "ROLL" }); await seedBalance(lw.id, -78.5, { type: "ADJUSTMENT", createdAt: WIB("2026-09-01") });
+  const kew = [{ rujukan: "GR-051126-02", jumlah: 10, satuan: "ROLL", keterangan: "penerimaan satuan lama belum diterjemahkan" }];
+  const p = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [{ materialId: lw.id, satuanBaru: "METER", saldoBaru: 180, kewajibanTerbuka: kew }, minta(w)] });
+  const a = p.transisi[0]; assert.deepEqual(a.kewajibanTerbuka[0].setara, { jumlah: 900, satuan: "METER", faktor: 90, dasar: "KEPUTUSAN_OWNER_2026_11_04" }); assert.equal(a.perkiraanSetelahKewajiban.saldo, 1080); assert.equal(a.saldoBaru, 180, "saldo hasil SO tidak ditambah otomatis"); assert.equal(a.cakupan, "PARSIAL");
+  const b = p.transisi[1]; assert.equal(b.kewajibanTerbuka[0].setara, null, "tanpa aturan satuan pakai: tidak ditebak"); assert.equal(b.perkiraanSetelahKewajiban, null);
+  assert.equal(await saldo(lw.id), -78.5); assert.equal(await dokumen(lw.id), 0);
+  const h1 = a.hash; const p2 = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [{ materialId: lw.id, satuanBaru: "METER", saldoBaru: 180, kewajibanTerbuka: kew }] }); assert.equal(p2.transisi[0].hash, h1, "hash stabil untuk masukan yang sama");
+  await testPrisma.productionSetting.create({ data: { key: "satuan_pakai_bahan", value: { aturan: [{ awalan: "LIST-WIBING", satuanStok: "ROLL", satuanPakai: "METER", faktor: 100 }] } } });
+  const p3 = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [{ materialId: lw.id, satuanBaru: "METER", saldoBaru: 180, kewajibanTerbuka: kew }] }); assert.equal(p3.transisi[0].kewajibanTerbuka[0].setara.jumlah, 1000); assert.notEqual(p3.transisi[0].hash, h1, "faktor berubah ⇒ hash berubah ⇒ persetujuan lama ditolak");
+  await assert.rejects(() => terapkanTransisi(testPrisma, { aktor: w.B, transisi: [{ materialId: lw.id, satuanBaru: "METER", saldoBaru: 180, kewajibanTerbuka: kew, hashPratinjau: h1 }], sumber: "SO uji", alasan: "Satuan operasional mengikuti Excel SO", rujukanHash: HASH_REF, kunci: `tr-faktor-${seq}-0001`, tautan: { soTanggal: HARI_INI, sumber: "SO uji", alasan: "Tautan SO dalam transisi uji", rujukanHash: HASH_REF } }), (e) => e.statusCode === 409);
+  assert.equal(await unitMaster(lw.id), "ROLL");
+});
+
+test("T15. rencana bahan unit produksi yang memuat bahan (jumlah dalam satuan lama) menjadi penghalang transisi", async () => {
+  const w = await dunia(); const { unit } = await createTestUnit({ status: "IN_PRODUCTION" });
+  await testPrisma.productionUnitMaterialPlan.create({ data: { unitId: unit.id, lines: [{ materialId: w.m.id, qty: 0.5 }] } });
+  const p = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [minta(w)] }); assert.equal(p.bolehDiterapkan, false); assert.ok(p.transisi[0].penghalang.some((x) => x.kode === "RENCANA_PRODUKSI_ADA"), JSON.stringify(p.transisi[0].penghalang));
+});

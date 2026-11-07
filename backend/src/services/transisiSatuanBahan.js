@@ -18,6 +18,8 @@ import { PERMISSIONS as P } from "../constants/permissions.js";
 import { postStockMovement, lockRowForUpdate } from "./inventoryLedger.js";
 import { KoreksiError } from "./warehouseCorrection.js";
 import { tautanSOAktif } from "./pengamanHistorisPascaSO.js";
+import { muatAturanSatuanPakai } from "./satuanPakaiService.js";
+import { aturanUntukBahan } from "../lib/domain/satuanPakaiBahan.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -44,9 +46,18 @@ function rapikanKewajiban(arr) {
 }
 
 /** Keadaan bahan SAAT INI (satu potret; dipanggil dengan `prisma` untuk pratinjau atau `tx` setelah kunci untuk penerapan). Baca-saja. */
+/** Setara satuan baru untuk kewajiban terbuka, HANYA bila ada aturan satuan pakai berlaku (bawaan Owner/penimpaan tercatat) untuk bahan ini dengan satuan stok = satuan kewajiban dan satuan pakai = satuan baru. Informasi; tidak memposting apa pun. */
+function perkayaKewajiban(kewajiban, m, satuanBaru, aturanSemua) {
+  const aturan = aturanUntukBahan({ code: m.code, unit: m.unit }, aturanSemua);
+  return kewajiban.map((k) => (aturan && aturan.satuanStok === k.satuan && aturan.satuanPakai === satuanBaru
+    ? { ...k, setara: { jumlah: r4(k.jumlah * aturan.faktor), satuan: satuanBaru, faktor: aturan.faktor, dasar: aturan.sumber ?? "ATURAN_SATUAN_PAKAI" } }
+    : { ...k, setara: null }));
+}
+
 async function ambilKeadaan(db, materialId, { satuanBaru, saldoBaru, kewajiban }) {
   const m = await db.material.findUnique({ where: { id: materialId }, select: { id: true, code: true, name: true, unit: true, category: true, active: true, reorderPoint: true, reorderQty: true, dataNote: true } });
   wajib(m, "bahan tidak ditemukan", "BAHAN_TIDAK_ADA", 404);
+  kewajiban = perkayaKewajiban(kewajiban, m, satuanBaru, await muatAturanSatuanPakai(db));
   const gerak = await db.stockMovement.findMany({ where: { materialId }, select: { id: true, qty: true, createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: MAKS_GERAKAN + 1 });
   wajib(gerak.length <= MAKS_GERAKAN, `pergerakan bahan terlalu banyak untuk transisi satu langkah (>${MAKS_GERAKAN})`, "GERAKAN_TERLALU_BANYAK", 422);
   const saldoLama = r4(gerak.reduce((a, x) => a + Number(x.qty), 0));
@@ -58,6 +69,7 @@ async function ambilKeadaan(db, materialId, { satuanBaru, saldoBaru, kewajiban }
     grTerbuka: await n1("SELECT COUNT(*)::int n FROM goods_receipt_lines l JOIN goods_receipts g ON g.id = l.goods_receipt_id WHERE l.material_id = $1::uuid AND g.status::text NOT IN ('COMPLETED','REJECTED','CANCELLED')", materialId),
     poTerbuka: await n1("SELECT COUNT(*)::int n FROM fin_purchase_order_lines l JOIN fin_purchase_orders o ON o.id = l.purchase_order_id WHERE l.material_id = $1::uuid AND o.status::text NOT IN ('SELESAI','DIBATALKAN')", materialId),
     bom: await n1("SELECT COUNT(*)::int n FROM planned_bom_lines_v2 WHERE material_id = $1::uuid", materialId),
+    rencanaProduksi: await n1("SELECT COUNT(*)::int n FROM production_unit_material_plans p CROSS JOIN LATERAL jsonb_array_elements(p.lines::jsonb) l WHERE l->>'materialId' = $1", materialId),
     reservasi: await n1("SELECT COUNT(*)::int n FROM material_reservations_v2 WHERE material_id = $1::uuid", materialId),
     katalogSupplier: await n1("SELECT COUNT(*)::int n FROM fin_supplier_materials WHERE material_id = $1::uuid", materialId),
     permintaanReplenishment: await n1("SELECT COUNT(*)::int n FROM replenishment_requests WHERE material_id = $1::uuid", materialId),
@@ -74,6 +86,7 @@ async function ambilKeadaan(db, materialId, { satuanBaru, saldoBaru, kewajiban }
   if (ukur.grTerbuka) tambah("GR_TERBUKA", `${ukur.grTerbuka} baris penerimaan belum selesai (berbasis satuan lama)`);
   if (ukur.poTerbuka) tambah("PO_TERBUKA", `${ukur.poTerbuka} baris PO belum selesai/dibatalkan (berbasis satuan lama)`);
   if (ukur.bom) tambah("BOM_ADA", `${ukur.bom} baris BOM merujuk bahan ini`);
+  if (ukur.rencanaProduksi) tambah("RENCANA_PRODUKSI_ADA", `${ukur.rencanaProduksi} baris rencana bahan unit produksi merujuk bahan ini (jumlah tersimpan dalam satuan lama)`);
   if (ukur.reservasi) tambah("RESERVASI_ADA", `${ukur.reservasi} reservasi merujuk bahan ini`);
   if (ukur.katalogSupplier) tambah("KATALOG_SUPPLIER_ADA", `${ukur.katalogSupplier} entri katalog supplier (konversi beli → stok) merujuk bahan ini`);
   if (ukur.permintaanReplenishment) tambah("REPLENISHMENT_ADA", `${ukur.permintaanReplenishment} permintaan replenishment merujuk bahan ini`);
@@ -85,6 +98,7 @@ async function ambilKeadaan(db, materialId, { satuanBaru, saldoBaru, kewajiban }
     dokumen: ukur,
     hargaTidakDibawa: harga.filter((h) => h.satuan !== satuanBaru).map((h) => ({ satuan: h.satuan, harga: Number(h.unitPrice), berlakuSejak: h.effectiveFrom.toISOString().slice(0, 10) })),
     kewajibanTerbuka: kewajiban, cakupan: kewajiban.length ? "PARSIAL" : "TUNTAS_SATUAN_BARU",
+    perkiraanSetelahKewajiban: kewajiban.length && kewajiban.every((k) => k.setara) ? { satuan: satuanBaru, saldo: r4(saldoBaru + kewajiban.reduce((a, k) => a + k.setara.jumlah, 0)), catatan: "PERKIRAAN informasional: saldo hasil SO ditambah setara kewajiban terbuka. Tidak diposting; penyelesaian kewajiban lewat jalur resmi dengan persetujuan terpisah." } : null,
     penghalang,
   };
   // hash mengikat keadaan yang MENENTUKAN hasil (bukan tautan: boleh dipasang di transaksi penerapan)

@@ -80,5 +80,19 @@ if (MODE === "dengan-transisi") {
   info("TEMUAN GUARD", `${salahBaca} dari ${ids.length} bahan bertransisi akan dibaca kode LAMA dengan riwayat berlabel satuan master baru padahal pergerakan sebelum transisi bersatuan lama → rollback rutin DITOLAK guard`);
   cek("kode lama menampilkan riwayat bahan bertransisi tanpa membedakan periode satuan (dasar penolakan guard terbukti, bukan dugaan)", salahBaca > 0 || ids.length === 0, `${salahBaca}`);
 }
+if (MODE === "dengan-transisi") { const post = async (url, body, header = {}) => { const r = await fetch(BASE + url, { method: "POST", headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json", ...header }, body: JSON.stringify(body) }); let json = null; try { json = await r.json(); } catch { /* bukan JSON */ } return { status: r.status, json }; };
+{ // PEMAKAIAN PRA-SO × TAUTAN SO ('Tetap catat meskipun stok tidak cukup') pada DATA NYATA (salinan restore): bahan LIST-WIBING-PUTIH bertransisi ⇒ tautan SO aktif (tanggal SO = hari uji)
+  const kodeUji = "LIST-WIBING-PUTIH"; const bahanUji = (await prisma.$queryRawUnsafe("select id::text id, unit::text unit from materials where code = $1", kodeUji))[0];
+  const unitUji = (await prisma.$queryRawUnsafe("select id::text id, (created_at at time zone 'Asia/Jakarta')::date::text d from units where status::text = 'DELIVERED' order by created_at desc limit 1"))[0];
+  if (!bahanUji || !unitUji) info("uji pemakaian pra-SO dilewati", "bahan atau unit TERKIRIM tidak ada di salinan restore"); else {
+    const s0 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", bahanUji.id); const i0 = await num("select count(*)::int n from stock_movements where type::text = 'ISSUE' and material_id = $1::uuid", bahanUji.id); const qty = Math.round(Math.abs(s0) + 500);
+    const pra = await post(`/api/production/units/${unitUji.id}/pembetulan-bahan/pratinjau`, { materialId: bahanUji.id, jenis: "TAMBAH", qty, tanggalPemakaian: unitUji.d, pengecualianStokTidakCukup: true });
+    const res = await post(`/api/units/${unitUji.id}/materials`, { materialId: bahanUji.id, qty, alasanPembetulan: "Uji rehearsal: pemakaian pra-SO", tanggalPemakaian: unitUji.d, saldoDilihat: pra.json?.stok?.saldoDilihat, hppSidik: pra.json?.hppOperasional?.sidik, pengecualianStokTidakCukup: true, alasanPengecualianStok: "Uji rehearsal: pemakaian pra-SO tidak boleh lolos", konfirmasiSaldoMinus: true, konfirmasiBukanGanda: true }, { "Idempotency-Key": `reh-praso-lama-${stamp}-0001` });
+    const s1 = await num("select coalesce(sum(qty),0)::float n from stock_movements where material_id = $1::uuid", bahanUji.id); const i1 = await num("select count(*)::int n from stock_movements where type::text = 'ISSUE' and material_id = $1::uuid", bahanUji.id);
+    const penghalang = (pra.json?.penghalang ?? []).map((x) => x.kode + (x.bisaDikecualikan === false ? "(tidak bisa dikecualikan)" : "")).join(",") || "-";
+    info(res.status === 201 ? "REPRODUKSI CELAH BASELINE (kode LAMA/live): pemakaian pra-SO + 'Tetap catat' pada bahan bertautan SO LOLOS" : "kode LAMA: pemakaian pra-SO ditolak", `pratinjau ${pra.status} penghalang ${penghalang}; POST ${res.status} ${res.json?.code ?? ""}; saldo ${s0}→${s1}; ISSUE baru ${i1 - i0}`);
+  }
+}
+}
 console.log(`RINGKAS_LAMA mode=${MODE} cek=${n} gagal=${gagal}`);
 berhenti(); await prisma.$disconnect(); process.exit(gagal ? 1 : 0);

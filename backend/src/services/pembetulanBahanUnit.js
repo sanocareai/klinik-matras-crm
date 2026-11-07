@@ -16,6 +16,7 @@ import { statusCutoverUntuk, pembukaAktif } from "./finance/persediaanAwal.js";
 import { aturanBerlaku, aturanUntukBahan, konversiKeStok, ringkasAturan } from "../lib/domain/satuanPakaiBahan.js";
 import { bacaPenimpaanSatuanPakai } from "./satuanPakaiService.js";
 import { hargaUntukPergerakan, penyelesaiHargaBerlaku, hargaBerubahPadaHari, batasHargaTanggal, teksDasarHarga } from "./finance/hargaBerlaku.js";
+import { tautanSOAktif } from "./pengamanHistorisPascaSO.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
 
@@ -133,12 +134,15 @@ export async function periksaCutoffOpname(db, { materialId, tanggal }) {
   }
   const aktif = await pembukaAktif(db);
   if (aktif?.countedAt && await db.finInventoryOpeningLine.findFirst({ where: { openingId: aktif.id, materialId }, select: { id: true } })) acuan.push({ jenis: "PERSEDIAAN_AWAL", nomor: aktif.number, tanggalAcuan: wibTgl(aktif.countedAt), dasar: "hitung fisik persediaan awal yang sudah diposting" });
+  // HASIL SO yang ditautkan EKSPLISIT ke bahan (bukan sesi Stock Count/PSA): hitung fisik itu sudah mencakup pemakaian sampai tanggal SO, jadi pemakaian pra-SO tidak boleh mengurangi stok lagi.
+  const tautanSO = (await tautanSOAktif(db, [materialId])).get(materialId);
+  if (tautanSO?.soTanggal) acuan.push({ jenis: "SO_TAUTAN", nomor: null, tanggalAcuan: tautanSO.soTanggal, dasar: "hasil SO yang ditautkan eksplisit ke bahan (" + (tautanSO.sumber ?? "sumber tercatat") + ")" });
   const jalan = await db.stockCountLine.findMany({ where: { materialId, excludedAt: null, stockCount: { status: { in: ["IN_PROGRESS", "WAITING_REVIEW"] } } }, select: { stockCount: { select: { countNumber: true, status: true } } }, take: 5 });
   for (const j of jalan) berjalan.push({ nomor: j.stockCount.countNumber, status: j.stockCount.status });
   const melintasi = acuan.filter((a) => tanggal <= a.tanggalAcuan);
   const teks = melintasi.length
-    ? `Tanggal pemakaian ${tanggal} sama dengan atau sebelum acuan ${melintasi.map((a) => `${a.jenis === "OPNAME" ? "opname" : "persediaan awal"} ${a.nomor ?? ""} (${a.tanggalAcuan}, ${a.dasar})`).join("; ")}: hitung fisik itu kemungkinan SUDAH mencakup pemakaian ini. Mencatatnya sebagai pengeluaran dapat mengurangi saldo DUA KALI, jadi pengecualian stok tidak cukup diblokir untuk kasus ini.`
-    : acuan.length ? `Opname terakhir yang sudah selesai: ${acuan[0].tanggalAcuan} (${acuan[0].jenis === "OPNAME" ? "opname" : "persediaan awal"} ${acuan[0].nomor ?? ""}); tanggal pemakaian ${tanggal} sesudahnya, jadi tidak melintasi opname.` : "Belum ada opname selesai atau persediaan awal terposting untuk bahan ini: tidak ada acuan cutoff.";
+    ? `Tanggal pemakaian ${tanggal} sama dengan atau sebelum acuan ${melintasi.map((a) => `${a.jenis === "OPNAME" ? "opname" : a.jenis === "SO_TAUTAN" ? "hasil SO" : "persediaan awal"} ${a.nomor ?? ""} (${a.tanggalAcuan}, ${a.dasar})`).join("; ")}: hitung fisik itu kemungkinan SUDAH mencakup pemakaian ini. Mencatatnya sebagai pengeluaran dapat mengurangi saldo DUA KALI, jadi pengecualian stok tidak cukup diblokir untuk kasus ini.`
+    : acuan.length ? `Opname terakhir yang sudah selesai: ${acuan[0].tanggalAcuan} (${acuan[0].jenis === "OPNAME" ? "opname" : acuan[0].jenis === "SO_TAUTAN" ? "hasil SO" : "persediaan awal"} ${acuan[0].nomor ?? ""}); tanggal pemakaian ${tanggal} sesudahnya, jadi tidak melintasi opname.` : "Belum ada opname selesai atau persediaan awal terposting untuk bahan ini: tidak ada acuan cutoff.";
   return { melintasi: melintasi.length > 0, acuan, melintasiDaftar: melintasi, berjalan, teks: berjalan.length ? `${teks} Ada sesi opname berjalan memuat bahan ini (${berjalan.map((x) => x.nomor).join(", ")}); selisihnya dihitung terhadap saldo saat penyesuaian.` : teks };
 }
 
