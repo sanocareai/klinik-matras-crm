@@ -1,0 +1,4 @@
+frontend/qa-harness/drawer-satuan-browser.cjs
+frontend/qa-harness/drawer-satuan-server.mjs
+frontend/src/features/warehouse/components/ItemDetailDrawer.jsx
+frontend/tests/drawerSatuanAsal.test.js

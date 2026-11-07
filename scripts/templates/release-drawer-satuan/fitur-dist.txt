@@ -1,0 +1,17 @@
+# Drawer satuan asal: penanda baru hanya di dist baru; teks/gaya fitur live (Gudang/Finance/Produksi/Sales CRM) HARUS ada di KEDUANYA.
+# Pencarian memakai cari_dist (find|xargs) — BUKAN glob: dist aktif >21.000 chunk sehingga glob melampaui ARG_MAX dan gagal diam-diam.
+for s1 in "satuan lama; saldo sekarang dalam" "satuan-asal"; do
+  [ -z "$(cari_dist "$PREV_DIR" js "$s1")" ] || die "[skrip] penanda baru '${s1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s1")" ] || die "dist baru TIDAK memuat penanda drawer satuan asal: ${s1}"
+done
+# Teks fitur live yang harus tetap ada (Nilai Persediaan Apple, Beranda Gudang, Stok & Lokasi, Finance)
+for s3 in "Catat hasil SO" "Definisi dan sumber angka" "Siapa melihat nominal" "Rincian verifikasi nol" "gud-br-kartu-besar" "Satu dokumen, satu baris" "Lokasi dari riwayat penerimaan" "tidak langsung mengubah saldo" "Filter daftar bahan"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s3")" ] || die "[skrip] teks lama '${s3}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s3")" ] || die "dist baru KEHILANGAN teks fitur: ${s3}"
+done
+for c0 in ".gud-gerak" ".gud-stok-baris" ".gud-strip" ".gud-halaman" ".gud-br-baris" ".nip-k-besar" ".gud-menu-item"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c0")" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c0")" ] || die "CSS baru KEHILANGAN ${c0}"
+done
+[ -n "$(ls "$NEW_DIR"/frontend/dist/assets/ 2>/dev/null | grep -E '^bca-.*.svg$' | sed -n 1p)" ] || die "dist baru TIDAK memuat logo BCA"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): drawer riwayat satuan asal ada; fitur Gudang/Finance/Produksi/Sales CRM tetap ada"
