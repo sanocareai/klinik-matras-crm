@@ -704,12 +704,12 @@ if (MODE === "dengan-transisi") {
     const b = (lap.json?.baris ?? []).find((x) => x.kode === m.code);
     if (Array.isArray(rows) && rows.length && lamaP > 0) salahBaca += 1;
     if (!Number.isFinite(sApi) || Math.abs(sApi - sdb) > 1e-6) salahSaldo += 1;
-    if (b && b.status === "DINILAI") dinilai += 1;
+    if (b && b.status === "DINILAI") { const hs = (await prisma.$queryRawUnsafe("select satuan::text s from material_harga_berlaku where material_id = $1::uuid order by effective_from desc, created_at desc limit 1", id))[0]?.s; if (hs !== m.unit) dinilai += 1; } // DINILAI sah hanya bila satuan HARGA = satuan stok (mis. harga per METER dari PO ROLL→METER)
     ringkas.push(`${m.code}: ${rows.length} baris dibaca kode lama; ${lamaP} di antaranya bersatuan LAMA tetapi berlabel ${m.unit}; status laporan ${b?.status ?? "-"}`);
   }
   for (const r of ringkas) info(`temuan kode lama ${r}`);
   cek("kode lama: saldo bahan bertransisi (jumlah qty) TETAP sama dengan saldo satuan baru (transisi menutup lalu membuka saldo)", salahSaldo === 0, `${salahSaldo} bahan berbeda`);
-  cek("kode lama: Laporan Nilai Persediaan TIDAK menilai bahan bertransisi dengan harga satuan lama (tidak ada status DINILAI)", dinilai === 0, `${dinilai} bahan berstatus DINILAI`);
+  cek("kode lama: Laporan Nilai Persediaan TIDAK menilai bahan bertransisi dengan harga bersatuan LAMA (DINILAI hanya bila satuan harga = satuan stok)", dinilai === 0, `${dinilai} bahan berstatus DINILAI`);
   info("TEMUAN GUARD", `${salahBaca} dari ${ids.length} bahan bertransisi akan dibaca kode LAMA dengan riwayat berlabel satuan master baru padahal pergerakan sebelum transisi bersatuan lama → rollback rutin DITOLAK guard`);
   cek("kode lama menampilkan riwayat bahan bertransisi tanpa membedakan periode satuan (dasar penolakan guard terbukti, bukan dugaan)", salahBaca > 0 || ids.length === 0, `${salahBaca}`);
 }
