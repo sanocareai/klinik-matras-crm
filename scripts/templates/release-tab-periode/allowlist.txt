@@ -1,3 +1,4 @@
+frontend/src/App.jsx
 frontend/src/components/TabbedContent.jsx
 frontend/src/lib/periodeBersama.js
 frontend/src/lib/posisiScrollTab.js
@@ -14,3 +15,4 @@ frontend/src/pages/finance/FinancePurchases.jsx
 frontend/src/pages/finance/FinanceReports.jsx
 frontend/tests/periodeBersama.test.js
 frontend/tests/posisiScrollTab.test.js
+frontend/tests/releaseTabPeriode.test.js
