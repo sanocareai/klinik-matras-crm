@@ -13,7 +13,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-fix/atribusi-fase1-on-38573e75}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Prisma/package/frontend/migrasi tidak boleh ikut.
 ALLOWED_RE='^(backend/src/routes/tracking\.js|backend/src/routes/webhooks\.js|backend/src/services/leadAttribution\.js|backend/src/services/templateIklan\.js|backend/tests/atribusiFase1\.test\.js|scripts/release-atribusi-fase1\.sh|scripts/release-ctwa-capture-flag-off\.sh|scripts/release-atribusi-iklan\.sh)$'
-BACKEND_SRC_EXPECT="backend/src/routes/tracking.js backend/src/routes/webhooks.js backend/src/services/leadAttribution.js backend/src/services/templateIklan.js"
+BACKEND_SRC_EXPECT="backend/src/services/templateIklan.js"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"

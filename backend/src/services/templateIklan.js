@@ -146,7 +146,7 @@ export async function ambilTemplateIklanAktif() {
       HAVING count(*) >= ${MIN_KEMUNCULAN}
     `;
     // Query sudah lower+trim; normalisasi lagi untuk merapatkan spasi ganda.
-    const data = baris.map((b) => normalisasi(b.teks)).filter(Boolean);
+    const data = saringTemplateIklan(baris.map((b) => normalisasi(b.teks)).filter(Boolean));
     cache = { data, at: Date.now() };
     return data;
   } catch (e) {
@@ -209,7 +209,7 @@ export async function ambilTeksTombolWebsite() {
       GROUP BY teks
       HAVING count(*) >= ${MIN_KEMUNCULAN_WEBSITE}
     `;
-    const data = baris.map((b) => normalisasi(b.teks)).filter(Boolean);
+    const data = gabungTeksTombolWebsite(baris.map((b) => normalisasi(b.teks)).filter(Boolean));
     cacheWeb = { data, at: Date.now() };
     return data;
   } catch (e) {

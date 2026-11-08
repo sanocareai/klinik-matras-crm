@@ -45,3 +45,9 @@ test("penyaring klik: bot dibuang, peramban & WebView TikTok dihitung", () => {
     "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Mobile/15E148 musical_ly_33 BytedanceWebview/d8a21c6",
   ]) assert.equal(bukanKlikManusia("GET", ua), false, ua);
 });
+
+test("saringan benar-benar dipakai oleh pengambil daftar", () => {
+  const src = readFileSync(new URL("../src/services/templateIklan.js", import.meta.url), "utf8");
+  assert.match(src, /const data = saringTemplateIklan\(baris\.map/);
+  assert.match(src, /const data = gabungTeksTombolWebsite\(baris\.map/);
+});
