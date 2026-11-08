@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RILIS PENJAGA "SATUAN BERUBAH SEJAK PENERIMAAN": BACKEND-SAJA, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA = 3714f357, frontend-saja Gelombang 2 di atas bbc79b3e). FAIL-CLOSED.
+# RILIS PENJAGA "SATUAN BERUBAH SEJAK PENERIMAAN": BACKEND-SAJA, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA = 7606e537, frontend-saja stp1 di atas 3714f357). FAIL-CLOSED.
 #   • ISI: dokumen yang jumlahnya dicatat dalam satuan LAMA (penerimaan, retur) tidak boleh menggerakkan saldo yang sudah berganti satuan dengan angka mentah. Retur supplier atas penerimaan yang bahan-nya bertransisi satuan SESUDAH penerimaan ditolak
 #     (SATUAN_BERUBAH_SEJAK_PENERIMAAN) di pratinjau, pengajuan draf, dan konfirmasi barang keluar (dihitung ulang di transaksi pengeluaran, termasuk draf yang dibuat sebelum transisi); pembatalan retur yang barangnya keluar sebelum transisi ditolak;
 #     koreksi penerimaan Finance menolak dengan sebab satuan; penyelesaian retur pelanggan (RETURN_TO_AVAILABLE) atas catatan satuan lama ditolak. Jumlah TIDAK dikonversi otomatis; pesan menjelaskan perlu penyelesaian khusus. Retur dari penerimaan BARU sesudah transisi tetap berjalan dalam satuan baru.
@@ -62,7 +62,7 @@ Image sebelumnya   : ${ROLLBACK_TAG:-<belum ditandai>}
 Backup + checksum  : ${BACKUP_FILE:-<belum dibuat>}
 Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya.
 Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya. Rollback kode TIDAK dinyatakan aman otomatis (lihat batas di bawah). Bila rollback diputuskan setelah switch:
-Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (3714f357); keduanya memuat transisi satuan, pembaca satuan asal, dan frontend Gelombang 1 dan 2; gerbang kode live membuktikan kode di container == folder == baseline disetujui sebelum switch.
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (7606e537); keduanya memuat transisi satuan, pembaca satuan asal, dan frontend Gelombang 1, 2, dan stp1; gerbang kode live membuktikan kode di container == folder == baseline disetujui sebelum switch.
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    (recreate backend dari folder release sebelumnya dengan image rollback; web = dist folder sebelumnya)
@@ -459,7 +459,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 cari_dist() { find "$1/frontend/dist/assets" -maxdepth 1 -type f -name "*.$2" -print0 2>/dev/null | xargs -0 grep -lF -- "$3" 2>/dev/null | sed -n 1p; } # $1=release dir $2=js|css $3=teks tetap; BUKAN glob (>21.000 chunk melampaui ARG_MAX)
-# Rilis backend-saja: sumber web TIDAK berubah. Fitur live (drawer satuan asal, Gudang/Finance/Produksi/Sales CRM) HARUS ada di KEDUANYA (daftar divalidasi terhadap dist aktif 3714f357).
+# Rilis backend-saja: sumber web TIDAK berubah. Fitur live (drawer satuan asal, Gudang/Finance/Produksi/Sales CRM) HARUS ada di KEDUANYA (daftar divalidasi terhadap dist aktif 7606e537).
 for s2 in "satuan lama; saldo sekarang dalam" "referensi-satuan-tidak-cocok" "Tidak berlaku pada satuan" "Catat hasil SO" "Definisi dan sumber angka" "Siapa melihat nominal" "Rincian verifikasi nol" "gud-br-kartu-besar" "Satu dokumen, satu baris" "Lokasi dari riwayat penerimaan" "tidak langsung mengubah saldo" "Filter daftar bahan"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$s2")" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s2")" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
