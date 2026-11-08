@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
@@ -7,7 +8,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
-import { HalamanFinance, PeriodePicker, periodeDefault, tanggalPendek } from "@/features/finance/shared.jsx";
+import { HalamanFinance, PeriodePicker, tanggalPendek } from "@/features/finance/shared.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import DaftarPemasukan from "@/features/finance/pemasukan/DaftarPemasukan.jsx";
 import RingkasanPemasukan, { Panel, StripSementara } from "@/features/finance/pemasukan/RingkasanPemasukan.jsx";
@@ -324,7 +325,7 @@ function AlasanTidakDihitung({ b }) {
 // ── HALAMAN ──────────────────────────────────────────────────────────────────────────────────────────────────
 export default function FinancePemasukan() {
   const nav = useNavigate();
-  const [periode, setPeriode] = useState(periodeDefault());
+  const [periode, setPeriode] = usePeriodeFinance();
   const [tab, setTab] = useState("ringkasan");
   const [opsi, setOpsi] = useState(null);
   const [error, setError] = useState(null);

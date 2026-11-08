@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { Plus, UserRound, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -14,7 +15,7 @@ import { api } from "@/api.js";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
+  Pilihan, InputUang, PeriodePicker, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel from "@/features/finance/ExportExcel.jsx";
@@ -63,7 +64,7 @@ export default function FinancePenjualanKaryawan() {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [fKaryawan, setFKaryawan] = useState("");
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const qTunda = useTertunda(q);
   const pernahMuat = useRef(false);
 

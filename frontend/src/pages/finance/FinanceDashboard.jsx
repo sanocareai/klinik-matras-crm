@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { api } from "@/api.js";
-import { HalamanFinance, PeriodePicker, periodeDefault, formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
+import { HalamanFinance, PeriodePicker, formatUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { StripStatus, KpiKartu, TindakLanjut, SaldoRekening, LabaRugiPanel } from "@/features/finance/RingkasanPanels.jsx";
 import { TagihanPelanggan, PencatatanTerbaru, PanelPendukung } from "@/features/finance/RingkasanBawah.jsx";
 import { IkKasBank } from "@/components/financeIcons.jsx";
@@ -22,7 +23,7 @@ import { hitungKualitasData, margin as hitungMargin, pisahkanPiutang, ringkasAgi
 
 export default function FinanceDashboard() {
   const navigate = useNavigate();
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const [data, setData] = useState(null);
   const [riil, setRiil] = useState(null);
   const [backfill, setBackfill] = useState(null);

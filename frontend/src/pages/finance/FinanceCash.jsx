@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { useUrlTab } from "@/lib/useUrlTab.js";
 // Gaya Kas & Bank (kelas fin-ks*) diimpor dari halaman ini agar ikut chunk lazy-nya dan main.jsx (berkas bersama) tidak berubah.
 import "@/styles/sanss-finance-kasbank.css";
@@ -11,7 +12,7 @@ import { api } from "@/api.js";
 import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
-  HalamanFinance, Pilihan, InputUang, TombolAksi, PeriodePicker, periodeDefault, tanggalPendek, formatUang,
+  HalamanFinance, Pilihan, InputUang, TombolAksi, PeriodePicker, tanggalPendek, formatUang,
 } from "@/features/finance/shared.jsx";
 import { useTertunda, cocok } from "@/features/finance/FilterBar.jsx";
 import { RowActions } from "@/features/finance/RowActions.jsx";
@@ -51,7 +52,7 @@ export default function FinanceCash() {
   const tabUi = tabAktifKas(tab);
   // Pindah bagian lewat tab hub (Rekening / Transfer antar-rekening / Pemasukan lain) menutup Mutasi Buku yang sedang terbuka.
   useEffect(() => { setTerpilih(null); }, [tabUi]);
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const [rekening, setRekening] = useState(null);
   const [transfers, setTransfers] = useState([]);
   const [incomes, setIncomes] = useState([]);

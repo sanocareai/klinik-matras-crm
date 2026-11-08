@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { BookOpen } from "lucide-react";
@@ -9,7 +10,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Pilihan,
-  PeriodePicker, periodeDefault, tanggalPendek, LABEL_SUMBER_JURNAL, LABEL_TIPE_AKUN,
+  PeriodePicker, tanggalPendek, LABEL_SUMBER_JURNAL, LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
@@ -23,7 +24,7 @@ import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportEx
 
 export default function FinanceLedger() {
   const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const [accountId, setAccountId] = useState("");
   const [akun, setAkun] = useState([]);
   const [data, setData] = useState(null);
