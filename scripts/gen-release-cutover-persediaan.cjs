@@ -49,6 +49,8 @@ function bangkitkan({ baseScript, blok, berkasList, rehNode, smokeNode }) {
   s = L.join("\n");
   // nama kunci/backup/tag/DB sementara khusus rilis ini (urutan penting: pola grep proses dulu)
   r("release-satuan-gabungan", "release-cutover-persediaan"); r("satuan-gabungan-${DEPLOY_SHORT}", "cutover-persediaan-${DEPLOY_SHORT}"); r("rollback-pre-sgb-", "rollback-pre-cpb-"); r("rehearsal_sgb_", "rehearsal_cpb_"); r("reh-sgb-", "reh-cpb-");
+  // sumber node_modules web: pembersihan disk 9 Nov menghapus node_modules di semua folder rilis; salinan kerja ~/klinik-matras tetap memilikinya (package.json tetap dibandingkan)
+  r('for d in "$PREV_DIR" "$RELEASES"/*/; do', 'for d in "$PREV_DIR" "$RELEASES"/*/ "$HOME/klinik-matras"; do');
   // blok rollback
   { const i = s.indexOf("Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya"); const j = s.indexOf("\nEOF\n", i); must(i >= 0 && j > i, "blok rollback"); const k = s.lastIndexOf("\n", j - 1) + 1; void k; s = s.slice(0, i) + lf(blok.rollback).trimEnd() + s.slice(j); }
   // dist: ganti SELURUH blok pemeriksaan fitur dengan daftar rilis ini (backend-saja: semua fitur harus ada di dist aktif DAN dist baru)

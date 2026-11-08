@@ -411,7 +411,7 @@ ok "dokumen pembanding dibekukan pada T0=${T0} UTC ($(awk -F'|' '{n+=$2} END{pri
 say "2b. Sumber node_modules frontend (package.json identik dengan kandidat)"
 LOCK_NEW="$BK_DIR/pkg-baru.json"; sg show "${DEPLOY_SHA}:frontend/package.json" > "$LOCK_NEW"
 NM_SRC=""
-for d in "$PREV_DIR" "$RELEASES"/*/; do
+for d in "$PREV_DIR" "$RELEASES"/*/ "$HOME/klinik-matras"; do
   d="${d%/}"
   if [ -d "$d/frontend/node_modules" ] && [ -f "$d/frontend/package.json" ] && cmp -s <(tr -d '\r' < "$d/frontend/package.json") <(tr -d '\r' < "$LOCK_NEW"); then NM_SRC="$d/frontend/node_modules"; break; fi
 done
