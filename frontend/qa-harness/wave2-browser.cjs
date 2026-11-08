@@ -67,7 +67,8 @@ const B2B = [{ id: "b1", orderNumber: "B2B-0001", customer: { name: "PT Maju Jay
 
   // ── Delivery: halaman yang memakai komponen bersama
   for (const [nama, rute] of [["jobs", "/armada/jobs"], ["orders", "/armada/orders"], ["pod", "/armada/pod"], ["kendali-rute", "/armada/kendali-rute"], ["ringkasan", "/armada/ringkasan"], ["laporan", "/armada/reports"]]) {
-    p = await buka(rute); const info = await p.evaluate(() => ({ kepala: !!document.querySelector("header.ap-kepala"), widget: document.querySelectorAll(".ap-widget").length, skin: !!document.querySelector(".app-shell.ap-skin") }));
+    p = await buka(rute); await p.waitForFunction(() => document.querySelectorAll(".ap-widget").length >= 4, { timeout: 25000 }).catch(() => {}); // ringkasan muncul setelah data termuat
+    const info = await p.evaluate(() => ({ kepala: !!document.querySelector("header.ap-kepala"), widget: document.querySelectorAll(".ap-widget").length, skin: !!document.querySelector(".app-shell.ap-skin") }));
     await p.screenshot({ path: path.join(OUT, `delivery-${nama}.png`) });
     ok(`Delivery ${nama}: kepala Apple + widget berwarna`, info.skin && info.kepala && info.widget >= 4, JSON.stringify(info)); ok(`Delivery ${nama}: tanpa galat skrip`, p.galat.length === 0, p.galat.join("|")); await p.close();
   }
