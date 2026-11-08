@@ -1,0 +1,4 @@
+frontend/qa-harness/delivery-fixtures.cjs
+frontend/src/styles/sanss-apple.css
+frontend/tests/appleDeliveryTab.test.js
+frontend/tests/appleGelombang2.test.js
