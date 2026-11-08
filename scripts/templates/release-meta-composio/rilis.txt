@@ -123,7 +123,9 @@ PHASE=6; say "6. Verifikasi dan smoke (baca-saja)"
 [ "$(sha256sum "$PERSIST/backend/.env" | cut -c1-16)" = "$ENV_SHA" ] || die ".env berubah"
 gd_verifikasi
 for ep in /api/atribusi/iklan/sync-meta/status /api/atribusi/iklan/spend /api/atribusi/iklan /api/atribusi/iklan/kesehatan /api/analytics/traffic; do [ "$(curl -s -o /dev/null -w '%{http_code}' -m15 "${PUBLIC_URL}${ep}")" = 401 ] || die "${ep} tanpa token harus 401"; done
-docker exec "$CID_NEW" node scripts/sync-meta-composio.js --cek | grep -q '"status":"TIDAK_SIAP"' || warn "--cek bukan TIDAK_SIAP: secret/flag sudah terpasang"
+# rc=3 adalah hasil normal TIDAK_SIAP; tangkap keluaran dulu supaya pipefail tidak memicu peringatan palsu.
+CEK_OUT="$(docker exec "$CID_NEW" node scripts/sync-meta-composio.js --cek || true)"
+grep -q '"status":"TIDAK_SIAP"' <<<"$CEK_OUT" || warn "--cek bukan TIDAK_SIAP: secret/flag sudah terpasang"
 [ "$(psql_live -At -c "select count(*) from meta_sync_runs where mode='commit'")" = 0 ] || warn "sudah ada run commit"
 sleep 15; [ "$(docker inspect -f '{{.RestartCount}}' "$CID_NEW")" = 0 ] || die "backend restart sendiri"
 ok "smoke lulus; flag OFF, tanpa secret, tanpa impor"
