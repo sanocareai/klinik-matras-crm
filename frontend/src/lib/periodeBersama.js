@@ -79,6 +79,9 @@ const penyimpanBersama = () => {
   return tunggal;
 };
 
+/** Kembali ke bulan berjalan di memori DAN penyimpanan — dipanggil saat logout / login ulang supaya pengguna berikutnya di browser yang sama tidak mewarisi rentang tanggal pengguna lama. */
+export function aturUlangPeriodeFinance() { penyimpanBersama().aturUlang(); }
+
 /** Pengganti `useState(periodeDefault)` di halaman Finance: `[periode, setPeriode]` dengan bentuk yang sama, tetapi dibagi ke semua halaman/tab Finance. */
 export function usePeriodeFinance() {
   const s = penyimpanBersama();

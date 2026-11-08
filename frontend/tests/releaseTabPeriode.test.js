@@ -24,7 +24,7 @@ test("skrip: sintaks bash valid; allowlist memuat berkas inti dan tidak memuat b
 
 test("allowlist aplikasi = tepat daftar yang disetujui; sumber dari git; rollback ke baseline; tanpa penghapusan docker", () => {
   const disetujui = baca("scripts/templates/release-tab-periode/allowlist.txt").split("\n").filter(Boolean);
-  assert.equal(disetujui.length, 16);
+  assert.equal(disetujui.length, 17);
   for (const f of disetujui) assert.ok(allow.includes(keRegex(f)), `allowlist skrip memuat ${f}`);
   assert.ok(script.includes('sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR"'), "git archive");
   assert.ok(script.includes("--rollback") && script.includes("/tmp/stp1.sh"), "rollback");

@@ -65,3 +65,14 @@ test("semua halaman Finance berperiode memakai penyimpan bersama (tidak ada useS
     assert.ok(!/useState\(periodeDefault/.test(src), `${f} masih menyimpan periode sendiri`);
   }
 });
+
+test("aturUlang (dipakai saat logout) kembali ke bulan berjalan, menulis ke penyimpanan, dan memberi tahu pendengar", () => {
+  const st = memori(); const j = jamTetap("2026-11-08T05:00:00Z"); const s = buatPenyimpanPeriode({ jam: j.jam, penyimpanan: st });
+  s.setel({ from: "2026-09-01", to: "2026-09-30" });
+  let n = 0; s.langganan(() => n++);
+  s.aturUlang();
+  assert.deepEqual(s.ambil(), { from: "2026-11-01", to: "2026-11-30" }); assert.equal(n, 1);
+  assert.deepEqual(JSON.parse(st.getItem("periode-finance:v1")), { hari: "2026-11-08", from: "2026-11-01", to: "2026-11-30" });
+  // pengguna berikutnya (muat ulang) tidak mewarisi rentang lama
+  assert.deepEqual(buatPenyimpanPeriode({ jam: j.jam, penyimpanan: st }).ambil(), { from: "2026-11-01", to: "2026-11-30" });
+});
