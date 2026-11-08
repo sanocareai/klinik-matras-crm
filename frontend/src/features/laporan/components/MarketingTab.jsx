@@ -3,7 +3,7 @@ import { AlertTriangle, Loader2, ShieldAlert, Wallet } from "lucide-react";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { todayWIB } from "@/lib/dateRange.js";
-import { periodeTab } from "../periodeLaporan.js";
+import { periodeTab, TAMPIL_SUMBER_LINK } from "../periodeLaporan.js";
 import { buatCsvAkuisisi, namaBerkasCsv, teksCutoff, sumberBerbiaya } from "../akuisisiLogic.js";
 import { kueriIklan } from "../iklanCampaignLogic.js";
 import { berurutan, pesanGalat } from "../marketingData.js";
@@ -11,6 +11,7 @@ import BannerPeriode from "./BannerPeriode.jsx";
 import KelolaBiayaIklan from "./KelolaBiayaIklan.jsx";
 import RingkasanMarketing from "./marketing/RingkasanMarketing.jsx";
 import DetailSumberMarketing from "./marketing/DetailSumberMarketing.jsx";
+import RincianKreatif from "./marketing/RincianKreatif.jsx";
 
 // ═══ MARKETING (ADMIN) ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Satu tab pengganti Traffic + Akuisisi + Iklan. Periode = filter global Laporan (SATU state, juga di URL). Sumber data (semua baca-saja, service existing):
@@ -71,6 +72,7 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
   const terpilih = url.sumber ? (lap?.sumber || []).find((x) => x.id === url.sumber) : null;
   const pilihSumber = (id) => onUbah({ sumber: id, level: "campaign", campaign: null, adset: null }, { ganti: false });
   const kembali = () => onUbah({ sumber: null, level: "campaign", campaign: null, adset: null }, { ganti: false });
+  const subTab = [{ id: null, label: "Ringkasan" }, { id: TAMPIL_SUMBER_LINK, label: "Sumber & Link" }];
   function ekspor() {
     const csv = buatCsvAkuisisi(lap, { urut: url.urut }); if (!csv) return;
     const u = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
@@ -98,7 +100,21 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
       {lap && terpilih && (
         <DetailSumberMarketing s={terpilih} lap={lap} periode={periode} range={range} url={url} onUbah={onUbah} onKembali={kembali} traffic={traffic} sourceDetail={sourceDetail} rangeParams={rangeParams} cacheMeta={cacheMeta} versi={versi} />
       )}
-      {lap && !url.sumber && (
+      {!url.sumber && (
+        <div role="tablist" aria-label="Tampilan Marketing" className="flex flex-wrap gap-2" data-testid="subtab-marketing">
+          {subTab.map((t) => (
+            <button key={t.label} type="button" role="tab" aria-selected={(url.tampil ?? null) === t.id} className={`btn btn-sm ${(url.tampil ?? null) === t.id ? "btn-primary" : "btn-ghost"}`} onClick={() => onUbah({ tampil: t.id }, { ganti: false })}>{t.label}</button>
+          ))}
+        </div>
+      )}
+      {!url.sumber && url.tampil === TAMPIL_SUMBER_LINK && (
+        memuatTraffic || !sourceDetail
+          ? <Card className="!p-4"><p className="flex items-center gap-2 text-sm text-ink3" data-testid="memuat-sumber-link"><Loader2 size={16} className="animate-spin" /> Memuat rincian sumber…</p></Card>
+          : (sourceDetail.data || []).length === 0
+            ? <Card className="!p-4"><p className="text-sm text-ink3" data-testid="sumber-link-kosong">Belum ada lead pada periode ini.</p></Card>
+            : <RincianKreatif traffic={traffic} sourceDetail={sourceDetail} rangeParams={rangeParams} hanyaRincian />
+      )}
+      {lap && !url.sumber && url.tampil !== TAMPIL_SUMBER_LINK && (
         <RingkasanMarketing lap={lap} iklan={iklan} iklanGalat={iklanGalat} traffic={traffic} memuatTraffic={memuatTraffic} periode={periode} rangeParams={rangeParams} url={url} onUbah={onUbah} onBuka={pilihSumber} onEkspor={ekspor} />
       )}
 
