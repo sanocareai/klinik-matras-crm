@@ -90,7 +90,7 @@ const selisihHari = (a, b) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.pa
 /**
  * Kesegaran spend. `spend.terakhirTanggal` = tanggal WIB spend terbaru di DB (sumber manapun). `hariIni` = YYYY-MM-DD WIB.
  */
-export function kesegaranSpend({ terakhirTanggal, terakhirImportAt, adaDataDiRentang, hariIni, dari = null, sampai, hariTersedia = null, hariNolTerverifikasi = [] }) {
+export function kesegaranSpend({ terakhirTanggal, terakhirImportAt, adaDataDiRentang, hariIni, dari = null, sampai, hariTersedia = null, hariNolTerverifikasi = [], hariTanpaDeliveryTeramati = [] }) {
   if (!terakhirTanggal) return { tersedia: false, terakhirTanggal: null, terakhirImportAt: null, tertinggalHari: null, terlambat: false, adaDataDiRentang: false };
   const tertinggal = selisihHari(hariIni, terakhirTanggal);
   // KELENGKAPAN: hari kalender WIB dalam [dari, sampai] yang tidak punya satu pun baris spend (tingkat akun). Hari berjalan (hariIni) tidak dihitung hilang — ia parsial, dilaporkan terpisah.
@@ -102,7 +102,7 @@ export function kesegaranSpend({ terakhirTanggal, terakhirImportAt, adaDataDiRen
     for (let i = 0; i <= n && i <= 400; i++) { const h = new Date(Date.parse(`${dari}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10); if (h === hariIni) { termasukHariBerjalan = true; continue; } if (h < hariIni && !ada.has(h)) hariHilang.push(h); }
   }
   return {
-    hariHilang, termasukHariBerjalan, hariNolTerverifikasi,
+    hariHilang, termasukHariBerjalan, hariNolTerverifikasi, hariTanpaDeliveryTeramati,
     tersedia: true, terakhirTanggal, terakhirImportAt: terakhirImportAt ?? null,
     tertinggalHari: tertinggal, batasHari: BATAS_TERLAMBAT_HARI,
     // terlambat bila rentang meminta hari yang belum ada datanya DAN ketertinggalan melewati batas
@@ -319,8 +319,8 @@ export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, targe
   const totalBaris = { lead: { unik: t.leadUnik, spam: laporan.grup.reduce((s, g) => s + (g.status === "UNKNOWN" ? 0 : g.lead.spam), 0), leadSah: t.leadSah }, pernahDitandaiProspek: { jumlah: laporan.grup.filter((g) => g.status !== "UNKNOWN").reduce((s, g) => s + g.pernahDitandaiProspek.jumlah, 0) }, customerDenganOrder: t.customerDenganOrder, closingUtama: { customerLunasTerbuktiLedger: t.closingUtama.customerLunasTerbuktiLedger }, bookedValue: t.bookedValue, uangBersihLedger: t.uangBersihLedger, status: "MAPPED", kematangan: laporan.grup.reduce((acc, g) => { for (const k of ["hari7", "hari30", "hari60"]) acc[k] = { leadMatang: (acc[k]?.leadMatang || 0) + (g.status === "UNKNOWN" ? 0 : g.kematangan?.[k]?.leadMatang || 0) }; return acc; }, {}) };
   // metrik aditif (spend, impressions, link clicks, percakapan) dijumlah; reach TIDAK pernah dijumlah (non-additive, tidak disimpan dalam agregat ini)
   const sumNullable = (k) => { const v = [...perKunci.values()].map((a) => a[k]).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((p, c) => p + Number(c), 0) : null; };
-  // Tanpa baris spend sama sekali, total = Rp0 HANYA bila setiap hari periode terbukti nol oleh kontrol akun; data hilang tetap null.
-  const semuaNolTerverifikasi = !spendPerAd?.length && (kesegaran.hariNolTerverifikasi?.length ?? 0) > 0 && Array.isArray(kesegaran.hariHilang) && kesegaran.hariHilang.length === 0 && !kesegaran.termasukHariBerjalan;
+  // Tanpa baris spend sama sekali, total = Rp0 HANYA bila setiap hari punya baris kontrol eksplisit spend 0. Respons kosong dan data hilang tetap null: bukan bukti angka nol.
+  const semuaNolTerverifikasi = !spendPerAd?.length && (kesegaran.hariNolTerverifikasi?.length ?? 0) > 0 && Array.isArray(kesegaran.hariHilang) && kesegaran.hariHilang.length === 0 && !kesegaran.termasukHariBerjalan && !(kesegaran.hariTanpaDeliveryTeramati?.length);
   const bTotal = hitungBiayaBaris({ baris: totalBaris, spend: perKunci.size ? { spend: spendTotal, platformConversations: sumNullable("platformConversations"), impressions: sumNullable("impressions"), linkClicks: sumNullable("linkClicks"), hariAdaSpend: new Set([...perKunci.values()].flatMap((a) => [...a.hari])).size || Math.max(0, ...[...perKunci.values()].map((a) => a.hariAdaSpend)) } : semuaNolTerverifikasi ? { spend: 0, platformConversations: null, impressions: null, linkClicks: null, hariAdaSpend: 0 } : null, konteks });
   const biayaLama = laporan.biaya || {};
   laporan.periode = {

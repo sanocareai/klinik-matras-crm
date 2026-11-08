@@ -22,6 +22,7 @@ function meta(w) {
     const dalam = (x) => x.date_start >= a.time_range.since && x.date_start <= a.time_range.until;
     if (a.breakdowns) return res({ data: [] });
     if (w.ulangMuncul && a.time_range.since === a.time_range.until && a.level === "account") return res({ data: [kontrol(a.time_range.since, "5")] });
+    if (w.adUlangMuncul && a.level === "ad" && (w.n = (w.n || 0) + 1) > 1) return res({ data: [ad(a.time_range.since, "10009", "5")] });
     return res({ data: (a.level === "ad" ? w.ad : w.kontrol).filter(dalam) });
   };
 }
@@ -40,19 +41,28 @@ test("hariAdaSpend: total = gabungan tanggal antar-Ad; layanan = MCP", async () 
   const mcp = await laporanPerforma(db, { dari: H1, sampai: H3, level: "campaign" }, { now: NOW });
   assert.equal(mcp.total.biaya.hariAdaSpend, l.biaya.hariAdaSpend); assert.equal(mcp.total.biaya.spend, l.biaya.spend);
 });
-test("nol terverifikasi: kontrol kosong dikonfirmasi ulang = hari lengkap Rp0; total spend benar", async () => {
+test("respons kosong konsisten: TIDAK_ADA_DELIVERY_TERAMATI, hari lengkap, kontrol_spend null, dasar tersimpan; total dari hari lain", async () => {
   const r = await jalan({ ad: [ad(H1, "10001", "100")], kontrol: [kontrol(H1, "100")] });
-  assert.equal(r.status, "SUKSES"); assert.deepEqual(r.ringkas.hari.map((h) => h.s), ["DELIVERY_TERVERIFIKASI", "NOL_TERVERIFIKASI", "NOL_TERVERIFIKASI"]);
+  assert.equal(r.status, "SUKSES"); assert.deepEqual(r.ringkas.hari.map((h) => h.s), ["DELIVERY_TERVERIFIKASI", "TIDAK_ADA_DELIVERY_TERAMATI", "TIDAK_ADA_DELIVERY_TERAMATI"]);
+  const [e] = await db.$queryRaw`select control_spend, evidence from meta_account_daily_control where date_wib=${new Date(`${H2}T00:00:00Z`)}`;
+  assert.equal(e.control_spend, null, "bukan angka nol"); assert.equal(e.evidence.dasar, "RESPONS_KOSONG_KONSISTEN"); assert.equal(e.evidence.akun.zonaWaktu, "Asia/Jakarta"); assert.equal(e.evidence.seluruhHalaman, true); assert.equal(e.evidence.spendTersimpan, 0);
   const l = await lap(H1, H3);
-  assert.deepEqual(l.biaya.kesegaran.hariHilang, [], "hari nol terbukti tidak hilang"); assert.equal(l.biaya.spend, 100); assert.equal(l.biaya.hariAdaSpend, 1);
+  assert.deepEqual(l.biaya.kesegaran.hariHilang, [], "hari tervalidasi tidak hilang"); assert.equal(l.biaya.kesegaran.hariTanpaDeliveryTeramati.length, 2); assert.equal(l.biaya.kesegaran.hariNolTerverifikasi.length, 0); assert.equal(l.biaya.spend, 100); assert.equal(l.biaya.hariAdaSpend, 1);
   assert.equal(await db.metaAdDailySpend.count(), 1, "tidak ada baris spend Rp0 rekaan");
 });
 test("baris kontrol spend 0 eksplisit = nol terverifikasi", async () => {
   const r = await jalan({ ad: [], kontrol: [{ ...kontrol(H1, "0"), impressions: "0", inline_link_clicks: "0" }] }, H1, H1);
   assert.equal(r.ringkas.hari[0].s, "NOL_TERVERIFIKASI");
+  const [e] = await db.$queryRaw`select control_spend::text s, evidence from meta_account_daily_control`; assert.equal(Number(e.s), 0); assert.equal(e.evidence.dasar, "BARIS_KONTROL_SPEND_0");
 });
-test("seluruh periode nol terverifikasi: spend Rp0, CPL/CPA penyebut nol null dengan alasan, ROAS SPEND_NOL", async () => {
+test("seluruh periode kosong: spend null, bukan Rp0; campuran nol eksplisit + kosong juga null", async () => {
   await jalan({ ad: [], kontrol: [] });
+  assert.equal((await lap(H1, H3)).biaya.spend ?? null, null);
+  await jalan({ ad: [], kontrol: [{ ...kontrol(H1, "0"), impressions: "0", inline_link_clicks: "0" }] }, H1, H1);
+  assert.equal((await lap(H1, H3)).biaya.spend ?? null, null);
+});
+test("seluruh periode nol eksplisit: spend Rp0, CPL/CPA penyebut nol null dengan alasan, ROAS SPEND_NOL", async () => {
+  await jalan({ ad: [], kontrol: [H1, H2, H3].map((t) => ({ ...kontrol(t, "0"), impressions: "0", inline_link_clicks: "0" })) });
   const l = await lap(H1, H3);
   assert.equal(l.biaya.spend, 0, "Rp0 terbukti, bukan null"); assert.equal(l.biaya.cpl, null); assert.equal(l.biaya.bookedRoas, null); assert.equal(l.biaya.alasanNull.cpl, "SEBELUM_ATRIBUSI", "tanpa touch: pengaman atribusi tetap menang");
 });
@@ -65,6 +75,20 @@ test("data hilang tetap null: kontrol tidak dikonfirmasi, gagal tarik, atau tanp
   const d = await jalan({ ad: [ad(H3, "10001", "100")], kontrol: [] }, H3, H3);
   assert.equal(d.ringkas.hari[0].s, "BELUM_REKONSILIASI"); assert.equal(await db.metaAdDailySpend.count(), 0);
   l = await lap(H1, H3); assert.equal(l.biaya.spend ?? null, null); assert.equal(l.biaya.kesegaran?.hariHilang?.length ?? 3, 3);
+});
+test("bukti lama tidak diturunkan: nol eksplisit dan delivery tidak ditimpa respons kosong; spend tersimpan tetap", async () => {
+  await jalan({ ad: [], kontrol: [{ ...kontrol(H1, "0"), impressions: "0", inline_link_clicks: "0" }] }, H1, H1);
+  await jalan({ ad: [], kontrol: [] }, H1, H1);
+  let [c] = await db.$queryRaw`select status from meta_account_daily_control where date_wib=${new Date(`${H1}T00:00:00Z`)}`; assert.equal(c.status, "NOL_TERVERIFIKASI");
+  await jalan({ ad: [ad(H2, "10001", "100")], kontrol: [kontrol(H2, "100")] }, H2, H2);
+  const r = await jalan({ ad: [], kontrol: [] }, H2, H2);
+  assert.equal(r.status, "BELUM_DIREKONSILIASI"); assert.equal(r.ringkas.hari[0].s, "DATA_TIDAK_LENGKAP");
+  [c] = await db.$queryRaw`select status, reconciled from meta_account_daily_control where date_wib=${new Date(`${H2}T00:00:00Z`)}`; assert.deepEqual([c.status, c.reconciled], ["DELIVERY_TERVERIFIKASI", true]);
+  assert.equal(await db.metaAdDailySpend.count(), 1);
+});
+test("tarikan Ad harian tidak konsisten dengan kosong: tidak lengkap", async () => {
+  const r = await jalan({ ad: [], kontrol: [], adUlangMuncul: true }, H1, H1);
+  assert.equal(r.ringkas.hari[0].s, "DATA_TIDAK_LENGKAP");
 });
 test("hari terbukti tidak ditimpa oleh kegagalan berikutnya", async () => {
   await jalan({ ad: [ad(H1, "10001", "100")], kontrol: [kontrol(H1, "100")] }, H1, H1);

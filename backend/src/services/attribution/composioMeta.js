@@ -13,7 +13,8 @@ export const TOOL_BACA = Object.freeze(["METAADS_GET_INSIGHTS", "METAADS_GET_OBJ
 export const ATRIBUSI = Object.freeze({ actionType: ACTION_PERCAKAPAN, nilaiDipakai: "value", actionAttributionWindows: ["7d_click"], actionReportTime: "BAWAAN_META_TIDAK_DAPAT_DISET_LEWAT_TOOL" });
 // Definisi hook rate terkunci. Angka hanya boleh dibandingkan dengan versi yang sama.
 export const HOOK_RATE_DEFINISI = Object.freeze({ versi: "HOOK_V1_3S_PER_IMPRESSION_VIDEO", pembilang: "actions[video_view].value (pemutaran 3 detik)", penyebut: "impressions baris Ad video yang punya metrik pemutaran 3 detik", agregasi: "Σ pembilang ÷ Σ penyebut; bukan rata-rata persentase", bukanVideo: "dikeluarkan dari pembilang dan penyebut", sebanding: "hanya dengan versi yang sama; histori berpenyebut lain tidak dibandingkan" });
-const BASE = "https://backend.composio.dev/api/v3.1/tools/execute";
+const BASE_API = "https://backend.composio.dev/api/v3.1";
+const BASE = `${BASE_API}/tools/execute`;
 const FIELDS_AD = ["account_id", "account_currency", "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name", "spend", "impressions", "reach", "inline_link_clicks", "actions", "video_thruplay_watched_actions", "date_start", "date_stop"];
 const FIELDS_AKUN = ["account_id", "account_currency", "spend", "impressions", "inline_link_clicks", "actions", "date_start", "date_stop"];
 export const BREAKDOWN = Object.freeze({ platform_posisi: ["publisher_platform", "platform_position"], demografi: ["age", "gender"] });
@@ -100,7 +101,18 @@ export function buatKlien({ env = process.env, fetchFn = fetch, tidurFn = tidur,
     return rows;
   };
   return {
-    akun: c.akun, panggil,
+    akun: c.akun, versiTool: c.versiTool, panggil,
+    /** Bukti konfigurasi tanpa nilai secret: connected account ada di project API key ini dan versi tool benar-benar tersedia. */
+    async periksaProject() {
+      const ambil = async (p) => { const r = await fetchFn(`${BASE_API}${p}`, { method: "GET", headers: { "x-api-key": c.apiKey }, signal: AbortSignal.timeout(timeoutMs) }); if (r.status === 401 || r.status === 403) throw new ErrSinkron("AKSES_COMPOSIO_DITOLAK"); if (!r.ok) throw new ErrSinkron(`HTTP_${r.status}`); return r.json(); };
+      const ca = await ambil(`/connected_accounts?connected_account_ids=${encodeURIComponent(c.connectedAccountId)}&toolkit_slugs=metaads&account_type=ALL`);
+      const item = (ca.items || []).find((x) => x.id === c.connectedAccountId);
+      if (!item) throw new ErrSinkron("CONNECTED_ACCOUNT_TIDAK_ADA_DI_PROJECT");
+      if (item.status !== "ACTIVE") throw new ErrSinkron("CONNECTED_ACCOUNT_TIDAK_AKTIF");
+      const versi = {};
+      for (const t of TOOL_BACA) { const d = await ambil(`/tools/${t}`); if (!(d.available_versions || []).includes(c.versiTool)) throw new ErrSinkron("VERSI_TOOL_TIDAK_TERSEDIA"); versi[t] = c.versiTool; }
+      return { connectedAccountAktif: true, toolkit: "metaads", versiTool: versi };
+    },
     async verifikasiAkun() {
       const a = await panggil("METAADS_GET_OBJECT", { object_id: objekAkun, fields: ["account_id", "currency", "timezone_name", "account_status"] });
       if (String(a.account_id) !== c.akun) throw new ErrSinkron("AKUN_SALAH");
@@ -181,7 +193,7 @@ export function hookRate(baris) {
 
 /**
  * Status per hari. Spend dibandingkan dalam sen (BigInt): selisih 1 sen pun = belum rekonsiliasi.
- * DELIVERY_TERVERIFIKASI | NOL_TERVERIFIKASI (kontrol ada, spend 0) | PERLU_KONFIRMASI (tidak ada baris; belum bukti Rp0, wajib dikonfirmasi tarikan ulang per hari oleh pemanggil) | BELUM_REKONSILIASI.
+ * DELIVERY_TERVERIFIKASI | NOL_TERVERIFIKASI (baris kontrol eksplisit spend 0) | PERLU_KONFIRMASI (tidak ada baris; bukan angka nol, dikonfirmasi pemanggil menjadi TIDAK_ADA_DELIVERY_TERAMATI) | BELUM_REKONSILIASI.
  */
 export function rekonsiliasiHarian(hariList, barisAd, barisKontrol) {
   const perAd = new Map(); const kontrol = new Map(barisKontrol.map((k) => [k.date_start, k]));

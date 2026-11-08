@@ -94,7 +94,7 @@ test("kegagalan halaman: run GAGAL, tidak ada impor parsial, histori utuh; respo
   assert.equal((await statusSinkronMeta(db)).terakhirDicoba.alasanGagal, "HTTP_400");
   const kosong = await jalan({ ad: [], kontrol: [] });
   assert.equal(kosong.status, "BELUM_DIREKONSILIASI", "spend tersimpan vs API kosong = kontradiksi"); assert.equal(await db.metaAdDailySpend.count(), n);
-  const [c] = await db.$queryRaw`select status from meta_account_daily_control where date_wib=${new Date(`${H1}T00:00:00Z`)}`; assert.equal(c.status, "DATA_TIDAK_LENGKAP", "bukan Rp0");
+  const [c] = await db.$queryRaw`select status from meta_account_daily_control where date_wib=${new Date(`${H1}T00:00:00Z`)}`; assert.equal(c.status, "DELIVERY_TERVERIFIKASI", "bukti lama tidak diturunkan respons kosong");
   assert.equal((await jalan({ ad: [], kontrol: [] }, "verify")).hari[0].status, "DB_ADA_KONTROL_TIDAK", "verify menandai, tidak menyatakan cocok");
 });
 test("kunci: run kedua ditolak saat ada yang berjalan; run basi diambil alih", async () => {

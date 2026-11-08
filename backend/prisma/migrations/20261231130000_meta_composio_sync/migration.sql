@@ -40,6 +40,7 @@ CREATE TABLE "meta_account_daily_control" (
   "ad_spend" DECIMAL(18,2),
   "ad_rows" INTEGER,
   "reconciled" BOOLEAN NOT NULL DEFAULT false,
+  "evidence" JSONB,
   "transport" VARCHAR(24) NOT NULL,
   "run_id" UUID,
   "fetched_at" TIMESTAMP(3) NOT NULL,

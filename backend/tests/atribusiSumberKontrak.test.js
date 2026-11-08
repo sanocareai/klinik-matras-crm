@@ -71,6 +71,21 @@ test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya 
   }
 });
 
+// spend.js dan biayaKpi.js SENGAJA berubah untuk sinkronisasi Meta. Yang dipin: importer, validasi, rencana, dan rumus KPI baris identik baseline; perubahan terbatas pada kelengkapan hari dan hari spend.
+test("spend.js dan biayaKpi.js: perubahan hanya di bagian kelengkapan/hari; importer dan rumus KPI identik baseline", { skip: adaBase ? false : `commit ${BASE_LIVE} tidak ada di klon ini` }, () => {
+  const lama = (f) => git(["show", `${BASE_LIVE}:${f}`]).stdout.replace(/\r\n/g, "\n"), baru = (f) => baca(path.join(root, f)).replace(/\r\n/g, "\n");
+  const potong = (s, a, b) => { const i = s.indexOf(a), j = s.indexOf(b, i); assert.ok(i >= 0 && j > i, `penanda ${a}`); return s.slice(i, j); };
+  const S = "backend/src/services/attribution/spend.js", K = "backend/src/services/attribution/biayaKpi.js";
+  assert.equal(potong(baru(S), "export const SUMBER_SPEND", "/** Spend per Ad dalam rentang"), potong(lama(S), "export const SUMBER_SPEND", "/** Spend per Ad dalam rentang"), "importer/validasi spend");
+  assert.equal(potong(baru(K), "export function hitungBiayaBaris", "/**\n * Terapkan spend"), potong(lama(K), "export function hitungBiayaBaris", "/**\n * Terapkan spend"), "rumus KPI baris");
+  const POLA_BOLEH = /hari|Hari|terakhir_tanggal|semuaNolTerverifikasi|^\s*(\/\/|$)|bTotal|for \(const h of s\.hariSpend/;
+  for (const f of [S, K]) {
+    const d = git(["diff", "--no-color", "-U0", "--ignore-space-at-eol", BASE_LIVE, "--", f]).stdout.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));
+    assert.ok(d.length > 0 && d.length <= 24, `${f}: ${d.length} baris berubah di luar batas tinjauan`);
+    for (const l of d) assert.match(l.slice(1), POLA_BOLEH, `${f}: baris di luar cakupan: ${l.slice(0, 120)}`);
+  }
+});
+
 test("laporan LAIN tidak ikut berubah: /iklan, /d7, importer spend, KPI biaya campaign, kohort, webhook utuh terhadap baseline live", { skip: adaBase ? false : `commit ${BASE_LIVE} tidak ada di klon ini` }, () => {
   for (const f of ["backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/d7.js", "backend/src/services/attribution/cohort.js",
     "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/routes/analytics.js", "backend/src/index.js"]) {

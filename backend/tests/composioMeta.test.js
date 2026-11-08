@@ -127,3 +127,13 @@ test("KPI spend nol: penyebut ada = Rp0 per lead; penyebut nol = null + alasan; 
   const hilang = hitungBiayaBaris({ baris: { lead: { unik: 5, spam: 0, leadSah: 5 } }, spend: null, konteks: { ...konteks, kesegaran: { hariHilang: ["2026-11-01"], terlambat: false } } });
   assert.equal(hilang.spend, null); assert.equal(hilang.cpl, null); assert.equal(hilang.alasanNull.cpl, "SPEND_TIDAK_LENGKAP");
 });
+
+test("cek project: connected account harus ada di project API key dan aktif; versi tool harus tersedia; tanpa kunci di URL", async () => {
+  const jawab = (o) => async (u, opsi) => { assert.ok(!u.includes(RAHASIA)); assert.equal(opsi.headers["x-api-key"], RAHASIA); return { ok: true, status: 200, json: async () => (u.includes("connected_accounts") ? { items: o.items } : { available_versions: o.versi }) }; };
+  const k = (o) => klien(jawab(o)).periksaProject();
+  await assert.rejects(k({ items: [], versi: [] }), (e) => e.kode === "CONNECTED_ACCOUNT_TIDAK_ADA_DI_PROJECT");
+  await assert.rejects(k({ items: [{ id: "ca_uji", status: "EXPIRED" }], versi: [] }), (e) => e.kode === "CONNECTED_ACCOUNT_TIDAK_AKTIF");
+  await assert.rejects(k({ items: [{ id: "ca_uji", status: "ACTIVE" }], versi: ["lain"] }), (e) => e.kode === "VERSI_TOOL_TIDAK_TERSEDIA");
+  assert.equal((await k({ items: [{ id: "ca_uji", status: "ACTIVE" }], versi: ["20261101_00"] })).connectedAccountAktif, true);
+  await assert.rejects(klien(async () => ({ ok: false, status: 401 })).periksaProject(), (e) => e.kode === "AKSES_COMPOSIO_DITOLAK");
+});

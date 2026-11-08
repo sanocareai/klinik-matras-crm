@@ -11935,6 +11935,7 @@ model MetaAccountDailyControl {
   adSpend              Decimal? @map("ad_spend") @db.Decimal(18, 2)
   adRows               Int?     @map("ad_rows")
   reconciled           Boolean  @default(false)
+  evidence             Json?
   transport            String   @db.VarChar(24)
   runId                String?  @map("run_id") @db.Uuid
   fetchedAt            DateTime @map("fetched_at")
