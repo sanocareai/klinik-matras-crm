@@ -26,3 +26,10 @@ test("kode order/job/unit di Semua Order, Kendala, Retur tidak terpecah di tanda
   const i = src("pages/armada/ArmadaIssues.jsx"); assert.match(i, /whitespace-nowrap font-semibold text-ink">\{jobLabelOf\(j\)\}/); assert.match(i, /whitespace-nowrap text-ink2">\{orderNumberOf\(j\) \|\| "—"\}/);
   assert.match(src("pages/armada/ArmadaReturns.jsx"), /whitespace-nowrap font-semibold text-ink">\{r\.unit\?\.unitCode\}/);
 });
+
+test("daftar baris: tanpa titik bawaan di ul flex/grid dan paragraf baris tanpa margin 1em bawaan; dibatasi .ap-skin", () => {
+  const css = fs.readFileSync(new URL("../src/styles/sanss-apple.css", import.meta.url), "utf8");
+  assert.match(css, /:root \.app-shell\.crm-skin\.ap-skin main :is\(li, button\) p:not\(\[class\*="mt-"\], \[class\*="mb-"\], \[class\*="my-"\]\) \{ margin-block: 0; \}/);
+  assert.match(css, /main :is\(li, button\) p \+ p:not\(\[class\*="mt-"\]\) \{ margin-top: 2px; \}/);
+  assert.match(css, /:is\(ul, ol\):is\(\[class\*="divide-"\], \[class\*="flex"\], \[class\*="grid"\], \[class\*="space-y"\]\) \{ list-style: none; padding-left: 0; \}/);
+});
