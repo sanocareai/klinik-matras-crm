@@ -15,6 +15,7 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
+import { transisiSesudah } from "../services/referensiHargaSatuan.js";
 
 export const returnRecordRouter = express.Router();
 returnRecordRouter.use(requireAuth);
@@ -154,6 +155,9 @@ returnRecordRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), w
       if (record.status !== "INSPECTION") throw new ReturnRecordError("Hanya retur berstatus Inspection yang bisa diselesaikan");
 
       if (resolution === "RETURN_TO_AVAILABLE") {
+        // PENJAGA SATUAN: jumlah retur dicatat saat satuan stok masih lama; bila bahan bertransisi satuan sesudahnya, angka mentah tidak boleh masuk saldo satuan baru dan tidak dikonversi otomatis.
+        const tr = await transisiSesudah(tx, record.materialId, record.createdAt);
+        if (tr) throw new ReturnRecordError(`Retur ${record.returnNumber} dicatat dalam satuan lama (${tr.fromUnit}); satuan stok bahan sudah berganti ke ${tr.toUnit}. Jumlah tidak dikonversi otomatis, jadi tidak dimasukkan ke stok. Batalkan retur ini lalu buat retur baru dalam satuan ${tr.toUnit}, atau minta penyetuju menyelesaikannya lewat penyesuaian khusus.`, 409);
         await postStockMovement(tx, {
           materialId: record.materialId, type: "RETURN", qty: record.qty,
           note: `Return ${record.returnNumber}`, returnRecordId: record.id,
