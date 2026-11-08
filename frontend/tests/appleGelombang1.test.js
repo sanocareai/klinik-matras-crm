@@ -22,8 +22,9 @@ test("CSS bersama: selektor terkunci ke .ap- (dan :root/.app-shell.ap-skin untuk
 
 test("Layout: kerangka baru hanya untuk Main Hub, Delivery, All Teams; pekerja lapangan (driver/helper) dan APK driver dikecualikan", () => {
   const l = baca("components/Layout.jsx");
-  assert.match(l, /const apSkin = \(onHub \|\| divisionKey === "armada" \|\| divisionKey === "kendali"\) && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF;/);
-  assert.match(l, /apSkin && "ap-skin"/); assert.match(l, /useWorkspaceFont\(apSkin, "apple"\)/); assert.ok(!/divisionKey === "b2b"\) && !driverOnly/.test(l), "B2B belum termasuk Gelombang 1");
+  // Gelombang 2 menambahkan B2B ke daftar yang sama (Sales, Finance, Produksi, Gudang tetap di luar).
+  assert.match(l, /const apSkin = \(onHub \|\| divisionKey === "armada" \|\| divisionKey === "kendali" \|\| divisionKey === "b2b"\) && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF;/);
+  assert.match(l, /apSkin && "ap-skin"/); assert.match(l, /useWorkspaceFont\(apSkin, "apple"\)/); assert.ok(!/divisionKey === "(growth|finance|bengkel|warehouse)"( \|\| [^)]*)?\) && !driverOnly/.test(l), "workspace yang belum bermigrasi tidak ikut apSkin");
 });
 
 test("Main Hub: logika auto-skip & tujuan klik tidak berubah; angka hanya dari server; deskripsi panjang di ikon info", () => {

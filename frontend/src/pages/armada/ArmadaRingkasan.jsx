@@ -14,6 +14,8 @@ import { hariIniWIB, hariSejak, toWIB } from "@/utils/formatDate.js";
 import { customerOf, orderNumberOf, isJobOverdue, overdueDays } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
 import IssueRescheduleDrawer from "@/features/armada/components/IssueRescheduleDrawer.jsx";
+import { KartuWidget, useApSkin } from "@/components/apple/Apple.jsx";
+
 
 // Polling 15 detik — SAMA persis pola & interval dengan ArmadaTracking.jsx
 // (POLL_MS di sana), bukan transport realtime baru. `load()` TIDAK
@@ -41,7 +43,18 @@ const AMBANG_BACKLOG_HARI = 7; // sama dengan ambang "Perlu Dijadwalkan" Dashboa
 // untuk daftar selabel ini.
 const JENIS_INSIDEN = { KECELAKAAN: "Kecelakaan", LECET: "Lecet", MOGOK: "Mogok", TILANG: "Tilang", LAINNYA: "Lainnya" };
 
+const NADA_TILE = { red: "pink", orange: "jingga", accent: "biru", green: "hijau", neutral: "langit" };
+
 function Tile({ icon: Icon, tone, label, value, hint }) {
+  const apple = useApSkin();
+  if (apple) {
+    return (
+      <KartuWidget nada={NADA_TILE[tone] || "langit"} Glif={Icon} judul={label} className="ap-w-ringkas">
+        <div className="ap-w-angka">{value}</div>
+        {hint && <p className="ap-w-label">{hint}</p>}
+      </KartuWidget>
+    );
+  }
   const TONE = {
     red:    "bg-redbg text-red",
     orange: "bg-orangebg text-orange",

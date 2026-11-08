@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/lib/utils.js";
+import { InfoI, KartuWidget, useApSkin } from "@/components/apple/Apple.jsx";
 
 // COMMAND CENTER — panel biru gelap di kepala tiap halaman workspace SANSS
 // (redesign 1 Agustus 2026, mengikuti mockup "… command center").
@@ -33,7 +34,31 @@ const TONE = {
  *   tampilannya sama sekali (fallback tetap amber/warn seperti sebelumnya).
  * @param {Array}   stats    — [{ label, value, hint }] maksimal 4, ANGKA NYATA
  */
+// Gaya Apple: warna kartu bergilir; tidak ada ikon karangan per kotak (ikon tidak membawa arti di sini).
+const NADA_APPLE = ["biru", "langit", "ungu", "hijau"];
+
 export function WorkspaceHero({ title, subtitle, tone = "blue", health, stats = [] }) {
+  const apple = useApSkin();
+  if (apple) {
+    return (
+      <section className="ap-hero" data-testid="workspace-hero">
+        <div className="ap-hero-kepala">
+          <h2 className="ap-judul-kecil">{title}{subtitle && <InfoI label={`Tentang ${typeof title === "string" ? title : "ringkasan ini"}`} kiri>{subtitle}</InfoI>}</h2>
+          {health && <span className="ap-pil" data-tone={health.tone || "ok"}><span className={cn("ap-titik", health.tone === "critical" ? "ap-titik-merah" : health.tone === "warn" ? "ap-titik-kuning" : "ap-titik-hijau")} aria-hidden="true" />{health.label}</span>}
+        </div>
+        {stats.length > 0 && (
+          <div className={cn("grid grid-cols-2 gap-3", stats.length === 5 ? "lg:grid-cols-5" : stats.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
+            {stats.map((s, i) => (
+              <KartuWidget key={s.label} nada={NADA_APPLE[i % NADA_APPLE.length]} judul={s.label} className="ap-w-ringkas">
+                <div className="ap-w-angka">{s.value}</div>
+                {s.hint && <p className="ap-w-label">{s.hint}</p>}
+              </KartuWidget>
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
   return (
     <div
       className={cn(

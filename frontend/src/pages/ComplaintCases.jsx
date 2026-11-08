@@ -18,6 +18,8 @@ import { TAHAP, aksiUtama, ringkasTahap, hitungTahap, statusUntukTahap, labelJum
 // Papan Kasus Komplain lintas divisi. Redesign Okt 2026: tim langsung paham keluhan, PIC, progres (4 tahap), dan langkah berikutnya; Aktif dan Riwayat dipisah; daftar tidak lagi
 // dipotong diam-diam pada 300 kasus — halaman 30 kasus + "Muat lagi" dengan jumlah hasil yang jelas (total dari server). Status rinci, transisi, izin, dan audit tetap di backend.
 const UKURAN_HALAMAN = 30;
+// Gaya Apple: tiap tahap = widget berwarna (tetap tombol filter; teks pertanyaan tahap tetap ada untuk pembaca layar).
+const NADA_TAHAP = { 1: "biru", 2: "ungu", 3: "langit", 4: "hijau" };
 const OWNER_OPTIONS = Object.keys(OWNER_LABEL).map((o) => ({ value: o, label: OWNER_LABEL[o] }));
 const HASIL_OPTIONS = [{ value: "SELESAI", label: "Selesai" }, { value: "DIBATALKAN", label: "Dibatalkan" }];
 
@@ -34,7 +36,7 @@ function CaseCard({ c, onOpen }) {
   const telat = !tutup && c.targetCompletionAt ? hariSejak(c.targetCompletionAt) : null;
   const lewat = telat != null && Number.isFinite(telat) && telat > 0;
   return (
-    <Card className="cursor-pointer p-4 transition-colors hover:bg-hovertint" onClick={onOpen} data-testid="kartu-komplain">
+    <Card className="ap-panel cursor-pointer !p-4 transition-colors hover:bg-hovertint" onClick={onOpen} data-testid="kartu-komplain">
       <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }} className="sr-only">Buka kasus {c.caseNumber}</button>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -146,10 +148,10 @@ export default function ComplaintCases({ scope = "" } = {}) {
             <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
               {TAHAP.map((t) => (
                 <button key={t.no} type="button" onClick={() => setTahap(tahap === t.no ? null : t.no)} aria-pressed={tahap === t.no} data-testid={`filter-tahap-${t.no}`}
-                  className={cn("rounded-xl p-3 text-left transition-colors", tahap === t.no ? "bg-accentbg ring-2 ring-accent/40" : "bg-surface hover:bg-hovertint")}>
-                  <p className="text-[20px] font-bold leading-none text-ink">{ringkasan ? perTahap[t.no] : "–"}</p>
-                  <p className="mt-1.5 text-[12px] font-semibold text-ink">{t.no}. {t.label}</p>
-                  <p className="mt-0.5 hidden text-[11px] leading-snug text-ink3 sm:block">{t.tanya}</p>
+                  className={cn("ap-widget ap-w-ringkas", `ap-w-${NADA_TAHAP[t.no] || "biru"}`, tahap === t.no && "ap-w-aktif")}>
+                  <h3 className="ap-w-kepala-teks">{t.no}. {t.label}</h3>
+                  <div className="ap-w-angka">{ringkasan ? perTahap[t.no] : "–"}</div>
+                  <span className="sr-only">{t.tanya}</span>
                 </button>
               ))}
             </div>
@@ -196,7 +198,7 @@ export default function ComplaintCases({ scope = "" } = {}) {
         {hasMore && (
           <div className="flex flex-col items-center gap-1.5 pb-4 pt-1">
             <button type="button" onClick={lagi} disabled={memuatLagi} data-testid="muat-lagi"
-              className="flex min-h-11 items-center gap-2 rounded-btn bg-accentbg px-5 py-2 text-[13px] font-semibold text-accent hover:bg-accent/20 disabled:opacity-60">
+              className="ap-tombol ap-tombol-tint">
               {memuatLagi && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}Muat lagi ({Math.max(0, total - cases.length).toLocaleString("id-ID")} kasus tersisa)
             </button>
           </div>

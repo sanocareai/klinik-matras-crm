@@ -467,7 +467,7 @@ export default function ArmadaPengajuanBiaya() {
             {editingId && <button type="button" onClick={batalEdit} className="ml-2 text-[11.5px] font-semibold text-accent underline">batal</button>}
           </div>
 
-          {!editingId && (templates.length > 0 || recent) && (
+          {!editingId && (templates.length > 0 || (recent && (recent.kendaraan?.length > 0 || recent.pic?.length > 0))) && (
             <div className="mb-3 flex flex-col gap-2 rounded-btn bg-inset p-2.5">
               {templates.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">

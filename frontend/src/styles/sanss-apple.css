@@ -126,3 +126,46 @@
 @media (max-width: 767px) { .ap-panel { padding: 16px 14px; border-radius: 22px; } }
 
 @media (prefers-reduced-motion: reduce) { .ap-widget, .ap-tombol, .ap-i > button { transition: none; transform: none; } }
+
+/* ── komponen bersama bergaya Apple (PageHeader / WorkspaceHero saat ApSkinContext aktif) ─────────────────── */
+.ap-kepala-judul { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ap-kepala-judul h1 { min-width: 0; }
+.ap-kepala .page-subtitle { margin: 4px 0 0; font-size: 14px; color: var(--text-secondary); }
+.ap-hero { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.ap-hero-kepala { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.ap-hero-kepala .ap-judul-kecil { margin: 0; }
+.ap-w-ringkas { min-height: 124px; }
+.ap-titik { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ap-titik-hijau { background: #22A84A; } .ap-titik-kuning { background: #F5A524; } .ap-titik-merah { background: #EE3E2C; }
+@media (max-width: 767px) { .ap-kepala h1 { font-size: 24px; } .ap-w-ringkas { min-height: 108px; } }
+
+/* ── penyesuaian komponen UI bersama di dalam kerangka Apple (hanya `.ap-skin`) ─────────────────────────────── */
+:root .app-shell.crm-skin.ap-skin .rounded-card { border-radius: 22px; }
+:root .app-shell.crm-skin.ap-skin button.rounded-btn { border-radius: 999px; }
+:root .app-shell.crm-skin.ap-skin button.rounded-btn.bg-accent:not(:disabled) { background-image: linear-gradient(180deg, #4C78FF 0%, #3965FA 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 2px rgba(57, 101, 250, 0.4), 0 4px 10px -4px rgba(57, 101, 250, 0.55); }
+:root .app-shell.crm-skin.ap-skin button.rounded-btn.bg-accentbg { background-color: var(--ap-biru-tint); color: var(--ap-biru-ink); }
+:root .app-shell.crm-skin.ap-skin thead th { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+:root .app-shell.crm-skin.ap-skin :is(h1.page-title) { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+
+.ap-w-aktif { box-shadow: 0 0 0 3px var(--crm-panel, #fff), 0 0 0 5px var(--ap-biru), 0 14px 26px -16px var(--k-bayang); }
+.ap-w-kepala-teks { margin: 0; font-size: 15px; font-weight: 500; line-height: 1.3; color: #fff; }
+button.ap-widget { font: inherit; }
+
+/* ── kolom isian & pemicu pilihan: permukaan terisi tanpa garis (di dalam kerangka Apple dan di dialog yang di-portal ke <body>) ───── */
+:root .app-shell.crm-skin.ap-skin :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select, textarea),
+:root[data-workspace="apple"] [role="dialog"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select, textarea) {
+  /* !important: tema kaca Delivery/B2B (delivery-light/-dark.css) memaksa latar putih tembus pandang pada input teks */
+  background: var(--ap-isi) !important; border: 0 !important; border-radius: 12px; box-shadow: none; backdrop-filter: none;
+}
+:root .app-shell.crm-skin.ap-skin :is(input, select, textarea):focus-visible,
+:root[data-workspace="apple"] [role="dialog"] :is(input, select, textarea):focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--ap-biru); }
+:root .app-shell.crm-skin.ap-skin button.rounded-lg.border:not(.bg-accentbg),
+:root[data-workspace="apple"] [role="dialog"] button.rounded-lg.border:not(.bg-accentbg) { background-color: var(--ap-isi); border-color: transparent; border-radius: 12px; }
+:root .app-shell.crm-skin.ap-skin button.rounded-lg.border:not(.bg-accentbg):hover { background-color: var(--ap-isi-hover); }
+/* HP: kolom isian setinggi target sentuh dan teksnya tidak terpotong */
+@media (max-width: 767px) {
+  :root .app-shell.crm-skin.ap-skin :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select),
+  :root[data-workspace="apple"] [role="dialog"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select) { min-height: 44px; line-height: 1.3; }
+}
+/* daftar baris berpemisah (ul.divide-y) tidak boleh menampilkan titik penanda bawaan peramban */
+:root .app-shell.crm-skin.ap-skin :is(ul, ol)[class*="divide-"] { list-style: none; padding-left: 0; }

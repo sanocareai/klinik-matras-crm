@@ -45,6 +45,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.j
 import { cn } from "@/lib/utils.js";
 import { FINANCE_HUBS, hubAktif, badgeHub, hubTerlihat } from "@/lib/financeHubs.js";
 import { useAntreanFinance } from "@/lib/financeAntrean.js";
+import { ApSkinContext } from "@/components/apple/Apple.jsx";
 
 // ─── SIDEBAR PER DIVISI (1 Agustus 2026, Gilang) ─────────────────────────────
 // SEBELUMNYA satu NAV_SECTIONS statis dipakai di SETIAP halaman — masuk ke
@@ -956,8 +957,10 @@ export default function Layout({ user, onLogout }) {
   const isAdmin = isAdminUser(user);
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
   // Gelombang 1 redesain Apple (Nov 2026): Main Hub, Delivery (armada), dan All Teams (kendali) ikut kerangka baru; `apSkin` = tipografi Apple/Inter (styles/sanss-apple.css).
-  const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF; // pekerja lapangan (driver/helper) tetap pada tampilan ringkas mereka
+  const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali" || divisionKey === "b2b") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF; // pekerja lapangan (driver/helper) tetap pada tampilan ringkas mereka
   const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse" || apSkin) && !IS_DRIVER_APP && !CRM_SKIN_OFF;
+  // Halaman yang memakai komponen bersama bergaya Apple (PageHeader/WorkspaceHero): kerangka Apple + papan Komplain (kerangka Sales tetap).
+  const gayaApple = apSkin || (!driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF && location.pathname.startsWith("/komplain"));
   useWorkspaceFont(apSkin, "apple");
   useWorkspaceFont(crmShell && divisionKey === "bengkel"); // tipografi Produksi juga untuk portal di <body>; dilepas saat pindah workspace
   useWorkspaceFont(crmShell && divisionKey === "warehouse", "gudang"); // tipografi Gudang (Apple/Inter) juga untuk portal di <body>; dilepas saat pindah workspace
@@ -1074,6 +1077,7 @@ export default function Layout({ user, onLogout }) {
     // dari `[data-division="armada"]` literal ke kelas ini). Bernilai true
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
+    <ApSkinContext.Provider value={gayaApple}>
     <div
       className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division", crmShell && "crm-skin", crmShell && divisionKey === "bengkel" && "prod-skin", crmShell && divisionKey === "warehouse" && "gud-skin", apSkin && "ap-skin")}
       data-division={divisionKey || "hub"}
@@ -1388,5 +1392,6 @@ export default function Layout({ user, onLogout }) {
         </div>
       </main>
     </div>
+    </ApSkinContext.Provider>
   );
 }
