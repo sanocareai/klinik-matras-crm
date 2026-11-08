@@ -1,4 +1,4 @@
-// Generator skrip rilis FRONTEND-SAJA "Scroll tab + periode Finance bersama" (stp1) — dari SUMBER GIT (git archive), TANPA overlay, TANPA backend/migrasi/image.
+// Generator skrip rilis FRONTEND-SAJA "Scroll tab + periode Finance bersama + perbaikan service worker" (stp1) — dari SUMBER GIT (git archive), TANPA overlay, TANPA backend/migrasi/image.
 // Hasil: scripts/release-tab-periode.sh — diturunkan dari scripts/release-gudang-pintu-masuk.sh (kerangka rilis frontend-saja release-directory yang sudah live) + blok di
 // scripts/templates/release-tab-periode/* + blok GERBANG KODE LIVE / verifikasi hotfix / hitung baris di scripts/templates/release-penjadwalan-langsung/*.
 // Semua nilai yang bergantung pada commit (allowlist, daftar frontend/src) dihitung dari git terhadap --base.
@@ -20,7 +20,7 @@ const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/contain
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const ALLOW = `${TPL}/allowlist.txt`;
 const FILE_TETAP = [OUT, GENERATOR, ALLOW, ...TPL_FILES];
-const CAND_BRANCH = "feat/tab-scroll-tanggal-on-bbc79b3e";
+const CAND_BRANCH = "feat/tab-scroll-tanggal-on-3714f357";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };

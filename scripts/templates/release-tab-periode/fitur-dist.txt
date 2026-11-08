@@ -1,8 +1,33 @@
-# Scroll tab + periode Finance bersama: penanda baru hanya di dist baru; semua fitur live (Apple, Nilai Persediaan, Beranda Gudang, Finance, dst.) HARUS ada di KEDUANYA.
+# Scroll tab + periode Finance bersama: penanda baru hanya di dist baru; semua fitur live (Apple Gelombang 1 dan 2, Nilai Persediaan, Beranda Gudang, Finance, dst.) HARUS ada di KEDUANYA.
 # Pencarian memakai cari_dist (find|xargs) — BUKAN glob: dist aktif >21.000 chunk sehingga glob melampaui ARG_MAX dan gagal diam-diam.
 for s1 in "periode-finance:v1"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$s1")" ] || die "[skrip] penanda baru '${s1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s1")" ] || die "dist baru TIDAK memuat penyimpan periode bersama: ${s1}"
+done
+# Apple Gelombang 2 (kini live) HARUS tetap ada
+for c1 in ".ap-hero" ".ap-w-aktif" ".ap-kepala-judul" ".ap-titik-hijau"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru KEHILANGAN ${c1}"
+done
+for s1 in "ap-hero" "ap-kepala-judul" "ap-w-kepala-teks" "ap-w-ringkas"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s1")" ] || die "[skrip] '${s1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s1")" ] || die "dist baru KEHILANGAN penanda Gelombang 2: ${s1}"
+done
+# Gelombang 1 yang sudah live HARUS tetap ada
+for c4 in ".ap-widget" ".ap-ubin" ".ap-panel"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c4")" ] || die "[skrip] ${c4} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c4")" ] || die "CSS baru KEHILANGAN ${c4}"
+done
+for s4 in "armada-ringkasan" "kendali-ringkasan" "portal-kartu" "ap-w-angka"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s4")" ] || die "[skrip] teks lama '${s4}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s4")" ] || die "dist baru KEHILANGAN penanda Gelombang 1: ${s4}"
+done
+# Service worker Gelombang 2 (kini live): kedua dist tanpa precache index.html, batas tunggu 10 dtk, penerima push utuh
+[ -f "$PREV_DIR/frontend/dist/sw.js" ] && [ -f "$NEW_DIR/frontend/dist/sw.js" ] || die "sw.js tidak ada di dist aktif/baru"
+for d in "$PREV_DIR" "$NEW_DIR"; do
+  ! grep -qF '"url":"index.html"' "$d/frontend/dist/sw.js" || die "sw.js di $d memprecache index.html"
+  grep -qE 'const [A-Za-z_$]{1,3}=10;' "$d/frontend/dist/sw.js" || die "sw.js di $d tidak memuat batas tunggu navigasi 10 dtk"
+  grep -qF 'addEventListener("push"' "$d/frontend/dist/sw.js" || die "sw.js di $d KEHILANGAN penerima notifikasi push"
 done
 # Fitur live terbaru yang dipertahankan
 for s3 in "Catat hasil SO" "Definisi dan sumber angka" "gud-br-kartu-besar" "np-k3-lihat" "Satu dokumen, satu baris"; do
@@ -19,4 +44,4 @@ for s2 in "Tampilkan di daftar" "Satu pengiriman = satu dokumen penerimaan" "Mul
 done
 [ -n "$(ls "$NEW_DIR"/frontend/dist/assets/ 2>/dev/null | grep -E '^bca-.*\.svg$' | sed -n 1p)" ] || die "dist baru TIDAK memuat logo BCA"
 [ -n "$(ls "$NEW_DIR"/frontend/dist/assets/ 2>/dev/null | grep -E '^mandiri-.*\.png$' | sed -n 1p)" ] || die "dist baru TIDAK memuat logo Mandiri"
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): penyimpan periode bersama ada; fitur live tetap ada"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): penyimpan periode bersama ada; fitur live (Gelombang 1 dan 2, service worker) tetap ada"
