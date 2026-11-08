@@ -4,7 +4,7 @@
 "use strict";
 const fs = require("fs"); const path = require("path"); const crypto = require("crypto"); const { execFileSync } = require("child_process");
 const REPO = path.resolve(__dirname, ".."); const OUT = "scripts/release-meta-composio.sh"; const TPL = "scripts/templates/release-meta-composio";
-const MIG = "20261231130000_meta_composio_sync";
+const MIG = "20261231140000_meta_composio_sync";
 const git = (...a) => execFileSync("git", a, { cwd: REPO, maxBuffer: 1 << 29 });
 const lf = (s) => s.replace(/\r\n/g, "\n"); const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const esc = (f) => f.replace(/[.+*?^${}()|[\]\\]/g, "\\$&");

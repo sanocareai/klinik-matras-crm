@@ -113,7 +113,9 @@ dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/nul
 gd_baseline
 T_SWITCH="$(date -u +%FT%TZ)"; dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "up gagal"
 UP=0; for i in $(seq 1 60); do curl -fsS -m4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done; [ "$UP" = 1 ] || die "backend baru tidak sehat"
-CID_NEW="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
+CID_NEW=""; for i in $(seq 1 30); do CID_NEW="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"; [ "$(printf '%s
+' "$CID_NEW" | grep -c .)" = 1 ] && break; sleep 2; done; [ "$(printf '%s
+' "$CID_NEW" | grep -c .)" = 1 ] || die "harus tepat satu backend setelah switch"
 ok "switch ${T_SWITCH}; image $(docker inspect -f '{{.Image}}' "$CID_NEW" | cut -c8-19)"
 
 PHASE=6; say "6. Verifikasi dan smoke (baca-saja)"
