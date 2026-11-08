@@ -32,10 +32,14 @@ export function konfigurasiKurang(c) {
   const k = [];
   if (!c.apiKey) k.push("COMPOSIO_API_KEY");
   if (!c.connectedAccountId) k.push("COMPOSIO_META_CONNECTED_ACCOUNT_ID");
+  if (!c.userId) k.push("COMPOSIO_META_USER_ID");   // eksekusi tool dengan connected account wajib menyertakan user_id; tanpa ini REST membalas 400 kode 1811
   if (!c.versiTool || c.versiTool === "latest") k.push("COMPOSIO_META_TOOL_VERSION (wajib versi tetap, bukan latest)");
   if (!ID_RE.test(c.akun)) k.push("META_ADS_ACCOUNT_ID");
   return k;
 }
+/** Kode galat konfigurasi. user_id punya kode sendiri karena kekosongannya baru terlihat saat eksekusi tool. */
+export const KODE_USER_ID_KOSONG = "COMPOSIO_META_USER_ID_KOSONG";
+export const kodeKonfigurasi = (kurang) => (kurang.includes("COMPOSIO_META_USER_ID") ? KODE_USER_ID_KOSONG : "KONFIGURASI_TIDAK_LENGKAP");
 // Galat Meta terbungkus teks oleh Composio: hanya kodenya yang diambil, teksnya dibuang.
 export function kelasGalat(teks) {
   const t = String(teks ?? "");
@@ -49,12 +53,13 @@ export function buatKlien({ env = process.env, fetchFn = fetch, tidurFn = tidur,
   const c = konfigurasiComposio(env);
   async function panggil(tool, args) {
     if (!TOOL_BACA.includes(tool)) throw new ErrSinkron("TOOL_TIDAK_DIIZINKAN");
+    if (!c.userId) throw new ErrSinkron(KODE_USER_ID_KOSONG);
     let terakhir = "GAGAL";
     for (let i = 1; i <= maksPercobaan; i++) {
       try {
         const r = await fetchFn(`${BASE}/${tool}`, {
           method: "POST", headers: { "x-api-key": c.apiKey, "Content-Type": "application/json" }, signal: AbortSignal.timeout(timeoutMs),
-          body: JSON.stringify({ connected_account_id: c.connectedAccountId, ...(c.userId ? { user_id: c.userId } : {}), version: c.versiTool, arguments: args }),
+          body: JSON.stringify({ connected_account_id: c.connectedAccountId, user_id: c.userId, version: c.versiTool, arguments: args }),
         });
         if (r.status === 401 || r.status === 403) throw new ErrSinkron("AKSES_COMPOSIO_DITOLAK");
         if (r.status === 429 || r.status >= 500) { terakhir = `HTTP_${r.status}`; }
@@ -109,6 +114,7 @@ export function buatKlien({ env = process.env, fetchFn = fetch, tidurFn = tidur,
       const item = (ca.items || []).find((x) => x.id === c.connectedAccountId);
       if (!item) throw new ErrSinkron("CONNECTED_ACCOUNT_TIDAK_ADA_DI_PROJECT");
       if (item.status !== "ACTIVE") throw new ErrSinkron("CONNECTED_ACCOUNT_TIDAK_AKTIF");
+      if (item.user_id !== c.userId) throw new ErrSinkron("USER_ID_TIDAK_COCOK");
       const versi = {};
       for (const t of TOOL_BACA) { const d = await ambil(`/tools/${t}`); if (!(d.available_versions || []).includes(c.versiTool)) throw new ErrSinkron("VERSI_TOOL_TIDAK_TERSEDIA"); versi[t] = c.versiTool; }
       return { connectedAccountAktif: true, toolkit: "metaads", versiTool: versi };

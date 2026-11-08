@@ -6,7 +6,7 @@ import crypto from "crypto";
 import { jalankanImporSpend } from "./spend.js";
 import { jalankanImpor } from "./adReferensi.js";
 import { ErrSinkron } from "./spendSyncMeta.js";
-import { ATRIBUSI, BREAKDOWN, HOOK_RATE_DEFINISI, hookRate, FLAG_SYNC_COMPOSIO, TRANSPORT, barisDelivery, barisImporter, buatKlien, konfigurasiComposio, konfigurasiKurang, rekonsiliasiHarian, rpKeSen, senKeRp } from "./composioMeta.js";
+import { ATRIBUSI, BREAKDOWN, HOOK_RATE_DEFINISI, hookRate, FLAG_SYNC_COMPOSIO, TRANSPORT, barisDelivery, barisImporter, buatKlien, konfigurasiComposio, konfigurasiKurang, kodeKonfigurasi, rekonsiliasiHarian, rpKeSen, senKeRp } from "./composioMeta.js";
 
 export const HARI_ROLLING = 7;
 const BASI_MENIT = 45;
@@ -143,7 +143,7 @@ async function prosesPotongan(db, klien, { potongan, zona, akunTerverifikasi, co
 export async function jalankanSinkronComposio(db, { mode = "cek", dari = null, sampai = null, env = process.env, fetchFn, tidurFn, now = new Date(), ukuranPotongan = 7 } = {}) {
   const c = konfigurasiComposio(env);
   const kurang = konfigurasiKurang(c);
-  if (kurang.length) return { status: "TIDAK_SIAP", konfigurasiKurang: kurang };
+  if (kurang.length) return { status: "TIDAK_SIAP", kode: kodeKonfigurasi(kurang), konfigurasiKurang: kurang };
   if (mode === "commit" && !c.aktif) return { status: "TIDAK_SIAP", alasan: `${FLAG_SYNC_COMPOSIO} tidak 'true'` };
   const r0 = rentangRolling(now); const d = dari || r0.dari, s = sampai || r0.sampai;
   if (s >= hariWib(now)) return { status: "DITOLAK", alasan: "HARI_BERJALAN_TIDAK_BOLEH_MASUK_KPI" };

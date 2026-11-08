@@ -8,7 +8,7 @@ const { hitungLaporanIklan, parseParameterIklan } = await import("../../src/serv
 const { laporanPerforma, ringkasTotal } = await import("../../src/services/attribution/laporanMeta.js");
 
 const AKUN = "2081614415911241", H1 = "2026-11-03", H2 = "2026-11-04", H3 = "2026-11-05";
-const ENV = { COMPOSIO_API_KEY: "k", COMPOSIO_META_CONNECTED_ACCOUNT_ID: "ca", COMPOSIO_META_TOOL_VERSION: "20261101_00", META_ADS_ACCOUNT_ID: AKUN, COMPOSIO_META_SYNC_ENABLED: "true" };
+const ENV = { COMPOSIO_API_KEY: "k", COMPOSIO_META_CONNECTED_ACCOUNT_ID: "ca", COMPOSIO_META_USER_ID: "u_uji", COMPOSIO_META_TOOL_VERSION: "20261101_00", META_ADS_ACCOUNT_ID: AKUN, COMPOSIO_META_SYNC_ENABLED: "true" };
 const NOW = new Date("2026-11-08T05:00:00Z");
 const ad = (t, id, spend, v = "40") => ({ account_id: AKUN, account_currency: "IDR", ad_id: id, adset_id: "20001", campaign_id: "30001", spend, impressions: "100", inline_link_clicks: "5", date_start: t, date_stop: t, actions: v === null ? [] : [{ action_type: "video_view", value: v }] });
 const kontrol = (t, spend, n = 1) => ({ account_id: AKUN, account_currency: "IDR", spend, impressions: String(100 * n), inline_link_clicks: String(5 * n), date_start: t, date_stop: t });

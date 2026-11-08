@@ -2,12 +2,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { TOOL_BACA, buatKlien, hookRate, kelasGalat, konfigurasiKurang, konfigurasiComposio, rekonsiliasiHarian, barisDelivery, barisImporter, ATRIBUSI } from "../src/services/attribution/composioMeta.js";
+import { TOOL_BACA, buatKlien, hookRate, kelasGalat, konfigurasiKurang, kodeKonfigurasi, konfigurasiComposio, rekonsiliasiHarian, barisDelivery, barisImporter, ATRIBUSI } from "../src/services/attribution/composioMeta.js";
 import { daftarHari, jalankanSinkronComposio, potongRentang, rentangRolling } from "../src/services/attribution/composioMetaSync.js";
 
 const AKUN = "2081614415911241";
 const RAHASIA = "kunci-rahasia-uji";
-const ENV = { COMPOSIO_API_KEY: RAHASIA, COMPOSIO_META_CONNECTED_ACCOUNT_ID: "ca_uji", COMPOSIO_META_TOOL_VERSION: "20261101_00", META_ADS_ACCOUNT_ID: AKUN };
+const ENV = { COMPOSIO_API_KEY: RAHASIA, COMPOSIO_META_CONNECTED_ACCOUNT_ID: "ca_uji", COMPOSIO_META_USER_ID: "u_uji", COMPOSIO_META_TOOL_VERSION: "20261101_00", META_ADS_ACCOUNT_ID: AKUN };
 const ok = (data) => ({ ok: true, status: 200, json: async () => ({ successful: true, data, error: null }) });
 const klien = (fetchFn, o = {}) => buatKlien({ env: ENV, fetchFn, tidurFn: async () => {}, ...o });
 const baris = (t, ad, spend = "100") => ({ account_id: AKUN, account_currency: "IDR", ad_id: ad, adset_id: "222222", campaign_id: "333333", spend, impressions: "10", inline_link_clicks: "1", date_start: t, date_stop: t });
@@ -65,7 +65,7 @@ test("permintaan: kunci hanya di header, versi tool tetap, connected account dik
   assert.equal(cap.o.headers["x-api-key"], RAHASIA); assert.ok(!cap.o.body.includes(RAHASIA)); assert.ok(!cap.u.includes(RAHASIA));
   const b = JSON.parse(cap.o.body); assert.equal(b.version, "20261101_00"); assert.equal(b.connected_account_id, "ca_uji"); assert.equal(b.arguments.time_increment, 1); assert.equal(b.arguments.level, "account");
   assert.ok(konfigurasiKurang(konfigurasiComposio({ ...ENV, COMPOSIO_META_TOOL_VERSION: "latest" })).some((x) => x.startsWith("COMPOSIO_META_TOOL_VERSION")));
-  assert.deepEqual(konfigurasiKurang(konfigurasiComposio({})).length, 4);
+  assert.deepEqual(konfigurasiKurang(konfigurasiComposio({})).length, 5);
 });
 test("rekonsiliasi: cocok, nol sah, tanpa delivery, selisih 1 rupiah, kontrol hilang", () => {
   const k = (t, s) => ({ date_start: t, spend: s, impressions: "10", inline_link_clicks: "1" });
@@ -133,7 +133,21 @@ test("cek project: connected account harus ada di project API key dan aktif; ver
   const k = (o) => klien(jawab(o)).periksaProject();
   await assert.rejects(k({ items: [], versi: [] }), (e) => e.kode === "CONNECTED_ACCOUNT_TIDAK_ADA_DI_PROJECT");
   await assert.rejects(k({ items: [{ id: "ca_uji", status: "EXPIRED" }], versi: [] }), (e) => e.kode === "CONNECTED_ACCOUNT_TIDAK_AKTIF");
-  await assert.rejects(k({ items: [{ id: "ca_uji", status: "ACTIVE" }], versi: ["lain"] }), (e) => e.kode === "VERSI_TOOL_TIDAK_TERSEDIA");
-  assert.equal((await k({ items: [{ id: "ca_uji", status: "ACTIVE" }], versi: ["20261101_00"] })).connectedAccountAktif, true);
+  await assert.rejects(k({ items: [{ id: "ca_uji", status: "ACTIVE", user_id: "u_uji" }], versi: ["lain"] }), (e) => e.kode === "VERSI_TOOL_TIDAK_TERSEDIA");
+  assert.equal((await k({ items: [{ id: "ca_uji", status: "ACTIVE", user_id: "u_uji" }], versi: ["20261101_00"] })).connectedAccountAktif, true);
+  await assert.rejects(k({ items: [{ id: "ca_uji", status: "ACTIVE", user_id: "u_lain" }], versi: ["20261101_00"] }), (e) => e.kode === "USER_ID_TIDAK_COCOK");
   await assert.rejects(klien(async () => ({ ok: false, status: 401 })).periksaProject(), (e) => e.kode === "AKSES_COMPOSIO_DITOLAK");
+});
+
+test("user_id kosong: kode konfigurasi jelas, ditolak sebelum ada permintaan jaringan, dan user_id selalu dikirim saat eksekusi", async () => {
+  const { COMPOSIO_META_USER_ID: _, ...tanpa } = ENV;
+  const kurang = konfigurasiKurang(konfigurasiComposio(tanpa));
+  assert.deepEqual(kurang, ["COMPOSIO_META_USER_ID"]);
+  assert.equal(kodeKonfigurasi(kurang), "COMPOSIO_META_USER_ID_KOSONG");
+  assert.equal(kodeKonfigurasi(["COMPOSIO_API_KEY"]), "KONFIGURASI_TIDAK_LENGKAP");
+  let panggilan = 0;
+  await assert.rejects(buatKlien({ env: tanpa, fetchFn: async () => { panggilan++; return { ok: true, status: 200, json: async () => ({}) }; } }).panggil("METAADS_GET_OBJECT", {}), (e) => e.kode === "COMPOSIO_META_USER_ID_KOSONG");
+  assert.equal(panggilan, 0);
+  let body; await buatKlien({ env: ENV, fetchFn: async (_u, o) => { body = JSON.parse(o.body); return { ok: true, status: 200, json: async () => ({ successful: true, data: {} }) }; } }).panggil("METAADS_GET_OBJECT", {});
+  assert.equal(body.user_id, "u_uji");
 });

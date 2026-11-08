@@ -9,7 +9,7 @@ const { hitungLaporanIklan, parseParameterIklan } = await import("../src/service
 const { laporanPerforma, rekapHarian, kesehatanAtribusi } = await import("../src/services/attribution/laporanMeta.js");
 
 const T = process.env.REPLAY_TANGGAL, AKUN = "2081614415911241";
-const ENV = { COMPOSIO_API_KEY: "k", COMPOSIO_META_CONNECTED_ACCOUNT_ID: "ca", COMPOSIO_META_TOOL_VERSION: "replay", META_ADS_ACCOUNT_ID: AKUN, COMPOSIO_META_SYNC_ENABLED: "true" };
+const ENV = { COMPOSIO_API_KEY: "k", COMPOSIO_META_CONNECTED_ACCOUNT_ID: "ca", COMPOSIO_META_USER_ID: "u_uji", COMPOSIO_META_TOOL_VERSION: "replay", META_ADS_ACCOUNT_ID: AKUN, COMPOSIO_META_SYNC_ENABLED: "true" };
 const AKSI = "onsite_conversion.messaging_conversation_started_7d";
 const ad = fs.readFileSync(process.env.REPLAY_CSV, "utf8").trim().split(/\r?\n/).map((l) => {
   const [a, s, c, sp, i, k, p, v] = l.split(",");
