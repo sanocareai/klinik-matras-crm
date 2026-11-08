@@ -1,0 +1,10 @@
+cari_dist() { find "$1/frontend/dist/assets" -maxdepth 1 -type f -name "*.$2" -print0 2>/dev/null | xargs -0 grep -lF -- "$3" 2>/dev/null | sed -n 1p; } # $1=release dir $2=js|css $3=teks tetap; BUKAN glob (>21.000 chunk melampaui ARG_MAX)
+# Rilis backend-saja: sumber web TIDAK berubah. Fitur live (drawer satuan asal, Gudang/Finance/Produksi/Sales CRM) HARUS ada di KEDUANYA (daftar divalidasi terhadap dist aktif 7606e537).
+for s2 in "satuan lama; saldo sekarang dalam" "referensi-satuan-tidak-cocok" "Tidak berlaku pada satuan" "Catat hasil SO" "Definisi dan sumber angka" "Siapa melihat nominal" "Rincian verifikasi nol" "gud-br-kartu-besar" "Satu dokumen, satu baris" "Lokasi dari riwayat penerimaan" "tidak langsung mengubah saldo" "Filter daftar bahan"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s2")" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s2")" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+for c0 in ".gud-gerak" ".gud-stok-baris" ".gud-strip" ".gud-halaman" ".gud-br-baris" ".nip-k-besar" ".gud-menu-item"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c0")" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c0")" ] || die "CSS baru KEHILANGAN ${c0}"
+done

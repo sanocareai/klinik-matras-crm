@@ -1,0 +1,17 @@
+# RILIS PENJAGA "SATUAN BERUBAH SEJAK PENERIMAAN": BACKEND-SAJA, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA = 7606e537, frontend-saja stp1 di atas 3714f357). FAIL-CLOSED.
+#   • ISI: dokumen yang jumlahnya dicatat dalam satuan LAMA (penerimaan, retur) tidak boleh menggerakkan saldo yang sudah berganti satuan dengan angka mentah. Retur supplier atas penerimaan yang bahan-nya bertransisi satuan SESUDAH penerimaan ditolak
+#     (SATUAN_BERUBAH_SEJAK_PENERIMAAN) di pratinjau, pengajuan draf, dan konfirmasi barang keluar (dihitung ulang di transaksi pengeluaran, termasuk draf yang dibuat sebelum transisi); pembatalan retur yang barangnya keluar sebelum transisi ditolak;
+#     koreksi penerimaan Finance menolak dengan sebab satuan; penyelesaian retur pelanggan (RETURN_TO_AVAILABLE) atas catatan satuan lama ditolak. Jumlah TIDAK dikonversi otomatis; pesan menjelaskan perlu penyelesaian khusus. Retur dari penerimaan BARU sesudah transisi tetap berjalan dalam satuan baru.
+#   • Skrip rilis TIDAK menjalankan transisi, TIDAK mengubah satuan, stok, harga, PO/GR, jurnal, penyesuaian, hasil SO, tautan, pemetaan, atau deklarasi historis. Smoke pasca-switch = bacaan murni (kapasitas retur per baris penerimaan; hitung baris sebelum vs sesudah). Uji tulis (tujuh transisi + penjaga pada baris penerimaan nyata) HANYA pada SALINAN RESTORE.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru sebagai SERVER terhadap salinan restore data nyata); build web di release dir (sumber web tidak berubah); switch SATU kali; verifikasi; smoke pasca-switch (kode smoke yang sama dengan rehearsal).
+#   • PENGUNCIAN: kunci deploy BERSAMA + kunci sendiri diambil ATOMIK; kepemilikan ditentukan proses (perangkat:inode fd 7/9), BUKAN nama berkas. GERBANG IDENTITAS KODE LIVE (hash blob semua berkas terlacak baseline) di fase 2, 6, dan TEPAT sebelum switch.
+#     Pembersihan release lama DINONAKTIFKAN; gerbang disk minimal 5 GiB tidak diturunkan. Pencarian teks di dist aktif memakai find|xargs (cari_dist), bukan glob (>21.000 chunk).
+#
+#   cat scripts/release-retur-satuan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/rsb.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/rsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/rsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/rsbr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata (termasuk build web); TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/rsb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/rsb.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: rilis ini tanpa migrasi dan tanpa tulisan data bisnis oleh skripnya, tetapi rollback TIDAK PERNAH dinyatakan aman otomatis: kode lama membuka kembali celah retur/koreksi atas penerimaan bersatuan lama (angka mentah ke saldo satuan baru).
+# SESUDAH ada transisi satuan tersimpan wajib scripts/rollback-guard-transisi-satuan.sh dan evaluasi kompatibilitas tujuan rollback; selama kode lama berjalan, jangan memproses retur/koreksi atas penerimaan LIST WIBING dan bahan bertransisi lainnya.
+# (dibangkitkan oleh scripts/gen-release-retur-satuan.cjs dari scripts/release-satuan-gabungan.sh + scripts/templates/release-retur-satuan/* + pustaka scripts/lib/{rehearsal,smoke}-retur-satuan.mjs; JANGAN edit tangan — ubah generator lalu bangkitkan ulang)

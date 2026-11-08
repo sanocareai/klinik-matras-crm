@@ -1,0 +1,7 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya. Rollback kode TIDAK dinyatakan aman otomatis (lihat batas di bawah). Bila rollback diputuskan setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (7606e537); keduanya memuat transisi satuan, pembaca satuan asal, dan frontend Gelombang 1, 2, dan stp1; gerbang kode live membuktikan kode di container == folder == baseline disetujui sebelum switch.
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   (recreate backend dari folder release sebelumnya dengan image rollback; web = dist folder sebelumnya)
+BATAS ROLLBACK: kode lama TIDAK memuat penjaga satuan berubah sejak penerimaan. Retur supplier, pembatalan retur, koreksi penerimaan, dan penyelesaian retur pelanggan atas penerimaan/catatan bersatuan lama (mis. LIST WIBING ROLL) bisa memasukkan atau mengeluarkan angka mentah ke saldo satuan baru.
+Selama kode lama berjalan JANGAN memproses dokumen-dokumen itu. Bila SUDAH ada transisi satuan tersimpan, gunakan scripts/rollback-guard-transisi-satuan.sh dan evaluasi kompatibilitas tujuan rollback sebelum memutuskan; jangan menyebut rollback aman.

@@ -18,3 +18,14 @@ export async function satuanCatatanPer(db, rows) {
   const master = new Map((await db.material.findMany({ where: { id: { in: ids } }, select: { id: true, unit: true } })).map((m) => [m.id, m.unit]));
   return (r) => r.unitAtEntry ?? pertama.get(r.materialId) ?? master.get(r.materialId) ?? null;
 }
+
+/**
+ * PENJAGA SATUAN BERUBAH (Nov 2026): dokumen yang jumlahnya dicatat dalam satuan LAMA (penerimaan, retur, koreksi) tidak boleh menggerakkan saldo yang sudah berganti satuan dengan angka mentah.
+ * Mengembalikan transisi satuan paling awal SESUDAH waktu `sejak` untuk bahan itu (null bila tidak ada). Tidak mengonversi apa pun. Baca-saja.
+ */
+export async function transisiSesudah(db, materialId, sejak) {
+  if (!materialId || !sejak) return null;
+  return db.materialUnitTransition.findFirst({ where: { materialId, createdAt: { gt: new Date(sejak) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, fromUnit: true, toUnit: true, createdAt: true } });
+}
+export const KODE_SATUAN_BERUBAH = "SATUAN_BERUBAH_SEJAK_PENERIMAAN";
+export const TEKS_SATUAN_BERUBAH = (bahan, dokumen, t) => `${bahan} pada ${dokumen} dicatat dalam satuan lama (${t.fromUnit}); satuan stok bahan sudah berganti ke ${t.toUnit} sejak transisi satuan. Jumlah tidak dikonversi otomatis, sehingga dokumen ini tidak diproses seperti biasa. Perlu penyelesaian khusus oleh penyetuju (mis. penyesuaian bersumber dokumen ini); retur dari penerimaan baru sesudah transisi tetap berjalan dalam ${t.toUnit}.`;

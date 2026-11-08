@@ -18,6 +18,7 @@ import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
 import { nilaiBarisPenerimaan } from "./posting/supplier.js";
 import { periksaKonversiBaris } from "./skuBaru.js";
 import { hitungKuantitas } from "./purchaseOrder.js";
+import { transisiSesudah, KODE_SATUAN_BERUBAH, TEKS_SATUAN_BERUBAH } from "../referensiHargaSatuan.js";
 
 const MASUK_BUKU = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
 const TIDAK_AKTIF = ["DIBATALKAN", "DITOLAK"];
@@ -102,6 +103,9 @@ export async function rencanaBaikSesudahStok(tx, { galat, receipt, baris, pl, po
   // 3. Bahan sudah bergerak sejak disimpan?
   const awal = gerakan[0]?.createdAt ?? null;
   if (awal) {
+    // PENJAGA SATUAN: penerimaan dicatat dalam satuan lama bila bahan bertransisi satuan sesudahnya; koreksi tidak boleh menulis jumlah mentah ke saldo satuan baru (juga bila transisi tanpa pergerakan penutup/pembuka).
+    const tr = await transisiSesudah(tx, baris.materialId, awal);
+    if (tr) throw galat(TEKS_SATUAN_BERUBAH(kode, receipt.receiptNumber, tr), 409, KODE_SATUAN_BERUBAH, "Selesaikan lewat penyesuaian khusus oleh penyetuju (bersumber dokumen penerimaan ini); jumlah tidak dikonversi otomatis.");
     // RECEIPT (penerimaan lain/koreksi) dan SUPPLIER_RETURN (retur per penerimaan — barangnya spesifik, bukan pemakaian dari kolam stok; retur yang masih aktif sudah ditolak
     // di langkah 1, yang dibatalkan saling meniadakan) BUKAN pemakaian. Disaring di sini (bukan di query) supaya build tanpa fitur Retur tidak memakai nilai enum yang belum ada.
     const bergerak = (await tx.stockMovement.groupBy({ by: ["type"], where: { materialId: baris.materialId, createdAt: { gt: awal } }, _sum: { qty: true }, _count: { _all: true } }))

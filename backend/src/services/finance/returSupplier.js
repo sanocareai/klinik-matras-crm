@@ -27,6 +27,7 @@ import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
 import { nilaiBarisPenerimaan, recomputeBillStatus } from "./posting/supplier.js";
 import { toMoney, sumMoney, ZERO, moneyToNumber, allocateProportional } from "./money.js";
 import { pastikanBelumDirekonsiliasi } from "./koreksiGate.js";
+import { transisiSesudah, KODE_SATUAN_BERUBAH, TEKS_SATUAN_BERUBAH } from "../referensiHargaSatuan.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
 export class ReturError extends Error {
@@ -161,6 +162,13 @@ export async function kapasitasBaris(db, goodsReceiptLineId, { hitungStok = true
   if (!gr.purchaseOrderId || !line.purchaseOrderLineId) blokir.push({ kode: "TANPA_PO", pesan: "Retur supplier hanya untuk penerimaan yang berasal dari PO." });
   if (gr.status !== "COMPLETED") blokir.push({ kode: "PENERIMAAN_BELUM_SELESAI", pesan: `Penerimaan ${gr.receiptNumber} belum disimpan ke stok — barangnya belum ada di stok, gunakan penolakan saat pemeriksaan.` });
   if (gr.finSupplierBills.length > 0) blokir.push({ kode: "DITAGIH_LAMA", pesan: `Penerimaan ${gr.receiptNumber} ditagih lewat tagihan lama (${gr.finSupplierBills.map((b) => b.billNumber).join(", ")}) yang menutup seluruh penerimaan — koreksi lewat koreksi tagihan, bukan retur.` });
+
+  // PENJAGA SATUAN: penerimaan ini dicatat dalam satuan lama bila bahan bertransisi satuan SESUDAH penerimaan disimpan; jumlah baris tidak dikonversi otomatis → retur ditolak (pratinjau, draf, dan konfirmasi keluar).
+  if (gr.status === "COMPLETED") {
+    const mvTerima = await db.stockMovement.findFirst({ where: { goodsReceiptId: gr.id, materialId: line.materialId, type: "RECEIPT" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { createdAt: true } });
+    const tr = await transisiSesudah(db, line.materialId, mvTerima?.createdAt ?? gr.createdAt);
+    if (tr) blokir.unshift({ kode: KODE_SATUAN_BERUBAH, pesan: TEKS_SATUAN_BERUBAH(line.material.code, gr.receiptNumber, tr) });
+  }
 
   const diterimaK = k(line.acceptedQty);
   const returAktif = await db.supplierReturnLine.findMany({
@@ -616,6 +624,12 @@ export async function batalkanRetur(tx, { returnId, alasan, aktor, sekarang = ne
   }
   const disetujui = retur.debitNotes.find((d) => d.status === "DISETUJUI");
   if (disetujui) throw gagal(`Debit note ${disetujui.debitNumber} sudah disetujui — batalkan debit note-nya dulu (Finance), baru retur ini.`, 409, "DEBIT_NOTE_DISETUJUI");
+  // PENJAGA SATUAN: pembatalan retur yang sudah mengeluarkan barang menambah stok dengan jumlah mentah bersatuan lama; ditolak bila satuan bahan berganti sesudah barang keluar.
+  for (const l of retur.lines) {
+    const mvKeluar = l.stockMovementId ? await tx.stockMovement.findUnique({ where: { id: l.stockMovementId }, select: { createdAt: true } }) : null;
+    const tr = await transisiSesudah(tx, l.materialId, mvKeluar?.createdAt ?? retur.dispatchedAt);
+    if (tr) throw gagal(`Retur ${retur.returnNumber} mengeluarkan barang dalam satuan lama (${tr.fromUnit}); satuan stok bahan sudah berganti ke ${tr.toUnit}. Pembatalan tidak mengembalikan jumlah mentah ke saldo satuan baru dan tidak dikonversi otomatis — perlu penyelesaian khusus oleh penyetuju.`, 409, KODE_SATUAN_BERUBAH);
+  }
   await lockRowForUpdate(tx, "fin_purchase_orders", retur.purchaseOrderId);
   await pastikanTidakDirekonsiliasi(tx, [{ source: "RETUR_SUPPLIER", sourceId: retur.id }], `Retur ${retur.returnNumber}`);
   for (const d of retur.debitNotes.filter((x) => x.status === "MENUNGGU")) {
