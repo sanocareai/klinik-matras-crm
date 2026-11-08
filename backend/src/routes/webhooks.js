@@ -12,7 +12,7 @@ import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { cleanMime, resolveMediaExt } from "../utils/mediaExt.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
 import {
-  matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
+  matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag, klikIdDariTag, DETAIL_DIMULAI_SALES,
   extractCtwaContext, leadSourceFromCtwa, ctwaDetail, legacyAdContextDetail,
 } from "../services/leadAttribution.js";
 import { ambilTemplateIklanAktif, cocokkanTemplateIklan, ambilTeksTombolWebsite } from "../services/templateIklan.js";
@@ -527,7 +527,21 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     // (lihat leadAttribution.js), ini sinyal PALING EKSPLISIT yang ada —
     // dicek duluan sebelum tebakan/kemiripan teks di lapis-lapis di bawah.
     const { tag: refTag } = extractRefTag(text);
-    if (refTag) {
+    const klikId = klikIdDariTag(refTag);
+    if (klikId) {
+      // Kode klik dari redirect /r/:slug. Id tak dikenal berarti bukan bukti:
+      // biarkan lapis berikutnya memeriksa teksnya.
+      const klik = await prisma.clickEvent.findUnique({
+        where: { id: klikId },
+        select: { id: true, matchedCustomerId: true, trackedLink: { select: { name: true, category: true } } },
+      });
+      if (klik) {
+        detectedSource = CATEGORY_TO_LEAD_SOURCE[klik.trackedLink.category] || "OTHER";
+        detectedDetail = klik.trackedLink.name;
+        pendingClickId = klik.matchedCustomerId ? null : klik.id;
+        console.log("[attribution] Lapis 0 kode klik:", klik.trackedLink.name);
+      }
+    } else if (refTag) {
       detectedSource = leadSourceFromRefTag(refTag) || "WHATSAPP_DIRECT";
       detectedDetail = `Website - ${refTag}`;
       console.log("[attribution] Lapis 0 tag website:", refTag);
@@ -545,9 +559,11 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       ctwaClid = ctwa.clid;
       ctwaSourceUrl = ctwa.sourceUrl;
       const sumberCtwa = leadSourceFromCtwa(ctwa);
-      if (sumberCtwa && detectedSource === "WHATSAPP_DIRECT") {
+      // clid adalah bukti terkuat dan mengalahkan tag; penanda tanpa clid tidak.
+      if (sumberCtwa && (ctwa.clid || detectedSource === "WHATSAPP_DIRECT")) {
         detectedSource = sumberCtwa;
         detectedDetail = ctwaDetail(ctwa);
+        pendingClickId = null;
         // clid TIDAK PERNAH di-log (utuh maupun potongan) — hanya ada/tidaknya.
         console.log("[attribution] Lapis 0b Meta CTWA:", detectedDetail, "clid:", ctwa.clid ? "ada" : "tidak ada");
       }
@@ -895,9 +911,9 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     }
     // Sales mulai chat duluan dari HP — buat customer+conversation seperti
     // pesan masuk biasa, TAPI pakai Chat (lawan bicara) sebagai identitas.
-    // Tidak ikut lead-attribution 3-lapis (itu murni utk pesan MASUK dari
-    // customer baru) — leadSource default WHATSAPP_DIRECT sudah representatif
-    // untuk kontak yang diinisiasi internal.
+    // Tidak ikut lead-attribution (itu murni utk pesan MASUK dari customer
+    // baru). Ditandai terpisah: kontak ini tidak menghubungi kita lebih dulu,
+    // jadi bukan WhatsApp Langsung.
     //
     // Nama & foto profil sama-sama dicoba resolve di sini juga (bukan cuma
     // handleInboundMessage) — kontak yang sales chat duluan biasanya SUDAH
@@ -909,7 +925,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
       customer = await prisma.customer.upsert({
         where:  { phone },
         update: {},
-        create: { phone, name: resolvedName, leadSource: "WHATSAPP_DIRECT", leadSourceConfirmed: false },
+        create: { phone, name: resolvedName, leadSource: "OTHER", leadSourceDetail: DETAIL_DIMULAI_SALES, leadSourceConfirmed: false },
       });
     } catch (e) {
       if (e.code !== "P2002") throw e;

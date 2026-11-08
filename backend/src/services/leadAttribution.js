@@ -111,6 +111,31 @@ const END_MARK = String.fromCharCode(0x2060) + String.fromCharCode(0x2060);   //
 // versi website SEBELUM tag disembunyikan.
 const LEGACY_VISIBLE_PATTERN = /\s*\(ref:\s*([a-z0-9-]+)\)\s*$/i;
 
+/** Kebalikan extractRefTag. Karakter di luar alfabet dilewati, sama seperti sisi website. */
+export function encodeRefTag(tag) {
+  let payload = "";
+  for (const ch of String(tag || "")) {
+    const idx = REF_ALPHABET.indexOf(ch);
+    if (idx === -1) continue;
+    for (const bit of idx.toString(2).padStart(6, "0")) payload += bit === "1" ? BIT1 : BIT0;
+  }
+  return START_MARK + payload + END_MARK;
+}
+
+// Kode unik per klik /r/:slug: "klik-<id ClickEvent>". Ini yang membuat klik
+// benar-benar terikat ke orangnya, bukan tebakan waktu.
+const AWALAN_TAG_KLIK = "klik-";
+
+export function tagKlik(clickEventId) {
+  return `${AWALAN_TAG_KLIK}${clickEventId}`;
+}
+
+/** @returns {string|null} id ClickEvent bila tag ini kode klik, selain itu null. */
+export function klikIdDariTag(tag) {
+  if (typeof tag !== "string" || !tag.startsWith(AWALAN_TAG_KLIK)) return null;
+  return tag.slice(AWALAN_TAG_KLIK.length) || null;
+}
+
 /**
  * Pisahkan tag referral (format tak-terlihat ATAU pola lama kasat mata)
  * dari teks pesan asli.
@@ -179,6 +204,10 @@ export function leadSourceFromRefTag(tag) {
   if (!tag) return null;
   const [source = "", medium = ""] = tag.split("-");
   const dibayar = MEDIUM_BERBAYAR.has(medium);
+
+  // Linktree bukan rekomendasi pelanggan; jangan masuk REFERRAL. Tag mentahnya
+  // tetap terbaca di leadSourceDetail.
+  if (source === "linktree") return "OTHER";
 
   if (source === "google") return dibayar ? "GOOGLE_ADS" : "WEBSITE_ORGANIC";
   if (source === "meta" || source === "facebook" || source === "fb") {
@@ -309,6 +338,9 @@ export function legacyAdContextDetail(ctwa) {
   if (typeof ctwa.headline === "string" && ctwa.headline.trim()) return ctwa.headline.trim().slice(0, 120);
   return TETAP;
 }
+
+/** Customer yang lahir dari pesan KELUAR: sales yang mulai, bukan WhatsApp Langsung. */
+export const DETAIL_DIMULAI_SALES = "Dimulai sales (chat pertama dari kita)";
 
 // Penyaring klik /r/:slug. Sengaja konservatif: hanya pola yang jelas bukan
 // orang. WebView TikTok ("BytedanceWebview", "musical_ly") tetap dihitung.

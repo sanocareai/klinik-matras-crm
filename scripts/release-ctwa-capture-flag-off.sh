@@ -38,10 +38,10 @@ TAG_KODE="ctwa0"
 ALLOWED_RE='^(\.gitignore|backend/\.env\.example|backend/scripts/ctwa-capture-(purge|report)\.js|backend/src/routes/webhooks\.js|backend/src/services/(ctwaCapture|ctwaCaptureAnalysis|leadAttribution)\.js|backend/tests/(ctwaCapture|leadAttribution|releaseCtwaCapture)\.test\.js|backend/tests/integration/ctwaCapture\.integration\.test\.js|docs/CTWA-[A-Z0-9-]+\.md|scripts/release-ctwa-capture-flag-off\.sh)$'
 # Pin sha256 (teks LF) berkas RUNTIME. Isi berbeda dari pin = berhenti sampai ditinjau ulang. Diisi saat kandidat dibekukan.
 declare -A PINS=(
-  ["backend/src/routes/webhooks.js"]="990be930af9d59c6c091ebda5c80167a0ae1630c0c0159a020ea6e310589846c"
+  ["backend/src/routes/webhooks.js"]="67d39838d249c7160d5b4811f061028708c588ee582e3ba561e171f14b23756d"
   ["backend/src/services/ctwaCapture.js"]="99a0bb004278c6189324097d3c99320eb0156d1b9881a93115a8b8ae46850302"
   ["backend/src/services/ctwaCaptureAnalysis.js"]="2944100f78ffa5594035d2077cfd280d0c702ca3e36660d055872b1f2d6ba3d0"
-  ["backend/src/services/leadAttribution.js"]="ecbafc2cbf89fa407e15b139d5e6498c79f892ad216c7424dd63f7c801f6cf5f"
+  ["backend/src/services/leadAttribution.js"]="e7fbf9ddda4b7a90815f0ea20b7c1178fc283dc0b0dca120ada219cb5c36993b"
 )
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }

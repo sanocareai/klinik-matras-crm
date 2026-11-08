@@ -84,14 +84,30 @@ export function cocokkanTemplateIklan(text, templates) {
   return terbaik;
 }
 
-// Teks tombol milik website (utils/whatsapp.ts & pages di repo website).
+// Teks tombol milik website (utils/whatsapp.ts & pages di repo website, termasuk
+// teks lama). Yang berujung nama layanan ditulis sampai bagian tetapnya saja.
 // Ditulis tetap, bukan hanya diturunkan dari data, karena sebagian kecil lead
 // ber-clid memakai teks ini sehingga ia sempat masuk daftar template Meta dan
 // memberi label Meta pada lead website. Berlaku sebagai awalan.
 export const TEKS_TOMBOL_WEBSITE_TETAP = [
   "halo sano, saya tertarik konsultasi",
+  "halo sano, saya tertarik dengan paket",
+  "halo sano, saya tertarik paket premium",
   "halo sano, saya mau konsultasi layanan klinik matras",
   "halo sano, saya mau konsultasi layanan klinik sofa",
+  "halo sano, saya ingin tanya layanan",
+  "halo sano, saya ingin konsultasi tentang layanan klinik matras",
+  "halo sano, saya ingin konsultasi tentang konsep matras sehat",
+  "halo sano, saya ingin konsultasi setelah baca artikel ini",
+  "halo sano, saya ingin konsultasi service kasur",
+  "halo sano, saya ingin konsultasi matras sehat",
+  "halo sano, saya ingin cek kondisi kasur saya",
+  "halo sano, saya ingin cek komponen dalam kasur saya",
+  "halo sano, saya ingin analisa kasur karena ada keluhan sakit",
+  "halo sano, kasur saya amblas. saya ingin konsultasi dan cek kondisi kasur",
+  "halo sano, boleh minta daftar harga lengkap untuk layanan lainnya",
+  "halo sano care, saya tertarik dengan layanan",
+  "halo sano care, saya ingin konsultasi mengenai kasur saya",
 ];
 
 /** Buang teks milik website dari daftar template iklan Meta. */
