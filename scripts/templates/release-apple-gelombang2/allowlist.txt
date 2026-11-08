@@ -8,6 +8,8 @@ frontend/src/components/ui/workspace-hero.jsx
 frontend/src/features/laporan/components/KpiCard.jsx
 frontend/src/pages/ComplaintCases.jsx
 frontend/src/pages/armada/ArmadaKendaliRute.jsx
+frontend/src/pages/armada/ArmadaPengajuanBiaya.jsx
+frontend/src/pages/armada/ArmadaPengaturan.jsx
 frontend/src/pages/armada/ArmadaRingkasan.jsx
 frontend/src/styles/sanss-apple.css
 frontend/src/sw.js
