@@ -5,6 +5,7 @@ import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { InfoI } from "@/components/apple/Apple.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -669,11 +670,10 @@ function DriverTab() {
           </Table>
         </TableWrap>
       )}
-      <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-ink3">
-        Nomor telepon, area, jam kerja, rating, dan status dokumen belum tersedia —
-        field-nya belum ada di data driver. Menambahkannya mengubah data akun yang
-        dipakai semua role, bukan cuma Delivery, jadi butuh keputusan terpisah.
-      </p>
+      <div className="flex items-center justify-between gap-2 border-t border-line px-4 py-1.5 text-[12px] text-ink3" data-testid="catatan-data-driver">
+        <span>Data driver masih terbatas</span>
+        <InfoI label="Data driver yang belum tersedia">Nomor telepon, area, jam kerja, rating, dan status dokumen belum tersedia — field-nya belum ada di data driver. Menambahkannya mengubah data akun yang dipakai semua role, bukan cuma Delivery, jadi butuh keputusan terpisah.</InfoI>
+      </div>
     </Card>
   );
 }
