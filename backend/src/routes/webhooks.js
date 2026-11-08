@@ -602,25 +602,28 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       }
     }
 
-    // Lapis 3: cari ClickEvent terbaru (15 menit) yang belum ter-match.
+    // Lapis "klik terbaru 15 menit" DIHAPUS (9 Nov 2026): klik tidak terikat ke
+    // orangnya. Dengan ribuan klik per hari, hampir semua lead tanpa jejak
+    // kebagian label TikTok (396 dari 474 lead tanpa bukti). Klik saja bukan
+    // bukti sumber; link pelacakan dibuktikan lewat teksnya di Lapis 1.
+
+    // Lapis 3c: TEKS TOMBOL WA WEBSITE tanpa tag kanal.
     //
-    // ⚠️ PALING LEMAH, sengaja ditaruh paling akhir: pencariannya GLOBAL,
-    // tidak terikat ke orangnya. Kalau dua orang mengklik iklan BERBEDA
-    // dalam 15 menit yang sama, sumbernya bisa tertukar dan tidak ada
-    // jejak untuk mendeteksinya. Dipertahankan sebagai jaring terakhir
-    // untuk customer yang MENGHAPUS teks prefilled sebelum mengirim.
+    // Pengunjung organik website tidak pernah dapat tag kanal (memang tidak
+    // ada iklan untuk dicatat), jadi selama ini mereka tercatat
+    // WHATSAPP_DIRECT — pernyataan yang JELAS SALAH, karena teks tombol
+    // website ada di pesan pertamanya. Terukur 292 lead dalam 90 hari.
+    //
+    // Kanalnya SENGAJA tidak ditebak (bisa organik, bisa iklan yang tagnya
+    // hilang) — cukup dinyatakan datang dari website. Menebak Google/Meta
+    // di sini akan mengkredit iklan yang belum tentu berjalan.
     if (detectedSource === "WHATSAPP_DIRECT") {
-      const since = new Date(Date.now() - 15 * 60 * 1000);
-      const recentClick = await prisma.clickEvent.findFirst({
-        where: { matchedCustomerId: null, createdAt: { gte: since } },
-        orderBy: { createdAt: "desc" },
-        include: { trackedLink: true },
-      });
-      if (recentClick) {
-        detectedSource = CATEGORY_TO_LEAD_SOURCE[recentClick.trackedLink.category] || "OTHER";
-        detectedDetail = recentClick.trackedLink.name;
-        pendingClickId = recentClick.id;
-        console.log("[attribution] Lapis 3 (tebakan 15 menit) hit:", recentClick.trackedLink.name);
+      const teksTombol = await ambilTeksTombolWebsite();
+      const cocokWeb = cocokkanTemplateIklan(text, teksTombol);
+      if (cocokWeb) {
+        detectedSource = "WEBSITE_ORGANIC";
+        detectedDetail = "Website - kanal tidak diketahui (tanpa tag, organik atau tag hilang)";
+        console.log("[attribution] Lapis 3c tombol WA website:", cocokWeb.slice(0, 50));
       }
     }
 
@@ -647,26 +650,6 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         // keputusan belanja iklan.
         detectedDetail = `Meta Ads - template: "${cocok.slice(0, 80)}" (pola pesan, CTWA tidak terbaca)`;
         console.log("[attribution] Lapis 3b template iklan:", cocok.slice(0, 50));
-      }
-    }
-
-    // Lapis 3c: TEKS TOMBOL WA WEBSITE tanpa tag kanal.
-    //
-    // Pengunjung organik website tidak pernah dapat tag kanal (memang tidak
-    // ada iklan untuk dicatat), jadi selama ini mereka tercatat
-    // WHATSAPP_DIRECT — pernyataan yang JELAS SALAH, karena teks tombol
-    // website ada di pesan pertamanya. Terukur 292 lead dalam 90 hari.
-    //
-    // Kanalnya SENGAJA tidak ditebak (bisa organik, bisa iklan yang tagnya
-    // hilang) — cukup dinyatakan datang dari website. Menebak Google/Meta
-    // di sini akan mengkredit iklan yang belum tentu berjalan.
-    if (detectedSource === "WHATSAPP_DIRECT") {
-      const teksTombol = await ambilTeksTombolWebsite();
-      const cocokWeb = cocokkanTemplateIklan(text, teksTombol);
-      if (cocokWeb) {
-        detectedSource = "WEBSITE_ORGANIC";
-        detectedDetail = "Website - kanal tidak diketahui (tanpa tag, organik atau tag hilang)";
-        console.log("[attribution] Lapis 3c tombol WA website:", cocokWeb.slice(0, 50));
       }
     }
     // Lapis 4: default WHATSAPP_DIRECT sudah diset di atas

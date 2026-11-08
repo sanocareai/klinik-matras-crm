@@ -309,3 +309,13 @@ export function legacyAdContextDetail(ctwa) {
   if (typeof ctwa.headline === "string" && ctwa.headline.trim()) return ctwa.headline.trim().slice(0, 120);
   return TETAP;
 }
+
+// Penyaring klik /r/:slug. Sengaja konservatif: hanya pola yang jelas bukan
+// orang. WebView TikTok ("BytedanceWebview", "musical_ly") tetap dihitung.
+const POLA_BOT = /bot|bot\/|crawl|spider|slurp|facebookexternalhit|bytespider|headless|lighthouse|preview|curl\/|wget\/|python|scrapy|^whatsapp\//i;
+
+export function bukanKlikManusia(method, userAgent) {
+  if (method === "HEAD") return true;
+  const ua = String(userAgent || "").trim();
+  return !ua || POLA_BOT.test(ua);
+}
