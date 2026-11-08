@@ -1,0 +1,15 @@
+# RILIS PERBAIKAN BATAS CUTOVER PERSEDIAAN: BACKEND-SAJA, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA).
+#   • ISI: (1) penerimaan yang ditulis sesudah waktu hitung Persediaan Awal tetap dijurnal walau tanggal terimanya sebelum cutover; (2) tanggal buku pergerakan dan tanggal terima memakai hari bisnis WIB;
+#     (3) kuantitas Persediaan Awal disimpan 4 desimal tanpa pembulatan; (4) Pengembalian Bahan Produksi menolak jumlah yang diajukan sebelum transisi satuan.
+#   • Skrip rilis TIDAK mengubah cutover, TIDAK membatalkan atau memposting PSA, TIDAK menghidupkan sakelar stok resmi, TIDAK menyelesaikan gap, TIDAK menulis harga, jurnal, atau stok.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru sebagai SERVER terhadap salinan restore data nyata); build web di release dir (sumber web tidak berubah); switch; smoke baca-saja.
+#   • PENGUNCIAN: kunci deploy BERSAMA + kunci sendiri diambil ATOMIK; kepemilikan ditentukan proses (perangkat:inode fd 7/9), BUKAN nama berkas.
+#     Pembersihan release lama DINONAKTIFKAN; gerbang disk minimal 5 GiB tidak diturunkan.
+#
+#   cat scripts/release-cutover-persediaan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/cpb.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/cpb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/cpb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/cpbr.out 2>&1 < /dev/null &'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/cpb.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/cpb.out 2>&1 < /dev/null &'   # rilis penuh; HANYA dengan izin Owner
+#
+# ROLLBACK: tanpa migrasi, tetapi rollback TIDAK dinyatakan aman otomatis: kode lama membuka kembali celah jurnal penerimaan dan tanggal UTC. Sesudah ada transisi satuan wajib scripts/rollback-guard-transisi-satuan.sh.
+# (dibangkitkan oleh scripts/gen-release-cutover-persediaan.cjs dari scripts/release-satuan-gabungan.sh + scripts/templates/release-cutover-persediaan/* + pustaka scripts/lib/{rehearsal,smoke}-cutover-persediaan.mjs; JANGAN edit tangan)

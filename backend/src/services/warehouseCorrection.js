@@ -15,7 +15,7 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { PENGHALANG } from "./warehouseCoverage.js";
 import { findEntryByKey } from "./finance/journal.js";
 import { KEY as KEY_SUPPLIER } from "./finance/posting/supplier.js";
-import { statusCutoverUntuk } from "./finance/persediaanAwal.js";
+import { penerimaanTercakupPembuka } from "./finance/persediaanAwal.js";
 
 export class KoreksiError extends Error {
   constructor(message, statusCode = 409, code = null, extra = {}) { super(message); this.statusCode = statusCode; if (code) this.code = code; Object.assign(this, extra); }
@@ -197,8 +197,7 @@ export async function rencanaKoreksiGR(db, { receiptId, perubahan, sekarang = ne
     if (jurnal && jurnal.status !== "REVERSED") blok.push(penghalang("JURNAL_FINANCE", { detail: { jurnal: jurnal.entryNumber ?? null, status: jurnal.status } }));
     const tagihan = await db.finSupplierBill.count({ where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, OR: [{ goodsReceiptId: receipt.id }, { poAllocations: { some: { goodsReceiptId: receipt.id } } }, { poReceipts: { some: { goodsReceiptId: receipt.id } } }] } });
     if (tagihan > 0) blok.push(penghalang("TAGIHAN_TERKAIT", { detail: { jumlah: tagihan } }));
-    const cut = await statusCutoverUntuk(db, receipt.receivedDate || receipt.createdAt);
-    if (cut.status === "tertutup") blok.push(penghalang("TERCAKUP_STOK_OPNAME"));
+    if (await penerimaanTercakupPembuka(db, receipt.id, receipt.receivedDate || receipt.createdAt)) blok.push(penghalang("TERCAKUP_STOK_OPNAME"));
   }
 
   const adaMeta = Object.keys(metaSesudah).length > 0 || adaMetaBaris;

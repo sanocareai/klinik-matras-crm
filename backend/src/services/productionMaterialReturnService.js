@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate, postStockMovement } from "./inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "./finance/posting/inventory.js";
+import { transisiSesudah, KODE_SATUAN_BERUBAH } from "./referensiHargaSatuan.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -128,6 +129,9 @@ export async function receiveMaterialReturn(prisma, { returnId, actorId, idempot
     if (!isProductionWriterEnabledFor(state, row.unitId)) throw returnError("Unit ini belum diaktifkan untuk alur produksi baru", 503, "RETURN_WRITER_OFF");
     if (row.status !== "PENDING") throw returnError("Retur ini sudah diterima", 409, "RETURN_ALREADY_RECEIVED", { revision: row.revision });
     if (row.revision !== rev) throw returnError(`Revisi retur berubah: diharapkan ${rev}, sekarang ${row.revision}. Muat ulang.`, 409, "RETURN_REVISION_CONFLICT", { revision: row.revision });
+    // PENJAGA SATUAN (sama dengan Return Record): jumlah diajukan saat satuan stok masih lama; angka mentah tidak boleh masuk saldo satuan baru.
+    const tr = await transisiSesudah(tx, row.materialId, row.requestedAt);
+    if (tr) throw returnError(`Retur ${row.material.code} diajukan dalam satuan lama (${tr.fromUnit}); satuan stok sudah berganti ke ${tr.toUnit}. Jumlahnya tidak bisa diterima otomatis.`, 409, KODE_SATUAN_BERUBAH);
     const requested = Number(row.qty);
     const receivedQty = qtyIn == null ? requested : round4(qtyIn);
     if (receivedQty > requested + EPS) throw returnError(`Jumlah diterima (${receivedQty}) melebihi sisa yang diajukan (${requested})`, 422, "RETURN_QTY_EXCEEDS");

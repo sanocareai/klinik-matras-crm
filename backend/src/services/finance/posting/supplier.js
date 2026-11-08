@@ -37,10 +37,10 @@
 // pembelian; jasa/operasional & biaya produksi non-stok → akun beban kategori biaya. Tagihan lama tanpa jenis tetap memakai
 // kategori biaya seperti sebelumnya.
 
-import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
+import { postJournal, recordPostingGap, findEntryByKey, todayBookDateWIB } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "../inventoryMethod.js";
-import { statusCutoverUntuk, penerimaanTertutupPeriodik } from "../persediaanAwal.js";
+import { penerimaanTercakupPembuka, penerimaanTertutupPeriodik } from "../persediaanAwal.js";
 import { resolvePostingGap } from "../journal.js";
 import { toMoney, sumMoney, ZERO, Decimal } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
@@ -105,7 +105,7 @@ export async function postGoodsReceiptValue(tx, { goodsReceiptId, userId = null 
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   // B3.6 — penerimaan sebelum cutover setelah persediaan awal diposting: barangnya sudah tercakup stok opname.
-  if ((await statusCutoverUntuk(tx, gr.receivedDate || gr.createdAt)).status === "tertutup") {
+  if (await penerimaanTercakupPembuka(tx, goodsReceiptId, gr.receivedDate || gr.createdAt)) {
     await resolvePostingGap(tx, { source: "PENERIMAAN_BAHAN", sourceId: goodsReceiptId });
     return { posted: false, reason: "tertutup_stok_opname" };
   }
@@ -137,7 +137,7 @@ export async function postGoodsReceiptValue(tx, { goodsReceiptId, userId = null 
     const grir = await resolveAccount(tx, SYSTEM_KEYS.UTANG_BELUM_DITAGIH);
 
     const { entry, created } = await postJournal(tx, {
-      date: gr.receivedDate || gr.createdAt,
+      date: gr.receivedDate || todayBookDateWIB(gr.createdAt),
       description: `Penerimaan barang ${gr.receiptNumber}${gr.supplier ? ` — ${gr.supplier}` : ""}`,
       source: "PENERIMAAN_BAHAN",
       sourceId: goodsReceiptId,

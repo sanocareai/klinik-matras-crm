@@ -19,7 +19,7 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 // MEMBACA baris itu beserta unitCost-nya. Lihat catatan lengkap di
 // services/finance/posting/supplier.js.
 import { postGoodsReceiptValue } from "../services/finance/posting/supplier.js";
-import { JournalError } from "../services/finance/journal.js";
+import { JournalError, todayBookDateWIB } from "../services/finance/journal.js";
 import { AccountError } from "../services/finance/accounts.js";
 // Fase 1 integrasi Finance→Gudang: penerimaan boleh bersumber dari PO bahan baku (services/finance/purchaseOrder.js). PO tidak
 // pernah menulis stok; yang dilakukan di sini hanya MEMBACA PO untuk mengisi dokumen, membatasi jumlah baik, dan menilai stok.
@@ -612,7 +612,7 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), wa
       }
       const updated = await tx.goodsReceipt.update({
         where: { id: receipt.id },
-        data: { status: "COMPLETED", receivedDate: receipt.receivedDate || new Date() },
+        data: { status: "COMPLETED", receivedDate: receipt.receivedDate || todayBookDateWIB() }, // hari bisnis WIB: new Date() menaruh 00.00-06.59 WIB di hari sebelumnya
         include: receiptInclude,
       });
       await selesaiPutaway(tx, {

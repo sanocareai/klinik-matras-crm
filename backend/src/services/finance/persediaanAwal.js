@@ -23,7 +23,7 @@
 import crypto from "node:crypto";
 import { postJournal, reverseJournal, generateDocumentNumber, toBookDate, findEntryByKey, STATUS_DIHITUNG } from "./journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
-import { toMoney, sumMoney, ZERO } from "./money.js";
+import { toMoney, sumMoney, ZERO, Decimal } from "./money.js";
 import { ambilKebijakanPersediaan, tanggalIndonesia } from "./inventoryMethod.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { referensiTidakCocok, TEKS_REFERENSI_TIDAK_COCOK } from "../referensiHargaSatuan.js";
@@ -98,6 +98,17 @@ export async function statusCutoverUntuk(tx, tanggal) {
   return { status: aktif ? "perpetual" : "tunggu_pembuka", kebijakan: k, aktif };
 }
 
+/**
+ * Penerimaan bertanggal sebelum cutover dianggap tercakup stok opname HANYA bila barangnya sudah masuk ledger sampai waktu hitung pembuka.
+ * Pergerakan RECEIPT yang ditulis SESUDAH waktu hitung tidak mungkin ada di snapshot, jadi tetap wajib dijurnal walau tanggal terimanya sebelum cutover.
+ */
+export async function penerimaanTercakupPembuka(tx, goodsReceiptId, tanggal) {
+  const s = await statusCutoverUntuk(tx, tanggal);
+  if (s.status !== "tertutup") return false;
+  const sesudah = await tx.stockMovement.findFirst({ where: { goodsReceiptId, type: "RECEIPT", createdAt: { gt: s.aktif.countedAt } }, select: { id: true } });
+  return !sesudah;
+}
+
 // ── baris & validasi ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 const angka = (v) => {
@@ -110,7 +121,7 @@ const angka = (v) => {
 
 export function hashIsi(lines) {
   const baris = [...lines]
-    .map((l) => [l.materialId, toMoney(l.qty).toFixed(4), l.unit, toMoney(l.unitCost).toFixed(2), toMoney(l.value).toFixed(2), l.priceSource, l.priceReference || "", l.priceNote || ""].join("|"))
+    .map((l) => [l.materialId, new Decimal(String(l.qty)).toFixed(4), l.unit, toMoney(l.unitCost).toFixed(2), toMoney(l.value).toFixed(2), l.priceSource, l.priceReference || "", l.priceNote || ""].join("|"))
     .sort();
   return crypto.createHash("sha256").update(baris.join("\n")).digest("hex");
 }
@@ -188,7 +199,7 @@ export async function validasiSnapshot(db, opening, lines) {
   }
   const sisaSistem = await db.stockMovement.groupBy({ by: ["materialId"], where: { createdAt: { lte: opening.countedAt } }, _sum: { qty: true } });
   const tidakDihitung = sisaSistem.filter((r) => toMoney(r._sum.qty || 0).greaterThan(0) && !perMaterial.has(r.materialId)).length;
-  if (tidakDihitung > 0) peringatan.push({ kode: "MATERIAL_TIDAK_DIHITUNG", pesan: `${tidakDihitung} material punya stok sistem > 0 tetapi tidak ada di snapshot (dianggap stok fisik 0).` });
+  if (tidakDihitung > 0) peringatan.push({ kode: "MATERIAL_TIDAK_DIHITUNG", pesan: `${tidakDihitung} material punya stok sistem > 0 tetapi tidak ada di snapshot: nilainya tidak diakui di snapshot ini (belum dapat difinalkan, bukan berarti stok nol); ledger stok tidak berubah.` });
 
   const total = sumMoney(lines.map((l) => toMoney(l.value)));
   return { blocker, peringatan, ringkasan: { jumlahBaris: lines.length, totalNilai: total.toFixed(2) } };
@@ -272,7 +283,7 @@ export async function isiBaris(tx, { openingId, rows, mode = "ganti", userId }) 
     if (!satuan) return galat.push({ baris: no, kode: "SATUAN_KOSONG", pesan: `Baris ${no}: satuan ${kode} wajib diisi (sesuai satuan saat menghitung).` });
     const sumber = qtyNol && !String(r.sumber || "").trim() ? "TANPA_STOK" : String(r.sumber || "").trim().toUpperCase();
     dipakai.add(m.id);
-    const q = toMoney(qty).toDecimalPlaces(4);
+    const q = new Decimal(String(qty)).toDecimalPlaces(4); // kolom qty numeric(18,4): toMoney membulatkan ke 2 desimal dan mengubah hasil hitung
     const h = qtyNol && hargaKosong ? toMoney(0) : toMoney(harga).toDecimalPlaces(2);
     siap.push({
       openingId, materialId: m.id, qty: q, unit: satuan, unitCost: h, value: q.times(h).toDecimalPlaces(2),
@@ -464,7 +475,7 @@ export async function detailSnapshot(db, openingId) {
     },
     baris: lines.map((l) => ({
       id: l.id, materialId: l.materialId, kode: l.material.code, nama: l.material.name, satuanMaterial: l.material.unit,
-      qty: toMoney(l.qty).toString(), satuan: l.unit, harga: toMoney(l.unitCost).toFixed(2), nilai: toMoney(l.value).toFixed(2),
+      qty: new Decimal(String(l.qty)).toString(), satuan: l.unit, harga: toMoney(l.unitCost).toFixed(2), nilai: toMoney(l.value).toFixed(2),
       sumber: l.priceSource, sumberLabel: SUMBER_HARGA[l.priceSource] || (l.priceSource === SUMBER_TANPA_STOK ? LABEL_TANPA_STOK : l.priceSource), referensi: l.priceReference, penjelasanHarga: l.priceNote, catatan: l.notes,
       hargaReferensi: refTdkD.has(l.materialId) ? null : (l.material.referenceUnitCost ?? null), referensiTidakCocok: refTdkD.get(l.materialId) ?? null, qtySistem: (sistem.get(l.materialId) || ZERO).toString(),
     })),
@@ -615,6 +626,5 @@ export async function penerimaanTertutupPeriodik(tx, goodsReceiptId) {
   const gr = await tx.goodsReceipt.findUnique({ where: { id: goodsReceiptId }, select: { receivedDate: true, createdAt: true } });
   if (!gr) return false;
   if (await findEntryByKey(tx, `PENERIMAAN_BAHAN:${goodsReceiptId}`)) return false;
-  const s = await statusCutoverUntuk(tx, gr.receivedDate || gr.createdAt);
-  return s.status === "tertutup";
+  return penerimaanTercakupPembuka(tx, goodsReceiptId, gr.receivedDate || gr.createdAt);
 }

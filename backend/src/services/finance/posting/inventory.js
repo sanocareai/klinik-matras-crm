@@ -28,7 +28,7 @@
 // pengeluaran — memaksa FIFO berarti mengarang pasangan "keluar ini dari
 // lot yang mana", yang justru melanggar aturan 2.
 
-import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey, JournalError } from "../journal.js";
+import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey, JournalError, todayBookDateWIB } from "../journal.js";
 import { statusCutoverUntuk, pembukaAktif, awalCutover } from "../persediaanAwal.js";
 import { ambilKebijakanPersediaan } from "../inventoryMethod.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
@@ -136,6 +136,15 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
     sumber: berharga.filter((r) => r.id).map((r) => ({ receiptMovementId: r.id, goodsReceiptId: r.goodsReceiptId, qty: String(r.qty), unitCost: Number(r.unitCost) })),
     opening: opening ? { qty: String(opening.qty), unitCost: Number(opening.unitCost) } : null,
   };
+}
+
+/**
+ * Tanggal buku = hari bisnis WIB. Stempel waktu (createdAt, issuedAt, postedAt) dikonversi ke WIB supaya pergerakan 00.00-06.59 WIB tidak jatuh ke hari sebelumnya;
+ * kolom tanggal (tengah malam UTC, mis. scheduledDate) dan string YYYY-MM-DD sudah berupa hari bisnis dan tidak digeser.
+ */
+export function hariBisnisWIB(t) {
+  if (!(t instanceof Date)) return t;
+  return t.getTime() % 86_400_000 === 0 ? t : todayBookDateWIB(t);
 }
 
 // Jenis pergerakan yang MENGURANGI persediaan dan akun beban tujuannya.
@@ -290,7 +299,7 @@ export async function bukukanPergerakan(tx, {
     }
 
     const { entry, created } = await postJournal(tx, {
-      date, description, source, sourceId, idempotencyKey, userId, lines,
+      date: hariBisnisWIB(date), description, source, sourceId, idempotencyKey, userId, lines,
     });
     return { posted: true, entry, created, gap: tanpaHarga.length > 0 };
   } catch (err) {

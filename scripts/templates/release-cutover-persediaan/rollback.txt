@@ -1,0 +1,5 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya. Rollback kode TIDAK dinyatakan aman otomatis. Bila rollback diputuskan setelah switch:
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   (recreate backend dari folder release sebelumnya dengan image rollback; web = dist folder sebelumnya)
+BATAS ROLLBACK: kode lama membulatkan kuantitas PSA ke 2 desimal, tidak menjurnal penerimaan bertanggal mundur sesudah PSA, dan memakai tanggal UTC. Jangan memposting PSA selama kode lama berjalan. Karena sudah ada transisi satuan tersimpan, wajib scripts/rollback-guard-transisi-satuan.sh dan evaluasi kompatibilitas.
