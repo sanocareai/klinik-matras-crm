@@ -84,6 +84,26 @@ export function cocokkanTemplateIklan(text, templates) {
   return terbaik;
 }
 
+// Teks tombol milik website (utils/whatsapp.ts & pages di repo website).
+// Ditulis tetap, bukan hanya diturunkan dari data, karena sebagian kecil lead
+// ber-clid memakai teks ini sehingga ia sempat masuk daftar template Meta dan
+// memberi label Meta pada lead website. Berlaku sebagai awalan.
+export const TEKS_TOMBOL_WEBSITE_TETAP = [
+  "halo sano, saya tertarik konsultasi",
+  "halo sano, saya mau konsultasi layanan klinik matras",
+  "halo sano, saya mau konsultasi layanan klinik sofa",
+];
+
+/** Buang teks milik website dari daftar template iklan Meta. */
+export function saringTemplateIklan(templates) {
+  return templates.filter((t) => !TEKS_TOMBOL_WEBSITE_TETAP.some((w) => t.startsWith(w)));
+}
+
+/** Gabungan teks tetap + teks hasil data, tanpa duplikat. */
+export function gabungTeksTombolWebsite(dariData) {
+  return [...new Set([...TEKS_TOMBOL_WEBSITE_TETAP, ...dariData])];
+}
+
 let cache = { data: null, at: 0 };
 let cacheWeb = { data: null, at: 0 };
 
@@ -194,6 +214,6 @@ export async function ambilTeksTombolWebsite() {
     return data;
   } catch (e) {
     console.warn("[templateIklan] Gagal ambil teks tombol website:", e.message);
-    return cacheWeb.data || [];
+    return cacheWeb.data || TEKS_TOMBOL_WEBSITE_TETAP;
   }
 }

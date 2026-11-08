@@ -2,6 +2,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { listSessionNumbers } from "../services/wahaClient.js";
+import { bukanKlikManusia } from "../services/leadAttribution.js";
 
 // ── Router publik: GET /r/:slug (redirect ke WhatsApp) ──────────────────────
 export const trackingRedirectRouter = express.Router();
@@ -22,7 +23,10 @@ trackingRedirectRouter.get("/:slug", async (req, res) => {
     if (!link?.active) {
       return res.redirect(302, fallbackUrl);
     }
-    await prisma.clickEvent.create({ data: { trackedLinkId: link.id } });
+    // Bot tetap diarahkan, tetapi tidak dihitung sebagai klik.
+    if (!bukanKlikManusia(req.method, req.get("user-agent"))) {
+      await prisma.clickEvent.create({ data: { trackedLinkId: link.id } });
+    }
     const phone = link.targetPhone || fallbackPhone;
     const text  = encodeURIComponent(link.prefilledMessage);
     res.redirect(302, phone ? `https://wa.me/${phone}?text=${text}` : fallbackUrl);
