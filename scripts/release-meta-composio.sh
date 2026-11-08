@@ -11,8 +11,8 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ && "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen harus DEPLOY_SHA BASE_SHA 40 karakter" >&2; exit 1; }
 MODE=release; for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --rehearsal-only) MODE=rehearsal;; --rollback) MODE=rollback;; esac; done
 BUNDLE="${BUNDLE:-}"; CAND_BRANCH="${CAND_BRANCH:-feat/meta-composio-sync}"; CAND_REF="refs/remotes/origin/cand-mcs"
-ALLOWED_RE='^(backend/prisma/migrations/20261231130000_meta_composio_sync/migration\.sql|backend/prisma/schema\.prisma|backend/scripts/rehearsal-composio-replay\.mjs|backend/scripts/sync-meta-composio\.js|backend/src/routes/attributionSpend\.js|backend/src/services/attribution/adReferensi\.js|backend/src/services/attribution/biayaKpi\.js|backend/src/services/attribution/biayaSumber\.js|backend/src/services/attribution/composioMeta\.js|backend/src/services/attribution/composioMetaSync\.js|backend/src/services/attribution/laporanMeta\.js|backend/src/services/attribution/spend\.js|backend/tests/atribusiSumberKontrak\.test\.js|backend/tests/composioMeta\.test\.js|backend/tests/integration/composioMetaSync\.integration\.test\.js|backend/tests/integration/composioNolDanHook\.integration\.test\.js|docs/META-COMPOSIO-SYNC\.md|frontend/qa-harness/marketing-laporan-sinkron\.cjs|frontend/qa-harness/marketing-status-server\.mjs|frontend/qa-harness/panel-sinkron-main\.jsx|frontend/qa-harness/panel-sinkron-qa\.cjs|frontend/qa-harness/panel-sinkron\.html|frontend/qa-harness/qa-util\.cjs|frontend/src/api\.js|frontend/src/features/laporan/components/marketing/KesehatanReferensi\.jsx|frontend/src/features/laporan/components/marketing/StatusSinkronMeta\.jsx|frontend/src/features/laporan/sinkronMetaLogic\.js|frontend/tests/sinkronMetaLogic\.test\.js|scripts/gen-release-meta-composio\.cjs|scripts/meta-composio-sync-cron\.sh|scripts/release-meta-composio\.sh|scripts/templates/release-meta-composio/gerbang-data\.txt|scripts/templates/release-meta-composio/rilis\.txt)$'
-MIG_NAME='20261231130000_meta_composio_sync'; MIG_SHA='a0666fa4144bb7b4f7f7e18016370be0250268116622820950615e6b5e64e12c'; DIFF_SHA='8bd9f37ffeaf5bce900bf68eca2a9fec03451aa1a35b488470c6d88ee6739883'
+ALLOWED_RE='^(backend/prisma/migrations/20261231130000_meta_composio_sync/migration\.sql|backend/prisma/schema\.prisma|backend/scripts/rehearsal-composio-replay\.mjs|backend/scripts/sync-meta-composio\.js|backend/src/routes/attributionSpend\.js|backend/src/services/attribution/adReferensi\.js|backend/src/services/attribution/biayaKpi\.js|backend/src/services/attribution/biayaSumber\.js|backend/src/services/attribution/composioMeta\.js|backend/src/services/attribution/composioMetaSync\.js|backend/src/services/attribution/laporanMeta\.js|backend/src/services/attribution/spend\.js|backend/tests/atribusiSumberKontrak\.test\.js|backend/tests/composioMeta\.test\.js|backend/tests/integration/composioMetaSync\.integration\.test\.js|backend/tests/integration/composioNolDanHook\.integration\.test\.js|backend/tests/skemaHash\.test\.js|docs/META-COMPOSIO-SYNC\.md|frontend/qa-harness/marketing-laporan-sinkron\.cjs|frontend/qa-harness/marketing-status-server\.mjs|frontend/qa-harness/panel-sinkron-main\.jsx|frontend/qa-harness/panel-sinkron-qa\.cjs|frontend/qa-harness/panel-sinkron\.html|frontend/qa-harness/qa-util\.cjs|frontend/src/api\.js|frontend/src/features/laporan/components/marketing/KesehatanReferensi\.jsx|frontend/src/features/laporan/components/marketing/StatusSinkronMeta\.jsx|frontend/src/features/laporan/sinkronMetaLogic\.js|frontend/tests/sinkronMetaLogic\.test\.js|scripts/gen-release-meta-composio\.cjs|scripts/lib/skema-hash\.sh|scripts/meta-composio-sync-cron\.sh|scripts/release-meta-composio\.sh|scripts/templates/release-meta-composio/gerbang-data\.txt|scripts/templates/release-meta-composio/rilis\.txt)$'
+MIG_NAME='20261231130000_meta_composio_sync'; MIG_SHA='a0666fa4144bb7b4f7f7e18016370be0250268116622820950615e6b5e64e12c'; DIFF_SHA='92aad0596165ccff8a0611511db135f93d0536aabbf3be8cae60601a3b13d6e7'
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"; PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
 DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; RELEASES="$HOME/releases/klinik-matras"; PERSIST="$HOME/klinik-matras"; SRC="$HOME/release-src/klinik-matras.git"; NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 MIN_FREE_KB=$((5 * 1024 * 1024)); TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/meta-composio-${DEPLOY_SHORT}-${TS}"
@@ -22,6 +22,57 @@ sg() { git --git-dir="$SRC" "$@"; }
 dcp() { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
 psql_live() { docker exec -i "$PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
 bebas_kb() { df -Pk "$HOME" | awk 'NR==2{print $4}'; }
+# Pemeriksaan skema untuk rehearsal rilis. Wajib: dump gagal/kosong/pendek, hash berbeda, atau tambahan di luar migrasi = kode keluar bukan 0.
+# Normalisasi hanya membuang unsur nonsemantik: komentar, baris kosong, token \restrict acak, koma akhir baris (kolom baru di akhir tabel),
+# dan, HANYA pada baris CHECK, cast varchar/text serta kurung redundan (render ulang pg_dump setelah restore). Urutan baris dipertahankan; tidak ada sort.
+SKEMA_MD5_KOSONG="d41d8cd98f00b204e9800998ecf8427e"; SKEMA_MIN_BARIS="${SKEMA_MIN_BARIS:-50}"
+skema_norm() {
+  tr -d '\r' | sed -E '/^--/d; /^[[:space:]]*$/d; /^.?(un)?restrict [A-Za-z0-9]+$/d; s/,$//' | sed -E '/CHECK/{
+    s/::character varying(\([0-9]+\))?(\[\])?//g
+    s/::text(\[\])?//g
+    :a
+    s/(^|[^A-Za-z0-9_])\(([^() ,]+)\)/\1\2/g
+    ta
+    :b
+    s/(^|[^A-Za-z0-9_])\((ARRAY\[[^]]*\])\)/\1\2/g
+    tb
+  }'
+}
+skema_valid() {
+  [ -s "$1" ] && [ "$(md5sum <"$1" | cut -d' ' -f1)" != "$SKEMA_MD5_KOSONG" ] && [ "$(wc -l <"$1")" -ge "$SKEMA_MIN_BARIS" ] && grep -q 'CREATE TABLE' "$1"
+}
+skema_banding() { # dump_sumber dump_salinan
+  local T ha hb; T="$(mktemp -d)"; skema_norm <"$1" >"$T/a"; skema_norm <"$2" >"$T/b"
+  if ! skema_valid "$T/a" || ! skema_valid "$T/b"; then echo "SKEMA_GAGAL: dump kosong atau terlalu pendek"; rm -rf "$T"; return 1; fi
+  ha="$(md5sum <"$T/a" | cut -d' ' -f1)"; hb="$(md5sum <"$T/b" | cut -d' ' -f1)"
+  if [ "$ha" != "$hb" ]; then echo "SKEMA_GAGAL: hash berbeda ${ha:0:16} vs ${hb:0:16}"; diff "$T/a" "$T/b" | head -n 6 | cut -c1-140; rm -rf "$T"; return 1; fi
+  echo "SKEMA_COCOK ${ha:0:16} baris=$(wc -l <"$T/a")"; rm -rf "$T"
+}
+skema_tambahan() { # dump_sebelum dump_sesudah migration.sql : sesudah = sebelum + persis objek migrasi
+  local T f; T="$(mktemp -d)"; skema_norm <"$1" >"$T/a"; skema_norm <"$2" >"$T/b"
+  if ! skema_valid "$T/a" || ! skema_valid "$T/b"; then echo "SKEMA_GAGAL: dump kosong atau terlalu pendek"; rm -rf "$T"; return 1; fi
+  diff "$T/a" "$T/b" >"$T/d" || true
+  if grep -q '^<' "$T/d"; then echo "SKEMA_GAGAL: skema lama berubah"; grep '^<' "$T/d" | head -n 5 | cut -c1-140; rm -rf "$T"; return 1; fi
+  sed -n 's/^> //p' "$T/d" >"$T/add"
+  tr -d '\r' <"$3" | sed -nE 's/^CREATE TABLE "([^"]+)".*/\1/p' | sort >"$T/mt"
+  tr -d '\r' <"$3" | sed -nE 's/^CREATE (UNIQUE )?INDEX "([^"]+)".*/\2/p' | sort >"$T/mi"
+  tr -d '\r' <"$3" | sed -nE 's/^ALTER TABLE "[^"]+" ADD COLUMN "([^"]+)".*/\1/p' | sort >"$T/mc"
+  : >"$T/at"; : >"$T/ai"; : >"$T/aa"; : >"$T/ac"; : >"$T/lain"
+  awk -v DT="$T" '
+    b==1 { if ($0 ~ /^\)/) b=0; next }
+    /^CREATE TABLE public\./ { t=$3; sub(/^public\./,"",t); print t >> (DT "/at"); b=1; next }
+    /^CREATE (UNIQUE )?INDEX / { for(i=1;i<=NF;i++) if($i=="INDEX"){ print $(i+1) >> (DT "/ai"); break } next }
+    /^ALTER TABLE ONLY public\./ { t=$4; sub(/^public\./,"",t); print t >> (DT "/aa"); getline; next }
+    /^[[:space:]]+[a-z_"]/ { print $1 >> (DT "/ac"); next }
+    { print >> (DT "/lain") }' "$T/add"
+  for f in at ai aa ac; do sort -o "$T/$f" "$T/$f"; done
+  if [ -s "$T/lain" ]; then echo "SKEMA_GAGAL: tambahan tak dikenal"; head -n 5 "$T/lain" | cut -c1-140; rm -rf "$T"; return 1; fi
+  if ! cmp -s "$T/at" "$T/mt"; then echo "SKEMA_GAGAL: tabel tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; fi
+  if ! cmp -s "$T/ai" "$T/mi"; then echo "SKEMA_GAGAL: indeks tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; fi
+  if ! cmp -s "$T/ac" "$T/mc"; then echo "SKEMA_GAGAL: kolom tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; fi
+  if [ -n "$(sort -u "$T/aa" | comm -23 - "$T/mt")" ]; then echo "SKEMA_GAGAL: constraint pada tabel lama di luar migrasi"; rm -rf "$T"; return 1; fi
+  echo "SKEMA_TAMBAHAN_SESUAI tabel=$(wc -l <"$T/at") indeks=$(wc -l <"$T/ai") kolom=$(wc -l <"$T/ac") constraint=$(wc -l <"$T/aa")"; rm -rf "$T"
+}
 bersih() { if [ -n "$REH_DB" ]; then docker exec "$PG" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS ${REH_DB}" >/dev/null 2>&1 || true; fi; }
 trap 'rc=$?; bersih; [ $rc -ne 0 ] && printf "Berhenti di fase %s. Setelah switch saja: bash /tmp/mcs.sh %s %s --rollback\n" "$PHASE" "$DEPLOY_SHA" "$BASE_SHA"; exit $rc' EXIT
 
@@ -134,8 +185,14 @@ ok "image baru dibangun; rollback ${ROLLBACK_TAG}"
 PHASE=4r; say "4r. Rehearsal migrasi pada salinan backup"
 REH_DB="rehearsal_mcs_${DEPLOY_SHORT}"; docker exec "$PG" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS ${REH_DB}" -c "CREATE DATABASE ${REH_DB}"
 gzip -dc "$BACKUP_FILE" | docker exec -i "$PG" psql -U "$DB_USER" -d "$REH_DB" -q > "$BK_DIR/restore.log" 2>&1 || true
+RE_LAIN="$(grep -E 'ERROR:|FATAL:' "$BK_DIR/restore.log" | grep -vc 'role "mcp_hub_readonly" does not exist' || true)"; [ "$RE_LAIN" = 0 ] || { grep -E 'ERROR:|FATAL:' "$BK_DIR/restore.log" | head -n 5 | cut -c1-160; die "restore rehearsal punya galat selain role hilang"; }
+dump_skema() { docker exec "$PG" pg_dump -U "$DB_USER" -d "$1" -s --no-owner --no-privileges > "$2" </dev/null || die "dump skema $1 gagal"; [ -s "$2" ] || die "dump skema $1 kosong"; }
+dump_skema "$DB_NAME" "$BK_DIR/skema-live.sql"; dump_skema "$REH_DB" "$BK_DIR/skema-reh-awal.sql"
+HSL="$(skema_banding "$BK_DIR/skema-live.sql" "$BK_DIR/skema-reh-awal.sql")" || { printf '%s\n' "$HSL"; die "skema salinan tidak identik dengan sumber"; }; ok "skema lama identik: $HSL"
 dcp "$NEW_DIR" run --rm --no-deps -T --entrypoint sh -e "RDB=${REH_DB}" backend -c 'DATABASE_URL="$(printf %s "$DATABASE_URL" | sed "s#/[^/?]*\(?.*\)\?\$#/$RDB\1#")" npx prisma migrate deploy' </dev/null > "$BK_DIR/migrate-reh.log" 2>&1 || { tail -n 15 "$BK_DIR/migrate-reh.log"; die "migrasi rehearsal gagal"; }
 [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-reh.log")" = 1 ] || die "rehearsal harus menerapkan tepat 1 migrasi"
+dump_skema "$REH_DB" "$BK_DIR/skema-reh-akhir.sql"
+HSL="$(skema_tambahan "$BK_DIR/skema-reh-awal.sql" "$BK_DIR/skema-reh-akhir.sql" "$NEW_DIR/backend/prisma/migrations/${MIG_NAME}/migration.sql")" || { printf '%s\n' "$HSL"; die "tambahan skema tidak sesuai migrasi"; }; ok "tambahan skema: $HSL"
 RC="$(docker exec "$PG" psql -U "$DB_USER" -d "$REH_DB" -At -c "select (select count(*) from meta_ad_daily_spend), (select count(*) from meta_sync_runs)")"; ok "rehearsal lulus; spend|run di salinan = ${RC}"
 bersih; REH_DB=""
 if [ "$MODE" = rehearsal ]; then
