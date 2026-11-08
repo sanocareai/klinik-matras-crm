@@ -12,6 +12,7 @@ import { disconnectSocket } from "./lib/socket.js";
 import { PAGES, RouteFallback, standalonePageFor } from "./routes/pageRegistry.jsx";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary.jsx";
 import { TabsProvider } from "./lib/TabsContext.jsx";
+import { aturUlangPeriodeFinance } from "@/lib/periodeBersama.js";
 
 // D-143 (9 September 2026) — daftar halaman (lazy import + path) dipindah ke
 // routes/pageRegistry.jsx (satu sumber kebenaran, dipakai juga oleh sistem
@@ -59,6 +60,7 @@ export default function App() {
         .catch(() => { /* IndexedDB tidak tersedia: tidak ada yang perlu dibersihkan */ });
     }
     deactivateDemo(); // Mode Latihan selalu mati saat keluar (default OFF untuk pengguna berikutnya)
+    aturUlangPeriodeFinance(); // rentang tanggal Finance bersama kembali ke bulan berjalan (tidak diwarisi pengguna berikutnya)
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     disconnectSocket();
@@ -91,6 +93,7 @@ export default function App() {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
     } catch {}
+    try { aturUlangPeriodeFinance(); } catch {}
 
     // Unregister SW + hapus cache — best-effort, JANGAN sampai gagal disini
     // membuat redirect di bawah tidak jalan (makanya di-wrap try/catch

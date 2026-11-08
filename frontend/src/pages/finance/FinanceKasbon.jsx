@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { Plus, HandCoins, Pencil, History } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -18,7 +19,7 @@ import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
+  StatusBadge, Pilihan, InputUang, PeriodePicker, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
@@ -76,7 +77,7 @@ export default function FinanceKasbon() {
   const [status, setStatus] = useState("AKTIF");
   const [q, setQ] = useState("");
   const [fKaryawan, setFKaryawan] = useState("");
-  const [periode, setPeriode] = useState(periodeDefault); // sama dengan tab Pengeluaran/Pembelian: bulan berjalan (WIB) sebagai bawaan
+  const [periode, setPeriode] = usePeriodeFinance(); // sama dengan tab Pengeluaran/Pembelian: bulan berjalan (WIB) sebagai bawaan
   const qTunda = useTertunda(q);
   const pernahMuat = useRef(false);
 

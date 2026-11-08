@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { Plus, Undo2, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -12,7 +13,7 @@ import { rekeningUntukAkun, butuhRekening, rekeningBarisValid } from "@/features
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, JudulKartu, Penjelasan, TombolAksi, StatusBadge,
-  Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
+  Pilihan, InputUang, PeriodePicker, tanggalPendek,
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
@@ -32,7 +33,7 @@ import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 // angkanya secara diam-diam.
 
 export default function FinanceJournal() {
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const [filter, setFilter] = useState({ source: "", status: "" });
   // Pencarian tetap dikirim ke server; ketikan ditunda supaya API tidak ditembak tiap huruf.
   const [q, setQ] = useState("");

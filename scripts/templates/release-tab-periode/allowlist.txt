@@ -1,0 +1,17 @@
+frontend/src/App.jsx
+frontend/src/components/TabbedContent.jsx
+frontend/src/lib/periodeBersama.js
+frontend/src/lib/posisiScrollTab.js
+frontend/src/pages/finance/FinanceCash.jsx
+frontend/src/pages/finance/FinanceDashboard.jsx
+frontend/src/pages/finance/FinanceExpenses.jsx
+frontend/src/pages/finance/FinanceJournal.jsx
+frontend/src/pages/finance/FinanceKasbon.jsx
+frontend/src/pages/finance/FinanceLedger.jsx
+frontend/src/pages/finance/FinancePayments.jsx
+frontend/src/pages/finance/FinancePemasukan.jsx
+frontend/src/pages/finance/FinancePenjualanKaryawan.jsx
+frontend/src/pages/finance/FinancePurchases.jsx
+frontend/src/pages/finance/FinanceReports.jsx
+frontend/tests/periodeBersama.test.js
+frontend/tests/posisiScrollTab.test.js

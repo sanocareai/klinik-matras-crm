@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { useUrlTab } from "@/lib/useUrlTab.js";
 import { ChevronDown, ChevronUp, ShieldCheck, Split, Eye, PenLine, FileEdit, History } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
@@ -6,7 +7,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
-import { HalamanFinance, formatUang, TombolAksi, periodeDefault, tanggalJam, InputUang } from "@/features/finance/shared.jsx";
+import { HalamanFinance, formatUang, TombolAksi, tanggalJam, InputUang } from "@/features/finance/shared.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import KartuSelisihSalesFinance from "@/features/finance/KartuSelisihSalesFinance.jsx";
@@ -132,7 +133,7 @@ function Bantuan({ gate, periode, ke, selisihTerbuka = false }) {
 
 export default function FinancePayments() {
   const [tab, setTabUrl] = useUrlTab(TAB_URL, "perlu"); // ?tab= (deep-link hub Penjualan & Piutang)
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const [hasil, setHasil] = useState(null); // { tabData, semua, _kunci }
   const [galat, setGalat] = useState(null);
   const [memuat, setMemuat] = useState(true);

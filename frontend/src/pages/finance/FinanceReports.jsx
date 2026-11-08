@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { AlertTriangle } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -19,7 +20,7 @@ import { PENJELASAN_LABA_BERJALAN, barisGrafikLabaRugi, barisLabaRugi, labelSald
 import { SEKSI, penandaMutu, formatCutoff, ringkasKontrol, bodyExport, bisaDrilldown } from "@/features/finance/laporanTerinci/logic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
-  PeriodePicker, periodeDefault, tanggalPendek, LABEL_TIPE_AKUN,
+  PeriodePicker, tanggalPendek, LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
 
 // LAPORAN KEUANGAN — empat laporan baku dalam satu halaman bertab.
@@ -41,7 +42,7 @@ const TAB = [
 
 export default function FinanceReports() {
   const [tab, setTab] = useState("labarugi");
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   const [data, setData] = useState({});
   const [terinci, setTerinci] = useState(null);
   const [terinciGalat, setTerinciGalat] = useState("");
