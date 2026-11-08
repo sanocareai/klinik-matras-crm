@@ -1,5 +1,5 @@
 Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya. Rollback kode TIDAK dinyatakan aman otomatis (lihat batas di bawah). Bila rollback diputuskan setelah switch:
-Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (bbc79b3e); keduanya memuat transisi satuan, pembaca satuan asal, dan frontend Gelombang 1; gerbang kode live membuktikan kode di container == folder == baseline disetujui sebelum switch.
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (3714f357); keduanya memuat transisi satuan, pembaca satuan asal, dan frontend Gelombang 1 dan 2; gerbang kode live membuktikan kode di container == folder == baseline disetujui sebelum switch.
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    (recreate backend dari folder release sebelumnya dengan image rollback; web = dist folder sebelumnya)
