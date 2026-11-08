@@ -40,6 +40,9 @@ Koneksi chat (`metaads_…`) milik sesi konektor dan tidak otomatis tersedia unt
 ## Rollout
 1. Rilis kode: `scripts/release-meta-composio.sh` (flag OFF). 2. Pasang konfigurasi; `--cek`. 3. `--dry --dari=2026-10-01 --sampai=<kemarin>`. 4. Setelah disetujui: flag ON, `--commit` rentang sama, `--verify`. 5. Pasang `scripts/meta-composio-sync-cron.sh` (blok di kepala berkas, tiap 3 jam). 6. Klaim AUTO SYNC hanya setelah run terjadwal terbukti dan data diverifikasi independen.
 
+## Pemeriksaan skema rehearsal
+`scripts/lib/skema-hash.sh` disisipkan generator ke skrip rilis, jadi tidak bergantung pada berkas sementara. Fase rehearsal berhenti bila: restore punya galat selain role `mcp_hub_readonly` yang hilang, dump gagal/kosong/pendek, skema salinan berbeda dari sumber sebelum migrasi, atau tambahan sesudah migrasi tidak persis objek migrasi. Normalisasi hanya membuang komentar, token `\restrict`, koma akhir baris, serta cast varchar/text dan kurung redundan pada baris CHECK.
+
 ## Penghentian dan rollback
 - Hentikan sync: cabut blok cron, `COMPOSIO_META_SYNC_ENABLED=false`. Histori tetap.
 - Rollback kode: `bash /tmp/mcs.sh <DEPLOY> <BASE> --rollback`. Migrasi aditif dibiarkan.

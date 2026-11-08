@@ -22,6 +22,7 @@ sg() { git --git-dir="$SRC" "$@"; }
 dcp() { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
 psql_live() { docker exec -i "$PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
 bebas_kb() { df -Pk "$HOME" | awk 'NR==2{print $4}'; }
+@@SKEMA_LIB@@
 bersih() { if [ -n "$REH_DB" ]; then docker exec "$PG" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS ${REH_DB}" >/dev/null 2>&1 || true; fi; }
 trap 'rc=$?; bersih; [ $rc -ne 0 ] && printf "Berhenti di fase %s. Setelah switch saja: bash /tmp/mcs.sh %s %s --rollback\n" "$PHASE" "$DEPLOY_SHA" "$BASE_SHA"; exit $rc' EXIT
 
@@ -90,8 +91,14 @@ ok "image baru dibangun; rollback ${ROLLBACK_TAG}"
 PHASE=4r; say "4r. Rehearsal migrasi pada salinan backup"
 REH_DB="rehearsal_mcs_${DEPLOY_SHORT}"; docker exec "$PG" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS ${REH_DB}" -c "CREATE DATABASE ${REH_DB}"
 gzip -dc "$BACKUP_FILE" | docker exec -i "$PG" psql -U "$DB_USER" -d "$REH_DB" -q > "$BK_DIR/restore.log" 2>&1 || true
+RE_LAIN="$(grep -E 'ERROR:|FATAL:' "$BK_DIR/restore.log" | grep -vc 'role "mcp_hub_readonly" does not exist' || true)"; [ "$RE_LAIN" = 0 ] || { grep -E 'ERROR:|FATAL:' "$BK_DIR/restore.log" | head -n 5 | cut -c1-160; die "restore rehearsal punya galat selain role hilang"; }
+dump_skema() { docker exec "$PG" pg_dump -U "$DB_USER" -d "$1" -s --no-owner --no-privileges > "$2" </dev/null || die "dump skema $1 gagal"; [ -s "$2" ] || die "dump skema $1 kosong"; }
+dump_skema "$DB_NAME" "$BK_DIR/skema-live.sql"; dump_skema "$REH_DB" "$BK_DIR/skema-reh-awal.sql"
+HSL="$(skema_banding "$BK_DIR/skema-live.sql" "$BK_DIR/skema-reh-awal.sql")" || { printf '%s\n' "$HSL"; die "skema salinan tidak identik dengan sumber"; }; ok "skema lama identik: $HSL"
 dcp "$NEW_DIR" run --rm --no-deps -T --entrypoint sh -e "RDB=${REH_DB}" backend -c 'DATABASE_URL="$(printf %s "$DATABASE_URL" | sed "s#/[^/?]*\(?.*\)\?\$#/$RDB\1#")" npx prisma migrate deploy' </dev/null > "$BK_DIR/migrate-reh.log" 2>&1 || { tail -n 15 "$BK_DIR/migrate-reh.log"; die "migrasi rehearsal gagal"; }
 [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-reh.log")" = 1 ] || die "rehearsal harus menerapkan tepat 1 migrasi"
+dump_skema "$REH_DB" "$BK_DIR/skema-reh-akhir.sql"
+HSL="$(skema_tambahan "$BK_DIR/skema-reh-awal.sql" "$BK_DIR/skema-reh-akhir.sql" "$NEW_DIR/backend/prisma/migrations/${MIG_NAME}/migration.sql")" || { printf '%s\n' "$HSL"; die "tambahan skema tidak sesuai migrasi"; }; ok "tambahan skema: $HSL"
 RC="$(docker exec "$PG" psql -U "$DB_USER" -d "$REH_DB" -At -c "select (select count(*) from meta_ad_daily_spend), (select count(*) from meta_sync_runs)")"; ok "rehearsal lulus; spend|run di salinan = ${RC}"
 bersih; REH_DB=""
 if [ "$MODE" = rehearsal ]; then
