@@ -12,7 +12,14 @@ Sumber data: Meta Marketing API (`source = META_MARKETING_API`, prioritas 1). Tr
 | `META_ADS_ACCOUNT_ID` | `2081614415911241` |
 | `COMPOSIO_META_SYNC_ENABLED` | `true` untuk mengizinkan commit; bawaan OFF |
 
-Pemasangan: buat project/API key dan hubungkan Meta di dashboard Composio, tambahkan nama di atas ke `.env` lewat editor di VPS (jangan lewat argumen perintah), recreate backend, lalu `--cek`.
+## Prosedur konfigurasi backend (dikerjakan pemilik akun, nilai tidak pernah masuk chat)
+Koneksi chat (`metaads_…`) milik sesi konektor dan tidak otomatis tersedia untuk backend.
+1. Dashboard Composio: pilih atau buat project khusus SANSS, buat API key project itu. Key terikat project.
+2. Di project itu, hubungkan toolkit Meta Ads dengan akun yang berhak baca iklan `2081614415911241`. Catat ID `ca_…` dan user_id koneksinya. Bila hanya ada koneksi di project lain, buat koneksi baru di sini.
+3. Tetapkan versi tool: lihat versi toolkit `metaads` terbaru di dashboard atau `GET /api/v3.1/tools/METAADS_GET_INSIGHTS`, salin versi tanggalnya (bukan `latest`). Saat menaikkan versi, ulangi langkah 6.
+4. Secret: buka `~/klinik-matras/backend/.env` lewat editor di VPS (bukan argumen perintah, riwayat shell, atau chat). Isi nama di atas; biarkan `COMPOSIO_META_SYNC_ENABLED` kosong atau false. Ini perubahan env produksi, butuh persetujuan.
+5. Recreate backend agar env terbaca, lalu `--cek`. Hasil harus `SIAP`, akun benar, IDR, Asia/Jakarta. `AKSES_COMPOSIO_DITOLAK` = key/project salah; `TOOL_GAGAL` atau `HTTP_4xx` = connected account atau versi salah.
+6. Bukti REST nyata, tanpa flag: `--dry --dari=<hari penuh> --sampai=<hari yang sama>`. Periksa: status `DRY_RUN`; `kontrolSpend` = `adSpend`, selisih 0; ringkasan referensi 0 konflik; spend 0 ditolak/konflik. Lalu rentang 1 Okt–kemarin untuk pagination nyata. Dry-run hanya menulis catatan `meta_sync_runs`. Replay dari chat tidak menggantikan langkah ini.
 
 ## Mode
 `docker exec klinik-matras-backend-1 node scripts/sync-meta-composio.js --cek | --dry | --commit | --verify [--dari=… --sampai=…]`. Tanpa rentang: rolling 7 hari penuh sampai kemarin WIB. Hari berjalan ditolak. Keluar 0 sukses, 3 tidak siap/belum direkonsiliasi, 2 gagal.
@@ -21,9 +28,12 @@ Pemasangan: buat project/API key dan hubungkan Meta di dashboard Composio, tamba
 - Tool yang bisa dipanggil hanya `METAADS_GET_INSIGHTS`, `METAADS_GET_OBJECT`, `METAADS_GET_MULTIPLE_OBJECTS`.
 - Percakapan platform: `onsite_conversion.messaging_conversation_started_7d`, kolom `value`. Kolom `7d_click` tidak dipakai. Contoh 7 Nov 2026: value 79, 7d_click 77. `action_attribution_windows=["7d_click"]` dikirim; `action_report_time` tidak tersedia di tool sehingga memakai bawaan Meta. Keduanya dicatat di `meta_sync_runs.attribution`.
 - Hari dengan selisih kontrol (spend sen, impressions, klik) atau konflik hierarki ditahan utuh dan run berstatus `BELUM_DIREKONSILIASI`. Selisih percakapan hanya informasi.
-- Status hari: `DELIVERY_TERVERIFIKASI`, `NOL_TERVERIFIKASI`, `TANPA_DELIVERY` (bukan bukti Rp0), `BELUM_REKONSILIASI`, `DITAHAN_KONFLIK`; di verify juga `DATA_HILANG`. Gerbang KPI laporan tidak diubah: hari tanpa baris spend tetap membuat CPA/ROAS null.
+- Status hari: `DELIVERY_TERVERIFIKASI`; `NOL_TERVERIFIKASI` (baris kontrol spend 0, atau kontrol kosong yang dikonfirmasi tarikan ulang per hari yang berhasil dan lengkap, tanpa spend tersimpan); `DATA_TIDAK_LENGKAP` (gagal tarik, kontrol ulang tidak konsisten, atau spend tersimpan tetapi API kosong); `BELUM_REKONSILIASI`; `DITAHAN_KONFLIK`.
+- Hanya `NOL_TERVERIFIKASI` yang menutup hari di laporan. Tidak dibuat baris spend Rp0. Seluruh periode nol: spend total 0, CPL/CPA 0 bila penyebut ada, null `BELUM_ADA_KONVERSI` bila penyebut 0, ROAS null `SPEND_NOL`. Hari lain tetap membuat KPI null. Batas bukti: Meta tidak mengirim baris untuk hari tanpa delivery, sehingga nol jenis kedua adalah "API konsisten menyatakan tidak ada", bukan angka 0 eksplisit.
 - Breakdown ada di `meta_account_daily_breakdowns`, tidak dijumlahkan ke laporan. Reach non-aditif: contoh 7 Nov Σ posisi 47.049 vs reach platform 45.085.
-- Hook rate: `hookRate()`, Σ pemutaran 3 detik ÷ Σ impressions Ad bermetrik video.
+- Hook rate versi `HOOK_V1_3S_PER_IMPRESSION_VIDEO`: Σ `actions[video_view]` ÷ Σ impressions baris Ad video yang punya metrik itu. Creative tanpa `video_id` dikeluarkan. Metrik null tidak dianggap nol: keluar dari penyebut dan menurunkan coverage (`impressionsVideoTanpaMetrik`, `impressionsTidakDiketahui`). Versi tersimpan di tiap run dan tampil di panel. Hanya bandingkan dengan versi sama.
+- `hariAdaSpend`: gabungan tanggal antar-Ad. Sebelumnya total selalu 0 dan baris gabungan memakai maksimum per Ad. Hanya tampilan; status biaya dan KPI memakai `hariHilang`.
+- Ad ber-touch tanpa referensi: `lengkapiReferensiTouch` membaca hierarki resmi per ID, termasuk Ad tanpa spend. Konflik tidak ditimpa, Ad tak terbaca dilaporkan.
 - Thumbnail tidak disimpan karena URL CDN bertanda tangan dan kedaluwarsa.
 
 ## Rollout

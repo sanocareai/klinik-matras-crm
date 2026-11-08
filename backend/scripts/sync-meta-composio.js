@@ -2,6 +2,7 @@
 //   node scripts/sync-meta-composio.js --cek                                  konfigurasi + akun (tanpa tulis)
 //   node scripts/sync-meta-composio.js --dry    [--dari=YYYY-MM-DD --sampai=YYYY-MM-DD]   tarik + rencana; hanya mencatat run
 //   node scripts/sync-meta-composio.js --commit [--dari --sampai]              tulis (wajib flag ON)
+//   Commit dan dry-run juga mengambil hierarki resmi Ad ber-touch tanpa referensi (termasuk Ad tanpa spend); konflik tidak ditimpa.
 //   node scripts/sync-meta-composio.js --verify [--dari --sampai]              DB (terpilih) vs kontrol akun sekarang
 // Tanpa --dari/--sampai: rolling 7 hari penuh sampai kemarin WIB. Keluaran JSON agregat; nilai kredensial tidak pernah dicetak.
 // Kode keluar: 0 sukses/terverifikasi | 3 tidak siap, sedang berjalan, atau belum direkonsiliasi | 2 gagal.

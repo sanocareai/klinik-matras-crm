@@ -3,7 +3,7 @@ import "./setup/env.js";
 const { default: test } = await import("node:test");
 const { default: assert } = await import("node:assert/strict");
 const { testPrisma: db, truncateAll } = await import("./setup/testDb.js");
-const { jalankanSinkronComposio, statusSinkronMeta } = await import("../../src/services/attribution/composioMetaSync.js");
+const { jalankanSinkronComposio, statusSinkronMeta, ringkasHookRate, lengkapiReferensiTouch } = await import("../../src/services/attribution/composioMetaSync.js");
 const { jalankanImporSpend, ringkasanSpendHarian, muatSpendPerAd } = await import("../../src/services/attribution/spend.js");
 
 const AKUN = "2081614415911241", H1 = "2026-11-05", H2 = "2026-11-06";
@@ -93,8 +93,8 @@ test("kegagalan halaman: run GAGAL, tidak ada impor parsial, histori utuh; respo
   const r = await jalan(w); assert.equal(r.status, "GAGAL"); assert.equal(r.failureCode, "HTTP_400"); assert.equal(await db.metaAdDailySpend.count(), n);
   assert.equal((await statusSinkronMeta(db)).terakhirDicoba.alasanGagal, "HTTP_400");
   const kosong = await jalan({ ad: [], kontrol: [] });
-  assert.equal(kosong.status, "SUKSES"); assert.equal(await db.metaAdDailySpend.count(), n);
-  const [c] = await db.$queryRaw`select status from meta_account_daily_control where date_wib=${new Date(`${H1}T00:00:00Z`)}`; assert.equal(c.status, "TANPA_DELIVERY");
+  assert.equal(kosong.status, "BELUM_DIREKONSILIASI", "spend tersimpan vs API kosong = kontradiksi"); assert.equal(await db.metaAdDailySpend.count(), n);
+  const [c] = await db.$queryRaw`select status from meta_account_daily_control where date_wib=${new Date(`${H1}T00:00:00Z`)}`; assert.equal(c.status, "DATA_TIDAK_LENGKAP", "bukan Rp0");
   assert.equal((await jalan({ ad: [], kontrol: [] }, "verify")).hari[0].status, "DB_ADA_KONTROL_TIDAK", "verify menandai, tidak menyatakan cocok");
 });
 test("kunci: run kedua ditolak saat ada yang berjalan; run basi diambil alih", async () => {

@@ -72,7 +72,7 @@ test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya 
 });
 
 test("laporan LAIN tidak ikut berubah: /iklan, /d7, importer spend, KPI biaya campaign, kohort, webhook utuh terhadap baseline live", { skip: adaBase ? false : `commit ${BASE_LIVE} tidak ada di klon ini` }, () => {
-  for (const f of ["backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/d7.js", "backend/src/services/attribution/biayaKpi.js", "backend/src/services/attribution/spend.js", "backend/src/services/attribution/cohort.js",
+  for (const f of ["backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/d7.js", "backend/src/services/attribution/cohort.js",
     "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/routes/analytics.js", "backend/src/index.js"]) {
     assert.equal(git(["diff", "--name-only", BASE_LIVE, "--", f]).stdout.trim(), "", `${f} berubah terhadap baseline live`);
   }

@@ -6,7 +6,7 @@ import crypto from "crypto";
 import { jalankanImporSpend } from "./spend.js";
 import { jalankanImpor } from "./adReferensi.js";
 import { ErrSinkron } from "./spendSyncMeta.js";
-import { ATRIBUSI, BREAKDOWN, FLAG_SYNC_COMPOSIO, TRANSPORT, barisDelivery, barisImporter, buatKlien, konfigurasiComposio, konfigurasiKurang, rekonsiliasiHarian, rpKeSen, senKeRp } from "./composioMeta.js";
+import { ATRIBUSI, BREAKDOWN, HOOK_RATE_DEFINISI, hookRate, FLAG_SYNC_COMPOSIO, TRANSPORT, barisDelivery, barisImporter, buatKlien, konfigurasiComposio, konfigurasiKurang, rekonsiliasiHarian, rpKeSen, senKeRp } from "./composioMeta.js";
 
 export const HARI_ROLLING = 7;
 const BASI_MENIT = 45;
@@ -24,7 +24,7 @@ async function ambilKunci(db, akun, mode, dari, sampai) {
   await db.$executeRaw`UPDATE meta_sync_runs SET status='DITINGGALKAN', failure_code='RUN_BASI', finished_at=now() WHERE account_id=${akun} AND status='RUNNING' AND started_at < now() - make_interval(mins => ${BASI_MENIT}::int)`;
   const id = crypto.randomUUID();
   try {
-    await db.$executeRaw`INSERT INTO meta_sync_runs (id, account_id, transport, mode, status, date_from, date_to, attribution) VALUES (${id}::uuid, ${akun}, ${TRANSPORT}, ${mode}, 'RUNNING', ${tgl(dari)}, ${tgl(sampai)}, ${JSON.stringify(ATRIBUSI)}::jsonb)`;
+    await db.$executeRaw`INSERT INTO meta_sync_runs (id, account_id, transport, mode, status, date_from, date_to, attribution) VALUES (${id}::uuid, ${akun}, ${TRANSPORT}, ${mode}, 'RUNNING', ${tgl(dari)}, ${tgl(sampai)}, ${JSON.stringify({ ...ATRIBUSI, hookRate: HOOK_RATE_DEFINISI })}::jsonb)`;
     return id;
   } catch (e) {
     if (/23505|meta_sync_runs_satu_berjalan/.test(`${e?.meta?.code ?? ""} ${e?.message ?? ""}`)) return null;
@@ -77,7 +77,14 @@ async function prosesPotongan(db, klien, { potongan, zona, commit, runId, now })
   const akun = klien.akun;
   const dataAd = await klien.insightsAd(potongan.dari, potongan.sampai);
   const dataKontrol = await klien.kontrolAkun(potongan.dari, potongan.sampai);
+  // Hari tanpa baris sama sekali: Rp0 hanya bila kontrol harian ditarik ulang, berhasil, lengkap, dan tetap kosong. Bila baris muncul, hari itu tidak lengkap.
   const hari = rekonsiliasiHarian(daftarHari(potongan.dari, potongan.sampai), dataAd, dataKontrol);
+  for (const h of hari.filter((x) => x.status === "PERLU_KONFIRMASI")) {
+    const ulang = await klien.kontrolAkun(h.tanggal, h.tanggal);
+    const [{ n }] = await db.$queryRaw`SELECT count(*)::int AS n FROM meta_ad_daily_spend WHERE account_id=${akun} AND date_wib=${tgl(h.tanggal)} AND spend > 0`;   // spend tersimpan vs API kosong = kontradiksi, bukan nol
+    if (ulang.length === 0 && n === 0) Object.assign(h, { status: "NOL_TERVERIFIKASI", rekonsiliasi: true, kontrolSpend: "0.00", dasarNol: "KONTROL_KOSONG_TERKONFIRMASI" });
+    else Object.assign(h, { status: "DATA_TIDAK_LENGKAP", rekonsiliasi: false });
+  }
   const rows = barisImporter(dataAd).map((r, i) => ({ ...r, baris: i + 1 }));
   const ditahan = new Map();
   for (const h of hari) if (!h.rekonsiliasi) ditahan.set(h.tanggal, "SELISIH_KONTROL");
@@ -150,6 +157,7 @@ export async function jalankanSinkronComposio(db, { mode = "cek", dari = null, s
       checkpoint = p.sampai;
       if (mode === "commit") await db.$executeRaw`UPDATE meta_sync_runs SET checkpoint_date=${tgl(checkpoint)} WHERE id=${runId}::uuid`;
     }
+    const refTouch = await lengkapiReferensiTouch(db, klien, { commit: mode === "commit", now });
     const hari = hasilPotongan.flatMap((x) => x.hari); const ditahan = hari.filter((h) => h.alasanTahan);
     const bersih = hari.filter((h) => !h.alasanTahan);
     let lengkap = null; for (const h of hari) { if (h.alasanTahan) break; lengkap = h.tanggal; }   // lengkap sampai: hari tak-ditahan beruntun dari awal rentang
@@ -157,12 +165,14 @@ export async function jalankanSinkronComposio(db, { mode = "cek", dari = null, s
       status: ditahan.length ? "BELUM_DIREKONSILIASI" : mode === "dry" ? "DRY_RUN" : "SUKSES", checkpoint, lengkapSampai: mode === "commit" ? lengkap : null,
       kontrolSpend: jumlahRp(bersih.map((h) => h.kontrolSpend)), adSpend: jumlahRp(bersih.map((h) => h.adSpend)), selisih: jumlahRp(ditahan.map((h) => h.selisihSpend)),
       hariCocok: bersih.length, hariDitahan: ditahan.length, unmapped: hasilPotongan.reduce((a, x) => a + x.unmapped, 0),
-      ringkas: { hari: hari.map((h) => ({ t: h.tanggal, s: h.status, ads: h.barisAd, kontrol: h.kontrolSpend, ad: h.adSpend, tahan: h.alasanTahan, selisihKonversasi: h.selisihKonversasi })), peringatan: hasilPotongan.flatMap((x) => x.peringatan), referensi: hasilPotongan.map((x) => x.referensi ?? x.referensiDry), spend: hasilPotongan.map((x) => x.spend ?? x.spendDry) },
+      ringkas: { hari: hari.map((h) => ({ t: h.tanggal, s: h.status, ads: h.barisAd, kontrol: h.kontrolSpend, ad: h.adSpend, tahan: h.alasanTahan, selisihKonversasi: h.selisihKonversasi })), referensiTouch: refTouch, peringatan: hasilPotongan.flatMap((x) => x.peringatan), referensi: hasilPotongan.map((x) => x.referensi ?? x.referensiDry), spend: hasilPotongan.map((x) => x.spend ?? x.spendDry) },
     };
     await tutupRun(db, runId, r);
     return { runId, mode, rentang: { dari: d, sampai: s }, ...r, atribusi: ATRIBUSI };
   } catch (e) {
     const kode = e instanceof ErrSinkron ? e.kode : String(e?.code || e?.name || "ERROR").slice(0, 60);
+    // gagal tarik: hari yang belum terbukti ditandai tidak lengkap; hari yang sudah terbukti tidak ditimpa dan tidak pernah menjadi Rp0
+    if (mode === "commit") for (const t of daftarHari(checkpoint ? geser(checkpoint, 1) : d, s)) await db.$executeRaw`INSERT INTO meta_account_daily_control (date_wib, account_id, status, reconciled, transport, run_id, fetched_at) VALUES (${tgl(t)}, ${klien.akun}, 'DATA_TIDAK_LENGKAP', false, ${TRANSPORT}, ${runId}::uuid, ${now}) ON CONFLICT (date_wib, account_id) DO NOTHING`;
     await tutupRun(db, runId, { status: "GAGAL", failureCode: kode, checkpoint, ringkas: { potonganSelesai: hasilPotongan.length } });
     return { runId, mode, status: "GAGAL", failureCode: kode, checkpoint };
   }
@@ -173,22 +183,57 @@ async function verifikasi(db, klien, d, s) {
     await klien.verifikasiAkun();
     const kontrol = await klien.kontrolAkun(d, s);
     const db1 = await db.$queryRaw`SELECT date_wib::text AS t, sum(spend)::text AS spend, count(*)::int AS ads FROM (SELECT DISTINCT ON (date_wib, account_id, ad_id) date_wib, spend FROM meta_ad_daily_spend WHERE account_id=${klien.akun} AND date_wib>=${tgl(d)} AND date_wib<=${tgl(s)} ORDER BY date_wib, account_id, ad_id, CASE source WHEN 'META_MARKETING_API' THEN 1 WHEN 'WINDSOR_API' THEN 2 ELSE 3 END) x GROUP BY 1`;
+    const nolTersimpan = new Set((await db.$queryRaw`SELECT date_wib::text AS t FROM meta_account_daily_control WHERE account_id=${klien.akun} AND reconciled AND status='NOL_TERVERIFIKASI' AND date_wib>=${tgl(d)} AND date_wib<=${tgl(s)}`).map((x) => x.t));
     const perDb = new Map(db1.map((x) => [x.t, x])); const perK = new Map(kontrol.map((k) => [k.date_start, k]));
     const hari = daftarHari(d, s).map((t) => {
       const a = perDb.get(t), k = perK.get(t); const sa = a ? rpKeSen(Number(a.spend).toFixed(2)) : null, sk = k ? rpKeSen(k.spend) : null;
-      const status = !a && !k ? "TANPA_DELIVERY" : !a ? "DATA_HILANG" : !k ? "DB_ADA_KONTROL_TIDAK" : sa === sk ? "COCOK" : "SELISIH";
+      const status = !a && !k ? (nolTersimpan.has(t) ? "NOL_TERVERIFIKASI" : "DATA_TIDAK_LENGKAP") : !a ? "DATA_HILANG" : !k ? "DB_ADA_KONTROL_TIDAK" : sa === sk ? "COCOK" : "SELISIH";
       return { tanggal: t, status, db: a ? senKeRp(sa) : null, kontrol: k ? senKeRp(sk) : null, ads: a?.ads ?? 0 };
     });
-    return { status: hari.every((h) => h.status === "COCOK" || h.status === "TANPA_DELIVERY") ? "TERVERIFIKASI" : "BELUM_TERVERIFIKASI", rentang: { dari: d, sampai: s }, hari };
+    return { status: hari.every((h) => h.status === "COCOK" || h.status === "NOL_TERVERIFIKASI") ? "TERVERIFIKASI" : "BELUM_TERVERIFIKASI", rentang: { dari: d, sampai: s }, hari };
   } catch (e) { if (e instanceof ErrSinkron) return { status: "GAGAL", failureCode: e.kode }; throw e; }
 }
 
-/** Status untuk laporan/kesehatan: baca-saja, tidak memanggil Composio. */
-export async function statusSinkronMeta(db) {
+/** Ad ber-touch tanpa referensi: ambil hierarki resmi per ID (juga Ad tanpa spend), lewat importer. Konflik tidak ditimpa; Ad tak terbaca dilaporkan. */
+export async function lengkapiReferensiTouch(db, klien, { commit = false, now = new Date() } = {}) {
+  const baris = await db.$queryRaw`SELECT DISTINCT t.ad_id FROM attribution_touches t LEFT JOIN meta_ad_references r ON r.ad_id = t.ad_id WHERE t.ad_id IS NOT NULL AND r.ad_id IS NULL`;
+  const ids = baris.map((x) => String(x.ad_id)).filter((x) => /^\d{5,32}$/.test(x)).sort();
+  if (!ids.length) return { kandidat: 0, terbaca: 0, tidakTerbaca: 0, ringkasan: null };
+  const { rows, galat } = await klien.hierarkiAd(ids);
+  const hasil = rows.length ? await jalankanImpor(db, { rows, sumber: "MARKETING_API", dryRun: !commit, izinTransport: TRANSPORT, namaBerkas: "composio-referensi-touch", sekarang: now }) : null;
+  if (commit && hasil?.importId) await db.$executeRaw`UPDATE meta_ad_reference_imports SET transport=${TRANSPORT} WHERE id=${hasil.importId}::uuid`;
+  return { kandidat: ids.length, terbaca: rows.length, tidakTerbaca: galat.length, ringkasan: hasil?.ringkasan ?? null };
+}
+
+/** Hook rate rentang tanggal dari data tersimpan (definisi terkunci). Baca-saja. */
+export async function ringkasHookRate(db, { dari, sampai }) {
+  const rows = await db.$queryRaw`SELECT d.video_3s_views AS v, d.impressions AS i, r.campaign_id AS camp, CASE WHEN c.ad_id IS NULL THEN 'TIDAK_DIKETAHUI' WHEN c.video_id IS NULL THEN 'BUKAN_VIDEO' ELSE 'VIDEO' END AS jenis
+    FROM meta_ad_daily_delivery d LEFT JOIN meta_ad_creatives c ON c.ad_id = d.ad_id LEFT JOIN meta_ad_references r ON r.ad_id = d.ad_id WHERE d.date_wib >= ${tgl(dari)} AND d.date_wib <= ${tgl(sampai)}`;
+  const b = rows.map((x) => ({ video3s: x.v, impressions: x.i, jenis: x.jenis, camp: x.camp ?? "UNMAPPED" }));
+  const perCampaign = Object.fromEntries([...new Set(b.map((x) => x.camp))].sort().map((c) => [c, hookRate(b.filter((x) => x.camp === c))]));
+  return { definisi: HOOK_RATE_DEFINISI, rentang: { dari, sampai }, total: hookRate(b), perCampaign };
+}
+
+/** MURNI. Satu keadaan untuk panel, urutan sesuai yang paling perlu tindakan. */
+export function keadaanSinkron({ konfigKurang, aktif, coba, lengkapSampai, kemarin, adaBelumRekon }) {
+  if (coba?.status === "RUNNING") return "BERJALAN";
+  if (konfigKurang.length) return "BELUM_DIKONFIGURASI";
+  if (!aktif) return "NONAKTIF";
+  if (!coba) return "BELUM_PERNAH_BERJALAN";
+  if (coba.status === "GAGAL" || coba.status === "DITINGGALKAN") return "GAGAL";
+  if (coba.status === "BELUM_DIREKONSILIASI" || adaBelumRekon) return "SELISIH_KONTROL";
+  if (!lengkapSampai || lengkapSampai < kemarin) return "DATA_TERLAMBAT";
+  return "SUKSES";
+}
+
+/** Status untuk laporan/kesehatan: baca-saja, tidak memanggil Composio. Nama konfigurasi yang kurang boleh tampil; nilainya tidak pernah. */
+export async function statusSinkronMeta(db, { env = process.env, now = new Date() } = {}) {
   const [coba] = await db.$queryRaw`SELECT status, mode, started_at, finished_at, failure_code, selisih_spend::text AS selisih, unmapped_ads, days_held FROM meta_sync_runs ORDER BY started_at DESC LIMIT 1`;
   const [sukses] = await db.$queryRaw`SELECT finished_at, complete_through::text AS lengkap FROM meta_sync_runs WHERE mode='commit' AND status='SUKSES' ORDER BY finished_at DESC LIMIT 1`;
   const belum = await db.$queryRaw`SELECT date_wib::text AS tanggal, status FROM meta_account_daily_control WHERE NOT reconciled ORDER BY date_wib DESC LIMIT 30`;
+  const c = konfigurasiComposio(env); const konfigKurang = konfigurasiKurang(c); const kemarin = geser(hariWib(now), -1);
   return {
+    keadaan: keadaanSinkron({ konfigKurang, aktif: c.aktif, coba, lengkapSampai: sukses?.lengkap ?? null, kemarin, adaBelumRekon: belum.length > 0 }), flagAktif: c.aktif, konfigurasiKurang: konfigKurang, kemarin,
     transport: TRANSPORT, sumber: "META_MARKETING_API", pernahBerjalan: !!coba,
     terakhirDicoba: coba ? { waktu: coba.started_at, selesai: coba.finished_at, mode: coba.mode, status: coba.status, alasanGagal: coba.failure_code, selisihSpend: coba.selisih === null ? null : Number(coba.selisih), unmapped: coba.unmapped_ads, hariDitahan: coba.days_held } : null,
     terakhirSukses: sukses ? { waktu: sukses.finished_at } : null, dataLengkapSampai: sukses?.lengkap ?? null, hariBelumRekonsiliasi: belum,

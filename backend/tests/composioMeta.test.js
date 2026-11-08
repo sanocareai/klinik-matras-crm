@@ -73,7 +73,7 @@ test("rekonsiliasi: cocok, nol sah, tanpa delivery, selisih 1 rupiah, kontrol hi
   const [a, b, c, d, e] = rekonsiliasiHarian(h, [baris(h[0], "1"), baris(h[3], "1", "100"), baris(h[4], "1")], [k(h[0], "100"), { date_start: h[1], spend: "0" }, k(h[3], "101")]);
   assert.equal(a.status, "DELIVERY_TERVERIFIKASI"); assert.equal(a.rekonsiliasi, true);
   assert.equal(b.status, "NOL_TERVERIFIKASI"); assert.equal(b.kontrolSpend, "0.00");
-  assert.equal(c.status, "TANPA_DELIVERY"); assert.equal(c.kontrolSpend, null, "tanpa delivery bukan Rp0");
+  assert.equal(c.status, "PERLU_KONFIRMASI"); assert.equal(c.rekonsiliasi, false); assert.equal(c.kontrolSpend, null, "tanpa baris belum bukti Rp0");
   assert.equal(d.status, "BELUM_REKONSILIASI"); assert.equal(d.selisihSpend, "1.00");
   assert.equal(e.status, "BELUM_REKONSILIASI", "baris Ad tanpa kontrol");
 });
@@ -90,9 +90,12 @@ test("ID string, percakapan pakai value (bukan 7d_click) dan tipe yang sama; nul
   const [d] = barisDelivery([x]); assert.equal(d.video3s, 500n); assert.equal(d.thruplay, 20n);
   assert.equal(barisDelivery([baris("2026-11-07", "1")])[0].video3s, null);
 });
-test("hook rate dari agregat, bukan rata-rata persentase; Ad tanpa video tidak masuk penyebut; tanpa penyebut = null + alasan", () => {
-  const r = hookRate([{ video3s: 1n, impressions: 1n }, { video3s: 100n, impressions: 1000n }, { video3s: null, impressions: 5000n }]);
-  assert.equal(r.pembilang, 101); assert.equal(r.penyebut, 1001); assert.equal(r.nilai, 10.08);
+test("hook rate: video, image, metrik null, lintas Ad, coverage, versi", () => {
+  const r = hookRate([{ video3s: 1n, impressions: 1n, jenis: "VIDEO" }, { video3s: 100n, impressions: 1000n, jenis: "VIDEO" }, { video3s: null, impressions: 500n, jenis: "VIDEO" }, { video3s: null, impressions: 5000n, jenis: "BUKAN_VIDEO" }, { video3s: 9n, impressions: 9n, jenis: "BUKAN_VIDEO" }, { video3s: null, impressions: 99n, jenis: "TIDAK_DIKETAHUI" }]);
+  assert.equal(r.pembilang, 101); assert.equal(r.penyebut, 1001); assert.equal(r.nilai, 10.08, "bukan rata-rata (100% dan 10%)");
+  assert.equal(r.coverage.impressionsVideoTanpaMetrik, 500); assert.equal(r.coverage.impressionsBukanVideo, 5009); assert.equal(r.coverage.impressionsTidakDiketahui, 99); assert.equal(r.coverage.persen, 62.56);
+  assert.equal(r.versi, "HOOK_V1_3S_PER_IMPRESSION_VIDEO");
+  assert.equal(hookRate([{ video3s: 7n, impressions: 10n, jenis: "TIDAK_DIKETAHUI" }]).nilai, 70, "metrik 3 detik = bukti video");
   assert.deepEqual(hookRate([{ video3s: null, impressions: 9n }]).nilai, null);
   assert.equal(hookRate([]).alasan, "TANPA_IMPRESSIONS_VIDEO");
 });
@@ -112,4 +115,15 @@ test("log aman: berkas adapter tidak mencetak ke console; galat tidak memuat kun
   for (const f of ["composioMeta.js", "composioMetaSync.js"]) assert.ok(!/console\./.test(fs.readFileSync(new URL(`../src/services/attribution/${f}`, import.meta.url), "utf8")), f);
   const e = await klien(async () => ({ ok: true, status: 200, json: async () => ({ successful: false, error: `gagal untuk ${RAHASIA} nomor 6281234` }) })).kontrolAkun("2026-11-07", "2026-11-07").catch((x) => x);
   assert.ok(!String(e.message).includes(RAHASIA)); assert.ok(!String(e.message).includes("6281234")); assert.equal(e.kode, "TOOL_GAGAL");
+});
+
+test("KPI spend nol: penyebut ada = Rp0 per lead; penyebut nol = null + alasan; ROAS SPEND_NOL; bukan Infinity", async () => {
+  const { hitungBiayaBaris, normalisasiTarget } = await import("../src/services/attribution/biayaKpi.js");
+  const konteks = { sumberTerhubung: true, target: normalisasiTarget(null), kesegaran: { hariHilang: [], terlambat: false, termasukHariBerjalan: false } };
+  const adaLead = hitungBiayaBaris({ baris: { lead: { unik: 5, spam: 0, leadSah: 5 }, customerDenganOrder: 2, closingUtama: { customerLunasTerbuktiLedger: 1 }, bookedValue: 100, uangBersihLedger: 50 }, spend: { spend: 0, hariAdaSpend: 0 }, konteks });
+  assert.equal(adaLead.spend, 0); assert.equal(adaLead.cpl, 0); assert.equal(adaLead.cpa, 0); assert.equal(adaLead.bookedRoas, null); assert.equal(adaLead.alasanNull.bookedRoas, "SPEND_NOL");
+  const nol = hitungBiayaBaris({ baris: { lead: { unik: 0, spam: 0, leadSah: 0 } }, spend: { spend: 0, hariAdaSpend: 0 }, konteks });
+  assert.equal(nol.cpl, null); assert.equal(nol.alasanNull.cpl, "BELUM_ADA_KONVERSI"); assert.equal(nol.alasanNull.cpa, "BELUM_ADA_KONVERSI");
+  const hilang = hitungBiayaBaris({ baris: { lead: { unik: 5, spam: 0, leadSah: 5 } }, spend: null, konteks: { ...konteks, kesegaran: { hariHilang: ["2026-11-01"], terlambat: false } } });
+  assert.equal(hilang.spend, null); assert.equal(hilang.cpl, null); assert.equal(hilang.alasanNull.cpl, "SPEND_TIDAK_LENGKAP");
 });

@@ -11,6 +11,8 @@ export const TOOL_BACA = Object.freeze(["METAADS_GET_INSIGHTS", "METAADS_GET_OBJ
 // Atribusi yang dipakai dan dicatat tiap run. `value` pada actions = angka yang dipakai SANSS sejak awal (ACTION_PERCAKAPAN); kolom 7d_click sengaja tidak dipakai.
 // Tool METAADS_GET_INSIGHTS tidak punya parameter action_report_time, jadi berlaku bawaan Meta.
 export const ATRIBUSI = Object.freeze({ actionType: ACTION_PERCAKAPAN, nilaiDipakai: "value", actionAttributionWindows: ["7d_click"], actionReportTime: "BAWAAN_META_TIDAK_DAPAT_DISET_LEWAT_TOOL" });
+// Definisi hook rate terkunci. Angka hanya boleh dibandingkan dengan versi yang sama.
+export const HOOK_RATE_DEFINISI = Object.freeze({ versi: "HOOK_V1_3S_PER_IMPRESSION_VIDEO", pembilang: "actions[video_view].value (pemutaran 3 detik)", penyebut: "impressions baris Ad video yang punya metrik pemutaran 3 detik", agregasi: "Σ pembilang ÷ Σ penyebut; bukan rata-rata persentase", bukanVideo: "dikeluarkan dari pembilang dan penyebut", sebanding: "hanya dengan versi yang sama; histori berpenyebut lain tidak dibandingkan" });
 const BASE = "https://backend.composio.dev/api/v3.1/tools/execute";
 const FIELDS_AD = ["account_id", "account_currency", "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name", "spend", "impressions", "reach", "inline_link_clicks", "actions", "video_thruplay_watched_actions", "date_start", "date_stop"];
 const FIELDS_AKUN = ["account_id", "account_currency", "spend", "impressions", "inline_link_clicks", "actions", "date_start", "date_stop"];
@@ -109,6 +111,22 @@ export function buatKlien({ env = process.env, fetchFn = fetch, tidurFn = tidur,
     insightsAd: async (dari, sampai) => periksaBaris(await semuaHalaman(kueri(dari, sampai, "ad", FIELDS_AD)), dari, sampai),
     kontrolAkun: async (dari, sampai) => periksaBaris(await semuaHalaman(kueri(dari, sampai, "account", FIELDS_AKUN)), dari, sampai),
     breakdown: async (dari, sampai, dim) => periksaBaris(await semuaHalaman(kueri(dari, sampai, "account", ["spend", "impressions", "inline_link_clicks", "reach", "date_start", "date_stop"], { breakdowns: BREAKDOWN[dim] })), dari, sampai),
+    /** Hierarki resmi Ad, termasuk Ad tanpa spend di rentang mana pun. Hasil baris importer referensi; Ad tak terbaca dikembalikan terpisah, tidak ditebak. */
+    async hierarkiAd(adIds) {
+      const rows = []; const galat = [];
+      for (let i = 0; i < adIds.length; i += 50) {
+        const ids = adIds.slice(i, i + 50);
+        const d = await panggil("METAADS_GET_MULTIPLE_OBJECTS", { object_ids: ids, fields: ["id", "account_id", "name", "adset_id", "campaign_id", "adset{name}", "campaign{name}"] });
+        const peta = d.results ?? d.data ?? d;
+        for (const id of ids) {
+          const o = peta[id];
+          if (!o || o.error || String(o.id) !== id || !o.adset_id || !o.campaign_id) { galat.push(id); continue; }
+          if (o.account_id !== undefined && String(o.account_id) !== c.akun) throw new ErrSinkron("AKUN_SALAH");
+          rows.push({ adId: id, adSetId: String(o.adset_id), campaignId: String(o.campaign_id), adName: o.name ?? null, adSetName: o.adset?.name ?? null, campaignName: o.campaign?.name ?? null });
+        }
+      }
+      return { rows, galat };
+    },
     /** Creative per Ad, maksimum 50 per panggilan. Hasil { adId: objek }; objek gagal dikembalikan terpisah. */
     async objekAd(adIds) {
       const hasil = {}; const galat = [];
@@ -141,17 +159,29 @@ export const barisImporter = (data) => barisDariInsights(data);
 /** Metrik video per Ad-hari. Tidak ada aksi = null (bukan nol). video_view = pemutaran 3 detik. */
 export const barisDelivery = (data) => data.map((x) => ({ tanggal: x.date_start, adId: String(x.ad_id), video3s: nilaiAksi(x.actions, "video_view"), thruplay: nilaiAksi(x.video_thruplay_watched_actions, "video_view"), impressions: intN(x.impressions) }));
 
-/** Hook rate dari pembilang & penyebut agregat; penyebut hanya baris yang punya metrik video. Bukan rata-rata persentase. */
+/**
+ * Hook rate (HOOK_RATE_DEFINISI). jenis: VIDEO | BUKAN_VIDEO | TIDAK_DIKETAHUI (dari creative). Metrik 3 detik pada creative tak dikenal = bukti video; pada creative tanpa video_id = dikeluarkan.
+ * Metrik null TIDAK dianggap nol: baris video tanpa metrik keluar dari penyebut dan menurunkan coverage.
+ */
 export function hookRate(baris) {
-  let p = 0n, q = 0n;
-  for (const b of baris) if (b.video3s !== null && b.video3s !== undefined && b.impressions !== null && b.impressions !== undefined) { p += BigInt(b.video3s); q += BigInt(b.impressions); }
-  if (q === 0n) return { nilai: null, alasan: "TANPA_IMPRESSIONS_VIDEO", pembilang: Number(p), penyebut: 0 };
-  return { nilai: Number((p * 10000n) / q) / 100, alasan: null, pembilang: Number(p), penyebut: Number(q) };
+  let p = 0n, q = 0n, tanpaMetrik = 0n, bukan = 0n, takTahu = 0n;
+  for (const b of baris) {
+    const imp = b.impressions === null || b.impressions === undefined ? 0n : BigInt(b.impressions);
+    const ada = b.video3s !== null && b.video3s !== undefined;
+    if (b.jenis === "BUKAN_VIDEO") bukan += imp;
+    else if (ada && b.impressions !== null && b.impressions !== undefined) { p += BigInt(b.video3s); q += imp; }
+    else if (b.jenis === "VIDEO") tanpaMetrik += imp;
+    else takTahu += imp;
+  }
+  const dasarCoverage = q + tanpaMetrik + takTahu;
+  const coverage = { impressionsTerhitung: Number(q), impressionsVideoTanpaMetrik: Number(tanpaMetrik), impressionsBukanVideo: Number(bukan), impressionsTidakDiketahui: Number(takTahu), persen: dasarCoverage === 0n ? null : Number((q * 10000n) / dasarCoverage) / 100 };
+  if (q === 0n) return { versi: HOOK_RATE_DEFINISI.versi, nilai: null, alasan: "TANPA_IMPRESSIONS_VIDEO", pembilang: Number(p), penyebut: 0, coverage };
+  return { versi: HOOK_RATE_DEFINISI.versi, nilai: Number((p * 10000n) / q) / 100, alasan: null, pembilang: Number(p), penyebut: Number(q), coverage };
 }
 
 /**
  * Status per hari. Spend dibandingkan dalam sen (BigInt): selisih 1 sen pun = belum rekonsiliasi.
- * DELIVERY_TERVERIFIKASI | NOL_TERVERIFIKASI (kontrol ada, spend 0) | TANPA_DELIVERY (tarikan lengkap, tidak ada baris; BUKAN bukti Rp0) | BELUM_REKONSILIASI.
+ * DELIVERY_TERVERIFIKASI | NOL_TERVERIFIKASI (kontrol ada, spend 0) | PERLU_KONFIRMASI (tidak ada baris; belum bukti Rp0, wajib dikonfirmasi tarikan ulang per hari oleh pemanggil) | BELUM_REKONSILIASI.
  */
 export function rekonsiliasiHarian(hariList, barisAd, barisKontrol) {
   const perAd = new Map(); const kontrol = new Map(barisKontrol.map((k) => [k.date_start, k]));
@@ -165,7 +195,7 @@ export function rekonsiliasiHarian(hariList, barisAd, barisKontrol) {
   return hariList.map((tanggal) => {
     const a = perAd.get(tanggal); const k = kontrol.get(tanggal);
     const dasar = { tanggal, barisAd: a?.n ?? 0, adSpend: a ? senKeRp(a.spend) : null, kontrolSpend: null, kontrolImpressions: null, kontrolKlik: null, kontrolKonversasi: null, selisihSpend: null, selisihKonversasi: null };
-    if (!a && !k) return { ...dasar, status: "TANPA_DELIVERY", rekonsiliasi: true };
+    if (!a && !k) return { ...dasar, status: "PERLU_KONFIRMASI", rekonsiliasi: false };
     const ks = k ? sen(k.spend) : null;
     const out = { ...dasar, kontrolSpend: ks === null ? null : senKeRp(ks), kontrolImpressions: k ? intN(k.impressions) : null, kontrolKlik: k ? intN(k.inline_link_clicks) : null, kontrolKonversasi: k ? nilaiAksi(k.actions, ACTION_PERCAKAPAN) : null };
     if (ks === null || !a || a.tidakValid) {
