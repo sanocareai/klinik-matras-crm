@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { angka } from "../../akuisisiLogic.js";
 import { berurutan, pesanGalat } from "../../marketingData.js";
+import StatusSinkronMeta from "./StatusSinkronMeta.jsx";
 
 // Kesehatan capture + referensi pemetaan Ad → Ad Set → Campaign (BACA-SAJA; endpoint existing /kesehatan, /referensi, /ekspor-id). Impor pemetaan tetap lewat POST /api/atribusi/iklan/referensi
 // (dry-run default) — belum ada layar impor di aplikasi; panel ini menyediakan daftar ID untuk dicocokkan dengan Ads Manager/Windsor.
@@ -20,8 +21,8 @@ export default function KesehatanReferensi() {
   const muat = useCallback(async () => {
     setSibuk(true); setGalat(null);
     try {
-      const [k, r] = await Promise.all([api.getAtribusiKesehatan(), api.getAtribusiReferensi()]);
-      setD({ k, r });
+      const [k, r, s] = await Promise.all([api.getAtribusiKesehatan(), api.getAtribusiReferensi(), api.getSinkronMetaStatus().catch((e) => ({ galatStatus: e?.status ?? 0 }))]);
+      setD({ k, r, s });
     } catch (e) { setD(null); setGalat(pesanGalat(e, "Gagal memuat kesehatan atribusi.")); }
     finally { setSibuk(false); }
   }, []);
@@ -29,10 +30,11 @@ export default function KesehatanReferensi() {
   const ekspor = async () => { try { const r = await berurutan(() => api.getAtribusiEksporId()); unduhCsv(r.iklan || []); } catch (e) { setGalat(pesanGalat(e, "Gagal mengekspor ID iklan.")); } };
   if (sibuk && !d) return <Card className="!p-4"><p className="flex items-center gap-2 text-sm text-ink3"><Loader2 size={16} className="animate-spin" /> Memuat…</p></Card>;
   if (galat && !d) return <Card className="!p-4"><p className="text-sm text-red">{galat}</p></Card>;
-  const { k, r } = d;
+  const { k, r, s } = d;
   const Baris = ({ a, b }) => <div className="flex items-baseline justify-between gap-3 border-b border-line/50 py-1.5 last:border-0"><dt className="t-secondary text-[12.5px]">{a}</dt><dd className="m-0 text-right text-[13px] font-medium tabular-nums text-ink">{b}</dd></div>;
   return (
     <Card className="flex flex-col gap-3 !p-4" data-testid="panel-kesehatan">
+      <StatusSinkronMeta s={s} />
       <div className="grid gap-4 md:grid-cols-2">
         <dl className="m-0">
           <h4 className="mb-1 text-[13px] font-semibold text-ink">Kesehatan capture touch</h4>

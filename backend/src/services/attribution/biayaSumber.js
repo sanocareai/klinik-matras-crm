@@ -286,7 +286,12 @@ export async function muatAdHarianMetaDetail(db, { dari, sampai }) {
        WHERE date_wib >= ${new Date(`${dari}T00:00:00Z`)} AND date_wib <= ${new Date(`${sampai}T00:00:00Z`)}
        ORDER BY date_wib, account_id, ad_id, CASE source WHEN 'META_MARKETING_API' THEN 1 WHEN 'WINDSOR_API' THEN 2 ELSE 3 END)
     SELECT to_char(date_wib, 'YYYY-MM-DD') AS d, sum(spend)::text AS s, array_agg(DISTINCT source) AS src FROM terpilih GROUP BY date_wib`;
-  return { harian: new Map(rows.map((r) => [r.d, Number(r.s)])), sumber: new Map(rows.map((r) => [r.d, r.src])) };
+  const harian = new Map(rows.map((r) => [r.d, Number(r.s)])), sumber = new Map(rows.map((r) => [r.d, r.src]));
+  // hari nol eksplisit = Rp0 data Meta. Hari tanpa delivery teramati hanya melengkapi periode yang punya spend/nol eksplisit lain; hari tanpa bukti tetap tidak ada di peta (hilang)
+  const nol = await db.$queryRaw`SELECT to_char(date_wib, 'YYYY-MM-DD') AS d, status FROM meta_account_daily_control WHERE reconciled AND status IN ('NOL_TERVERIFIKASI', 'TIDAK_ADA_DELIVERY_TERAMATI') AND date_wib >= ${new Date(`${dari}T00:00:00Z`)} AND date_wib <= ${new Date(`${sampai}T00:00:00Z`)}`;
+  const adaAngka = rows.length > 0 || (nol || []).some((x) => x.status === "NOL_TERVERIFIKASI");
+  if (adaAngka) for (const { d } of nol || []) if (!harian.has(d)) { harian.set(d, 0); sumber.set(d, ["META_MARKETING_API"]); }
+  return { harian, sumber };
 }
 export async function muatAdHarianMeta(db, { dari, sampai }) { return (await muatAdHarianMetaDetail(db, { dari, sampai })).harian; }
 

@@ -8,6 +8,7 @@
 //
 // Fungsi `susun*` MURNI (tanpa DB) supaya bisa dites; fungsi `laporan*` / `rekap*` / `kesehatan*` memuat lewat service dan menjaga satu perhitungan sekaligus
 // lewat penjaga bersama (penjagaLaporan.js). Semua pemuatan berjalan di transaksi READ ONLY milik service atribusi.
+import { ringkasHookRate, statusSinkronMeta } from "./composioMetaSync.js";
 import { hitungLaporanIklan, parseParameterIklan, ParameterError, MAKS_HARI } from "./iklanReport.js";
 import { hitungKesehatanCapture } from "./captureHealth.js";
 import { ringkasanSpendHarian } from "./spend.js";
@@ -430,7 +431,8 @@ export async function kesehatanAtribusi(db, arg = {}, { now = new Date(), hitung
   }
   const capture = await hitungKesehatanCapture(db, { now });
   const spendHarian = await ringkasanSpendHarian(db, { dari: parameter.dari, sampai: parameter.sampai });
-  return susunKesehatan({ laporan, capture, spendHarian, lintasLevel });
+  const sinkronMeta = { ...(await statusSinkronMeta(db, { now })), hookRate: await ringkasHookRate(db, { dari: parameter.dari, sampai: parameter.sampai }) };
+  return { ...susunKesehatan({ laporan, capture, spendHarian, lintasLevel }), sinkronMeta };
 }
 
 export { MAKS_HARI };

@@ -12,7 +12,8 @@ const num = (s) => { if (s == null) return null; const m = String(s).replace(/Rp
 const apiGet = async (siapa, p) => { const r = await fetch(API + p, { headers: { Authorization: `Bearer ${T[siapa].token}` } }); return { status: r.status, json: await r.json().catch(() => null) }; };
 
 async function mulai() { return puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox", "--disable-gpu"] }); }
-async function buka(browser, siapa, rute, { lebar = 1440, tinggi = 900, hp = false, awal = null, prasiap = null } = {}) {
+async function bukaBase(browser, base, siapa, rute, opsi = {}) { return buka(browser, siapa, rute, { ...opsi, base }); }
+async function buka(browser, siapa, rute, { base = BASE, lebar = 1440, tinggi = 900, hp = false, awal = null, prasiap = null } = {}) {
   const ctx = await browser.createBrowserContext(); const page = await ctx.newPage(); page.setDefaultTimeout(30000);
   await page.setViewport({ width: lebar, height: tinggi, isMobile: hp, hasTouch: hp, deviceScaleFactor: hp ? 2 : 1 });
   await page.evaluateOnNewDocument((token, user, awalTabs) => { try { localStorage.setItem("token", token); localStorage.setItem("user", JSON.stringify(user)); if (awalTabs && !sessionStorage.getItem("__awal")) { localStorage.setItem("open-tabs:v1", awalTabs); sessionStorage.setItem("__awal", "1"); } } catch (e) {} }, T[siapa].token, T[siapa].user, awal);
@@ -23,7 +24,7 @@ async function buka(browser, siapa, rute, { lebar = 1440, tinggi = 900, hp = fal
   page.on("request", (r) => { if (/\/api\/(atribusi|analytics)/.test(r.url())) page.permintaan.push({ url: r.url().replace(/^https?:\/\/[^/]+/, ""), t: Date.now() }); });
   const client = await page.createCDPSession(); await client.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: DL, eventsEnabled: true, browserContextId: ctx.id }).catch(() => {});
   if (prasiap) await prasiap(page);   // mis. pasang intersepsi permintaan SEBELUM halaman memuat
-  await page.goto(BASE + rute, { waitUntil: "domcontentloaded" });
+  await page.goto(base + rute, { waitUntil: "domcontentloaded" });
   return page;
 }
 // Tunggu SALAH SATU elemen yang cocok tampak (tab shell yang disembunyikan boleh memuat elemen bertestid sama; waitForSelector hanya melihat yang pertama).
@@ -45,4 +46,4 @@ async function tungguUnduhan(cocok, sejak, ms = 40000) {
   return null;
 }
 const selesai = (nama) => { fs.writeFileSync(path.join(OUT, nama), JSON.stringify({ gagal, hasil }, null, 2)); console.log(`\n${hasil.length - gagal}/${hasil.length} lulus${gagal ? `, ${gagal} GAGAL` : ""}`); };
-module.exports = { puppeteer, fs, path, BASE, API, OUT, DL, SHOTS, T, tidur, ok, num, apiGet, mulai, buka, tunggu, teks, sel, urlKini, klikTeks, tungguUrl, foto, tungguUnduhan, selesai, hasilRef: () => ({ gagal, hasil }) };
+module.exports = { bukaBase, puppeteer, fs, path, BASE, API, OUT, DL, SHOTS, T, tidur, ok, num, apiGet, mulai, buka, tunggu, teks, sel, urlKini, klikTeks, tungguUrl, foto, tungguUnduhan, selesai, hasilRef: () => ({ gagal, hasil }) };

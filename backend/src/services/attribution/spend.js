@@ -275,17 +275,19 @@ export async function muatSpendPerAd(tx, { dari, sampai }) {
        WHERE date_wib >= ${d1} AND date_wib <= ${d2}
        ORDER BY date_wib, account_id, ad_id, CASE source WHEN 'META_MARKETING_API' THEN 1 WHEN 'WINDSOR_API' THEN 2 ELSE 3 END)
     SELECT ad_id, sum(spend)::text AS spend, sum(impressions)::text AS impressions, sum(link_clicks)::text AS link_clicks,
-           sum(platform_conversations)::text AS konversasi, count(DISTINCT date_wib)::int AS hari
+           sum(platform_conversations)::text AS konversasi, count(DISTINCT date_wib)::int AS hari, array_agg(DISTINCT date_wib::text) AS hari_list
       FROM terpilih GROUP BY ad_id`;
   const [kes] = await tx.$queryRaw`
-    SELECT (SELECT max(date_wib)::text FROM meta_ad_daily_spend) AS terakhir_tanggal,
+    SELECT GREATEST((SELECT max(date_wib) FROM meta_ad_daily_spend), (SELECT max(date_wib) FROM meta_account_daily_control WHERE reconciled AND status IN ('NOL_TERVERIFIKASI', 'TIDAK_ADA_DELIVERY_TERAMATI')))::text AS terakhir_tanggal,
+           (SELECT coalesce(array_agg(date_wib::text ORDER BY date_wib), '{}') FROM meta_account_daily_control WHERE reconciled AND status = 'TIDAK_ADA_DELIVERY_TERAMATI' AND date_wib >= ${d1} AND date_wib <= ${d2}) AS hari_kosong,
+           (SELECT coalesce(array_agg(date_wib::text ORDER BY date_wib), '{}') FROM meta_account_daily_control WHERE reconciled AND status = 'NOL_TERVERIFIKASI' AND date_wib >= ${d1} AND date_wib <= ${d2}) AS hari_nol,
            (SELECT max(created_at) FROM meta_spend_imports) AS terakhir_import,
            (SELECT count(*)::int FROM meta_ad_daily_spend WHERE date_wib >= ${d1} AND date_wib <= ${d2}) AS baris_di_rentang,
            (SELECT coalesce(array_agg(DISTINCT date_wib::text ORDER BY date_wib::text), '{}') FROM meta_ad_daily_spend WHERE date_wib >= ${d1} AND date_wib <= ${d2}) AS hari_tersedia`;
   const num = (v) => (v === null || v === undefined ? null : Number(v));
   return {
-    spendPerAd: baris.map((b) => ({ adId: b.ad_id, spend: bulat2(b.spend), impressions: num(b.impressions), linkClicks: num(b.link_clicks), platformConversations: num(b.konversasi), hariAdaSpend: b.hari })),
-    kesegaranMentah: { terakhirTanggal: kes.terakhir_tanggal ?? null, terakhirImportAt: kes.terakhir_import ? new Date(kes.terakhir_import).toISOString() : null, adaDataDiRentang: kes.baris_di_rentang > 0, hariTersedia: kes.hari_tersedia ?? [] },
+    spendPerAd: baris.map((b) => ({ adId: b.ad_id, spend: bulat2(b.spend), impressions: num(b.impressions), linkClicks: num(b.link_clicks), platformConversations: num(b.konversasi), hariAdaSpend: b.hari, hariSpend: b.hari_list ?? [] })),
+    kesegaranMentah: { terakhirTanggal: kes.terakhir_tanggal ?? null, terakhirImportAt: kes.terakhir_import ? new Date(kes.terakhir_import).toISOString() : null, adaDataDiRentang: kes.baris_di_rentang > 0 || (kes.hari_nol ?? []).length > 0, hariTersedia: [...new Set([...(kes.hari_tersedia ?? []), ...(kes.hari_nol ?? []), ...(kes.hari_kosong ?? [])])].sort(), hariNolTerverifikasi: kes.hari_nol ?? [], hariTanpaDeliveryTeramati: kes.hari_kosong ?? [] },
   };
 }
 

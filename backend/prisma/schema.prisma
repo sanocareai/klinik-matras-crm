@@ -11209,6 +11209,7 @@ model MetaAdReferenceImport {
   source          String   @db.VarChar(24)
   fileName        String?  @map("file_name") @db.VarChar(120)
   contentSha256   String   @map("content_sha256") @db.VarChar(64)
+  transport      String?  @db.VarChar(24)
   rowsTotal       Int      @map("rows_total")
   rowsAccepted    Int      @map("rows_accepted")
   rowsRejected    Int      @map("rows_rejected")
@@ -11232,6 +11233,7 @@ model MetaSpendImport {
   accountId      String   @map("account_id") @db.VarChar(32)
   fileName       String?  @map("file_name") @db.VarChar(120)
   contentSha256  String   @map("content_sha256") @db.VarChar(64)
+  transport      String?  @db.VarChar(24) // COMPOSIO bila ditarik lewat Composio; null = jalur lama
   dateFrom       DateTime? @map("date_from") @db.Date
   dateTo         DateTime? @map("date_to") @db.Date
   accountTimezone String? @map("account_timezone") @db.VarChar(40)
@@ -11912,4 +11914,97 @@ model UnitMaterialDeclaration {
 
   @@index([unitId, status])
   @@map("unit_material_declarations")
+}
+
+/// Sinkronisasi Meta lewat Composio (transport); sumber data tetap META_MARKETING_API. Diakses dengan SQL mentah di services/attribution/composioMetaSync.js.
+model MetaSyncRun {
+  id              String    @id @db.Uuid
+  accountId       String    @map("account_id") @db.VarChar(32)
+  transport       String    @db.VarChar(24)
+  mode            String    @db.VarChar(12)
+  status          String    @db.VarChar(30)
+  dateFrom        DateTime? @map("date_from") @db.Date
+  dateTo          DateTime? @map("date_to") @db.Date
+  checkpointDate  DateTime? @map("checkpoint_date") @db.Date
+  completeThrough DateTime? @map("complete_through") @db.Date
+  controlSpend    Decimal?  @map("control_spend") @db.Decimal(18, 2)
+  adSpend         Decimal?  @map("ad_spend") @db.Decimal(18, 2)
+  selisihSpend    Decimal?  @map("selisih_spend") @db.Decimal(18, 2)
+  unmappedAds     Int?      @map("unmapped_ads")
+  daysReconciled  Int?      @map("days_reconciled")
+  daysHeld        Int?      @map("days_held")
+  failureCode     String?   @map("failure_code") @db.VarChar(60)
+  attribution     Json?
+  summary         Json?
+  startedAt       DateTime  @default(now()) @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+
+  @@index([accountId, startedAt])
+  @@map("meta_sync_runs")
+}
+
+model MetaAccountDailyControl {
+  dateWib              DateTime @map("date_wib") @db.Date
+  accountId            String   @map("account_id") @db.VarChar(32)
+  status               String   @db.VarChar(30)
+  controlSpend         Decimal? @map("control_spend") @db.Decimal(18, 2)
+  controlImpressions   BigInt?  @map("control_impressions")
+  controlLinkClicks    BigInt?  @map("control_link_clicks")
+  controlConversations Int?     @map("control_conversations")
+  adSpend              Decimal? @map("ad_spend") @db.Decimal(18, 2)
+  adRows               Int?     @map("ad_rows")
+  reconciled           Boolean  @default(false)
+  evidence             Json?
+  transport            String   @db.VarChar(24)
+  runId                String?  @map("run_id") @db.Uuid
+  fetchedAt            DateTime @map("fetched_at")
+
+  @@id([dateWib, accountId])
+  @@map("meta_account_daily_control")
+}
+
+model MetaAdDailyDelivery {
+  dateWib        DateTime @map("date_wib") @db.Date
+  accountId      String   @map("account_id") @db.VarChar(32)
+  adId           String   @map("ad_id") @db.VarChar(32)
+  video3sViews   BigInt?  @map("video_3s_views")
+  videoThruplays BigInt?  @map("video_thruplays")
+  impressions    BigInt?
+  transport      String   @db.VarChar(24)
+  runId          String?  @map("run_id") @db.Uuid
+  fetchedAt      DateTime @map("fetched_at")
+
+  @@id([dateWib, accountId, adId])
+  @@map("meta_ad_daily_delivery")
+}
+
+model MetaAccountDailyBreakdown {
+  dateWib      DateTime @map("date_wib") @db.Date
+  accountId    String   @map("account_id") @db.VarChar(32)
+  dimension    String   @db.VarChar(40)
+  dimensionKey String   @map("dimension_key") @db.VarChar(120)
+  spend        Decimal  @db.Decimal(18, 2)
+  impressions  BigInt?
+  linkClicks   BigInt?  @map("link_clicks")
+  reach        BigInt?
+  transport    String   @db.VarChar(24)
+  runId        String?  @map("run_id") @db.Uuid
+  fetchedAt    DateTime @map("fetched_at")
+
+  @@id([dateWib, accountId, dimension, dimensionKey])
+  @@map("meta_account_daily_breakdowns")
+}
+
+model MetaAdCreative {
+  adId                   String   @id @map("ad_id") @db.VarChar(32)
+  accountId              String   @map("account_id") @db.VarChar(32)
+  creativeId             String?  @map("creative_id") @db.VarChar(32)
+  creativeName           String?  @map("creative_name") @db.VarChar(200)
+  objectStoryId          String?  @map("object_story_id") @db.VarChar(80)
+  effectiveObjectStoryId String?  @map("effective_object_story_id") @db.VarChar(80)
+  videoId                String?  @map("video_id") @db.VarChar(32)
+  transport              String   @db.VarChar(24)
+  fetchedAt              DateTime @map("fetched_at")
+
+  @@map("meta_ad_creatives")
 }
