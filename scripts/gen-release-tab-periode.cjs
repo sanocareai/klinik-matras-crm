@@ -19,7 +19,7 @@ const TPL_P = "scripts/templates/release-penjadwalan-langsung";
 const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/container-baru.txt`, `${TPL}/build-only.txt`, `${TPL}/bandingkan-kode.txt`, `${TPL}/verifikasi-hotfix.txt`,
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const ALLOW = `${TPL}/allowlist.txt`;
-const FILE_TETAP = [OUT, GENERATOR, ALLOW, ...TPL_FILES];
+const FILE_TETAP = [OUT, GENERATOR, ALLOW, ...TPL_FILES, "frontend/tests/releaseTabPeriode.test.js"];
 const CAND_BRANCH = "feat/tab-scroll-tanggal-on-3714f357";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
