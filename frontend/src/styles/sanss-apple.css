@@ -168,7 +168,10 @@ button.ap-widget { font: inherit; }
   :root[data-workspace="apple"] [role="dialog"] :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), select) { min-height: 44px; line-height: 1.3; }
 }
 /* daftar baris berpemisah (ul.divide-y) tidak boleh menampilkan titik penanda bawaan peramban */
-:root .app-shell.crm-skin.ap-skin :is(ul, ol)[class*="divide-"] { list-style: none; padding-left: 0; }
+:root .app-shell.crm-skin.ap-skin :is(ul, ol):is([class*="divide-"], [class*="flex"], [class*="grid"], [class*="space-y"]) { list-style: none; padding-left: 0; }
+/* paragraf di dalam baris daftar/tombol tidak membawa margin bawaan peramban (tanpa preflight, p punya margin 1em) — kecuali bila kelasnya sendiri mengatur margin */
+:root .app-shell.crm-skin.ap-skin main :is(li, button) p:not([class*="mt-"], [class*="mb-"], [class*="my-"]) { margin-block: 0; }
+:root .app-shell.crm-skin.ap-skin main :is(li, button) p + p:not([class*="mt-"]) { margin-top: 2px; }
 
 /* ── isi halaman (tab Delivery, B2B): lencana dan teks kecil lebih terbaca, nomor tidak terpecah ──────────────── */
 :root .app-shell.crm-skin.ap-skin main .uppercase { text-transform: none; letter-spacing: 0; }

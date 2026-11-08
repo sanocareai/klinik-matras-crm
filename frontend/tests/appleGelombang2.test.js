@@ -71,7 +71,7 @@ test("kerapian: kolom isian terisi (mengalahkan tema kaca Delivery), HP setinggi
   assert.match(css, /background: var\(--ap-isi\) !important; border: 0 !important; border-radius: 12px;/);
   assert.match(css, /:root\[data-workspace="apple"\] \[role="dialog"\] :is\(input:not/, "dialog yang di-portal ke body ikut");
   assert.match(css, /@media \(max-width: 767px\) \{\s*:root \.app-shell\.crm-skin\.ap-skin :is\(input:not[^}]*min-height: 44px;/);
-  assert.match(css, /:is\(ul, ol\)\[class\*="divide-"\] \{ list-style: none;/);
+  assert.match(css, /:is\(ul, ol\):is\(\[class\*="divide-"\], \[class\*="flex"\], \[class\*="grid"\], \[class\*="space-y"\]\) \{ list-style: none;/, "daftar flex/grid (mis. Prioritas Kendali Rute) tanpa titik bawaan ganda");
   const glass = src("styles/delivery-light.css"); assert.match(glass, /\.glass-division input\[type="text"\][\s\S]*background: rgba\(255, 255, 255, 0\.72\) !important/, "alasan !important masih berlaku");
   const p = src("pages/armada/ArmadaPengaturan.jsx"); assert.match(p, /data-testid="catatan-data-driver"/); assert.doesNotMatch(p, /<p className="border-t border-line px-4 py-2\.5 text-\[11px\] leading-relaxed text-ink3">\s*Nomor telepon/);
   const pb = src("pages/armada/ArmadaPengajuanBiaya.jsx"); assert.match(pb, /templates\.length > 0 \|\| \(recent && \(recent\.kendaraan\?\.length > 0 \|\| recent\.pic\?\.length > 0\)\)/);
