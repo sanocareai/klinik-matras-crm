@@ -15,4 +15,3 @@ frontend/src/pages/finance/FinancePurchases.jsx
 frontend/src/pages/finance/FinanceReports.jsx
 frontend/tests/periodeBersama.test.js
 frontend/tests/posisiScrollTab.test.js
-frontend/tests/releaseTabPeriode.test.js
