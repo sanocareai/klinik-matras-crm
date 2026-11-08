@@ -6,6 +6,7 @@
 //   PUT  /target    ubah target. HANYA label evaluasi: sistem TIDAK mengubah iklan, campaign, atau budget Meta.
 //   GET  /monitor   snapshot monitoring + alarm (agregat; tanpa nomor/nama/chat/JID/clid/payload)
 import { prisma } from "../db.js";
+import { statusSinkronMeta } from "../services/attribution/composioMetaSync.js";
 import { barisSpendDariCsv, jalankanImporSpend, ringkasanSpendHarian, sidikJari, MAKS_BARIS_SPEND, MAKS_HARI_IMPOR } from "../services/attribution/spend.js";
 import { ambilSnapshotMonitor, ambilStatusWaha, evaluasiAlarm, levelGabungan, CFG_BAWAAN } from "../services/attribution/monitor.js";
 import { normalisasiTarget } from "../services/attribution/biayaKpi.js";
@@ -110,6 +111,12 @@ export function pasangRuteSpend(router) {
       console.error("atribusi/iklan/target PUT error:", err?.code || err?.name || "ERROR");
       return res.status(500).json({ error: "Gagal menyimpan target" });
     }
+  });
+
+  // Status sinkronisasi Meta lewat Composio (baca-saja; tidak memanggil Composio)
+  router.get("/sync-meta/status", async (_req, res) => {
+    try { return res.json(await statusSinkronMeta(prisma)); }
+    catch (err) { console.error("atribusi/iklan/sync-meta/status error:", err?.code || err?.name || "ERROR"); return res.status(500).json({ error: "Gagal memuat status sinkronisasi" }); }
   });
 
   router.get("/monitor", async (req, res) => {

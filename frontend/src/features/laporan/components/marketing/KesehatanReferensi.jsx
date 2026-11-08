@@ -20,8 +20,8 @@ export default function KesehatanReferensi() {
   const muat = useCallback(async () => {
     setSibuk(true); setGalat(null);
     try {
-      const [k, r] = await Promise.all([api.getAtribusiKesehatan(), api.getAtribusiReferensi()]);
-      setD({ k, r });
+      const [k, r, s] = await Promise.all([api.getAtribusiKesehatan(), api.getAtribusiReferensi(), api.getSinkronMetaStatus().catch(() => null)]);
+      setD({ k, r, s });
     } catch (e) { setD(null); setGalat(pesanGalat(e, "Gagal memuat kesehatan atribusi.")); }
     finally { setSibuk(false); }
   }, []);
@@ -29,10 +29,21 @@ export default function KesehatanReferensi() {
   const ekspor = async () => { try { const r = await berurutan(() => api.getAtribusiEksporId()); unduhCsv(r.iklan || []); } catch (e) { setGalat(pesanGalat(e, "Gagal mengekspor ID iklan.")); } };
   if (sibuk && !d) return <Card className="!p-4"><p className="flex items-center gap-2 text-sm text-ink3"><Loader2 size={16} className="animate-spin" /> Memuat…</p></Card>;
   if (galat && !d) return <Card className="!p-4"><p className="text-sm text-red">{galat}</p></Card>;
-  const { k, r } = d;
+  const { k, r, s } = d;
+  const waktu = (w) => (w ? new Date(w).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB" : "—");
   const Baris = ({ a, b }) => <div className="flex items-baseline justify-between gap-3 border-b border-line/50 py-1.5 last:border-0"><dt className="t-secondary text-[12.5px]">{a}</dt><dd className="m-0 text-right text-[13px] font-medium tabular-nums text-ink">{b}</dd></div>;
   return (
     <Card className="flex flex-col gap-3 !p-4" data-testid="panel-kesehatan">
+      {s && <dl className="m-0" data-testid="status-sinkron-meta">
+        <h4 className="mb-1 text-[13px] font-semibold text-ink">Sinkronisasi spend Meta</h4>
+        <Baris a="Terakhir dicoba" b={s.terakhirDicoba ? `${waktu(s.terakhirDicoba.waktu)} · ${s.terakhirDicoba.status}` : "Belum pernah berjalan"} />
+        <Baris a="Terakhir sukses" b={waktu(s.terakhirSukses?.waktu)} />
+        <Baris a="Data lengkap sampai" b={s.dataLengkapSampai ?? "—"} />
+        <Baris a="Selisih kontrol" b={s.terakhirDicoba?.selisihSpend ?? "—"} />
+        <Baris a="Ad belum terpetakan" b={s.terakhirDicoba?.unmapped ?? "—"} />
+        <Baris a="Hari belum direkonsiliasi" b={angka(s.hariBelumRekonsiliasi?.length ?? 0)} />
+        {s.terakhirDicoba?.alasanGagal && <Baris a="Alasan gagal" b={s.terakhirDicoba.alasanGagal} />}
+      </dl>}
       <div className="grid gap-4 md:grid-cols-2">
         <dl className="m-0">
           <h4 className="mb-1 text-[13px] font-semibold text-ink">Kesehatan capture touch</h4>

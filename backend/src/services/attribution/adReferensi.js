@@ -1,8 +1,8 @@
 // ATRIBUSI CTWA FASE 2 — referensi Ad ID → Ad Set ID → Campaign ID dan impor pemetaan dari ekspor Ads Manager.
 //
 // Prinsip: ID adalah kunci. Nama hanya label snapshot. TIDAK ADA pemetaan dari kemiripan nama atau angka. Notasi ilmiah (5.27E+13 — kerusakan
-// umum saat CSV dibuka di spreadsheet) DITOLAK karena presisinya sudah hilang. Tidak ada kredensial Meta di sistem ini: sumber MARKETING_API
-// baru boleh dipakai bila akses sah dikonfigurasi (belum); jalur yang tersedia sekarang = ADS_MANAGER_EXPORT (CSV/JSON) atau MANUAL.
+// umum saat CSV dibuka di spreadsheet) DITOLAK karena presisinya sudah hilang. Sumber MARKETING_API hanya dari sinkronisasi server (izinTransport, composioMetaSync.js);
+// jalur HTTP tetap ADS_MANAGER_EXPORT (CSV/JSON) atau MANUAL dan tetap menolak MARKETING_API.
 import crypto from "crypto";
 
 export const SUMBER_REFERENSI = Object.freeze(["ADS_MANAGER_EXPORT", "MARKETING_API", "MANUAL"]);
@@ -145,9 +145,9 @@ export const sidikJari = (teks) => crypto.createHash("sha256").update(String(tek
  * Terapkan impor ke DB dalam SATU transaksi. `dryRun` (default true) hanya menghitung rencana. Tidak pernah menghapus referensi.
  * @returns {Promise<{dryRun, ringkasan, rencana, importId?}>}
  */
-export async function jalankanImpor(db, { rows, sumber = "ADS_MANAGER_EXPORT", dryRun = true, izinkanKoreksi = false, namaBerkas = null, sidik = null, userId = null, sekarang = new Date() }) {
+export async function jalankanImpor(db, { rows, sumber = "ADS_MANAGER_EXPORT", dryRun = true, izinkanKoreksi = false, namaBerkas = null, sidik = null, userId = null, sekarang = new Date(), izinTransport = null }) {
   if (!SUMBER_REFERENSI.includes(sumber)) throw Object.assign(new Error("sumber tidak dikenal"), { statusCode: 400 });
-  if (sumber === "MARKETING_API") throw Object.assign(new Error("MARKETING_API belum dikonfigurasi di sistem ini (tidak ada kredensial); gunakan ADS_MANAGER_EXPORT"), { statusCode: 400 });
+  if (sumber === "MARKETING_API" && !izinTransport) throw Object.assign(new Error("MARKETING_API belum dikonfigurasi di sistem ini (tidak ada kredensial); gunakan ADS_MANAGER_EXPORT"), { statusCode: 400 });
   if (!Array.isArray(rows) || rows.length === 0) throw Object.assign(new Error("tidak ada baris untuk diimpor"), { statusCode: 400 });
   if (rows.length > MAKS_BARIS_IMPOR) throw Object.assign(new Error(`maksimum ${MAKS_BARIS_IMPOR} baris per impor`), { statusCode: 413 });
 

@@ -1552,6 +1552,7 @@ export const api = {
   getAtribusiSumber: (params) => request("/atribusi/iklan/sumber" + buildQuery(params)),
   // Kesehatan capture touch, daftar referensi Ad→Ad Set→Campaign (+Ad ID belum terpetakan), dan ekspor ID iklan (ADMIN, baca-saja) — dipakai panel "Kesehatan & referensi" di Marketing → Meta.
   getAtribusiKesehatan: () => request("/atribusi/iklan/kesehatan"),
+  getSinkronMetaStatus: () => request("/atribusi/iklan/sync-meta/status"),
   getAtribusiReferensi: () => request("/atribusi/iklan/referensi"),
   getAtribusiEksporId: () => request("/atribusi/iklan/ekspor-id"),
   // Fase 3 (Okt 2026): spend harian per Ad ID, target KPI, monitoring (ADMIN). Impor spend dryRun-default; sistem tidak mengubah iklan/budget.
