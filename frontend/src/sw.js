@@ -23,9 +23,15 @@ cleanupOutdatedCaches();
 
 precacheAndRoute(self.__WB_MANIFEST);
 
+// ⚠️ KELUHAN "UI kadang balik ke gaya lama setelah refresh" (Nov 2026): penyebab yang dapat dibuktikan di harness (qa-harness/sw-navigasi-basi.cjs) ada DUA —
+//  (1) index.html ikut di-precache, jadi "/" dan "/index.html" dilayani dari salinan SAAT SW terpasang (basi sampai SW baru aktif);
+//  (2) jaringan yang lambat (>3 detik, umum di seluler) membuat NetworkFirst jatuh ke html-shell yang tersimpan → cangkang HTML versi lama (menunjuk bundel lama) tampil.
+// Perbaikan: index.html TIDAK lagi di-precache (vite.config.js: globPatterns hanya js/css) dan batas tunggu naik ke `NAVIGASI_TUNGGU_DETIK`.
+// Offline sungguhan tetap aman: gagal jaringan langsung jatuh ke salinan html-shell (tanpa menunggu batas).
+const NAVIGASI_TUNGGU_DETIK = 10;
 registerRoute(
   ({ request }) => request.mode === "navigate",
-  new NetworkFirst({ cacheName: "html-shell", networkTimeoutSeconds: 3 })
+  new NetworkFirst({ cacheName: "html-shell", networkTimeoutSeconds: NAVIGASI_TUNGGU_DETIK })
 );
 
 registerRoute(/\/api\//, new NetworkOnly());

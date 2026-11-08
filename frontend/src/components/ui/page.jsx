@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/lib/utils.js";
+import { InfoI, adaPenjelasanPanjang, useApSkin } from "@/components/apple/Apple.jsx";
 
 // Kontainer halaman standar Sano — padding konsisten (16px mobile → 32px desktop,
 // sesuai skala spacing) + area scroll. Menggantikan pola `.dash-page` yang tersebar
@@ -65,6 +66,26 @@ export function PageContainer({ className, fluid, children, ...props }) {
 // sebagai satu toolbar pembuka halaman, bukan tempelan di pojok kanan yang
 // jaraknya jauh dari judul yang menerangkannya.
 export function PageHeader({ title, subtitle, actions, actionsBelow = false, className, children }) {
+  const apple = useApSkin();
+  // Gaya Apple (Delivery, All Teams, B2B, Komplain): judul besar + satu baris keterangan; penjelasan panjang pindah ke ikon info "i" (klik/ketuk/keyboard). Isi, aksi, dan kelas `page-title`/`page-subtitle` tetap.
+  if (apple) {
+    const panjang = adaPenjelasanPanjang(subtitle);
+    return (
+      <header className={cn("ap-kepala", className)}>
+        <div className="min-w-0">
+          {title && (
+            <div className="ap-kepala-judul">
+              <h1 className="page-title">{title}</h1>
+              {panjang && <InfoI label={`Tentang ${typeof title === "string" ? title : "halaman ini"}`} kiri>{subtitle}</InfoI>}
+            </div>
+          )}
+          {subtitle && !panjang && <p className="page-subtitle">{subtitle}</p>}
+          {children}
+        </div>
+        {actions && <div className="ap-kepala-aksi">{actions}</div>}
+      </header>
+    );
+  }
   const blokAksi = actions && (
     <div className="flex flex-wrap items-center gap-2">{actions}</div>
   );

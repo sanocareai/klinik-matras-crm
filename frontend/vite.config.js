@@ -55,6 +55,8 @@ export default defineConfig({
         // Sama alasan dengan maximumFileSizeToCacheInBytes di generateSW
         // lama — bundle utama sudah lewat 2MB.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // index.html SENGAJA tidak di-precache (lihat catatan di src/sw.js): navigasi dilayani NetworkFirst supaya tidak menampilkan cangkang HTML basi.
+        globPatterns: ["**/*.{js,css}"],
       },
       registerType: "autoUpdate",
       manifest: {
