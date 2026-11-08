@@ -20,7 +20,7 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-fix/cutover-persediaan-on-604a0cde}"
+CAND_BRANCH="${CAND_BRANCH:-fix/cutover-persediaan-on-1be098c6}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
 ALLOWED_RE='^(backend/src/routes/goodsReceipt\.js|backend/src/services/finance/persediaanAwal\.js|backend/src/services/finance/posting/inventory\.js|backend/src/services/finance/posting/supplier\.js|backend/src/services/productionMaterialReturnService\.js|backend/src/services/warehouseCorrection\.js|backend/tests/cutoverPersediaanBatas\.test\.js|scripts/gen-release-cutover-persediaan\.cjs|scripts/lib/rehearsal-cutover-persediaan\.mjs|scripts/lib/smoke-cutover-persediaan\.mjs|scripts/release-cutover-persediaan\.sh|scripts/templates/release-cutover-persediaan/fitur-dist\.txt|scripts/templates/release-cutover-persediaan/header\.txt|scripts/templates/release-cutover-persediaan/rollback\.txt)$'
