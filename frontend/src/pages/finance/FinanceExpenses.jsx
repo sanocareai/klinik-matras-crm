@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -11,8 +12,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, formatUang, TombolAksi,
-  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault,
-  LABEL_DIVISI, PemilihBukti,
+  StatusBadge, Pilihan, InputUang, PeriodePicker, LABEL_DIVISI, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import { useKontrak } from "@/features/finance/kontrakData.jsx";
 import { StripBiaya, KpiStatis, ToolbarBiaya, DaftarBiaya } from "@/features/finance/PengeluaranPanels.jsx";
@@ -87,7 +87,7 @@ function aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk }
 
 
 export default function FinanceExpenses() {
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   // Default "Semua" (bukan "Menunggu Persetujuan") — histori impor Notion
   // (D-181, 18 Sep 2026) masuk sebagai DIBAYAR langsung (transaksi lama,
   // sudah lunas), jadi default lama membuat halaman ini tampak kosong

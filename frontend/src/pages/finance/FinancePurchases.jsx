@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { usePeriodeFinance } from "@/lib/periodeBersama.js";
 import { useSearchParams } from "react-router-dom";
 import { Plus, Pencil, Wallet, History, Ban, ikonMenuApple, ChevronRight, UbinApple } from "@/components/ikApple.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -15,7 +16,7 @@ import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/fina
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, PeriodePicker, tanggalPendek,
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
@@ -142,7 +143,7 @@ const STATUS_TAB = [
 ];
 
 export default function FinancePurchases() {
-  const [periode, setPeriode] = useState(periodeDefault);
+  const [periode, setPeriode] = usePeriodeFinance();
   // Default "Semua" — lihat catatan yang sama di FinanceExpenses.jsx
   // (histori impor Notion masuk sebagai DIBAYAR langsung, jadi default
   // "Menunggu Persetujuan" membuat halaman ini tampak kosong).
