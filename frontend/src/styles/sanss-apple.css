@@ -169,3 +169,18 @@ button.ap-widget { font: inherit; }
 }
 /* daftar baris berpemisah (ul.divide-y) tidak boleh menampilkan titik penanda bawaan peramban */
 :root .app-shell.crm-skin.ap-skin :is(ul, ol)[class*="divide-"] { list-style: none; padding-left: 0; }
+
+/* ── isi halaman (tab Delivery, B2B): lencana dan teks kecil lebih terbaca, nomor tidak terpecah ──────────────── */
+:root .app-shell.crm-skin.ap-skin main .uppercase { text-transform: none; letter-spacing: 0; }
+:root .app-shell.crm-skin.ap-skin main :is(.rounded-chip, .ord-chip) { border-radius: 999px; padding-inline: 10px; font-size: 12px; font-weight: 500; }
+:root .app-shell.crm-skin.ap-skin main :is([class*="text-[9"], [class*="text-[10"], [class*="text-[11"]):not(svg, .ap-i-isi) { font-size: 12px; }
+:root .app-shell.crm-skin.ap-skin main :is(td, th) :is(.font-mono, [class*="font-mono"]) { white-space: nowrap; }
+:root .app-shell.crm-skin.ap-skin main tbody td { padding-block: 14px; }
+:root .app-shell.crm-skin.ap-skin main tbody tr:hover { background-color: var(--ap-isi); }
+
+/* HP: angka rupiah panjang di kartu dua kolom tidak boleh terpotong — ukuran angka mengikuti lebar kartu */
+.ap-widget { container-type: inline-size; }
+@media (max-width: 767px) {
+  .ap-widget { padding: 16px; }
+  .ap-w-angka { font-size: clamp(19px, 9.6cqi, 30px); overflow-wrap: anywhere; }
+}

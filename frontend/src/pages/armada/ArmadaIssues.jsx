@@ -92,8 +92,8 @@ export default function ArmadaIssues() {
                     {loading && <TableSkeletonRows rows={5} cols={6} />}
                     {!loading && jobs?.map((j) => (
                       <TR key={j.id} clickable onClick={() => setSelected(j)}>
-                        <TD className="font-semibold text-ink">{jobLabelOf(j)}</TD>
-                        <TD className="text-ink2">{orderNumberOf(j) || "—"}</TD>
+                        <TD className="whitespace-nowrap font-semibold text-ink">{jobLabelOf(j)}</TD>
+                        <TD className="whitespace-nowrap text-ink2">{orderNumberOf(j) || "—"}</TD>
                         <TD truncate>{customerOf(j) || "—"}</TD>
                         <TD className="text-ink2">{j.driver?.name || "—"}</TD>
                         <TD truncate className="text-ink2">{j.failureReason || "—"}</TD>

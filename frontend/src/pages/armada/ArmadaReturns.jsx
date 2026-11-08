@@ -100,7 +100,7 @@ export default function ArmadaReturns() {
                     {loading && <TableSkeletonRows rows={5} cols={6} />}
                     {!loading && revisions?.map((r) => (
                       <TR key={r.id} clickable onClick={() => setSelected(r)}>
-                        <TD className="font-semibold text-ink">{r.unit?.unitCode}</TD>
+                        <TD className="whitespace-nowrap font-semibold text-ink">{r.unit?.unitCode}</TD>
                         <TD truncate>{customerOfUnit(r.unit) || "—"}</TD>
                         <TD><StatusBadge map={REVISION_TRIGGER} value={r.trigger} /></TD>
                         <TD truncate className="text-ink2">{r.complaint}</TD>

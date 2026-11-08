@@ -353,7 +353,7 @@ export default function ArmadaOrders() {
               ) : orders && orders.length > 0 ? (
                 orders.map((o) => (
                   <TR key={o.id} clickable onClick={() => setOpenOrder(o)}>
-                    <TD className="font-semibold text-ink">{o.orderNumber || o.id.slice(0, 8)}</TD>
+                    <TD className="whitespace-nowrap font-semibold text-ink">{o.orderNumber || o.id.slice(0, 8)}</TD>
                     <TD>
                       <span className="flex items-center gap-2">
                         <Avatar name={o.customerName} size="sm" />
