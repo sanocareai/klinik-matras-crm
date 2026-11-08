@@ -1134,6 +1134,25 @@ model TrackedLink {
   clicks           ClickEvent[]
 }
 
+// Jejak relabel sumber lead (Fase 3 audit 9 Nov 2026). Append-only: label lama
+// tersimpan di sini sehingga setiap perubahan bisa ditelusuri dan dibalik.
+model LeadSourceRelabel {
+  id             String      @id @default(cuid())
+  batch          String
+  customerId     String
+  sumberLama     LeadSource?
+  detailLama     String?
+  sumberBaru     LeadSource
+  detailBaru     String?
+  aturan         String
+  klikDilepasIds String[]    @default([])
+  createdAt      DateTime    @default(now())
+
+  @@unique([batch, customerId])
+  @@index([customerId])
+  @@map("lead_source_relabels")
+}
+
 model ClickEvent {
   id                String      @id @default(cuid())
   trackedLinkId     String
