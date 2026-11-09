@@ -1,4 +1,4 @@
-// Generator skrip rilis FRONTEND-SAJA "tab Marketing gaya Apple" (mka2) — dari SUMBER GIT (git archive), TANPA overlay, TANPA backend/migrasi/image.
+// Generator skrip rilis FRONTEND-SAJA "tab Marketing gaya Apple" (mka3) — dari SUMBER GIT (git archive), TANPA overlay, TANPA backend/migrasi/image.
 // Hasil: scripts/release-marketing-apple.sh — diturunkan dari scripts/release-gudang-pintu-masuk.sh (kerangka rilis frontend-saja release-directory yang sudah live) + blok di
 // scripts/templates/release-marketing-apple/* + blok GERBANG KODE LIVE / verifikasi hotfix / hitung baris di scripts/templates/release-penjadwalan-langsung/*.
 // Semua nilai yang bergantung pada commit (allowlist, daftar frontend/src) dihitung dari git terhadap --base.
@@ -41,21 +41,21 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   const aplikasi = berkas.filter((f) => !FILE_TETAP.includes(f));
   must(JSON.stringify(aplikasi) === JSON.stringify(DISETUJUI), "himpunan berkas aplikasi berbeda dari allowlist eksplisit. Lebih: [" + aplikasi.filter((f) => !DISETUJUI.includes(f)).join(", ") + "] Kurang: [" + DISETUJUI.filter((f) => !aplikasi.includes(f)).join(", ") + "]");
   must(!berkas.some((f) => /package(-lock)?\.json$|(^|\/)docker-compose|(^|\/)Dockerfile$|(^|\/)\.env/.test(f)), "dependensi/compose/.env berubah");
-  must(["frontend/src/styles/sanss-mk-apple.css", "frontend/src/features/laporan/components/marketing/TabelSumber.jsx"].every((f) => berkas.includes(f)), "berkas inti harus ada di diff");
+  must(["frontend/src/styles/sanss-mk-apple.css"].every((f) => berkas.includes(f)), "berkas inti harus ada di diff");
 
   potong('# RILIS FRONTEND-SAJA "satu pintu masuk Gudang"', "set -Eeuo pipefail", blokTeks(blok, "header") + "\n");
   r('CAND_BRANCH="${CAND_BRANCH:-fix/gudang-pintu-masuk}"', `CAND_BRANCH="\${CAND_BRANCH:-${CAND_BRANCH}}"`);
-  r('CAND_REF="refs/remotes/origin/cand-gpm"', 'CAND_REF="refs/remotes/origin/cand-mka2"');
+  r('CAND_REF="refs/remotes/origin/cand-gpm"', 'CAND_REF="refs/remotes/origin/cand-mka3"');
   const L = s.split("\n"); const ia = L.findIndex((l) => l.startsWith("ALLOWED_RE=")); must(ia > 0 && L[ia + 1].startsWith("FRONTEND_SRC_EXPECT="), "ALLOWED_RE");
   L[ia] = `ALLOWED_RE='^(${berkas.map(esc).join("|")})$'`; L[ia + 1] = `FRONTEND_SRC_EXPECT="${fe}"`; s = L.join("\n");
   r('--preflight-only) MODE=preflight;; --rollback) MODE=rollback;;', '--preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;;');
   r('BK_DIR="$HOME/release-backups/gpm-${DEPLOY_SHORT}-${TS}"', 'BK_DIR="$HOME/release-backups/marketing-apple-${DEPLOY_SHORT}-${TS}"');
   r("/tmp/release-gudang-pintu-masuk.lock", "/tmp/release-marketing-apple.lock");
-  r('grep -v "gpm\\|release-gudang-pintu-masuk\\|pgrep\\|node src/index.js"', 'grep -v "mka2\\|release-marketing-apple\\|pgrep\\|node src/index.js"');
-  r("/tmp/gpm.sh", "/tmp/mka2.sh");
+  r('grep -v "gpm\\|release-gudang-pintu-masuk\\|pgrep\\|node src/index.js"', 'grep -v "mka3\\|release-marketing-apple\\|pgrep\\|node src/index.js"');
+  r("/tmp/gpm.sh", "/tmp/mka3.sh");
 
   // blok gerbang (dari templat rilis penjadwalan; nama kunci/skrip disesuaikan)
-  const adapt = (t) => t.split("pjl\\|release-penjadwalan-langsung").join("mka2\\|release-marketing-apple").split("/tmp/release-penjadwalan-langsung.lock").join("/tmp/release-marketing-apple.lock");
+  const adapt = (t) => t.split("pjl\\|release-penjadwalan-langsung").join("mka3\\|release-marketing-apple").split("/tmp/release-penjadwalan-langsung.lock").join("/tmp/release-marketing-apple.lock");
   const CMP_LAMA = 'cmp -s "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt" || {';
   const gerbangDasar = adapt(blokTeks(blok, "gerbang-kode-live"));
   must(gerbangDasar.split(CMP_LAMA).length === 2, "perbandingan container-vs-folder pada gerbang kode live");
@@ -83,7 +83,7 @@ function bangkitkan({ baseScript, blok, berkasList }) {
   const GD_LAMA = 'FP_1="$(psql_live -At -c "$FP_SQL")"; [ "$FP_1" = "$FP_0" ] || die "hitungan data BERUBAH selama rilis: sebelum=${FP_0} sesudah=${FP_1}"';
   r(GD_LAMA, 'FP_1="$(psql_live -At -c "$FP_SQL")"; [ "${FP_1%|*}" = "${FP_0%|*}" ] || die "hitungan data BERUBAH selama rilis (selain pesan): sebelum=${FP_0} sesudah=${FP_1}"; [ "$FP_1" = "$FP_0" ] || warn "kolom pesan WhatsApp bertambah selama rilis (lalu lintas pelanggan, bukan efek rilis): sebelum=${FP_0##*|} sesudah=${FP_1##*|}"');
   const iSel = s.indexOf('say "SELESAI — frontend'); must(iSel > 0, "SELESAI"); const jSel = s.indexOf("\n", iSel);
-  s = s.slice(0, jSel + 1) + 'say "CATATAN: rilis FRONTEND-SAJA. Backend, image, migrasi, data, .env, atribusi/tracker/biaya/jadwal/stok/jurnal TIDAK berubah; hotfix performa tetap ada. Rollback = baseline ${BASE_SHA:0:8} (image sama): bash /tmp/mka2.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback. Tidak ada folder release/image/backup/volume yang dihapus."\n' + s.slice(jSel + 1);
+  s = s.slice(0, jSel + 1) + 'say "CATATAN: rilis FRONTEND-SAJA. Backend, image, migrasi, data, .env, atribusi/tracker/biaya/jadwal/stok/jurnal TIDAK berubah; hotfix performa tetap ada. Rollback = baseline ${BASE_SHA:0:8} (image sama): bash /tmp/mka3.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback. Tidak ada folder release/image/backup/volume yang dihapus."\n' + s.slice(jSel + 1);
   { const sisa = s.split("\n").filter((l) => !l.startsWith("# (dibangkitkan") && !l.startsWith("ALLOWED_RE=")).filter((l) => /gpm|gudang-pintu-masuk|release-penjadwalan/.test(l) || l.includes("pjl\\|")); must(sisa.length === 0, "sisa nama rilis lain: " + sisa.map((l) => l.slice(0, 140)).join(" || ")); }
   must(!/rm -rf[^\n]*(RELEASES\b|PREV_DIR|backups|volume)/.test(s.replace('rm -rf -- "$NEW_DIR"', "")), "penghapusan di luar release dir sementara");
   s = lf(s);

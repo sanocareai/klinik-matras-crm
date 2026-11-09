@@ -169,7 +169,9 @@
 
 /* ── Performa sumber ─────────────────────────────────────────────────────── */
 .mk-ap .mk-sumber { padding-bottom: 14px; }
-.mk-ap .mk-sumber-kepala { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.mk-ap .mk-sumber-kepala { display: flex; flex-direction: column; gap: 14px; margin: 0 -20px 16px; padding: 0 20px 16px; border-bottom: 1px solid var(--mk-garis); }
+/* menang atas .crm-lap .crm-lap-tab section > div:first-child { margin-bottom: 0 } (sanss-crm-laporan.css) */
+.mk-ap-halaman .mk-ap .mk-sumber > .mk-sumber-kepala { margin-bottom: 16px; }
 .mk-ap .mk-sumber-judul { display: flex; flex-direction: column; gap: 2px; }
 .mk-ap .mk-sumber-deskripsi { margin: 0; font-size: 13px; color: var(--text-tertiary); }
 .mk-ap .mk-sumber-kontrol { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }

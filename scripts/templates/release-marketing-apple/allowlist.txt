@@ -1,5 +1,1 @@
-frontend/qa-harness/marketing-apple-browser.cjs
-frontend/src/features/laporan/components/LogoSumber.jsx
-frontend/src/features/laporan/components/marketing/TabelSumber.jsx
 frontend/src/styles/sanss-mk-apple.css
-frontend/tests/laporanRedesignMarketing.test.js
