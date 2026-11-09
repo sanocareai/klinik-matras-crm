@@ -20,6 +20,7 @@ function avgEffectiveMinutes(pairs) {
   return total / pairs.length;
 }
 import { platformDariDetail, PLATFORM } from "../services/platformIklan.js";
+import { detailCtwaKanonik } from "../services/leadAttribution.js";
 import { pctOrNull } from "../services/conversionMetrics.js";
 
 // Definisi OMSET (30 September 2026, keputusan Owner): order berstatus PENDING
@@ -2251,24 +2252,30 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
         ${searchQuery ? Prisma.sql`AND c."leadSourceDetail" ILIKE ${"%" + searchQuery + "%"}` : Prisma.empty}
       GROUP BY 1, 2`;
 
-    const semua = baris.map((b) => {
-      const leads = Number(b.leads);
-      const won = Number(b.won);
-      const spam = Number(b.spam_count);
+    // Satu customer hanya punya satu keterangan, jadi penjumlahan antarbentuk tidak menghitung dua kali.
+    const perDetail = new Map();
+    for (const b of baris) {
+      const detail = detailCtwaKanonik(b.detail);
+      const kunci = `${b.source}|${detail}`;
+      const ada = perDetail.get(kunci) || { source: b.source, detail, leads: 0, won: 0, spam: 0, totalValue: 0 };
+      ada.leads += Number(b.leads);
+      ada.won += Number(b.won);
+      ada.spam += Number(b.spam_count);
       // bigint dari Postgres — JSON.stringify melempar error untuk BigInt,
       // jadi WAJIB dikonversi sebelum dikirim.
-      const totalValue = Number(b.total_value);
-      return {
-        source: b.source,
-        detail: b.detail,
-        platform: platformDariDetail(b.detail),
-        leads,
-        won,
-        spamCount: spam,
-        totalValue,
-        ...metrikKualitas(leads, won, totalValue, spam),
-      };
-    });
+      ada.totalValue += Number(b.total_value);
+      perDetail.set(kunci, ada);
+    }
+    const semua = [...perDetail.values()].map(({ source, detail, leads, won, spam, totalValue }) => ({
+      source,
+      detail,
+      platform: platformDariDetail(detail),
+      leads,
+      won,
+      spamCount: spam,
+      totalValue,
+      ...metrikKualitas(leads, won, totalValue, spam),
+    }));
 
     // Sortir dinamis (default: leads desc, sama seperti sebelumnya). PENTING:
     // ini terjadi SEBELUM potongan BATAS=30 di bawah — kalau urutannya
