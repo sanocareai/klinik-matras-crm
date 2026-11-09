@@ -27,7 +27,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;; esac; done
-CAND_BRANCH="${CAND_BRANCH:-feat/apple-cari-notif-on-29e8cad0}"
+CAND_BRANCH="${CAND_BRANCH:-feat/apple-cari-notif-on-0c0b9737}"
 CAND_REF="refs/remotes/origin/cand-acn1"
 BUNDLE="${BUNDLE:-}"
 ALLOWED_RE='^(frontend/src/components/Layout\.jsx|frontend/src/components/Topbar\.jsx|frontend/src/components/ui/command-palette\.jsx|frontend/src/features/notifications/NotificationDrawer\.jsx|frontend/src/features/notifications/NotificationItem\.jsx|frontend/src/features/notifications/notificationTypes\.js|frontend/src/lib/cariGlobal\.js|frontend/src/main\.jsx|frontend/src/pages/Notifications\.jsx|frontend/src/pages/Orders\.jsx|frontend/src/styles/sanss-cari\.css|frontend/tests/cariNotifApple\.test\.js|frontend/tests/shellSalesCrm\.test\.js|scripts/gen-release-apple-cari-notif\.cjs|scripts/release-apple-cari-notif\.sh|scripts/templates/release-apple-cari-notif/allowlist\.txt|scripts/templates/release-apple-cari-notif/bandingkan-kode\.txt|scripts/templates/release-apple-cari-notif/build-only\.txt|scripts/templates/release-apple-cari-notif/container-baru\.txt|scripts/templates/release-apple-cari-notif/fitur-dist\.txt|scripts/templates/release-apple-cari-notif/header\.txt|scripts/templates/release-apple-cari-notif/verifikasi-hotfix\.txt|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt)$'
