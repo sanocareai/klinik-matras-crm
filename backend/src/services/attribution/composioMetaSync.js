@@ -112,7 +112,7 @@ async function prosesPotongan(db, klien, { potongan, zona, akunTerverifikasi, co
   const hariBoleh = new Set(hari.filter((h) => !ditahan.has(h.tanggal)).map((h) => h.tanggal));
   const hasil = {
     potongan, hari: hari.map((h) => ({ ...h, status: !ditahan.has(h.tanggal) || ditahan.get(h.tanggal) === "SELISIH_KONTROL" ? h.status : "DITAHAN_KONFLIK", alasanTahan: ditahan.get(h.tanggal) ?? null })),
-    barisAd: rows.length, adUnik: ref0.length, referensiDry: dryRef?.ringkasan ?? null, spendDry: drySpend?.ringkasan ?? null, peringatan: [], unmapped: drySpend?.ringkasan.adIdTidakTerpetakan ?? 0,
+    barisAd: rows.length, adUnik: ref0.length, referensiDry: dryRef?.ringkasan ?? null, spendDry: drySpend?.ringkasan ?? null, peringatan: [], adIdTidakTerpetakan: [...(drySpend?.rencana.tidakTerpetakan ?? [])].map(String),
   };
   if (!commit) return hasil;
   const refBoleh = barisReferensi(akhir);
@@ -129,7 +129,7 @@ async function prosesPotongan(db, klien, { potongan, zona, akunTerverifikasi, co
       await db.$executeRaw`UPDATE meta_spend_imports SET transport=${TRANSPORT} WHERE id=${sp.importId}::uuid`;
       hasil.spend = sp.ringkasan;
     } else hasil.spend = ulang.ringkasan;
-    hasil.unmapped = 0;   // referensi sudah ditulis sebelum spend
+    hasil.adIdTidakTerpetakan = [];   // referensi sudah ditulis sebelum spend
   }
   for (const h of hari) await simpanKontrol(db, akun, h, h.rekonsiliasi && !ditahan.has(h.tanggal), runId, now);
   hasil.peringatan = await simpanTambahan(db, klien, potongan, dataAd.filter((x) => hariBoleh.has(x.date_start)), hariBoleh, runId, now);
@@ -171,7 +171,7 @@ export async function jalankanSinkronComposio(db, { mode = "cek", dari = null, s
     const r = {
       status: ditahan.length ? "BELUM_DIREKONSILIASI" : mode === "dry" ? "DRY_RUN" : "SUKSES", checkpoint, lengkapSampai: mode === "commit" ? lengkap : null,
       kontrolSpend: jumlahRp(bersih.map((h) => h.kontrolSpend)), adSpend: jumlahRp(bersih.map((h) => h.adSpend)), selisih: jumlahRp(ditahan.map((h) => h.selisihSpend)),
-      hariCocok: bersih.length, hariDitahan: ditahan.length, unmapped: hasilPotongan.reduce((a, x) => a + x.unmapped, 0),
+      hariCocok: bersih.length, hariDitahan: ditahan.length, unmapped: new Set(hasilPotongan.flatMap((x) => x.adIdTidakTerpetakan)).size,   // Ad unik lintas potongan; Ad yang muncul di beberapa potongan dihitung sekali
       ringkas: { hari: hari.map((h) => ({ t: h.tanggal, s: h.status, ads: h.barisAd, kontrol: h.kontrolSpend, ad: h.adSpend, tahan: h.alasanTahan, selisihKonversasi: h.selisihKonversasi })), referensiTouch: refTouch, peringatan: hasilPotongan.flatMap((x) => x.peringatan), referensi: hasilPotongan.map((x) => x.referensi ?? x.referensiDry), spend: hasilPotongan.map((x) => x.spend ?? x.spendDry) },
     };
     await tutupRun(db, runId, r);

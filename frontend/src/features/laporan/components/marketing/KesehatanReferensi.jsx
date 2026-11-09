@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card.jsx";
 import { angka } from "../../akuisisiLogic.js";
 import { berurutan, pesanGalat } from "../../marketingData.js";
 import StatusSinkronMeta from "./StatusSinkronMeta.jsx";
+import { sumberReferensiTeks, waktuWibTeks } from "../../sinkronMetaLogic.js";
 
 // Kesehatan capture + referensi pemetaan Ad → Ad Set → Campaign (BACA-SAJA; endpoint existing /kesehatan, /referensi, /ekspor-id). Impor pemetaan tetap lewat POST /api/atribusi/iklan/referensi
 // (dry-run default) — belum ada layar impor di aplikasi; panel ini menyediakan daftar ID untuk dicocokkan dengan Ads Manager/Windsor.
@@ -47,9 +48,9 @@ export default function KesehatanReferensi() {
         <dl className="m-0">
           <h4 className="mb-1 text-[13px] font-semibold text-ink">Referensi pemetaan</h4>
           <Baris a="Referensi tersimpan" b={angka(r.jumlah)} />
-          <Baris a="Sinkron terakhir" b={k.db?.referensi?.sinkronTerakhir ? k.db.referensi.sinkronTerakhir.slice(0, 16).replace("T", " ") + " UTC" : "—"} />
+          <Baris a="Sinkron terakhir" b={waktuWibTeks(k.db?.referensi?.sinkronTerakhir)} />
           <Baris a="Ad ID belum terpetakan" b={angka((r.tidakTerpetakan || []).length)} />
-          <Baris a="Sumber impor tersedia" b={(r.sumberTersedia || []).join(", ") || "—"} />
+          <Baris a="Sumber pemetaan" b={sumberReferensiTeks(r.sumberTersedia)} />
         </dl>
       </div>
       {(r.tidakTerpetakan || []).length > 0 && (
@@ -63,7 +64,7 @@ export default function KesehatanReferensi() {
         <button type="button" className="btn btn-ghost btn-sm" onClick={ekspor}><Download size={14} /> Unduh daftar ID iklan (CSV)</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={muat} disabled={sibuk}>Muat ulang</button>
       </div>
-      <p className="t-secondary text-[11.5px]">{r.catatan} Impor pemetaan dari ekspor Ads Manager/Windsor: <code>POST /api/atribusi/iklan/referensi</code> (dry-run bawaan; konflik hierarki tidak ditimpa). Sistem tidak mengubah campaign, ad set, ads, atau budget Meta.</p>
+      <p className="t-secondary text-[11.5px]">{r.catatan} Impor manual tetap bisa dari ekspor Ads Manager/Windsor: <code>POST /api/atribusi/iklan/referensi</code> (dry-run bawaan; konflik hierarki tidak ditimpa). Sistem tidak mengubah campaign, ad set, ads, atau budget Meta.</p>
       {galat && <p className="text-[12px] text-orange">{galat}</p>}
     </Card>
   );

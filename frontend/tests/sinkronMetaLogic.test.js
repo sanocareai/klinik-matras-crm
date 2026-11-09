@@ -16,3 +16,13 @@ test("panel terpasang di Kesehatan & referensi; galat akses tidak menjatuhkan pa
   const s = fs.readFileSync(new URL("../src/features/laporan/components/marketing/KesehatanReferensi.jsx", import.meta.url), "utf8");
   assert.match(s, /<StatusSinkronMeta s=\{s\} \/>/); assert.match(s, /galatStatus/);
 });
+
+test("format panel: waktu WIB seragam, tanggal ramah, status dan sumber berlabel", async () => {
+  const { tanggalTeks, statusRunTeks, sumberReferensiTeks } = await import("../src/features/laporan/sinkronMetaLogic.js");
+  assert.equal(waktuWibTeks("2026-11-09T19:00:02Z"), "10 Nov 2026, 02.00 WIB", "UTC malam = WIB hari berikutnya");
+  assert.equal(waktuWibTeks("bukan-waktu"), "—");
+  assert.equal(tanggalTeks("2026-11-09"), "9 Nov 2026"); assert.equal(tanggalTeks(null), "—");
+  assert.equal(statusRunTeks("SUKSES"), "Sukses"); assert.equal(statusRunTeks("KODE_BARU"), "KODE_BARU");
+  assert.equal(sumberReferensiTeks(["COMPOSIO", "ADS_MANAGER_EXPORT", "MANUAL"]), "Sinkron otomatis (Composio) · Ekspor Ads Manager · Manual");
+  assert.equal(sumberReferensiTeks([]), "—");
+});

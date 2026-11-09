@@ -37,6 +37,15 @@ export function konfigurasiKurang(c) {
   if (!ID_RE.test(c.akun)) k.push("META_ADS_ACCOUNT_ID");
   return k;
 }
+/** Sumber pemetaan Ad → Ad Set → Campaign yang benar-benar tersedia di server ini, untuk panel referensi. Hanya keadaan, tidak pernah nilai konfigurasi. */
+export function sumberReferensiTersedia(env = process.env) {
+  const c = konfigurasiComposio(env);
+  const siap = konfigurasiKurang(c).length === 0;
+  const catatan = !siap ? "Sinkronisasi Meta lewat Composio belum dikonfigurasi; pemetaan hanya bertambah lewat impor."
+    : c.aktif ? "Pemetaan diperbarui otomatis oleh sinkronisasi Meta lewat Composio (baca-saja)."
+    : "Sinkronisasi Meta lewat Composio terpasang tetapi nonaktif; pemetaan hanya bertambah lewat impor.";
+  return { sumberTersedia: [...(siap && c.aktif ? ["COMPOSIO"] : []), "ADS_MANAGER_EXPORT", "MANUAL"], catatan };
+}
 /** Kode galat konfigurasi. user_id punya kode sendiri karena kekosongannya baru terlihat saat eksekusi tool. */
 export const KODE_USER_ID_KOSONG = "COMPOSIO_META_USER_ID_KOSONG";
 export const kodeKonfigurasi = (kurang) => (kurang.includes("COMPOSIO_META_USER_ID") ? KODE_USER_ID_KOSONG : "KONFIGURASI_TIDAK_LENGKAP");

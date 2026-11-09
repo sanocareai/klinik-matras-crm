@@ -20,6 +20,7 @@ import { denganPenjaga, SedangDihitungError } from "../services/attribution/penj
 import { pasangRuteSpend } from "./attributionSpend.js";
 import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
+import { sumberReferensiTersedia } from "../services/attribution/composioMeta.js";
 import { parseFilterChat, hitungDaftarChat, hitungEksporMarketing } from "../services/attribution/rincianChat.js";
 
 export const attributionAdsRouter = express.Router();
@@ -161,8 +162,7 @@ attributionAdsRouter.get("/referensi", async (_req, res) => {
     return res.json({
       jumlah: refs.length, referensi: refs,
       tidakTerpetakan: ids.filter((x) => x.status === "UNMAPPED").map((x) => ({ adId: x.adId, touch: x.touch, pertama: x.pertama, terakhir: x.terakhir })),
-      sumberTersedia: ["ADS_MANAGER_EXPORT", "MANUAL"],
-      catatan: "MARKETING_API belum dikonfigurasi (tidak ada kredensial Meta di sistem ini).",
+      ...sumberReferensiTersedia(),
     });
   } catch (err) {
     console.error("atribusi/iklan/referensi error:", err?.code || err?.name || "ERROR");   // tanpa pesan: galat Prisma bisa memuat nilai kueri

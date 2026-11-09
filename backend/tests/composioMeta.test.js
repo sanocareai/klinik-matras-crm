@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { TOOL_BACA, buatKlien, hookRate, kelasGalat, konfigurasiKurang, kodeKonfigurasi, konfigurasiComposio, rekonsiliasiHarian, barisDelivery, barisImporter, ATRIBUSI } from "../src/services/attribution/composioMeta.js";
+import { TOOL_BACA, buatKlien, hookRate, kelasGalat, konfigurasiKurang, kodeKonfigurasi, konfigurasiComposio, rekonsiliasiHarian, barisDelivery, barisImporter, ATRIBUSI, sumberReferensiTersedia } from "../src/services/attribution/composioMeta.js";
 import { daftarHari, jalankanSinkronComposio, potongRentang, rentangRolling } from "../src/services/attribution/composioMetaSync.js";
 
 const AKUN = "2081614415911241";
@@ -178,4 +178,14 @@ test("user_id kosong: kode konfigurasi jelas, ditolak sebelum ada permintaan jar
   assert.equal(panggilan, 0);
   let body; await buatKlien({ env: ENV, fetchFn: async (_u, o) => { body = JSON.parse(o.body); return { ok: true, status: 200, json: async () => ({ successful: true, data: {} }) }; } }).panggil("METAADS_GET_OBJECT", {});
   assert.equal(body.user_id, "u_uji");
+});
+
+test("sumber referensi: mengikuti keadaan konfigurasi, tanpa nilai konfigurasi", () => {
+  const kosong = sumberReferensiTersedia({});
+  assert.deepEqual(kosong.sumberTersedia, ["ADS_MANAGER_EXPORT", "MANUAL"]); assert.match(kosong.catatan, /belum dikonfigurasi/);
+  const mati = sumberReferensiTersedia({ ...ENV, COMPOSIO_META_SYNC_ENABLED: "false" });
+  assert.deepEqual(mati.sumberTersedia, ["ADS_MANAGER_EXPORT", "MANUAL"]); assert.match(mati.catatan, /nonaktif/);
+  const aktif = sumberReferensiTersedia({ ...ENV, COMPOSIO_META_SYNC_ENABLED: "true" });
+  assert.deepEqual(aktif.sumberTersedia, ["COMPOSIO", "ADS_MANAGER_EXPORT", "MANUAL"]); assert.match(aktif.catatan, /otomatis/);
+  for (const h of [kosong, mati, aktif]) { const s = JSON.stringify(h); for (const v of Object.values(ENV)) assert.ok(!s.includes(v), "nilai konfigurasi tidak boleh bocor"); assert.ok(!s.includes("MARKETING_API belum")); }
 });

@@ -44,6 +44,13 @@ test("dry-run tidak menulis fakta; commit menulis referensi sebelum spend, trans
   const [ri] = await db.$queryRaw`select transport from meta_ad_reference_imports where transport is not null`; assert.equal(ri.transport, "COMPOSIO");
   const st = await statusSinkronMeta(db); assert.equal(st.dataLengkapSampai, H2); assert.equal(st.terakhirDicoba.status, "SUKSES"); assert.equal(st.hariBelumRekonsiliasi.length, 0);
 });
+test("unmapped = Ad unik lintas potongan, bukan jumlah per potongan", async () => {
+  const d = await jalan(dunia0(), "dry", { ukuranPotongan: 1 });   // 10001 ada di H1 dan H2 (dua potongan), 10002 hanya H1
+  assert.equal(d.status, "DRY_RUN"); assert.equal(d.unmapped, 2);
+  const [run] = await db.$queryRaw`select unmapped_ads from meta_sync_runs order by started_at desc limit 1`; assert.equal(run.unmapped_ads, 2);
+  const c = await jalan(dunia0(), "commit", { ukuranPotongan: 1 });
+  assert.equal(c.unmapped, 0, "commit menulis referensi sebelum spend");
+});
 test("idempoten: impor ulang sama tidak menambah impor/revisi; angka berubah menyimpan histori", async () => {
   await jalan(dunia0()); const n = await db.metaSpendImport.count();
   await jalan(dunia0()); assert.equal(await db.metaSpendImport.count(), n); assert.equal(await db.metaAdSpendRevision.count(), 0);
