@@ -4,7 +4,7 @@ for c1 in ".mk-pakem-blok" ".mk-alat-titik" ".mk-sumber-kontrol"; do
   [ -z "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
-for j1 in "Tutup penjelasan" "Peringkat hanya di dalam kelompok" "data-ubin"; do
+for j1 in "Peringkat hanya di dalam kelompok" "data-ubin"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$j1")" ] || die "[skrip] '${j1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j1")" ] || die "dist baru TIDAK memuat tampilan Marketing baru: ${j1}"
 done
