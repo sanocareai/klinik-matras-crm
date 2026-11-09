@@ -256,7 +256,7 @@ for c1 in ".mk-kpi-grid" ".mk-strip-butir" ".mk-sumber-kategori" ".mk-pop-isi"; 
   [ -z "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
-for j1 in "Hasil masih sementara" "saring-sumber-berbayar" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber"; do
+for j1 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$j1")" ] || die "[skrip] '${j1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j1")" ] || die "dist baru TIDAK memuat tampilan Marketing baru: ${j1}"
 done
