@@ -5339,6 +5339,8 @@ model Material {
   kind          String?  @map("kind") @db.VarChar(24)
   specification String?
   storageHint   String?  @map("storage_hint")
+  // Deskripsi bebas yang diisi pengguna (merek, isi kemasan, cara pakai). INFORMASI SAJA. Terpisah dari specification karena specification dibaca deteksi SKU kembar di PO (lib/domain/kemiripanBarang.js); isi kemasan di sini TIDAK menjadi konversi stok.
+  description   String?
   createdVia    String?  @map("created_via") @db.VarChar(20)
   createdById   String?  @map("created_by")
   skuOrigin       FinMaterialSkuOrigin?

@@ -1,6 +1,7 @@
 // Pemisahan tugas penyesuaian stok — SATU tempat aturan "pemohon != penyetuju" dan "penyetuju wajib peran penyetuju".
 // Dipakai dua jalur yang menulis movement ADJUSTMENT: Stock Adjustment (APPROVED) dan Stock Count (complete dengan selisih).
 // Koreksi satu-langkah POST /inventory/movements/adjustment DITUTUP untuk semua peran (tidak ada penulisan ledger di sana).
+// Pengecualian keputusan Owner 9 Nov 2026: koreksi saldo langsung ADMIN/OWNER (services/koreksiSaldoBahan.js) tidak melewati kedua aturan ini karena tidak ada langkah persetujuan.
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
 

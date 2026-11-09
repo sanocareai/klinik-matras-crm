@@ -4,8 +4,12 @@
 
 export const ROLE_PENYETUJU = Object.freeze(["OWNER", "FINANCE"]);
 export const ROLE_PENULIS = Object.freeze(["WAREHOUSE", "ADMIN", "OWNER"]);
+// Keputusan Owner 9 Nov 2026: Admin/Owner mengoreksi saldo langsung tanpa persetujuan (cermin inventory:koreksi_saldo_langsung di backend; server tetap yang memutuskan).
+export const ROLE_KOREKSI_LANGSUNG = Object.freeze(["ADMIN", "OWNER"]);
+export const bolehKoreksiLangsung = (roles) => punyaRole(roles, ROLE_KOREKSI_LANGSUNG);
 
 export const punyaRole = (roles, daftar) => Array.isArray(roles) && roles.some((r) => daftar.includes(r));
+export const PESAN_LANGSUNG = "Saldo sudah dikoreksi dan langsung tercatat di stok.";
 export const bolehMenyetujui = (roles) => punyaRole(roles, ROLE_PENYETUJU);
 export const bolehMenulis = (roles) => punyaRole(roles, ROLE_PENULIS);
 

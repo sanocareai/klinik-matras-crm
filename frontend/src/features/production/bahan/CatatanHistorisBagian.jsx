@@ -41,8 +41,9 @@ function FormAksi({ item, aksi, onSelesai, onBatal }) {
         await api.kecualikanCatatanHistoris(item.id, { alasan: f.alasan.trim() }, kunciRef.current); setOk("Dikecualikan dari perhitungan (catatan tidak dihapus).");
       } else if (aksi === "koreksiSaldo") {
         const v = validasiKoreksiSaldo({ saldoBaru: f.saldoBaru, alasan: f.alasan }); if (!v.ok) { setGalat(v.galat); return; }
-        const r = await api.createAdjustmentRequest({ materialId: item.bahan.id, adjustmentType: "DATA_CORRECTION", saldoBaru: v.saldo, reason: f.alasan.trim(), originType: "USAGE_NOTE", originId: item.id });
-        setDibuat(r); setOk(`Diajukan sebagai ${r.adjustmentNumber}: saldo ${String(r.beforeQty).replace(".", ",")} → ${String(Math.round((Number(r.beforeQty) + Number(r.adjustmentQty)) * 10000) / 10000).replace(".", ",")} ${item.bahan?.satuan ?? ""}. Menunggu persetujuan orang lain; saldo belum berubah.`);
+        const r = await api.createAdjustmentRequest({ materialId: item.bahan.id, adjustmentType: "DATA_CORRECTION", saldoBaru: v.saldo, reason: f.alasan.trim(), originType: "USAGE_NOTE", originId: item.id }, kunciRef.current ?? undefined);
+        const teksSaldo = `saldo ${String(r.beforeQty).replace(".", ",")} → ${String(Math.round((Number(r.beforeQty) + Number(r.adjustmentQty)) * 10000) / 10000).replace(".", ",")} ${item.bahan?.satuan ?? ""}`;
+        setDibuat(r); setOk(r.status === "POSTED" ? `Tersimpan sebagai ${r.adjustmentNumber}: ${teksSaldo}. Saldo sudah berubah.` : `Diajukan sebagai ${r.adjustmentNumber}: ${teksSaldo}. Menunggu persetujuan orang lain; saldo belum berubah.`);
         kunciRef.current = null; await onSelesai?.(true); return;
       } else if (aksi === "koreksiPemakaian") {
         const v = validasiKoreksiPemakaian({ qtyBaru: f.qtyBaru, alasan: f.alasan }); if (!v.ok) { setGalat(v.galat); return; }
@@ -73,7 +74,7 @@ function FormAksi({ item, aksi, onSelesai, onBatal }) {
       )}
       {aksi === "koreksiSaldo" && (
         <div className="space-y-2">
-          <p className="m-0 text-[12.5px] text-ink2">Untuk saldo <b>{item.bahan?.kode}</b> yang salah di Gudang (bukan jumlah pemakaian order ini). Isi saldo yang BENAR; selisihnya dihitung dari saldo saat diajukan. Saldo tidak ditimpa — menunggu persetujuan orang lain, asal koreksi = catatan ini.</p>
+          <p className="m-0 text-[12.5px] text-ink2">Untuk saldo <b>{item.bahan?.kode}</b> yang salah di Gudang (bukan jumlah pemakaian order ini). Isi saldo yang BENAR; selisihnya dihitung dari saldo saat ini dan asal koreksi = catatan ini. Admin: saldo langsung berubah saat disimpan. Peran lain: menunggu persetujuan orang lain.</p>
           <label className="block space-y-1"><span className={LABEL}>Saldo yang benar ({item.bahan?.satuan})</span><input value={f.saldoBaru} onChange={(e) => set("saldoBaru", e.target.value)} inputMode="decimal" className={FIELD} data-testid="cph-saldo-baru" disabled={sibuk || !!dibuat} /></label>
         </div>
       )}

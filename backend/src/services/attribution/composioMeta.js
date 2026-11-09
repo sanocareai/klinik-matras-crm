@@ -41,11 +41,25 @@ export function konfigurasiKurang(c) {
 export const KODE_USER_ID_KOSONG = "COMPOSIO_META_USER_ID_KOSONG";
 export const kodeKonfigurasi = (kurang) => (kurang.includes("COMPOSIO_META_USER_ID") ? KODE_USER_ID_KOSONG : "KONFIGURASI_TIDAK_LENGKAP");
 // Galat Meta terbungkus teks oleh Composio: hanya kodenya yang diambil, teksnya dibuang.
+// Kode numerik Meta menang atas teks: "OAuthException" hanyalah tipe yang juga dipakai rate limit (4/17) dan galat izin (10/200-299).
+// Composio bisa membungkus kode sendiri di sekitar kode Meta, jadi semua kode dinilai; error_subcode diabaikan.
+const KODE_TOKEN = new Set([102, 190]);
+const KODE_RATE = new Set([4, 17, 32, 341, 613, 80000, 80003, 80004]);
+const KODE_SEMENTARA = new Set([1, 2]);
+const kodeIzin = (k) => k === 10 || (k >= 200 && k <= 299);
 export function kelasGalat(teks) {
   const t = String(teks ?? "");
-  if (/"?code"?\s*[:=]\s*"?190\b|expired|OAuthException/i.test(t)) return { kode: "TOKEN_KEDALUWARSA", ulang: false };
-  if (/"?code"?\s*[:=]\s*"?(4|17|32|613|80000|80003|80004)\b|rate.?limit|too many/i.test(t)) return { kode: "RATE_LIMIT", ulang: true };
-  if (/"?code"?\s*[:=]\s*"?(1|2)\b|temporar|timeout|unavailable/i.test(t)) return { kode: "GANGGUAN_SEMENTARA", ulang: true };
+  const kode = [...t.matchAll(/(?<![a-z_])"?code"?\s*[:=]\s*"?(\d+)\b/gi)].map((m) => Number(m[1]));
+  if (kode.some((k) => KODE_TOKEN.has(k))) return { kode: "TOKEN_KEDALUWARSA", ulang: false };
+  if (kode.some(kodeIzin)) return { kode: "IZIN_META_DITOLAK", ulang: false };
+  if (kode.some((k) => KODE_RATE.has(k))) return { kode: "RATE_LIMIT", ulang: true };
+  if (kode.some((k) => KODE_SEMENTARA.has(k)) || /"?is_transient"?\s*[:=]\s*"?true\b/i.test(t)) return { kode: "GANGGUAN_SEMENTARA", ulang: true };
+  if (kode.length) return { kode: "TOOL_GAGAL", ulang: false };
+  // Tanpa kode numerik baru teks dipakai.
+  if (/rate.?limit|too many/i.test(t)) return { kode: "RATE_LIMIT", ulang: true };
+  if (/temporar|timeout|unavailable/i.test(t)) return { kode: "GANGGUAN_SEMENTARA", ulang: true };
+  if (/expired/i.test(t)) return { kode: "TOKEN_KEDALUWARSA", ulang: false };
+  if (/OAuthException/i.test(t)) return { kode: "OAUTH_GAGAL", ulang: false };
   return { kode: "TOOL_GAGAL", ulang: false };
 }
 

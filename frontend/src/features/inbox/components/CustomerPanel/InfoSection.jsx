@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { api } from "../../../../api.js";
+import { keteranganTampil } from "../../../laporan/kanalPakem.js";
 
 const LEAD_SOURCE_LABELS = {
   META_ADS:        "Iklan Meta",
   GOOGLE_ADS:      "Google Ads",
   TIKTOK_ADS:      "TikTok Ads",
-  WEBSITE_ORGANIC: "Website Organik",
+  WEBSITE_ORGANIC: "Website (kanal belum diketahui)",
   INSTAGRAM:       "Instagram",
   WHATSAPP_DIRECT: "WA Langsung",
   REFERRAL:        "Referral",
@@ -121,7 +122,7 @@ export default function InfoSection({ customer, onUpdate }) {
           </span>
         </div>
         {customer.leadSourceDetail && (
-          <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-muted)" }}>{customer.leadSourceDetail}</p>
+          <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-muted)" }}>{keteranganTampil(customer.leadSourceDetail)}</p>
         )}
         <div className="inline-field">
           <select
@@ -131,7 +132,7 @@ export default function InfoSection({ customer, onUpdate }) {
             <option value="META_ADS">Iklan Meta</option>
             <option value="GOOGLE_ADS">Google Ads</option>
             <option value="TIKTOK_ADS">TikTok Ads</option>
-            <option value="WEBSITE_ORGANIC">Website Organik</option>
+            <option value="WEBSITE_ORGANIC">Website (kanal belum diketahui)</option>
             <option value="INSTAGRAM">Instagram</option>
             <option value="WHATSAPP_DIRECT">WA Langsung</option>
             <option value="REFERRAL">Referral</option>

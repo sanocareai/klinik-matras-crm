@@ -19,14 +19,16 @@ import { biayaKpiSumber, SUMBER_BERBIAYA } from "./biayaSumber.js";
 
 export const AMBANG_SAMPEL = 30;
 export const SUMBER = Object.freeze([
-  { id: "META", label: "Meta Ads", jenis: "IKLAN", labelCrm: ["META_ADS"], bukti: "ATRIBUSI_TERBUKTI_TERSEDIA" },
-  { id: "TIKTOK", label: "TikTok Ads", jenis: "IKLAN", labelCrm: ["TIKTOK_ADS"], bukti: "LABEL_CRM" },
+  { id: "META", label: "Meta Ads", jenis: "IKLAN", labelCrm: ["META_ADS"], bukti: "ATRIBUSI_TERBUKTI_TERSEDIA", kelompok: "Iklan berbayar", tingkatBukti: "Kuat" },
+  { id: "TIKTOK", label: "TikTok Ads", jenis: "IKLAN", labelCrm: ["TIKTOK_ADS"], bukti: "LABEL_CRM", kelompok: "Iklan berbayar", tingkatBukti: "Sedang" },
   // Google Ads sumber SENDIRI (sebelumnya dilebur ke "Lainnya"). Hanya label CRM (tanpa bukti per klik; gclid belum disimpan di CRM). Biaya: manual/Pengaturan bulanan.
-  { id: "GOOGLE", label: "Google Ads", jenis: "IKLAN", labelCrm: ["GOOGLE_ADS"], bukti: "LABEL_CRM" },
-  { id: "WHATSAPP", label: "WhatsApp Langsung", jenis: "ORGANIK", labelCrm: ["WHATSAPP_DIRECT"], bukti: "LABEL_CRM" },
-  { id: "INSTAGRAM", label: "Instagram Organik", jenis: "ORGANIK", labelCrm: ["INSTAGRAM"], bukti: "LABEL_CRM" },
-  { id: "WEBSITE", label: "Website Organik", jenis: "ORGANIK", labelCrm: ["WEBSITE_ORGANIC", "WEBSITE"], bukti: "LABEL_CRM" },
-  { id: "LAINNYA", label: "Lainnya", jenis: "LAINNYA", labelCrm: ["OTHER", "ADS", "REFERRAL"], bukti: "LABEL_CRM" },
+  { id: "GOOGLE", label: "Google Ads", jenis: "IKLAN", labelCrm: ["GOOGLE_ADS"], bukti: "LABEL_CRM", kelompok: "Iklan berbayar", tingkatBukti: "Sedang" },
+  { id: "WHATSAPP", label: "WhatsApp tanpa jejak", jenis: "ORGANIK", labelCrm: ["WHATSAPP_DIRECT"], bukti: "LABEL_CRM", kelompok: "Tanpa jejak", tingkatBukti: "Tidak diketahui" },
+  { id: "INSTAGRAM", label: "Instagram via Website", jenis: "ORGANIK", labelCrm: ["INSTAGRAM"], bukti: "LABEL_CRM", kelompok: "Website dan organik", tingkatBukti: "Kuat" },
+  { id: "WEBSITE", label: "Website (kanal belum diketahui)", jenis: "ORGANIK", labelCrm: ["WEBSITE_ORGANIC", "WEBSITE"], bukti: "LABEL_CRM", kelompok: "Website dan organik", tingkatBukti: "Sedang" },
+  // Chat pertama dari pihak Sano: label CRM tetap OTHER, dipisah menurut keterangannya. Bukan lead yang datang dari marketing, jadi tidak ikut sorotan.
+  { id: "DIMULAI_SALES", label: "Dimulai Sales", jenis: "INTERNAL", labelCrm: [], bukti: "LABEL_CRM", kelompok: "Dimulai internal", tingkatBukti: "Internal" },
+  { id: "LAINNYA", label: "Lainnya", jenis: "LAINNYA", labelCrm: ["OTHER", "ADS", "REFERRAL"], bukti: "LABEL_CRM", kelompok: "Lainnya", tingkatBukti: "Sedang" },
 ]);
 /** Label yang BUKAN lead pemasaran (dikeluarkan dari semua sumber; dilaporkan terpisah). */
 export const LABEL_BUKAN_LEAD = Object.freeze(["B2B_DIRECT", "PENJUALAN_KARYAWAN"]);
@@ -44,6 +46,8 @@ const pct = (a, b) => (b > 0 ? Math.round((a / b) * 10000) / 100 : null);
 
 const petaLabel = new Map(); for (const s of SUMBER) for (const l of s.labelCrm) petaLabel.set(l, s.id);
 export const sumberDariLabel = (label) => (LABEL_BUKAN_LEAD.includes(label) ? null : petaLabel.get(label) ?? "LAINNYA");
+/** Sumber satu customer: label CRM, kecuali OTHER yang keterangannya menyatakan chat dimulai dari pihak Sano. */
+export const sumberDariCustomer = (c) => (c.leadSource === "OTHER" && /^dimulai\b/i.test(c.leadSourceDetail || "") ? "DIMULAI_SALES" : sumberDariLabel(c.leadSource));
 
 // Prospek = keputusan MANUAL sales (drag stage); sistem tidak menilai. Hitungan DESKRIPTIF dari riwayat transisi (ada sejak 25 Jul 2026) + stage saat ini; TIDAK ada kriteria baru.
 const STAGE_LANJUT_JAUH = Object.freeze(["TRANSACTION", "REVIEWED"]);
@@ -71,7 +75,7 @@ export function hitungSumber({ customers, orders, kontribusi, refunds }) {
   const per = new Map(SUMBER.map((s) => [s.id, kosong()]));
   const cust = new Map(); let bukanLeadPemasaran = 0; const bukanLeadPerLabel = {};
   for (const c of customers) {
-    const sid = sumberDariLabel(c.leadSource);
+    const sid = sumberDariCustomer(c);
     if (!sid) { bukanLeadPemasaran++; bukanLeadPerLabel[c.leadSource] = (bukanLeadPerLabel[c.leadSource] || 0) + 1; continue; }
     cust.set(c.id, { c, sid }); const x = per.get(sid); x.lead++;
     const alasan = alasanBukanLead(c);
@@ -97,7 +101,8 @@ export function hitungSumber({ customers, orders, kontribusi, refunds }) {
 }
 
 /** Sorotan yang dihitung server dari data (bukan hardcode). Konversi = ber-order ÷ TOTAL lead (termasuk spam); sampel minimum = AMBANG_SAMPEL lead (aturan tampilan sementara, bukan uji signifikansi). */
-export function sorotan(daftar) {
+export function sorotan(semua) {
+  const daftar = semua.filter((s) => s.jenis !== "INTERNAL");
   const layak = daftar.filter((s) => !s.sampelKecil && s.lead > 0);
   const maks = (arr, f) => arr.reduce((b, s) => (b === null || f(s) > f(b) ? s : b), null);
   const out = [];
@@ -134,7 +139,7 @@ export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = n
     const sampelKecil = x.lead < AMBANG_SAMPEL; const sampelKecilNonSpam = x.leadSah < AMBANG_SAMPEL;
     const adaMeta = s.id === "META";
     return {
-      id: s.id, label: s.label, jenis: s.jenis, labelCrm: s.labelCrm, sampelKecil, sampelKecilNonSpam, ambangSampel: AMBANG_SAMPEL,
+      id: s.id, label: s.label, jenis: s.jenis, labelCrm: s.labelCrm, kelompok: s.kelompok, tingkatBukti: s.tingkatBukti, sampelKecil, sampelKecilNonSpam, ambangSampel: AMBANG_SAMPEL,
       lead: x.lead, spam: x.spam, spamPersen: { nilai: pct(x.spam, x.lead), pembilang: x.spam, penyebut: x.lead }, dikecualikanLain: x.dikecualianLain, leadSah: x.leadSah,
       pengecualian: { spam: x.spam, internalStaff: x.internalStaff, profilKaryawan: x.profilKaryawan, jumlahDikeluarkanDariLeadSah: x.spam + x.dikecualianLain, catatan: "lead = semua customer berlabel sumber ini (termasuk spam dan staf); lead sah = lead dikurangi spam, staf internal, dan profil karyawan" },
       berOrder: x.berOrder, membayar: x.membayar, lunas: x.lunas,
@@ -150,7 +155,7 @@ export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = n
         : { jenis: "LABEL_CRM", akuisisiTerbukti: null, catatan: "Sumber hanya label CRM (tanpa bukti per klik dan tanpa data spend)." },
       // BIAYA SUMBER (label CRM + biaya sumber pada rentang yang sama; BUKAN atribusi per klik). Campaign tetap membutuhkan touch/mapping terbukti (tab Iklan); pengaman campaign tidak disentuh.
       biaya: (() => {
-        if (s.jenis === "ORGANIK") return biayaKpiSumber({ jenis: "ORGANIK" });
+        if (s.jenis === "ORGANIK" || s.jenis === "INTERNAL") return biayaKpiSumber({ jenis: "ORGANIK" });
         if (!biayaSumber) return { dasar: "ATRIBUSI_LABEL_CRM", status: "BELUM_DIHITUNG", spend: null, spendLengkap: false, sementara: false, alasanSementara: [], cpl: null, cpa: null, bookedRoas: null, cashRoas: null, alasanNull: { cpa: "BELUM_DIHITUNG", bookedRoas: "BELUM_DIHITUNG", cashRoas: "BELUM_DIHITUNG", cpl: "BELUM_DIHITUNG" }, cakupan: null };
         const cak = biayaSumber.get(s.id);
         if (s.jenis === "ORGANIK" || !cak) return biayaKpiSumber({ jenis: "ORGANIK" });
@@ -214,6 +219,13 @@ import { muatBiayaSumber } from "./biayaSumber.js";
 export async function hitungSumberPerforma(db, parameter, { now = new Date(), timeoutMs = 25_000, denganMeta = true } = {}) {
   const { dari, sampai, hariIni } = parameter;
   const { meta, ...m } = await muatMasukanKohort(db, { leadFrom: dari, leadTo: sampai });
+  // Keterangan hanya dibutuhkan untuk memisahkan "Dimulai Sales" dari label OTHER; loader kohort sengaja tidak diubah.
+  const idOther = m.customers.filter((c) => c.leadSource === "OTHER").map((c) => c.id);
+  if (idOther.length) {
+    const ket = await db.customer.findMany({ where: { id: { in: idOther } }, select: { id: true, leadSourceDetail: true } });
+    const peta = new Map(ket.map((c) => [c.id, c.leadSourceDetail]));
+    for (const c of m.customers) if (c.leadSource === "OTHER") c.leadSourceDetail = peta.get(c.id) ?? null;
+  }
   const hasil = hitungSumber({ customers: m.customers, orders: m.orders, kontribusi: m.kontribusi, refunds: m.refunds });
   let biayaMeta = null, provenMeta = null, mulaiHari = null;
   const agg = await db.attributionTouch.aggregate({ _min: { touchAt: true } });

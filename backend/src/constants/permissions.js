@@ -51,6 +51,8 @@ export const PERMISSIONS = {
   // Pemisahan tugas penyesuaian stok (Okt 2026): MENYETUJUI penyesuaian (Stock Adjustment APPROVED, Stock Count dengan selisih, koreksi
   // satu-langkah) dipegang peran PENYETUJU yang berbeda dari penulis ledger (INVENTORY_WRITE). Pemohon tidak pernah boleh menyetujui permintaannya sendiri.
   INVENTORY_ADJUSTMENT_APPROVE: "inventory:adjustment_approve",
+  // KEPUTUSAN OWNER 9 Nov 2026: ADMIN mengoreksi saldo bahan LANGSUNG, tanpa pengajuan dan tanpa persetujuan orang lain. Tetap satu pergerakan ADJUSTMENT lewat postStockMovement, alasan wajib, pelaku tercatat. Lihat services/koreksiSaldoBahan.js.
+  INVENTORY_KOREKSI_LANGSUNG: "inventory:koreksi_saldo_langsung",
   // Catat bahan baku dipakai untuk SATU unit spesifik (busa/lem/kain saat
   // mengerjakan tahap). SENGAJA dipisah dari INVENTORY_WRITE — lantai
   // produksi tidak butuh (dan tidak boleh) akses goods receipt/stock
@@ -264,7 +266,7 @@ const ADMIN_PERMS = [
   // Menambah: eksekusi tahap (UNIT_STAGE_WRITE + PRODUCTION_EXECUTE_ANY), bahan unit, putusan QC (QC_WRITE), stok & penerimaan Gudang
   // (INVENTORY_WRITE), unggah/koreksi dokumentasi foto, ringkasan pribadi, usulan revisi lingkup. Trade-off yang diterima owner: pemisahan
   // tugas Owner/Admin vs PIC/QC/Gudang hilang; mitigasi = actor_id selalu user penekan (tidak dipalsukan sebagai PIC) dan QC_WAIVE tetap tercatat.
-  P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE, P.QC_WRITE, P.INVENTORY_WRITE, P.PRODUCTION_DOCUMENTATION_WRITE,
+  P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE, P.QC_WRITE, P.INVENTORY_WRITE, P.INVENTORY_KOREKSI_LANGSUNG, P.PRODUCTION_DOCUMENTATION_WRITE,
   P.PRODUCTION_REPORT_SELF, P.PRODUCTION_EXECUTE_ANY,   // usulan revisi lingkup TETAP milik Lead/QC (pengusul ≠ pemutus)
   // D-116 — ADMIN penuh lintas divisi, konsisten dengan ORDER_WRITE/JOB_WRITE
   // yang sudah dipegang ADMIN sejak awal.

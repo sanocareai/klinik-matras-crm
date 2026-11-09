@@ -313,6 +313,20 @@ export function urlIklanAman(raw) {
   return tanpaQuery.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "").slice(0, 200);
 }
 
+/**
+ * Satu kreatif tersimpan dalam dua bentuk: "Meta CTWA - instagram - instagram.com/p/X" dan
+ * "Meta CTWA - instagram.com/p/X" (aplikasi tidak terbaca). Bentuk tanpa aplikasi disamakan
+ * lewat domain URL-nya agar laporan tidak memecah satu kreatif. Teks lain tidak diubah.
+ */
+export function detailCtwaKanonik(detail) {
+  if (typeof detail !== "string") return detail;
+  const m = /^Meta CTWA - ((?:instagram\.com|facebook\.com|fb\.me|fb\.watch|wa\.me)\/\S+)$/i.exec(detail);
+  if (!m) return detail;
+  const url = m[1].toLowerCase();
+  const app = url.startsWith("instagram.") ? "instagram" : url.startsWith("wa.me") ? "whatsapp" : "facebook";
+  return `Meta CTWA - ${app} - ${m[1]}`;
+}
+
 /** Keterangan singkat untuk kolom leadSourceDetail di CRM. */
 export function ctwaDetail(ctwa) {
   if (!ctwa) return null;

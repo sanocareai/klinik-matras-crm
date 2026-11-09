@@ -1,7 +1,7 @@
 // INVARIAN laporan Marketing (GET /api/atribusi/iklan/sumber) — fungsi MURNI, tanpa I/O. Dipakai oleh: (1) smoke pasca-switch dan rehearsal (disisipkan generator ke kode smoke; kata kunci `export` dibuang saat disisipkan),
 // (2) tes unit backend/tests/marketingLaporanInvarian.test.js (fixture + mutasi). Setiap pemeriksaan = { n, ok, d }.
 // Kebenaran = hubungan ANTAR angka di laporan dan terhadap hitungan SQL independen pada data yang sama, BUKAN angka tetap.
-export const URUTAN_SUMBER = ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA"];
+export const URUTAN_SUMBER = ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "DIMULAI_SALES", "LAINNYA"];
 const jml = (a, f) => a.reduce((s, x) => s + (Number(f(x)) || 0), 0);
 const KUNCI_RASIO = ["cpl", "cpa", "costPerProspekEksplisit", "bookedRoas", "cashRoas"];
 
@@ -9,7 +9,7 @@ const KUNCI_RASIO = ["cpl", "cpa", "costPerProspekEksplisit", "bookedRoas", "cas
 export function periksaLaporan(d) {
   const hasil = []; const rec = (n, ok, det = "") => hasil.push({ n, ok: !!ok, d: String(det).slice(0, 240) });
   const S = Array.isArray(d?.sumber) ? d.sumber : []; const T = d?.total ?? {};
-  rec("bentuk: periode, total, dan tujuh sumber dalam urutan tetap (Google Ads terpisah dari Lainnya)", !!d?.periode && S.map((x) => x.id).join() === URUTAN_SUMBER.join(), S.map((x) => x.id).join());
+  rec("bentuk: periode, total, dan delapan sumber dalam urutan tetap (Google Ads terpisah dari Lainnya)", !!d?.periode && S.map((x) => x.id).join() === URUTAN_SUMBER.join(), S.map((x) => x.id).join());
   const g = S.find((x) => x.id === "GOOGLE"), l = S.find((x) => x.id === "LAINNYA");
   rec("Google Ads = sumber berbayar berlabel CRM GOOGLE_ADS; Lainnya tidak lagi memuat GOOGLE_ADS", g?.jenis === "IKLAN" && (g?.labelCrm ?? []).join() === "GOOGLE_ADS" && !(l?.labelCrm ?? []).includes("GOOGLE_ADS"), JSON.stringify([g?.jenis, g?.labelCrm, l?.labelCrm]));
   for (const k of ["lead", "spam", "leadSah", "berOrder", "membayar", "lunas"]) rec(`total.${k} = jumlah ${k} seluruh sumber`, T[k] === jml(S, (x) => x[k]), `${T[k]} vs ${jml(S, (x) => x[k])}`);
@@ -38,7 +38,7 @@ export function periksaLaporan(d) {
   return hasil;
 }
 
-/** Bandingkan laporan dengan hitungan SQL independen. `sql` = { SUMBER_ID: { lead, spam, leadSah, eksplisit, atauLanjut } } untuk semua tujuh sumber. */
+/** Bandingkan laporan dengan hitungan SQL independen. `sql` = { SUMBER_ID: { lead, spam, leadSah, eksplisit, atauLanjut } } untuk semua delapan sumber. */
 export function banding(d, sql) {
   const hasil = []; const rec = (n, ok, det = "") => hasil.push({ n, ok: !!ok, d: String(det).slice(0, 300) });
   const beda = [];
@@ -57,7 +57,8 @@ export const SQL_BANDING = `WITH k AS (
     CASE WHEN c."leadSource"::text IN ('B2B_DIRECT','PENJUALAN_KARYAWAN') THEN 'BUKAN_LEAD'
          WHEN c."leadSource"::text='META_ADS' THEN 'META' WHEN c."leadSource"::text='TIKTOK_ADS' THEN 'TIKTOK' WHEN c."leadSource"::text='GOOGLE_ADS' THEN 'GOOGLE'
          WHEN c."leadSource"::text='WHATSAPP_DIRECT' THEN 'WHATSAPP' WHEN c."leadSource"::text='INSTAGRAM' THEN 'INSTAGRAM'
-         WHEN c."leadSource"::text IN ('WEBSITE_ORGANIC','WEBSITE') THEN 'WEBSITE' ELSE 'LAINNYA' END AS sid,
+         WHEN c."leadSource"::text IN ('WEBSITE_ORGANIC','WEBSITE') THEN 'WEBSITE'
+         WHEN c."leadSource"::text='OTHER' AND c."leadSourceDetail" ~* '^dimulai\\M' THEN 'DIMULAI_SALES' ELSE 'LAINNYA' END AS sid,
     CASE WHEN c."pipelineStage"::text='SPAM' THEN 'SPAM' WHEN c."leadSource"::text IN ('B2B_DIRECT','PENJUALAN_KARYAWAN') THEN 'BUKAN_LEAD'
          WHEN c.is_internal_staff THEN 'INTERNAL' WHEN c.staff_user_id IS NOT NULL THEN 'PROFIL_KARYAWAN' ELSE 'SAH' END AS alasan
   FROM "Customer" c WHERE c."createdAt" >= $1::timestamp AND c."createdAt" < $2::timestamp),
@@ -68,7 +69,7 @@ SELECT k.sid, count(*) FILTER (WHERE k.alasan<>'BUKAN_LEAD')::int AS lead, count
   count(*) FILTER (WHERE k.alasan='SAH' AND (coalesce(tr.lanjut,false) OR k.stage IN ('PROSPECT','TRANSACTION','REVIEWED')))::int AS atau_lanjut
 FROM k LEFT JOIN tr ON tr.cid=k.id WHERE k.sid<>'BUKAN_LEAD' GROUP BY k.sid`;
 
-/** Baris hasil SQL → peta per sumber (tujuh sumber selalu ada, 0 bila tidak ada baris). */
+/** Baris hasil SQL → peta per sumber (delapan sumber selalu ada, 0 bila tidak ada baris). */
 export function petaSql(baris) {
   const o = Object.fromEntries(URUTAN_SUMBER.map((id) => [id, { lead: 0, spam: 0, leadSah: 0, eksplisit: 0, atauLanjut: 0 }]));
   for (const r of baris ?? []) if (o[r.sid]) o[r.sid] = { lead: Number(r.lead), spam: Number(r.spam), leadSah: Number(r.lead_sah), eksplisit: Number(r.eksplisit), atauLanjut: Number(r.atau_lanjut) };

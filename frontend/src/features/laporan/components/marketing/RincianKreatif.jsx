@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import { sumberAkuisisiDariTraffic } from "../../periodeLaporan.js";
+import { tautanDariDetail } from "../../marketingLogic.js";
 import ChartCard from "../ChartCard.jsx";
 
 // Rincian kreatif/tautan + Nilai per lead per platform (pindahan dari tab Traffic). BASIS LEGACY (analytics/lead-source-detail & source-performance): tetap tersedia agar tidak ada fitur yang hilang,
@@ -52,7 +53,8 @@ const LABEL_PLATFORM = {
   UNKNOWN: "—",
 };
 
-export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sumberLabelAwal = "", onBukaAkuisisi }) {
+// hanyaRincian = tampilan sub-tab "Sumber & Link": hanya rincian per channel dan link. Biaya resmi ada di tab Ringkasan.
+export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sumberLabelAwal = "", onBukaAkuisisi, hanyaRincian = false }) {
   const atribusi = traffic?.atribusi;
 
   // ── Filter/pencarian/sortir di "Rincian per Iklan" ────────────────────
@@ -124,6 +126,7 @@ export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sum
   const [perf, setPerf] = useState(null); // { months, spendNote, data }
   const [loadingPerf, setLoadingPerf] = useState(false);
   useEffect(() => {
+    if (hanyaRincian) return undefined;
     let batal = false;
     setLoadingPerf(true);
     api.getAnalyticsSourcePerformance({ ...rangeParams })
@@ -131,7 +134,7 @@ export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sum
       .catch(() => { if (!batal) setPerf(null); })
       .finally(() => { if (!batal) setLoadingPerf(false); });
     return () => { batal = true; };
-  }, [rangeParams?.from, rangeParams?.to]);
+  }, [rangeParams?.from, rangeParams?.to, hanyaRincian]);
   const perfRows = useMemo(
     () => [...(perf?.data || [])].sort((a, b) => b.leads - a.leads),
     [perf],
@@ -149,7 +152,7 @@ export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sum
           WhatsApp Langsung/Referral, yang wajar tidak punya biaya) — sama
           persis pola default "Rincian per Iklan" di bawah. Pilih satu dari
           dropdown untuk mendalami platform itu lewat kartu statistik besar. */}
-      {perfRows.length > 0 && (
+      {!hanyaRincian && perfRows.length > 0 && (
         <ChartCard
           index={9}
           title="Performa per Platform"
@@ -354,8 +357,8 @@ export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sum
       {(sourceDetail?.data || []).length > 0 && (
         <ChartCard
           index={10}
-          title="Rincian per Iklan"
-          description="Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"
+          title={hanyaRincian ? "Rincian per channel & link" : "Rincian per Iklan"}
+          description={hanyaRincian ? "Semua sumber lead beserta keterangan kreatif atau link-nya. Dasarnya label CRM, bukan atribusi campaign." : "Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"}
           actions={
             // flex-wrap — di layar sempit, search box + dropdown TIDAK
             // dipaksa muat 1 baris bersama title (lihat catatan panjang di
@@ -485,7 +488,11 @@ export default function RincianKreatif({ traffic, sourceDetail, rangeParams, sum
                       </span>
                     </td>
                     <td className="py-2 pr-3 text-ink2">{LABEL_PLATFORM[row.platform] || "—"}</td>
-                    <td className="max-w-[280px] truncate py-2 pr-3 text-ink3" title={row.detail}>{row.detail}</td>
+                    <td className="max-w-[280px] truncate py-2 pr-3 text-ink3" title={row.detail}>
+                      {tautanDariDetail(row.detail)
+                        ? <a href={tautanDariDetail(row.detail)} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">{row.detail}</a>
+                        : row.detail}
+                    </td>
                     <td className="py-2 pr-3 text-right font-semibold tabular-nums text-ink">{row.leads}</td>
                     <td className="py-2 pr-3 text-right tabular-nums text-ink3">
                       {row.spamRate == null ? "—" : `${row.spamRate}%`}

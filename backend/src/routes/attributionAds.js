@@ -5,8 +5,10 @@
 //   GET  /referensi        daftar referensi Ad→AdSet→Campaign + Ad ID yang belum terpetakan (baca-saja)
 //   POST /referensi        impor pemetaan tervalidasi dari ekspor Ads Manager. dryRun DEFAULT true. Menulis HANYA ke meta_ad_references/_imports.
 //   GET  /ekspor-id        ?format=json|csv  — satu baris per Ad ID (tanpa data customer) untuk join dengan data spend (Windsor)
+//   GET  /chat             ?dari&sampai&(sumber|adId|adSetId|campaignId|kreatif|tanpaIklan=1)&hasil=semua|order|spam&halaman=1 — daftar chat. MEMUAT nama, nomor, dan pesan pertama pelanggan.
+//   GET  /ekspor.xlsx      ?dari&sampai[&pemilih yang sama] — berkas Excel tiga lembar. MEMUAT nama, nomor, dan pesan pertama pelanggan.
 //
-// Terisolasi: tidak mengubah Dashboard/analytics.js; tidak ada migrasi data lama. Respons hanya agregat/ID iklan (tanpa nomor, nama, chat, clid).
+// Terisolasi: tidak mengubah Dashboard/analytics.js; tidak ada migrasi data lama. Respons selain /chat dan /ekspor.xlsx hanya agregat/ID iklan (tanpa nomor, nama, chat, clid).
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
@@ -18,6 +20,7 @@ import { denganPenjaga, SedangDihitungError } from "../services/attribution/penj
 import { pasangRuteSpend } from "./attributionSpend.js";
 import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
+import { parseFilterChat, hitungDaftarChat, hitungEksporMarketing } from "../services/attribution/rincianChat.js";
 
 export const attributionAdsRouter = express.Router();
 attributionAdsRouter.use(requireAuth, requireAdmin);
@@ -94,6 +97,45 @@ attributionAdsRouter.get("/sumber", async (req, res) => {
     if (err instanceof SedangDihitungError) return jawabSibuk(res);
     console.error("atribusi/iklan/sumber error:", err?.code || err?.name || "ERROR");
     return res.status(500).json({ error: "Gagal menghitung performa akuisisi per sumber" });
+  }
+});
+
+attributionAdsRouter.get("/chat", async (req, res) => {
+  let parameter, filter;
+  try { parameter = parseParameterIklan({ dari: req.query.dari, sampai: req.query.sampai }); filter = parseFilterChat(req.query); }
+  catch (err) {
+    if (err instanceof ParameterError) return res.status(400).json({ error: err.message, code: err.code });
+    throw err;
+  }
+  try {
+    const hasil = await denganPenjaga(() => hitungDaftarChat(prisma, parameter, filter));
+    res.set("Cache-Control", "no-store");
+    return res.json(hasil);
+  } catch (err) {
+    if (err instanceof SedangDihitungError) return jawabSibuk(res);
+    console.error("atribusi/iklan/chat error:", err?.code || err?.name || "ERROR");
+    return res.status(500).json({ error: "Gagal memuat daftar chat" });
+  }
+});
+
+attributionAdsRouter.get("/ekspor.xlsx", async (req, res) => {
+  let parameter, filter;
+  try { parameter = parseParameterIklan({ dari: req.query.dari, sampai: req.query.sampai }); filter = parseFilterChat(req.query, { wajibPemilih: false }); }
+  catch (err) {
+    if (err instanceof ParameterError) return res.status(400).json({ error: err.message, code: err.code });
+    throw err;
+  }
+  try {
+    const { berkas, namaFile } = await denganPenjaga(() => hitungEksporMarketing(prisma, parameter, filter, { asalUrl: "https://app.sanomatrassehat.com" }));
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${namaFile}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.end(Buffer.from(berkas));
+  } catch (err) {
+    if (err instanceof SedangDihitungError) return jawabSibuk(res);
+    console.error("atribusi/iklan/ekspor.xlsx error:", err?.code || err?.name || "ERROR");
+    return res.status(500).json({ error: "Gagal membuat berkas Excel" });
   }
 });
 

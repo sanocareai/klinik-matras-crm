@@ -9,6 +9,12 @@ import { ringkasCakupan, UMUR, LEVELS } from "./iklanCampaignLogic.js";
 
 export const TAB_MARKETING = "Marketing";
 
+/** URL publik di keterangan sumber lead, atau null. Tautan pratinjau Status WhatsApp bukan alamat publik, jadi tidak dibuat tautan. */
+export function tautanDariDetail(detail) {
+  const m = /(?:^|\s)((?:www\.)?(?:instagram\.com|facebook\.com|fb\.me|fb\.watch)\/\S+)/i.exec(String(detail || ""));
+  return m ? `https://${m[1]}` : null;
+}
+
 // ── URL lama → tujuan pengganti ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // ?tab=Traffic → Marketing (ringkasan); ?tab=Akuisisi[&sumber=X] → Marketing[&sumber=X]; ?tab=Iklan → Marketing&sumber=META (campaign → ad set → ad). Periode (dari/sampai) dipertahankan oleh pemanggil.
 export const TAB_LAMA = Object.freeze({ Traffic: { sumber: null }, Akuisisi: { sumber: undefined }, Iklan: { sumber: "META" } });

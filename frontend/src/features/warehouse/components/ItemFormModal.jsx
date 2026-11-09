@@ -10,7 +10,8 @@ import { UNIT_LABEL, ALL_UNITS, CATEGORY_REAL, SERVICE_LINE_REAL } from "../inve
 // ⚠️ `code`, `unit`, dan `serviceLine` TIDAK BISA DIUBAH setelah bahan dibuat. Itu bukan kelalaian UI: backend menolaknya karena ledger sudah mengacu ke satuan itu — mengganti satuan diam-diam membuat riwayat
 // qty tidak bisa dibandingkan. Kolomnya dikunci dan alasannya ditulis. Mengubah informasi bahan (nama, kategori, batas minimum, jumlah restok) TIDAK mengubah saldo, harga, atau dokumen lama;
 // perubahan saldo dan harga memakai jalurnya sendiri (Koreksi saldo dan Ubah harga di rincian bahan).
-const KOSONG = { code: "", name: "", unit: "PCS", category: "", serviceLine: "", reorderPoint: "", reorderQty: "" };
+const KOSONG = { code: "", name: "", unit: "PCS", category: "", serviceLine: "", reorderPoint: "", reorderQty: "", description: "" };
+const DESKRIPSI_MAKS = 1000;
 const angkaSah = (v) => v === "" || v === null || v === undefined || (Number.isFinite(Number(v)) && Number(v) >= 0);
 
 export default function ItemFormModal({ open, item, onClose, onSaved }) {
@@ -25,7 +26,7 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
     if (!open) return;
     setErr(""); setGalat({});
     setForm(item
-      ? { code: item.code, name: item.name, unit: item.unit, category: item.category || "", serviceLine: item.serviceLine || "", reorderPoint: item.reorderPoint ?? "", reorderQty: item.reorderQty ?? "" }
+      ? { code: item.code, name: item.name, unit: item.unit, category: item.category || "", serviceLine: item.serviceLine || "", reorderPoint: item.reorderPoint ?? "", reorderQty: item.reorderQty ?? "", description: item.description ?? "" }
       : KOSONG);
   }, [open, item]);
 
@@ -40,6 +41,7 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
     if (!String(form.name).trim()) e.name = "Nama wajib diisi";
     if (!angkaSah(form.reorderPoint)) e.reorderPoint = "Harus angka 0 atau lebih";
     if (!angkaSah(form.reorderQty)) e.reorderQty = "Harus angka 0 atau lebih";
+    if (String(form.description ?? "").trim().length > DESKRIPSI_MAKS) e.description = `Maksimum ${DESKRIPSI_MAKS} karakter`;
     setGalat(e); return e;
   }
 
@@ -57,6 +59,7 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
           category: form.category,          // "" → dikosongkan
           reorderPoint: form.reorderPoint,  // "" → alert dimatikan
           reorderQty: form.reorderQty,
+          description: form.description,   // "" → dikosongkan
         });
       } else {
         await api.createMaterial({
@@ -65,6 +68,7 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
           serviceLine: form.serviceLine || undefined,
           reorderPoint: form.reorderPoint || undefined,
           reorderQty: form.reorderQty || undefined,
+          description: form.description || undefined,
         });
       }
       onSaved();
@@ -89,6 +93,13 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
               <input id="wh-name" className="gud-f-teks" value={form.name} onChange={set("name")} placeholder="Busa HR Density 18 — 5cm" aria-invalid={!!galat.name || undefined} data-testid="input-nama" />
             </GudField>
           </div>
+        </fieldset>
+
+        <fieldset className="gud-f-seksi" data-testid="seksi-deskripsi">
+          <legend className="gud-f-bagian-judul">Deskripsi (opsional)</legend>
+          <GudField label="Deskripsi bahan" htmlFor="wh-desc" galat={galat.description} hint="Catatan untuk tim, tidak mengubah saldo atau harga. Isi kemasan di sini tidak menjadi konversi stok.">
+            <textarea id="wh-desc" rows={3} maxLength={DESKRIPSI_MAKS} className="gud-f-teks gud-f-area" value={form.description} onChange={set("description")} placeholder="Mis. Merek ABC. Dibeli per pack, 1 pack isi 12 pcs. Dipakai per pcs." aria-invalid={!!galat.description || undefined} data-testid="input-deskripsi" />
+          </GudField>
         </fieldset>
 
         <fieldset className="gud-f-seksi" data-testid="seksi-satuan">

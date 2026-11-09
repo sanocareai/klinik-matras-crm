@@ -45,7 +45,9 @@ export function saranRentang(hariIni) {
 // ── URL ↔ state ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // Kunci milik tab Marketing (semua opsional; nilai bawaan TIDAK ditulis agar URL bersih): sumber (detail sumber), urut (urutan tabel sumber), kolom (ringkas|lengkap),
 // banding (=1, bandingkan periode sebelumnya), level/campaign/adset (drilldown Meta), rank (kriteria peringkat Meta), umur (kohort Meta).
-const KUNCI_MARKETING = ["sumber", "urut", "kolom", "banding", "level", "campaign", "adset", "rank", "umur"];
+const KUNCI_MARKETING = ["sumber", "urut", "kolom", "banding", "level", "campaign", "adset", "rank", "umur", "tampil"];
+/** Sub-tab Marketing yang boleh ditulis di URL; tanpa nilai = Ringkasan. */
+export const TAMPIL_SUMBER_LINK = "sumber-link";
 /**
  * Baca ?tab&dari&sampai&(kunci Marketing). Nilai tak valid → null/bawaan (diabaikan, tidak pernah melempar).
  * URL LAMA tetap berlaku: ?tab=Traffic|Akuisisi|Iklan dipetakan ke Marketing (Akuisisi membawa ?sumber=; Iklan → sumber=META) — periode dipertahankan.
@@ -70,6 +72,7 @@ export function bacaUrlLaporan(search, tabsValid = []) {
     adset: marketing && peta.sumber === "META" ? jalur.adset : null,
     rank: marketing && kriteriaMetaValid(p.get("rank")) ? p.get("rank") : KRITERIA_META_BAWAAN,
     umur: marketing && umurValid(p.get("umur")) ? p.get("umur") : "semua",
+    tampil: marketing && !peta.sumber && p.get("tampil") === TAMPIL_SUMBER_LINK ? TAMPIL_SUMBER_LINK : null,
   };
 }
 
@@ -89,6 +92,7 @@ export function tulisUrlLaporan(search, { tab, range, sumber, marketing = {} }) 
     if (m.urut && m.urut !== URUT_SUMBER_BAWAAN && urutSumberValid(m.urut)) p.set("urut", m.urut);
     if (m.kolom === "lengkap") p.set("kolom", "lengkap");
     if (m.banding) p.set("banding", "1");
+    if (m.tampil === TAMPIL_SUMBER_LINK && !m.sumber) p.set("tampil", TAMPIL_SUMBER_LINK);
     if (m.sumber === "META") {
       const j = normalisasiJalurMeta(m);
       if (j.level !== "campaign") p.set("level", j.level);
@@ -107,7 +111,7 @@ const PETA_TRAFFIC = { META_ADS: "META", TIKTOK_ADS: "TIKTOK", WHATSAPP_DIRECT: 
 /** Label sumber Traffic (LeadSource) → id sumber Akuisisi. B2B/penjualan karyawan bukan lead pemasaran → null (tidak ada detail akuisisi). */
 export const sumberAkuisisiDariTraffic = (leadSource) => (leadSource === "B2B_DIRECT" || leadSource === "PENJUALAN_KARYAWAN" ? null : PETA_TRAFFIC[leadSource] ?? (leadSource ? "LAINNYA" : null));
 /** Id sumber Akuisisi → label LeadSource untuk daftar Pelanggan (?source=). Sumber gabungan (Website/Lainnya) memakai label utamanya. */
-export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK_ADS", WHATSAPP: "WHATSAPP_DIRECT", INSTAGRAM: "INSTAGRAM", WEBSITE: "WEBSITE_ORGANIC", GOOGLE: "GOOGLE_ADS", LAINNYA: "OTHER" });
+export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK_ADS", WHATSAPP: "WHATSAPP_DIRECT", INSTAGRAM: "INSTAGRAM", WEBSITE: "WEBSITE_ORGANIC", GOOGLE: "GOOGLE_ADS", LAINNYA: "OTHER", DIMULAI_SALES: "OTHER" });
 
 /** Apa yang bisa dibuka lebih dalam dari satu sumber — hanya yang datanya ADA (tidak ada tabel palsu). */
 export function jalurRincian(id) {

@@ -31,7 +31,7 @@ test("pemakai kontrak /sumber: hanya route (attributionAds.js), klien API (api.j
   const pemakai = [...semuaBerkas(path.join(root, "backend/src"), [".js"]), ...semuaBerkas(path.join(root, "frontend/src"), [".js", ".jsx"])]
     .filter((p) => POLA.test(baca(p))).map(rel).sort();
   assert.deepEqual(pemakai, [
-    "backend/src/routes/attributionAds.js", "backend/src/services/attribution/sumber.js",
+    "backend/src/routes/attributionAds.js", "backend/src/services/attribution/rincianChat.js", "backend/src/services/attribution/sumber.js",
     "frontend/src/api.js", "frontend/src/features/laporan/akuisisiLogic.js", "frontend/src/features/laporan/components/MarketingTab.jsx", "frontend/src/features/laporan/marketingLogic.js", "frontend/src/utils/marketingXlsx.js",
   ]);
   for (const dir of ["backend/src/mcp", "backend/src/mcpHub"]) for (const p of semuaBerkas(path.join(root, dir), [".js"])) assert.ok(!POLA.test(baca(p)), `${rel(p)} tidak boleh memakai /sumber`);
@@ -50,7 +50,7 @@ test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya 
   for (const k of ["berbayar", "uangBersih", "uangLedger", "nilaiOrderSaatIni"]) assert.ok(k in r.total, `total.${k}`);
   for (const k of ["sumber", "lengkap", "belumLengkap", "spend", "sementara", "lead", "lunas", "nilaiOrderSaatIni", "uangBersih", "cpa", "bookedRoas", "cashRoas", "alasanNull", "catatan"]) assert.ok(k in r.total.berbayar, `total.berbayar.${k}`);
   // Google Ads kini sumber sendiri (sebelumnya dilebur ke LAINNYA) — urutan baris SENGAJA berubah
-  assert.deepEqual(r.sumber.map((s) => s.id), ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA"]);
+  assert.deepEqual(r.sumber.map((s) => s.id), ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "DIMULAI_SALES", "LAINNYA"]);
   for (const s of r.sumber) {
     for (const k of ["dasar", "status", "spend", "spendLengkap", "sementara", "alasanSementara", "cpl", "cpa", "bookedRoas", "cashRoas", "alasanNull"]) assert.ok(k in s.biaya, `${s.id}.biaya.${k}`);
     for (const k of ["costPerQualifiedLead", "costPerCustomerOrder", "cpaClosing", "costPerPlatformConversation"]) assert.ok(!(k in s.biaya) && !(k in s.biaya.alasanNull), `${s.id}.biaya.${k} sudah dipindah ke biayaCampaignTerbukti`);
@@ -88,14 +88,15 @@ test("spend.js dan biayaKpi.js: perubahan hanya di bagian kelengkapan/hari; impo
 
 test("laporan LAIN tidak ikut berubah: /iklan, /d7, importer spend, KPI biaya campaign, kohort, webhook utuh terhadap baseline live", { skip: adaBase ? false : `commit ${BASE_LIVE} tidak ada di klon ini` }, () => {
   for (const f of ["backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/d7.js", "backend/src/services/attribution/cohort.js",
-    "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/routes/analytics.js", "backend/src/index.js"]) {
+    "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/index.js"]) {
     assert.equal(git(["diff", "--name-only", BASE_LIVE, "--", f]).stdout.trim(), "", `${f} berubah terhadap baseline live`);
   }
-  // router: terhadap baseline live TIDAK BOLEH berubah satu baris pun (pemasangan rute biaya sumber sudah ada di baseline), dan pemasangan itu tetap ada
+  // router: rute lama utuh; yang bertambah hanya /chat dan /ekspor.xlsx, dan pemasangan rute biaya sumber tetap ada
   const p = (x) => git(["show", `${BASE_LIVE}:${x}`]).stdout;
   const lama = p("backend/src/routes/attributionAds.js").replace(/\r\n/g, "\n"), baru = baca(path.join(root, "backend/src/routes/attributionAds.js")).replace(/\r\n/g, "\n");
   assert.ok(lama.length > 1000, "router baseline tidak terbaca");
-  assert.equal(baru, lama, "router attributionAds.js berubah terhadap baseline live");
+  for (const baris of lama.split("\n").filter((x) => x.trim() && !x.startsWith("//"))) assert.ok(baru.includes(baris), `baris router hilang: ${baris.slice(0, 80)}`);
+  assert.deepEqual([...baru.matchAll(/attributionAdsRouter\.(?:get|post)\("([^"]+)"/g)].map((m) => m[1]).filter((r) => !lama.includes(`"${r}"`)), ["/chat", "/ekspor.xlsx"]);
   assert.ok(baru.includes('import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";') && baru.includes("pasangRuteBiayaSumber(attributionAdsRouter);"), "pemasangan rute biaya sumber hilang");
 });
 

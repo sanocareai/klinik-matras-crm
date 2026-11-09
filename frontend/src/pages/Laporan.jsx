@@ -67,7 +67,7 @@ export default function Laporan() {
   const idTab = useIdTab();
   const location = useLocation();
   // Keadaan Marketing yang tersimpan di URL (sumber, urutan, kolom, banding, drilldown Meta, peringkat, umur) — dibaca dari URL, diubah lewat ubahMarketing.
-  const marketingKini = useMemo(() => ({ sumber: dariUrl.sumber, urut: dariUrl.urut, kolom: dariUrl.kolom, banding: dariUrl.banding, level: dariUrl.level, campaign: dariUrl.campaign, adset: dariUrl.adset, rank: dariUrl.rank, umur: dariUrl.umur }), [dariUrl]);
+  const marketingKini = useMemo(() => ({ sumber: dariUrl.sumber, urut: dariUrl.urut, kolom: dariUrl.kolom, banding: dariUrl.banding, level: dariUrl.level, campaign: dariUrl.campaign, adset: dariUrl.adset, rank: dariUrl.rank, umur: dariUrl.umur, tampil: dariUrl.tampil }), [dariUrl]);
   const perbaruiUrl = useCallback((patch, { ganti = true } = {}) => {
     const p = tulisUrlLaporan(searchParams, {
       tab: patch.tab ?? tab, range: patch.range ?? range, marketing: patch.marketing === undefined ? ((patch.tab ?? tab) === "Marketing" ? marketingKini : {}) : patch.marketing,

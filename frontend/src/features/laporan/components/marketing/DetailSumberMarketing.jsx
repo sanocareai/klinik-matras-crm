@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import DetailSumberAkuisisi from "../DetailSumberAkuisisi.jsx";
 import { LABEL_PELANGGAN } from "../../periodeLaporan.js";
@@ -10,7 +10,7 @@ import RincianKreatif from "./RincianKreatif.jsx";
 
 // Detail SATU sumber. Jejak: Marketing › Sumber [› Campaign › Ad set]. Meta = campaign → ad set → ad (atribusi terbukti); TikTok dan sumber lain hanya menampilkan data yang BENAR-BENAR ada
 // (label CRM + biaya sumber) — tidak ada atribusi campaign dari label atau teks.
-export default function DetailSumberMarketing({ s, lap, periode, range, url, onUbah, onKembali, traffic, sourceDetail, rangeParams, cacheMeta, versi }) {
+export default function DetailSumberMarketing({ s, lap, periode, range, url, onUbah, onKembali, traffic, sourceDetail, rangeParams, cacheMeta, versi, onLihatChat }) {
   const [metaLap, setMetaLap] = useState(null);
   const onMuat = useCallback((l) => setMetaLap(l), []);
   const meta = s.id === "META";
@@ -34,8 +34,11 @@ export default function DetailSumberMarketing({ s, lap, periode, range, url, onU
         ))}
       </nav>
 
+      {s.lead > 0 && !meta && (
+        <button type="button" className="btn btn-ghost btn-sm self-start" onClick={() => onLihatChat({ judul: s.label, sub: `${Number(s.lead).toLocaleString("id-ID")} chat`, query: { sumber: s.id } })} data-testid="lihat-chat-sumber"><MessageSquare size={14} /> Lihat {Number(s.lead).toLocaleString("id-ID")} chat</button>
+      )}
       <DetailSumberAkuisisi s={s} lap={lap} periode={periode} tanpaJejak onBukaIklan={null}
-        sisipanAtas={meta ? <MetaDetail range={range} periode={periode} jalur={jalur} rank={url.rank} umur={url.umur} kolom={url.kolom} onUbah={onUbah} cache={cacheMeta} versi={versi} onMuat={onMuat} /> : null} />
+        sisipanAtas={meta ? <MetaDetail range={range} periode={periode} jalur={jalur} rank={url.rank} umur={url.umur} kolom={url.kolom} onUbah={onUbah} cache={cacheMeta} versi={versi} onMuat={onMuat} onLihatChat={onLihatChat} /> : null} />
 
       {s.id !== "UNKNOWN" && traffic && (
         <Disclosure id="kreatif" judul="Kreatif & tautan (basis label CRM)" ringkas="Lead per kreatif/link dan nilai per lead — analisis legacy; bukan atribusi campaign">

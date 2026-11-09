@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Loader2, ShieldAlert, Wallet } from "lucide-react";
+import { AlertTriangle, Download, Loader2, ShieldAlert, Wallet } from "lucide-react";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { todayWIB } from "@/lib/dateRange.js";
-import { periodeTab } from "../periodeLaporan.js";
+import { periodeTab, TAMPIL_SUMBER_LINK } from "../periodeLaporan.js";
 import { buatCsvAkuisisi, namaBerkasCsv, teksCutoff, sumberBerbiaya } from "../akuisisiLogic.js";
 import { kueriIklan } from "../iklanCampaignLogic.js";
 import { berurutan, pesanGalat } from "../marketingData.js";
@@ -11,6 +11,9 @@ import BannerPeriode from "./BannerPeriode.jsx";
 import KelolaBiayaIklan from "./KelolaBiayaIklan.jsx";
 import RingkasanMarketing from "./marketing/RingkasanMarketing.jsx";
 import DetailSumberMarketing from "./marketing/DetailSumberMarketing.jsx";
+import RincianKreatif from "./marketing/RincianKreatif.jsx";
+import PanelChat from "./marketing/PanelChat.jsx";
+import { unduhEksporMarketing } from "./marketing/eksporMarketing.js";
 
 // ═══ MARKETING (ADMIN) ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Satu tab pengganti Traffic + Akuisisi + Iklan. Periode = filter global Laporan (SATU state, juga di URL). Sumber data (semua baca-saja, service existing):
@@ -26,6 +29,9 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
   const [iklanGalat, setIklanGalat] = useState(null);
   const [versi, setVersi] = useState(0);
   const [kelola, setKelola] = useState(false);
+  const [chat, setChat] = useState(null);        // { judul, sub, query } untuk panel daftar chat
+  const [mengunduh, setMengunduh] = useState(false);
+  const [galatUnduh, setGalatUnduh] = useState(null);
   const cacheMeta = useRef(new Map());
   const tokenLap = useRef(0);          // permintaan terbaru menang; hasil permintaan lama dibuang
   const kunciLap = useRef(null);        // periode/filter milik `lap` yang sedang tampil
@@ -71,10 +77,18 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
   const terpilih = url.sumber ? (lap?.sumber || []).find((x) => x.id === url.sumber) : null;
   const pilihSumber = (id) => onUbah({ sumber: id, level: "campaign", campaign: null, adset: null }, { ganti: false });
   const kembali = () => onUbah({ sumber: null, level: "campaign", campaign: null, adset: null }, { ganti: false });
+  const subTab = [{ id: null, label: "Ringkasan" }, { id: TAMPIL_SUMBER_LINK, label: "Sumber & Link" }];
   function ekspor() {
     const csv = buatCsvAkuisisi(lap, { urut: url.urut }); if (!csv) return;
     const u = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = u; a.download = namaBerkasCsv(lap); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
+  }
+
+  async function unduhExcel() {
+    setMengunduh(true); setGalatUnduh(null);
+    try { await unduhEksporMarketing({ dari: periode.dari, sampai: periode.sampai }); }
+    catch (e) { setGalatUnduh(pesanGalat(e, "Gagal membuat berkas Excel.")); }
+    finally { setMengunduh(false); }
   }
 
   return (
@@ -84,10 +98,12 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
           <BannerPeriode periode={periode} hariIni={hariIni} onUbahRentang={onUbahRentang} cutoff={teksCutoff(lap)} ringkas={!!terpilih} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={unduhExcel} disabled={!periode.ok || mengunduh} data-testid="ekspor-excel-marketing">{mengunduh ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {mengunduh ? "Menyiapkan…" : "Export Excel"}</button>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setKelola(true)} data-testid="kelola-biaya"><Wallet size={14} /> Kelola biaya iklan</button>
         </div>
       </div>
 
+      {galatUnduh && <Card className="!p-4" role="alert"><p className="flex items-center gap-2 text-sm text-red"><AlertTriangle size={16} /> {galatUnduh}</p></Card>}
       {galat?.ditolak && <Card className="flex items-start gap-3 !p-4" role="alert" data-testid="akses-ditolak"><ShieldAlert size={18} className="mt-0.5 shrink-0 text-red" /><div><p className="text-[14px] font-semibold text-ink">Akses ditolak</p><p className="t-secondary text-[12.5px]">Laporan Marketing hanya untuk ADMIN. Hubungi admin bila Anda memerlukan akses.</p></div></Card>}
       {galat && !galat.ditolak && <Card className="!p-4" role="alert" data-testid="galat-marketing"><p className="flex flex-wrap items-center gap-2 text-sm text-red"><AlertTriangle size={16} /> {galat.pesan} <button type="button" className="btn btn-ghost btn-sm" onClick={segarkan}>Coba lagi</button></p></Card>}
       {periode.ok && !lap && memuat && <Card className="!p-4"><p className="flex items-center gap-2 text-sm text-ink3" data-testid="memuat-marketing"><Loader2 size={16} className="animate-spin" /> Memuat laporan Marketing…</p></Card>}
@@ -96,12 +112,27 @@ export default function MarketingTab({ range, onUbahRentang, url, onUbah, traffi
         <Card className="flex flex-col gap-2 !p-4" data-testid="sumber-tidak-dikenal"><p className="text-[13px] text-ink2">Sumber “{url.sumber}” tidak dikenal pada laporan ini.</p><button type="button" className="btn btn-ghost btn-sm self-start" onClick={kembali}>Kembali ke semua sumber</button></Card>
       )}
       {lap && terpilih && (
-        <DetailSumberMarketing s={terpilih} lap={lap} periode={periode} range={range} url={url} onUbah={onUbah} onKembali={kembali} traffic={traffic} sourceDetail={sourceDetail} rangeParams={rangeParams} cacheMeta={cacheMeta} versi={versi} />
+        <DetailSumberMarketing s={terpilih} lap={lap} periode={periode} range={range} url={url} onUbah={onUbah} onKembali={kembali} traffic={traffic} sourceDetail={sourceDetail} rangeParams={rangeParams} cacheMeta={cacheMeta} versi={versi} onLihatChat={setChat} />
       )}
-      {lap && !url.sumber && (
-        <RingkasanMarketing lap={lap} iklan={iklan} iklanGalat={iklanGalat} traffic={traffic} memuatTraffic={memuatTraffic} periode={periode} rangeParams={rangeParams} url={url} onUbah={onUbah} onBuka={pilihSumber} onEkspor={ekspor} />
+      {!url.sumber && (
+        <div role="tablist" aria-label="Tampilan Marketing" className="flex flex-wrap gap-2" data-testid="subtab-marketing">
+          {subTab.map((t) => (
+            <button key={t.label} type="button" role="tab" aria-selected={(url.tampil ?? null) === t.id} className={`btn btn-sm ${(url.tampil ?? null) === t.id ? "btn-primary" : "btn-ghost"}`} onClick={() => onUbah({ tampil: t.id }, { ganti: false })}>{t.label}</button>
+          ))}
+        </div>
+      )}
+      {!url.sumber && url.tampil === TAMPIL_SUMBER_LINK && (
+        memuatTraffic || !sourceDetail
+          ? <Card className="!p-4"><p className="flex items-center gap-2 text-sm text-ink3" data-testid="memuat-sumber-link"><Loader2 size={16} className="animate-spin" /> Memuat rincian sumber…</p></Card>
+          : (sourceDetail.data || []).length === 0
+            ? <Card className="!p-4"><p className="text-sm text-ink3" data-testid="sumber-link-kosong">Belum ada lead pada periode ini.</p></Card>
+            : <RincianKreatif traffic={traffic} sourceDetail={sourceDetail} rangeParams={rangeParams} hanyaRincian />
+      )}
+      {lap && !url.sumber && url.tampil !== TAMPIL_SUMBER_LINK && (
+        <RingkasanMarketing lap={lap} iklan={iklan} iklanGalat={iklanGalat} traffic={traffic} memuatTraffic={memuatTraffic} periode={periode} rangeParams={rangeParams} url={url} onUbah={onUbah} onBuka={pilihSumber} onEkspor={ekspor} onLihatChat={setChat} />
       )}
 
+      {chat && <PanelChat pilihan={chat} periode={periode} onTutup={() => setChat(null)} />}
       {kelola && <KelolaBiayaIklan open onOpenChange={(o) => { if (!o) setKelola(false); }} periode={periode} hariIni={hariIni} sumberAwal={terpilih && sumberBerbiaya(terpilih) ? terpilih.id : "TIKTOK"} onTersimpan={segarkan} />}
     </div>
   );

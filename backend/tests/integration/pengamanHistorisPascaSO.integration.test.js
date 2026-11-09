@@ -45,13 +45,13 @@ async function dunia() {
   const aktor = (u, r) => ({ id: u.user.id, name: u.user.name, roles: [r] });
   const catatan = async (m) => testPrisma.unitUsageNote.findMany({ where: { materialId: m.id }, orderBy: { orderNumber: "asc" } });
   const idDari = async (m, frag) => (await catatan(m)).find((n) => n.orderNumber.includes(frag)).id;
-  return { admin, owner, fin, A: aktor(admin, "ADMIN"), B: aktor(owner, "OWNER"), F: aktor(fin, "FINANCE"), mx, my, uA, uB, uC, ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token), catatan, idDari };
+  return { admin, owner, fin, A: aktor(admin, "ADMIN"), B: aktor(owner, "OWNER"), F: aktor(fin, "FINANCE"), mx, my, uA, uB, uC, cg: makeClient(server.baseUrl, (await createTestUser({ roles: ["WAREHOUSE"] })).token), ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token), catatan, idDari };
 }
 // Koreksi Saldo lewat jalur RESMI. selesai: "diposting" (default) | "diajukan". Mengembalikan { id, nomor }.
 async function koreksi(w, mat, fisik, selesai = "diposting") {
   const pr = (await w.ca.post("/api/inventory/adjustments/koreksi-saldo/pratinjau", { materialId: mat.id, jumlahFisik: fisik })).body;
-  const aj = await w.ca.post("/api/inventory/adjustments/koreksi-saldo/ajukan", { materialId: mat.id, jumlahFisik: fisik, saldoDilihat: pr.saldoDilihat, alasan: "Koreksi uji" }, { "Idempotency-Key": `ks-uji-${mat.code}-${++seq}-xxxxx` }); assert.equal(aj.status, 201, JSON.stringify(aj.body));
-  if (selesai === "diposting") { assert.equal((await w.co.patch(`/api/inventory/adjustments/${aj.body.id}`, { status: "APPROVED" })).status, 200); const po = await w.ca.post(`/api/inventory/adjustments/${aj.body.id}/post`, {}); assert.equal(po.status, 200, JSON.stringify(po.body)); }
+  const aj = await w.cg.post("/api/inventory/adjustments/koreksi-saldo/ajukan", { materialId: mat.id, jumlahFisik: fisik, saldoDilihat: pr.saldoDilihat, alasan: "Koreksi uji" }, { "Idempotency-Key": `ks-uji-${mat.code}-${++seq}-xxxxx` }); assert.equal(aj.status, 201, JSON.stringify(aj.body));
+  if (selesai === "diposting") { assert.equal((await w.co.patch(`/api/inventory/adjustments/${aj.body.id}`, { status: "APPROVED" })).status, 200); const po = await w.cg.post(`/api/inventory/adjustments/${aj.body.id}/post`, {}); assert.equal(po.status, 200, JSON.stringify(po.body)); }
   return { id: aj.body.id, nomor: aj.body.nomor };
 }
 const issues = (unit) => testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } });

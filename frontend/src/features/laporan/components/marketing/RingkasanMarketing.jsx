@@ -26,7 +26,7 @@ function ringkasPola(traffic) {
 // KPI utama (urutan & warna mengikuti mockup) dan metrik pendukung — dipilih dari kartuRingkas() berdasarkan id, jadi label/tooltip/catatan TIDAK ditulis ulang di sini.
 const KPI_UTAMA = [{ id: "lead", tone: "revenue", ikon: "orang" }, { id: "berOrder", tone: "leads", ikon: "alur" }, { id: "nilai", tone: "orders", ikon: "tas" }, { id: "uang", tone: "conversion", ikon: "dompet" }];
 
-export default function RingkasanMarketing({ lap, iklan, iklanGalat, traffic, memuatTraffic, periode, rangeParams, url, onUbah, onBuka, onEkspor }) {
+export default function RingkasanMarketing({ lap, iklan, iklanGalat, traffic, memuatTraffic, periode, rangeParams, url, onUbah, onBuka, onEkspor, onLihatChat }) {
   const kartu = kartuRingkas(lap);
   const k = Object.fromEntries(kartu.map((c) => [c.id, c]));
   const banner = bannerUtama(lap);
@@ -69,7 +69,7 @@ export default function RingkasanMarketing({ lap, iklan, iklanGalat, traffic, me
         <KelengkapanData lap={lap} periode={periode} onRincian={keRincian} />
       </div>
 
-      <TabelSumber lap={lap} urutId={url.urut} kolomMode={url.kolom} bandingkan={url.banding} onUbah={onUbah} onBuka={onBuka} onEkspor={onEkspor} periodeOk={periode.ok} />
+      <TabelSumber lap={lap} urutId={url.urut} kolomMode={url.kolom} bandingkan={url.banding} onUbah={onUbah} onBuka={onBuka} onEkspor={onEkspor} periodeOk={periode.ok} onLihatChat={onLihatChat} />
 
       <Disclosure id="pola" judul="Pola lead & respons" ringkas={ringkasPola(traffic)}>
         {traffic ? <PolaLeadRespons traffic={traffic} rangeParams={rangeParams} /> : <p className="text-[13px] text-ink3">Data traffic belum tersedia.</p>}

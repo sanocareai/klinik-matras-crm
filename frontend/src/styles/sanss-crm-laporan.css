@@ -564,3 +564,15 @@
 .crm-lap .crm-pl-info-isi { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(194, 94, 0, 0.25); font-size: 12.5px; line-height: 1.5; }
 :root[data-theme="dark"] .crm-lap .crm-pl-info { color: #FFC38A; }
 :root[data-theme="dark"] .crm-lap .crm-pl-info[aria-expanded="true"] { background: rgba(255, 195, 138, 0.16); }
+
+/* Kelompok channel dan penjelasan channel di Performa Sumber */
+.crm-lap .crm-mk-grup th { padding: 16px 12px 6px; background: transparent; cursor: default; }
+.crm-lap .crm-mk-grup-nama { display: block; font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.crm-lap .crm-mk-grup-catatan { display: block; font-size: 12.5px; font-weight: 400; color: var(--text-tertiary); }
+.crm-lap .crm-mk-info { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none; border: 0; border-radius: 8px; background: transparent; color: var(--text-tertiary); cursor: pointer; }
+.crm-lap .crm-mk-info:hover, .crm-lap .crm-mk-info[aria-expanded="true"] { background: var(--bg-inset); color: var(--text-primary); }
+.crm-lap .crm-mk-pakem td { padding: 2px 12px 14px; background: transparent; text-align: left; white-space: normal; cursor: default; }
+.crm-lap .crm-mk-pakem-isi { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--bg-inset); max-width: 1000px; }
+.crm-lap .crm-mk-pakem-kisi { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.crm-lap .crm-mk-pakem-judul { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.crm-lap .crm-mk-pakem-teks { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-primary); }

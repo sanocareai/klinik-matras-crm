@@ -41,6 +41,34 @@ test("retry terbatas: 429/5xx/jaringan/timeout diulang lalu berhenti; 4xx dan to
   await assert.rejects(klien(async () => { n++; return { ok: false, status: 401 }; }).kontrolAkun("2026-11-07", "2026-11-07"), (e) => e.kode === "AKSES_COMPOSIO_DITOLAK"); assert.equal(n, 1);
   assert.equal(kelasGalat("code: 17 limit").ulang, true);
 });
+test("kelasGalat: kode numerik menang atas tipe OAuthException", () => {
+  const k = (o) => kelasGalat(typeof o === "string" ? o : JSON.stringify(o));
+  assert.deepEqual(k({ type: "OAuthException", code: 190, error_subcode: 463 }), { kode: "TOKEN_KEDALUWARSA", ulang: false });
+  assert.deepEqual(k({ type: "OAuthException", code: 17, message: "User request limit reached" }), { kode: "RATE_LIMIT", ulang: true });
+  assert.deepEqual(k({ type: "OAuthException", code: 4 }), { kode: "RATE_LIMIT", ulang: true });
+  assert.deepEqual(k({ type: "OAuthException", code: 2, is_transient: true }), { kode: "GANGGUAN_SEMENTARA", ulang: true });
+  assert.deepEqual(k({ type: "OAuthException", code: 200, message: "Permissions error" }), { kode: "IZIN_META_DITOLAK", ulang: false });
+  assert.deepEqual(k({ type: "OAuthException", code: 10 }), { kode: "IZIN_META_DITOLAK", ulang: false });
+  assert.deepEqual(k({ type: "OAuthException", code: 100, message: "Invalid parameter" }), { kode: "TOOL_GAGAL", ulang: false });
+  assert.deepEqual(k({ type: "OAuthException", code: 999, is_transient: true }), { kode: "GANGGUAN_SEMENTARA", ulang: true });
+});
+test("kelasGalat: subcode diabaikan, kode bertumpuk dinilai, teks hanya cadangan", () => {
+  const k = (o) => kelasGalat(typeof o === "string" ? o : JSON.stringify(o));
+  assert.equal(k({ code: 100, error_subcode: 190 }).kode, "TOOL_GAGAL");
+  assert.equal(k({ code: 1811, error: { code: 190 } }).kode, "TOKEN_KEDALUWARSA");
+  assert.equal(k({ code: 100, message: "time range expired" }).kode, "TOOL_GAGAL");
+  assert.deepEqual(k("Session has expired"), { kode: "TOKEN_KEDALUWARSA", ulang: false });
+  assert.deepEqual(k("OAuthException"), { kode: "OAUTH_GAGAL", ulang: false });
+  assert.deepEqual(k("too many calls"), { kode: "RATE_LIMIT", ulang: true });
+  assert.deepEqual(k("service temporarily unavailable"), { kode: "GANGGUAN_SEMENTARA", ulang: true });
+  assert.deepEqual(k(""), { kode: "TOOL_GAGAL", ulang: false });
+});
+test("rate limit ber-tipe OAuthException diulang, bukan langsung berhenti", async () => {
+  let n = 0;
+  const f = async () => { n++; return { ok: true, status: 200, json: async () => ({ successful: false, error: '{"type":"OAuthException","code":17}' }) }; };
+  await assert.rejects(klien(f).kontrolAkun("2026-11-07", "2026-11-07"), (e) => e.kode === "RATE_LIMIT");
+  assert.equal(n, 4);
+});
 test("timeout eksplisit dipasang pada tiap panggilan", async () => {
   let sinyal; await klien(async (_u, o) => { sinyal = o.signal; return ok({ data: [] }); }).kontrolAkun("2026-11-07", "2026-11-07");
   assert.ok(sinyal instanceof AbortSignal);

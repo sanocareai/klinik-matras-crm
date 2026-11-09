@@ -70,7 +70,7 @@ test("peringatan: hari berjalan, ledger tidak lengkap (batas bawah), spend belum
   for (const w of ["HARI_BERJALAN", "LEDGER_TIDAK_LENGKAP", "SPEND_BELUM_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI"]) assert.ok(k.includes(w), w);
   const meta = r.sumber[0]; assert.equal(meta.biaya.cpa, null); assert.equal(meta.biaya.alasanNull.cpa, "SPEND_TIDAK_LENGKAP"); assert.equal(meta.biaya.spend, 100);
   assert.equal(r.status.ledger.persen, 50);
-  assert.equal(SUMBER.length, 7); assert.ok(r.definisi.overlap.includes("tidak eksklusif"));
+  assert.equal(SUMBER.length, 8); assert.ok(r.definisi.overlap.includes("tidak eksklusif"));
 });
 
 test("konversi UTAMA = ber-order ÷ TOTAL lead (termasuk spam); konversi non-spam terpisah berlabel; spam menurunkan konversi utama; sorotan menyebut denominator & jenis & ambang sementara", () => {

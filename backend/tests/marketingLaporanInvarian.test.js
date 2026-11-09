@@ -43,7 +43,7 @@ test("invarian LULUS pada laporan nyata hasil kode (fixture kaya: eksplisit vs l
 test("setiap invarian PEKA: mutasi yang disengaja terdeteksi (bukan lulus karena longgar)", () => {
   const dasar = fixture();
   const mut = (nama, f, harapan) => { const r = salin(dasar); f(r); const g = gagal(periksaLaporan(r)); assert.ok(g.some((x) => harapan.test(x)), `${nama}: tidak terdeteksi; gagal=${JSON.stringify(g)}`); };
-  mut("sumber hilang (Google dilebur lagi)", (r) => { r.sumber = r.sumber.filter((x) => x.id !== "GOOGLE"); }, /tujuh sumber/);
+  mut("sumber hilang (Google dilebur lagi)", (r) => { r.sumber = r.sumber.filter((x) => x.id !== "GOOGLE"); }, /delapan sumber/);
   mut("Lainnya memuat GOOGLE_ADS lagi", (r) => { r.sumber.find((x) => x.id === "LAINNYA").labelCrm.push("GOOGLE_ADS"); }, /Google Ads = sumber berbayar/);
   mut("total lead tidak sama dengan jumlah sumber", (r) => { r.total.lead += 1; }, /total\.lead/);
   mut("total ber-order tidak sama", (r) => { r.total.berOrder += 1; }, /total\.berOrder/);
@@ -63,13 +63,13 @@ test("setiap invarian PEKA: mutasi yang disengaja terdeteksi (bukan lulus karena
   mut("total uang bersih tidak sama dengan jumlah sumber", (r) => { r.total.uangBersih += 10; }, /uang bersih = uang ledger/);
 });
 
-test("pembanding SQL: sama → lulus; selisih satu angka mana pun (lead/spam/sah/eksplisit/atau-lanjut) → terdeteksi; urutan tujuh sumber tetap", () => {
+test("pembanding SQL: sama → lulus; selisih satu angka mana pun (lead/spam/sah/eksplisit/atau-lanjut) → terdeteksi; urutan delapan sumber tetap", () => {
   const r = fixture();
   const sql = Object.fromEntries(r.sumber.map((x) => [x.id, { lead: x.lead, spam: x.spam, leadSah: x.leadSah, eksplisit: x.prospek.prospekEksplisit.jumlah, atauLanjut: x.prospek.pernahProspekAtauLanjut.jumlah }]));
   assert.deepEqual(gagal(banding(r, sql)), []);
   for (const k of ["lead", "spam", "leadSah", "eksplisit", "atauLanjut"]) { const s2 = salin(sql); s2.META[k] += 1; assert.equal(gagal(banding(r, s2)).length, 1, k); }
   const s3 = salin(sql); delete s3.GOOGLE; r.sumber.find((x) => x.id === "GOOGLE").lead = 1; assert.equal(gagal(banding(r, s3)).length, 1, "sumber tak ada di SQL = 0");
-  assert.deepEqual(URUTAN_SUMBER, ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "LAINNYA"]);
+  assert.deepEqual(URUTAN_SUMBER, ["META", "TIKTOK", "GOOGLE", "WHATSAPP", "INSTAGRAM", "WEBSITE", "DIMULAI_SALES", "LAINNYA"]);
   const peta = petaSql([{ sid: "META", lead: "3", spam: "1", lead_sah: "2", eksplisit: "1", atau_lanjut: "2" }]);
   assert.deepEqual(peta.META, { lead: 3, spam: 1, leadSah: 2, eksplisit: 1, atauLanjut: 2 }); assert.deepEqual(peta.GOOGLE, { lead: 0, spam: 0, leadSah: 0, eksplisit: 0, atauLanjut: 0 });
 });

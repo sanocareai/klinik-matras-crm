@@ -1,10 +1,12 @@
 // KOREKSI SALDO PER BAHAN dari Stok & Lokasi (Okt 2026).
 // Pengguna mengisi JUMLAH FISIK yang benar + alasan. Sistem menampilkan pratinjau (saldo sebelum, jumlah baru, selisih, dampak stok, izin) lalu MENGAJUKAN permintaan Penyesuaian Stok resmi
 // (stock_adjustment_requests): status Menunggu persetujuan -> disetujui ORANG LAIN (Owner/Finance) -> diposting lewat postStockMovement (SATU-SATUNYA penulis ledger). Tidak ada penimpaan saldo.
-// File ini TIDAK menulis stock_movements, harga berlaku, biaya operasional, valuasi Finance, jurnal, maupun GL. Konteks pengajuan disimpan di koreksi_saldo_bahan (append-only):
+// KOREKSI LANGSUNG (keputusan Owner 9 Nov 2026): pemegang inventory:koreksi_saldo_langsung (ADMIN, OWNER) tidak mengajukan; permintaan langsung berstatus POSTED dan pergerakannya ditulis dalam transaksi yang sama, tanpa penyetuju (approvedById tetap kosong, jujur).
+// File ini tidak menulis harga berlaku, biaya operasional, valuasi Finance, jurnal, maupun GL; stock_movements hanya lewat postStockMovement pada koreksi langsung. Konteks koreksi disimpan di koreksi_saldo_bahan (append-only):
 // saldo yang DILIHAT pengaju dipakai untuk menolak persetujuan/posting bila saldo sudah bergeser (wajibSaldoBelumBergeser).
 import crypto from "node:crypto";
-import { computeStockSnapshot, lockMaterialBalance } from "./inventoryLedger.js";
+import { computeStockSnapshot, lockMaterialBalance, postStockMovement } from "./inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { keadaanStok, LABEL_KEADAAN } from "./stokLokasi.js";
 import { KEADAAN_SALDO, LABEL_KEADAAN_SALDO, klasifikasiSaldo, nolTerverifikasiPer } from "./keadaanSaldo.js";
 import { peringatanCatatanHistoris } from "./pengamanHistorisPascaSO.js";
@@ -52,11 +54,18 @@ function bacaJumlahFisik(v) {
   return r4(x);
 }
 
+/** Admin (dan Owner) mengoreksi langsung; penanda ini tertulis di catatan dokumen supaya Finance dan audit bisa membedakannya dari penyesuaian yang disetujui orang lain. */
+export const PENANDA_LANGSUNG = "Koreksi langsung Admin: tanpa persetujuan orang lain.";
+export const bolehKoreksiLangsung = (user) => hasPermission(user, P.INVENTORY_KOREKSI_LANGSUNG);
+export const adalahKoreksiLangsung = (r) => String(r?.notes ?? "").includes(PENANDA_LANGSUNG);
+
 export function izinKoreksi(user) {
-  const mengajukan = hasPermission(user, P.INVENTORY_WRITE); const menyetujui = hasPermission(user, P.INVENTORY_ADJUSTMENT_APPROVE);
+  const mengajukan = hasPermission(user, P.INVENTORY_WRITE); const menyetujui = hasPermission(user, P.INVENTORY_ADJUSTMENT_APPROVE); const langsung = mengajukan && bolehKoreksiLangsung(user);
   return {
-    bolehMengajukan: mengajukan, bolehMenyetujui: menyetujui,
-    teks: mengajukan
+    bolehMengajukan: mengajukan, bolehMenyetujui: menyetujui, langsung,
+    teks: langsung
+      ? "Anda boleh mengoreksi saldo langsung. Saldo berubah saat disimpan, tanpa persetujuan orang lain; nama Anda dan alasannya tercatat."
+      : mengajukan
       ? "Anda boleh mengajukan koreksi saldo. Stok baru berubah setelah DISETUJUI orang lain berperan penyetuju (Owner atau Finance) dan diposting — Anda tidak dapat menyetujui koreksi Anda sendiri."
       : "Akun Anda hanya dapat melihat. Mengajukan koreksi saldo: peran Gudang, Admin, atau Owner (izin inventory:write). Menyetujui: Owner atau Finance (orang lain dari pengaju).",
   };
@@ -66,6 +75,12 @@ export const DAMPAK_DATA = Object.freeze({
   ditulisSaatAjukan: ["1 permintaan Penyesuaian Stok (status Menunggu persetujuan) dengan nomor ADJ-…", "1 catatan konteks koreksi (saldo yang Anda lihat, jumlah fisik, keadaan saldo)"],
   ditulisSaatPosting: ["1 pergerakan stok jenis ADJUSTMENT sebesar selisih (lewat postStockMovement, jalur resmi) — baru terjadi setelah disetujui orang lain dan diposting"],
   tidakDisentuh: ["Harga Berlaku dan riwayat harga", "HPP operasional pemakaian lama (snapshot beku order tidak berubah)", "Nilai persediaan/valuasi Finance, jurnal, dan GL (tidak ada jurnal otomatis dari penyesuaian)", "Pergerakan stok lain yang sudah ada (tidak ada yang ditimpa)"],
+});
+
+export const DAMPAK_DATA_LANGSUNG = Object.freeze({
+  ditulisSaatAjukan: ["1 dokumen Penyesuaian Stok berstatus Diposting dengan nomor ADJ-…", "1 catatan konteks koreksi (saldo yang Anda lihat, jumlah fisik, keadaan saldo)", "1 pergerakan stok jenis ADJUSTMENT sebesar selisih (lewat postStockMovement, jalur resmi)"],
+  ditulisSaatPosting: [],
+  tidakDisentuh: DAMPAK_DATA.tidakDisentuh,
 });
 
 /** Pratinjau (baca-saja): saldo sebelum, jumlah baru, selisih, dampak stok, izin. Tidak menulis apa pun. */
@@ -93,9 +108,9 @@ export async function pratinjauKoreksi(db, user, { materialId, jumlahFisik } = {
     dampakStok: {
       onHand: { sebelum: d.saldo, sesudah: saldoSesudah }, dipesan: d.dipesan, tersedia: { sebelum: d.tersedia, sesudah: tersediaSesudah },
       keadaanSebelum: LABEL_KEADAAN[statusStok(d, d.saldo, d.tersedia, d.jumlahPergerakan)], keadaanSesudah: LABEL_KEADAAN[statusStok(d, saldoSesudah, tersediaSesudah, nSesudah)],
-      catatan: "Angka 'sesudah' berlaku HANYA bila koreksi disetujui orang lain dan diposting; sebelum itu stok tidak berubah.",
+      catatan: izin.langsung ? "Angka 'sesudah' berlaku begitu koreksi disimpan." : "Angka 'sesudah' berlaku HANYA bila koreksi disetujui orang lain dan diposting; sebelum itu stok tidak berubah.",
     },
-    dampakData: DAMPAK_DATA, peringatan, izin,
+    dampakData: izin.langsung ? DAMPAK_DATA_LANGSUNG : DAMPAK_DATA, peringatan, izin, langsung: izin.langsung,
     pengajuanAktif: aktif ? { nomor: aktif.adjustmentRequest.adjustmentNumber, status: aktif.adjustmentRequest.status, statusTeks: STATUS_TEKS[aktif.adjustmentRequest.status] } : null,
     dapatDiajukan,
     alasanTidakDapat: !izin.bolehMengajukan ? "Akun tanpa izin mengajukan" : !adaSelisih ? "Jumlah fisik sama dengan saldo catatan — tidak ada selisih" : aktif ? `Sudah ada koreksi saldo ${aktif.adjustmentRequest.adjustmentNumber} yang belum selesai` : null,
@@ -104,7 +119,7 @@ export async function pratinjauKoreksi(db, user, { materialId, jumlahFisik } = {
 }
 
 const kunciValid = (k) => { const s = String(k ?? "").trim(); wajib(s.length >= 8 && s.length <= 120, "Idempotency-Key wajib (8–120 karakter) agar klik ganda tidak membuat dua pengajuan", "KUNCI_WAJIB"); return s; };
-const tampilHasil = (req, h, ulang) => ({ ulang, id: req.id, nomor: req.adjustmentNumber, status: req.status, statusTeks: STATUS_TEKS[req.status], jumlahFisik: Number(h.jumlahFisik), saldoDilihat: Number(h.saldoDilihat), selisih: Number(h.selisih), keadaanAwal: h.keadaanAwal, bahanId: h.materialId, satuan: h.satuan });
+const tampilHasil = (req, h, ulang) => ({ ulang, langsung: adalahKoreksiLangsung(req), id: req.id, nomor: req.adjustmentNumber, status: req.status, statusTeks: STATUS_TEKS[req.status], jumlahFisik: Number(h.jumlahFisik), saldoDilihat: Number(h.saldoDilihat), selisih: Number(h.selisih), keadaanAwal: h.keadaanAwal, bahanId: h.materialId, satuan: h.satuan });
 
 /**
  * Ajukan koreksi saldo. Satu transaksi di bawah kunci bahan: saldo yang DILIHAT pengaju harus sama dengan saldo ledger saat ini (bila tidak: 409 SALDO_BERGESER, tidak ada yang tersimpan);
@@ -119,14 +134,42 @@ export async function ajukanKoreksi(prisma, user, { materialId, jumlahFisik, sal
   wajib(saldoDilihat !== undefined && saldoDilihat !== null && Number.isFinite(Number(saldoDilihat)), "Saldo yang Anda lihat di pratinjau wajib dikirim (lihat pratinjau dulu)", "PRATINJAU_WAJIB");
   wajib(Boolean(originType) === Boolean(originId), "originType dan originId harus diisi bersamaan", "ASAL_TIDAK_LENGKAP");
   if (originType) { wajib(ASAL_KOREKSI_TIPE.includes(originType), "originType tidak dikenal", "ASAL_TIDAK_DIKENAL"); await validasiAsalKoreksi(prisma, { originType, originId, materialId }); }
+  return tulisKoreksi(prisma, user, { materialId, kunci, alasan: teksAlasan, catatan, originType, originId, jenis: "DATA_CORRECTION", fisikDiminta: fisik, saldoDilihat, tentukanFisik: () => fisik });
+}
+
+/**
+ * Koreksi LANGSUNG dari form Penyesuaian Stok / Stok Gudang / catatan historis (POST /api/inventory/adjustments, hanya pemegang izin langsung + Idempotency-Key).
+ * Isian boleh saldo yang benar (saldoBaru) atau perubahan bertanda (adjustmentQty); keduanya menjadi jumlah fisik dari saldo terkunci, jadi hasil minus ditolak tanpa menyimpan apa pun.
+ */
+export async function koreksiDariPenyesuaian(prisma, user, { materialId, adjustmentType, adjustmentQty, saldoBaru, saldoDilihat = null, reason, notes = null, originType = null, originId = null } = {}, kunciMentah) {
+  wajib(user?.id, "Pelaku wajib ada", "PELAKU_WAJIB", 401);
+  wajib(bolehKoreksiLangsung(user), "Akun Anda tidak berizin mengoreksi saldo langsung", "TANPA_IZIN", 403);
+  const kunci = kunciValid(kunciMentah);
+  const teksAlasan = String(reason ?? "").trim(); wajib(teksAlasan.length >= 5 && teksAlasan.length <= 500, "Alasan wajib diisi (5–500 karakter)", "ALASAN_WAJIB");
+  const pakaiPerubahan = !(adjustmentQty === undefined || adjustmentQty === null || adjustmentQty === "");
+  const fisikDiminta = pakaiPerubahan ? null : bacaJumlahFisik(saldoBaru);
+  const perubahan = pakaiPerubahan ? Number(adjustmentQty) : null;
+  if (pakaiPerubahan) { wajib(Number.isFinite(perubahan) && Math.abs(perubahan) > EPS, "Perubahan stok wajib diisi dan tidak boleh nol", "JUMLAH_TIDAK_VALID"); wajib(Math.abs(r4(perubahan) - perubahan) < 1e-9, "Perubahan stok maksimum 4 angka di belakang koma", "DESIMAL_BERLEBIH"); }
+  return tulisKoreksi(prisma, user, { materialId, kunci, alasan: teksAlasan, catatan: notes, originType, originId, jenis: adjustmentType, fisikDiminta, saldoDilihat, tentukanFisik: (saldo) => {
+    if (!pakaiPerubahan) return fisikDiminta;
+    const hasil = r4(saldo + perubahan);
+    wajib(hasil >= 0, `Saldo ${saldo} ${perubahan > 0 ? "+" : ""}${perubahan} menjadi minus. Isi saldo yang benar menurut hitung fisik.`, "HASIL_MINUS", 409);
+    return hasil;
+  } });
+}
+
+/** Satu transaksi di bawah kunci bahan. Tanpa izin langsung: permintaan Menunggu persetujuan, stok tidak berubah. Dengan izin langsung: dokumen POSTED + satu pergerakan ADJUSTMENT; gagal di mana pun berarti tidak ada yang tersimpan. */
+async function tulisKoreksi(prisma, user, { materialId, kunci, alasan: teksAlasan, catatan, originType, originId, jenis, fisikDiminta, saldoDilihat, tentukanFisik }) {
+  const langsung = bolehKoreksiLangsung(user);
   for (let percobaan = 0; percobaan < 5; percobaan++) {
     try {
       return await prisma.$transaction(async (tx) => {
         const saldo = r4(await lockMaterialBalance(tx, materialId)); // kunci bahan: serentak diserialkan
         const ada = await tx.koreksiSaldoBahan.findUnique({ where: { idempotencyKey: kunci }, include: { adjustmentRequest: true } });
-        if (ada) { wajib(ada.materialId === materialId && Math.abs(Number(ada.jumlahFisik) - fisik) < EPS, "Idempotency-Key ini sudah dipakai untuk koreksi lain", "KUNCI_DIPAKAI_LAIN", 409); return tampilHasil(ada.adjustmentRequest, ada, true); }
+        if (ada) { wajib(ada.materialId === materialId && (fisikDiminta === null || Math.abs(Number(ada.jumlahFisik) - fisikDiminta) < EPS), "Idempotency-Key ini sudah dipakai untuk koreksi lain", "KUNCI_DIPAKAI_LAIN", 409); return tampilHasil(ada.adjustmentRequest, ada, true); }
         const m = await tx.material.findUnique({ where: { id: materialId }, select: { id: true, code: true, unit: true } }); wajib(m, "Bahan tidak ditemukan", "BAHAN_TIDAK_ADA", 404);
-        wajib(Math.abs(saldo - r4(saldoDilihat)) <= EPS, `Saldo bahan sudah bergeser: pratinjau Anda memakai ${r4(saldoDilihat)}, saldo sekarang ${saldo}. Buka pratinjau lagi dari saldo terbaru; tidak ada yang tersimpan.`, "SALDO_BERGESER", 409, { saldoDilihat: r4(saldoDilihat), saldoSekarang: saldo });
+        wajib(saldoDilihat === null || saldoDilihat === undefined || Math.abs(saldo - r4(saldoDilihat)) <= EPS, `Saldo bahan sudah bergeser: pratinjau Anda memakai ${r4(saldoDilihat)}, saldo sekarang ${saldo}. Buka pratinjau lagi dari saldo terbaru; tidak ada yang tersimpan.`, "SALDO_BERGESER", 409, { saldoDilihat: r4(saldoDilihat), saldoSekarang: saldo });
+        const fisik = tentukanFisik(saldo);
         const selisih = r4(fisik - saldo); wajib(Math.abs(selisih) > EPS, "Jumlah fisik sama dengan saldo catatan — tidak ada selisih untuk dikoreksi", "TIDAK_ADA_SELISIH", 409);
         const aktif = await tx.koreksiSaldoBahan.findFirst({ where: { materialId, adjustmentRequest: { status: { in: AKTIF } } }, include: { adjustmentRequest: { select: { adjustmentNumber: true } } } });
         wajib(!aktif, `Sudah ada koreksi saldo ${aktif?.adjustmentRequest.adjustmentNumber} untuk bahan ini yang belum selesai — setujui/batalkan dulu`, "SUDAH_ADA_PENGAJUAN_AKTIF", 409);
@@ -136,11 +179,16 @@ export async function ajukanKoreksi(prisma, user, { materialId, jumlahFisik, sal
         const hari = new Date(); const awal = new Date(Date.UTC(hari.getUTCFullYear(), hari.getUTCMonth(), hari.getUTCDate()));
         const urut = (await tx.stockAdjustmentRequest.count({ where: { createdAt: { gte: awal } } })) + 1 + percobaan;
         const nomor = `ADJ-${String(hari.getUTCDate()).padStart(2, "0")}${String(hari.getUTCMonth() + 1).padStart(2, "0")}${String(hari.getUTCFullYear()).slice(-2)}-${String(urut).padStart(2, "0")}`;
+        const teksCatatan = catatan ? String(catatan).slice(0, 500) : null;
         const req = await tx.stockAdjustmentRequest.create({ data: {
-          adjustmentNumber: nomor, adjustmentType: "DATA_CORRECTION", materialId, beforeQty: saldo, adjustmentQty: selisih, reason: teksAlasan, notes: catatan ? String(catatan).slice(0, 500) : null,
-          status: "WAITING_APPROVAL", requestedById: user.id, originType: originType || null, originId: originId ? String(originId) : null,
+          adjustmentNumber: nomor, adjustmentType: jenis, materialId, beforeQty: saldo, adjustmentQty: selisih, reason: teksAlasan, notes: langsung ? [teksCatatan, PENANDA_LANGSUNG].filter(Boolean).join(" — ") : teksCatatan,
+          status: langsung ? "POSTED" : "WAITING_APPROVAL", requestedById: user.id, ...(langsung ? { postedById: user.id, postedAt: new Date() } : {}), originType: originType || null, originId: originId ? String(originId) : null,
         } });
         const h = await tx.koreksiSaldoBahan.create({ data: { adjustmentRequestId: req.id, materialId, satuan: m.unit, jumlahFisik: String(fisik), saldoDilihat: String(saldo), selisih: String(selisih), keadaanAwal: keadaan, jumlahPergerakanAwal: n, idempotencyKey: kunci, createdById: user.id } });
+        if (langsung) {
+          await postStockMovement(tx, { materialId, type: "ADJUSTMENT", qty: selisih, reason: teksAlasan, note: `Stock Adjustment ${nomor}`, stockAdjustmentRequestId: req.id, createdById: user.id });
+          await recordActivity(tx, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, entityId: req.id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: user.id, metadata: { adjustmentNumber: nomor, adjustmentQty: selisih, koreksiLangsung: true, saldoSebelum: saldo, jumlahFisik: fisik } });
+        }
         return tampilHasil(req, h, false);
       }, { timeout: 20_000, maxWait: 10_000 });
     } catch (e) {
@@ -187,7 +235,7 @@ export async function riwayatKoreksiBahan(db, materialId, { limit = 30 } = {}) {
   return baris.map((h) => {
     const r = h.adjustmentRequest; const aktif = AKTIF.includes(r.status);
     return {
-      id: r.id, nomor: r.adjustmentNumber, status: r.status, statusTeks: STATUS_TEKS[r.status] ?? r.status,
+      id: r.id, nomor: r.adjustmentNumber, status: r.status, statusTeks: STATUS_TEKS[r.status] ?? r.status, langsung: adalahKoreksiLangsung(r),
       jumlahFisik: Number(h.jumlahFisik), saldoDilihat: Number(h.saldoDilihat), selisih: Number(h.selisih), satuan: h.satuan, keadaanAwal: h.keadaanAwal, keadaanAwalTeks: LABEL_KEADAAN_SALDO[h.keadaanAwal],
       alasan: r.reason, catatan: r.notes, rujukan: r.originType ? { tipe: r.originType, id: r.originId } : null,
       diajukanOleh: r.requestedBy?.name ?? null, diajukanPada: r.createdAt, disetujuiOleh: r.approvedBy?.name ?? null, disetujuiPada: r.approvedAt, dipostingOleh: r.postedBy?.name ?? null, dipostingPada: r.postedAt,

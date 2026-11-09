@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Scale, Plus, RefreshCw, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
@@ -8,13 +8,17 @@ import DaftarSederhana from "@/features/warehouse/dokumen/DaftarSederhana.jsx";
 import { ADJUSTMENT_TYPE_REAL, UNIT_LABEL } from "../inventoryReal.js";
 import { JENIS_PENYESUAIAN, TAHAP_FILTER_ADJ, teksCari } from "@/features/warehouse/dokumen/labelDokumen.js";
 import { tanggalPendek, teksJumlah } from "@/features/warehouse/dokumen/dokumenLogic.js";
+import { rolesOf } from "@/lib/roles.js";
+import { bolehKoreksiLangsung } from "@/features/warehouse/penyesuaianLogic.js";
 
-// PENYESUAIAN STOK — daftar (Draf → Menunggu persetujuan → Disetujui → Diposting). Persetujuan wajib orang lain berperan penyetuju (aturan pemisahan tugas yang berlaku). Detail dibuka sebagai halaman.
+// PENYESUAIAN STOK — daftar (Draf → Menunggu persetujuan → Disetujui → Diposting). Persetujuan wajib orang lain berperan penyetuju, kecuali koreksi langsung Admin/Owner yang langsung Diposting. Detail dibuka sebagai halaman.
 const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
+const rolesLokal = () => { try { return rolesOf(JSON.parse(localStorage.getItem("user"))); } catch { return []; } }; // hanya untuk label; server yang memutuskan
 const tanda = (n) => `${n > 0 ? "+" : ""}${teksJumlah(n)}`;
 
 
-function FormModal({ open, onClose, onCreated }) {
+function FormModal({ open, onClose, onCreated, langsung }) {
+  const kunci = useRef(null);
   const [materials, setMaterials] = useState([]);
   const [materialId, setMaterialId] = useState("");
   const [adjustmentType, setAdjustmentType] = useState("DATA_CORRECTION");
@@ -28,7 +32,7 @@ function FormModal({ open, onClose, onCreated }) {
   useEffect(() => {
     if (!open) return;
     setMaterialId(""); setAdjustmentType("DATA_CORRECTION"); setAdjustmentQty(""); setMode("delta"); setSaldoBaru("");
-    setReason(""); setNotes(""); setErr("");
+    setReason(""); setNotes(""); setErr(""); kunci.current = `penyesuaian-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`;
     api.getMaterials({ active: "true" }).then(setMaterials).catch(() => {});
   }, [open]);
 
@@ -40,13 +44,13 @@ function FormModal({ open, onClose, onCreated }) {
     if (!reason.trim()) { setErr("Alasan wajib diisi"); return; }
     setBusy(true); setErr("");
     try {
-      const baru = await api.createAdjustmentRequest({ materialId, adjustmentType, ...(mode === "saldo" ? { saldoBaru: Number(saldoBaru) } : { adjustmentQty }), reason, notes: notes || undefined });
+      const baru = await api.createAdjustmentRequest({ materialId, adjustmentType, ...(mode === "saldo" ? { saldoBaru: Number(saldoBaru) } : { adjustmentQty }), reason, notes: notes || undefined }, kunci.current);
       onCreated(baru); onClose();
     } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
   }
 
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title="Ajukan Penyesuaian Stok">
+    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={langsung ? "Koreksi Stok" : "Ajukan Penyesuaian Stok"}>
       <form onSubmit={simpan} className="space-y-3">
         <div>
           <label className="mb-1 block text-[11.5px] font-semibold text-ink2">Bahan *</label>
@@ -73,7 +77,7 @@ function FormModal({ open, onClose, onCreated }) {
               <>
                 <input type="number" step="any" value={saldoBaru} onChange={(e) => setSaldoBaru(e.target.value)} placeholder="saldo yang seharusnya" data-testid="adj-saldo-baru"
                   className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent" />
-                <p className="m-0 mt-1 text-[11px] text-ink3">Selisih dihitung dari saldo saat ini. Saldo tidak ditimpa — tetap menunggu persetujuan orang lain, lalu tercatat sebagai penyesuaian.</p>
+                <p className="m-0 mt-1 text-[11px] text-ink3">{langsung ? "Selisih dihitung dari saldo saat ini dan langsung tercatat sebagai penyesuaian saat disimpan." : "Selisih dihitung dari saldo saat ini. Saldo tidak ditimpa — tetap menunggu persetujuan orang lain, lalu tercatat sebagai penyesuaian."}</p>
               </>
             ) : (
             <input type="number" step="any" value={adjustmentQty} onChange={(e) => setAdjustmentQty(e.target.value)}
@@ -96,7 +100,7 @@ function FormModal({ open, onClose, onCreated }) {
         {err && <p className="text-[12px] text-red">{err}</p>}
         <div className="flex justify-end gap-2 border-t border-line pt-3">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Batal</Button>
-          <Button type="submit" size="sm" disabled={busy}>{busy && <Loader2 size={14} className="animate-spin" />} Ajukan</Button>
+          <Button type="submit" size="sm" disabled={busy}>{busy && <Loader2 size={14} className="animate-spin" />} {langsung ? "Simpan koreksi" : "Ajukan"}</Button>
         </div>
       </form>
     </Modal>
@@ -105,6 +109,7 @@ function FormModal({ open, onClose, onCreated }) {
 
 export default function AdjustmentsTab() {
   const navigate = useNavigate();
+  const langsung = bolehKoreksiLangsung(rolesLokal());
   const [tahap, setTahap] = useState(""); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
   const load = useCallback(() => {
@@ -113,7 +118,7 @@ export default function AdjustmentsTab() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { window.addEventListener("gudang-dokumen-berubah", load); return () => window.removeEventListener("gudang-dokumen-berubah", load); }, [load]); // jendela fokus dokumen memberi kabar setelah aksi
-  const baru = <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Ajukan Penyesuaian</Button>;
+  const baru = <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> {langsung ? "Koreksi Stok" : "Ajukan Penyesuaian"}</Button>;
   return (
     <>
       <DaftarSederhana filters={TAHAP_FILTER_ADJ} rows={rows} loading={loading} error={error} tahap={tahap} onTahap={setTahap} cari={cari} onCari={setCari}
@@ -127,8 +132,8 @@ export default function AdjustmentsTab() {
           { label: "Alasan", kelas: "max-w-[220px] truncate text-ink2", isi: (r) => r.reason },
         ]}
         kartu={(r) => ({ judul: r.adjustmentNumber, baris: [<>{JENIS_PENYESUAIAN[r.adjustmentType] ?? r.adjustmentType} · <span className="font-medium text-ink">{r.material.code}</span> · {tanda(Number(r.adjustmentQty))} {satuan(r.material.unit)}</>, `${r.requestedBy?.name ?? "—"} · ${tanggalPendek(r.createdAt)}`, r.reason] })}
-        kosong={{ icon: Scale, judul: "Belum ada penyesuaian stok", deskripsi: "Ajukan penyesuaian bila stok sistem perlu dikoreksi.", aksi: baru }} />
-      <FormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) navigate(`/warehouse/adjustments/stock/${d.id}`); }} />
+        kosong={{ icon: Scale, judul: "Belum ada penyesuaian stok", deskripsi: langsung ? "Koreksi bila stok sistem tidak sama dengan fisik." : "Ajukan penyesuaian bila stok sistem perlu dikoreksi.", aksi: baru }} />
+      <FormModal langsung={langsung} open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) navigate(`/warehouse/adjustments/stock/${d.id}`); }} />
     </>
   );
 }

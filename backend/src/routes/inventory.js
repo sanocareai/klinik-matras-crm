@@ -81,10 +81,21 @@ inventoryRouter.get("/materials", requireAnyPermission(P.INVENTORY_READ, P.UNIT_
   }
 });
 
-// POST /api/inventory/materials { code, name, unit, serviceLine?, reorderPoint?, reorderQty? }
+// Deskripsi bahan: teks bebas, dipangkas, kosong = dikosongkan, maksimum 1000 karakter. undefined = tidak diubah.
+const DESKRIPSI_MAKS = 1000;
+function bacaDeskripsi(nilai) {
+  if (nilai === undefined) return undefined;
+  if (nilai !== null && typeof nilai !== "string") throw new InventoryError("Deskripsi harus berupa teks");
+  const t = String(nilai ?? "").trim();
+  if (t.length > DESKRIPSI_MAKS) throw new InventoryError(`Deskripsi maksimum ${DESKRIPSI_MAKS} karakter`);
+  return t || null;
+}
+
+// POST /api/inventory/materials { code, name, unit, serviceLine?, reorderPoint?, reorderQty?, description? }
 inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { code, name, unit, serviceLine, category, reorderPoint, reorderQty } = req.body;
+    const { code, name, unit, serviceLine, category, reorderPoint, reorderQty, description } = req.body;
+    const deskripsi = bacaDeskripsi(description);
     if (!code?.trim() || !name?.trim()) throw new InventoryError("Kode dan nama material wajib diisi");
     if (!VALID_UNITS.includes(unit)) throw new InventoryError("Satuan tidak valid");
     if (serviceLine && !["SERVICE", "UPGRADE"].includes(serviceLine)) {
@@ -99,6 +110,7 @@ inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (
         category: category || null,
         reorderPoint: reorderPoint != null && reorderPoint !== "" ? Number(reorderPoint) : null,
         reorderQty: reorderQty != null && reorderQty !== "" ? Number(reorderQty) : null,
+        description: deskripsi ?? null,
       },
     });
     res.status(201).json(material);
@@ -131,7 +143,8 @@ inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), as
   try {
     const existing = await prisma.material.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Material tidak ditemukan" });
-    const { name, active, category, reorderPoint, reorderQty } = req.body;
+    const { name, active, category, reorderPoint, reorderQty, description } = req.body;
+    const deskripsi = bacaDeskripsi(description);
     if (category !== undefined && category !== null && category !== "" && !VALID_CATEGORIES.includes(category)) {
       throw new InventoryError("Kategori tidak valid");
     }
@@ -143,6 +156,7 @@ inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), as
       ...(category !== undefined && { category: category === "" || category === null ? null : category }),
       ...(reorderPoint !== undefined && { reorderPoint: reorderPoint === "" || reorderPoint === null ? null : Number(reorderPoint) }),
       ...(reorderQty !== undefined && { reorderQty: reorderQty === "" || reorderQty === null ? null : Number(reorderQty) }),
+      ...(deskripsi !== undefined && { description: deskripsi }),
     };
 
     // Audit trail (12 Sept 2026) — PATCH material sebelumnya menimpa data
