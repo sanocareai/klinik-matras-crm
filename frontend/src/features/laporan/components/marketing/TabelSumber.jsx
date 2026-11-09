@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Columns3, Info, ListFilter, MessageSquare, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleSlash, Columns3, Info, ListFilter, MessageSquare, Search, ShieldCheck, X } from "lucide-react";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { METRIK_URUT, urutkan, penandaPerSumber, teksSorotan, angka, formatPersen, rupiah, selBiayaSumber, selTotalBerbayar, delta, deltaTeks, DASAR_BIAYA_LABEL, BUKTI_LABEL, sementaraTeks } from "../../akuisisiLogic.js";
@@ -129,7 +129,7 @@ function Popover({ label, ikon: Ikon, aktif = false, testid, children }) {
   }, [buka]);
   return (
     <div className="mk-pop" ref={ref}>
-      <button type="button" className={cn("mk-kapsul", aktif && "mk-kapsul--aktif")} aria-expanded={buka} aria-haspopup="dialog" onClick={() => setBuka((v) => !v)} data-testid={testid}><Ikon size={15} aria-hidden="true" /> {label}</button>
+      <button type="button" className={cn("mk-alat", aktif && "mk-alat--aktif")} aria-expanded={buka} aria-haspopup="dialog" onClick={() => setBuka((v) => !v)} data-testid={testid}><Ikon size={15} aria-hidden="true" /> {label}{aktif && <span className="mk-alat-titik" aria-label="aktif" />}</button>
       {buka && <div className="mk-pop-isi" role="dialog" aria-label={label}>{children}</div>}
     </div>
   );
@@ -160,9 +160,13 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
   return (
     <section className="mk-panel mk-sumber" data-testid="tabel-sumber" aria-label="Performa sumber">
       <div className="mk-sumber-kepala">
-        <h3 className="mk-panel-judul">Performa sumber
-          <InfoTooltip text={`Urut menurut ${labelUrut?.toLowerCase() || "pilihan"} di dalam tiap kelompok — kelompok tidak diperingkat bersama. Sumber dengan sampel kecil (< 30 lead) tidak dibandingkan pada rasio. Klik baris untuk rincian; ikon i untuk penjelasan channel.`} />
-        </h3>
+        <div className="mk-sumber-judul">
+          <h3 className="mk-panel-judul">Performa sumber
+            <InfoTooltip text={`Urut menurut ${labelUrut?.toLowerCase() || "pilihan"} di dalam tiap kelompok — kelompok tidak diperingkat bersama. Sumber dengan sampel kecil (< 30 lead) tidak dibandingkan pada rasio. Klik baris untuk rincian; ikon i untuk penjelasan channel.`} />
+          </h3>
+          <p className="mk-sumber-deskripsi">Klik baris untuk rincian. Peringkat hanya di dalam kelompok.</p>
+        </div>
+        <div className="mk-sumber-kontrol">
         <div className="mk-seg" role="group" aria-label="Kelompok sumber">
           {SARING_SUMBER.map((s) => <button key={s.id} type="button" aria-pressed={saring === s.id} onClick={() => setSaring(s.id)} data-testid={`saring-sumber-${s.id}`}>{s.label}</button>)}
         </div>
@@ -195,6 +199,7 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
             </div>
           </Popover>
         </div>
+        </div>
       </div>
 
       <div className="mk-gulir" tabIndex={0} role="region" aria-label="Tabel performa sumber; gulir mendatar untuk kolom lain">
@@ -225,7 +230,7 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
                             <span className="mk-sumber-teks">
                               <span className="mk-sumber-nama">{s.label}
                                 {pakem && <button type="button" className="mk-info" aria-expanded={terbuka} aria-label={`Penjelasan ${s.label}`} data-testid={`info-${s.id}`}
-                                  onClick={(e) => { e.stopPropagation(); setInfoId(terbuka ? null : s.id); }} onKeyDown={(e) => e.stopPropagation()}><Info size={14} aria-hidden="true" /></button>}
+                                  onClick={(e) => { e.stopPropagation(); setInfoId(terbuka ? null : s.id); }} onKeyDown={(e) => e.stopPropagation()}><Info size={15} strokeWidth={2.2} aria-hidden="true" /></button>}
                               </span>
                               <span className="mk-sumber-kategori">{kategoriSumber(s.id)}</span>
                               {(s.sampelKecil || (penanda.get(s.id) || []).length > 0) && (
@@ -244,14 +249,22 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
                       {terbuka && pakem && (
                         <tr className="mk-pakem" data-testid={`pakem-${s.id}`}>
                           <td colSpan={kolom.length + 2}>
-                            <div className="mk-pakem-isi">
-                              <div className="mk-pakem-kisi">
-                                <div><p className="mk-pakem-judul">Apa ini</p><p>{pakem.apa}</p></div>
-                                <div><p className="mk-pakem-judul">Buktinya</p><p>{pakem.bukti}</p></div>
-                                <div><p className="mk-pakem-judul">Tidak termasuk</p><p>{pakem.bukan}</p></div>
+                            {/* Kartu penjelasan channel: menempel di kiri area gulir (tidak melebar sepanjang tabel). */}
+                            <div className="mk-pakem-isi" role="region" aria-label={`Tentang ${s.label}`}>
+                              <div className="mk-pakem-kepala">
+                                <LogoSumber id={s.id} size={28} />
+                                <p className="mk-pakem-nama">Tentang {s.label}</p>
+                                <button type="button" className="mk-pakem-tutup" aria-label="Tutup penjelasan" onClick={(e) => { e.stopPropagation(); setInfoId(null); }}><X size={15} aria-hidden="true" /></button>
                               </div>
-                              <p className="mk-pakem-dasar">Dasar angka: {BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"}{s.tingkatBukti ? ` · tingkat bukti ${s.tingkatBukti.toLowerCase()}` : ""}</p>
-                              {onLihatChat && s.lead > 0 && <button type="button" className="mk-kapsul mk-kapsul--kecil" data-testid={`lihat-chat-${s.id}`} onClick={(e) => { e.stopPropagation(); onLihatChat({ judul: s.label, sub: `${angka(s.lead)} chat`, query: { sumber: s.id } }); }}><MessageSquare size={14} /> Lihat {angka(s.lead)} chat</button>}
+                              <div className="mk-pakem-kisi">
+                                <div className="mk-pakem-blok"><span className="mk-pakem-ikon" data-nada="biru" aria-hidden="true"><Info size={15} /></span><div><p className="mk-pakem-judul">Apa ini</p><p>{pakem.apa}</p></div></div>
+                                <div className="mk-pakem-blok"><span className="mk-pakem-ikon" data-nada="hijau" aria-hidden="true"><ShieldCheck size={15} /></span><div><p className="mk-pakem-judul">Buktinya</p><p>{pakem.bukti}</p></div></div>
+                                <div className="mk-pakem-blok"><span className="mk-pakem-ikon" data-nada="oranye" aria-hidden="true"><CircleSlash size={15} /></span><div><p className="mk-pakem-judul">Tidak termasuk</p><p>{pakem.bukan}</p></div></div>
+                              </div>
+                              <div className="mk-pakem-kaki">
+                                <p className="mk-pakem-dasar">Dasar angka: {BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"}{s.tingkatBukti ? ` · tingkat bukti ${s.tingkatBukti.toLowerCase()}` : ""}</p>
+                                {onLihatChat && s.lead > 0 && <button type="button" className="mk-kapsul mk-kapsul--kecil mk-kapsul--aktif" data-testid={`lihat-chat-${s.id}`} onClick={(e) => { e.stopPropagation(); onLihatChat({ judul: s.label, sub: `${angka(s.lead)} chat`, query: { sumber: s.id } }); }}><MessageSquare size={14} /> Lihat {angka(s.lead)} chat</button>}
+                              </div>
                             </div>
                           </td>
                         </tr>

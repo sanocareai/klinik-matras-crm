@@ -100,7 +100,7 @@ test("gaya dibatasi ke Marketing: berkas terpisah dimuat dari MarketingTab; styl
   assert.doesNotMatch(baca("src/main.jsx"), /sanss-mk-apple/);
   const aturan = css.split("}").map((r) => r.trim()).filter((r) => r.includes("{")).map((r) => r.split("{").slice(-2, -1)[0] ?? r.split("{")[0]).map((x) => x.trim()).filter((sel) => sel && !sel.startsWith("@"));
   const pecah = (sel) => { const out = []; let d = 0, cur = ""; for (const ch of sel) { if (ch === "(") d++; if (ch === ")") d--; if (ch === "," && d === 0) { out.push(cur); cur = ""; } else cur += ch; } out.push(cur); return out.map((x) => x.trim()).filter(Boolean); };
-  for (const sel of aturan) for (const bagian of pecah(sel)) assert.match(bagian, /mk-ap|data-mk-ap/, `selektor tidak dibatasi: ${bagian}`);
+  for (const sel of aturan) for (const bagian of pecah(sel)) assert.match(bagian, /mk-ap|data-mk-ap|^(from|to|\d+%)$/, `selektor tidak dibatasi: ${bagian}`);
   assert.doesNotMatch(cssLama, /font-family/);
   assert.doesNotMatch(cssLama, /!important/);
 });

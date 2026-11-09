@@ -2,7 +2,6 @@
 // Merek dagang tetap milik pemiliknya; logo dipakai hanya untuk mengidentifikasi sumber trafik (nominative use), bukan untuk menyiratkan afiliasi. TIDAK ada hotlink eksternal; semua path inline/lokal.
 // Wadah seragam (kotak membulat 36px); kontras tema terang/gelap dijaga lewat latar wadah (putih di tema gelap untuk logo gelap/TikTok), nama sumber selalu tampil di samping.
 import React from "react";
-import { Globe, MoreHorizontal, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 
 const PATH = {
@@ -16,16 +15,32 @@ export const SUMBER_IKON_SUMBER = "Simple Icons 13.21.0 (CC0 1.0)";
 
 const NAMA = { META: "Meta", TIKTOK: "TikTok", GOOGLE: "Google Ads", WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", WEBSITE: "Website", DIMULAI_SALES: "Dimulai Sales", LAINNYA: "Lainnya", UNKNOWN: "Tidak diketahui", UNMAPPED: "Belum terpetakan" };
 
-/** Logo sumber dalam wadah seragam. size = sisi wadah (px). Dekoratif (aria-hidden) karena nama sumber selalu ada di teks sebelahnya; prop `judul` bila dipakai sendiri. */
+// Ubin squircle ala ikon aplikasi Apple untuk sumber tanpa logo merek: gradien vertikal + kilau atas + ikon putih. Logo merek tetap asli di atas ubin putih (sudut squircle yang sama).
+const UBIN = {
+  WEBSITE: ["#6AC4FF", "#1E7BF2"],         // biru langit — situs web
+  DIMULAI_SALES: ["#A99BFF", "#6247E8"],   // ungu — dimulai tim internal
+  LAINNYA: ["#C9CDD8", "#8A90A3"],         // abu — sumber bertag lain
+  UNKNOWN: ["#C9CDD8", "#8A90A3"], UNMAPPED: ["#C9CDD8", "#8A90A3"],
+};
+function IkonUbin({ id, ukuran }) {
+  const umum = { width: ukuran, height: ukuran, viewBox: "0 0 24 24", fill: "none", stroke: "#fff", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", focusable: "false", style: { filter: "drop-shadow(0 1px 1px rgba(0,0,0,.22))" } };
+  if (id === "WEBSITE") return <svg {...umum}><circle cx="12" cy="12" r="8.6" /><path d="M3.6 12h16.8" /><path d="M12 3.4c2.4 2.4 3.6 5.3 3.6 8.6s-1.2 6.2-3.6 8.6c-2.4-2.4-3.6-5.3-3.6-8.6S9.6 5.8 12 3.4Z" /></svg>;
+  if (id === "DIMULAI_SALES") return <svg {...umum}><circle cx="9.5" cy="8" r="3.4" /><path d="M3.6 19.6c.5-3.2 2.9-5.4 5.9-5.4 1.5 0 2.8.5 3.8 1.4" /><path d="M15.2 17.4h6M18.6 14.8l2.6 2.6-2.6 2.6" /></svg>;
+  if (id === "UNKNOWN" || id === "UNMAPPED") return <svg {...umum}><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.5-2.7 4.1" /><circle cx="12" cy="17.6" r=".6" fill="#fff" /></svg>;
+  return <svg {...umum} fill="#fff" stroke="none"><circle cx="6" cy="12" r="1.9" /><circle cx="12" cy="12" r="1.9" /><circle cx="18" cy="12" r="1.9" /></svg>;
+}
+
+/** Logo sumber dalam wadah squircle seragam. size = sisi wadah (px). Dekoratif (aria-hidden) karena nama sumber selalu ada di teks sebelahnya; prop `judul` bila dipakai sendiri. */
 export default function LogoSumber({ id, size = 36, judul = null, className }) {
   const wadah = Math.round(size);
-  const gelapPutih = id === "TIKTOK"; // logo hitam: latar terang di tema gelap
-  const base = cn("inline-flex shrink-0 items-center justify-center rounded-btn", className);
+  const base = cn("inline-flex shrink-0 items-center justify-center", className);
+  const bentuk = { width: wadah, height: wadah, borderRadius: Math.round(size * 0.27) };
   const aria = judul ? { role: "img", "aria-label": judul } : { "aria-hidden": true };
+  const putih = { ...bentuk, background: "#fff", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,.12), 0 1px 2px rgba(16,24,64,.12)" };
   if (PATH[id]) {
     const isi = Math.round(size * 0.56);
     return (
-      <span className={cn(base, gelapPutih ? "bg-white ring-1 ring-black/10" : "bg-white ring-1 ring-black/10")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}>
+      <span className={base} style={putih} data-logo={id} {...aria}>
         <svg viewBox="0 0 24 24" width={isi} height={isi} fill={WARNA_MEREK[id]} focusable="false"><path d={PATH[id]} /></svg>
       </span>
     );
@@ -34,7 +49,7 @@ export default function LogoSumber({ id, size = 36, judul = null, className }) {
   if (id === "GOOGLE") {
     const isi = Math.round(size * 0.62);
     return (
-      <span className={cn(base, "bg-white ring-1 ring-black/10")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}>
+      <span className={base} style={putih} data-logo={id} {...aria}>
         <svg viewBox="0 0 24 24" width={isi} height={isi} focusable="false">
           <line x1="6.2" y1="17.6" x2="11.3" y2="5.9" stroke="#FBBC04" strokeWidth="5.2" strokeLinecap="round" />
           <line x1="12.7" y1="5.9" x2="17.8" y2="17.6" stroke="#4285F4" strokeWidth="5.2" strokeLinecap="round" />
@@ -43,18 +58,12 @@ export default function LogoSumber({ id, size = 36, judul = null, className }) {
       </span>
     );
   }
-  // Dimulai Sales: orang dengan panah keluar (chat dimulai dari pihak Sano).
-  if (id === "DIMULAI_SALES") {
-    const isi = Math.round(size * 0.58);
-    return (
-      <span className={cn(base, "bg-inset text-ink2")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}>
-        <svg viewBox="0 0 24 24" width={isi} height={isi} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" focusable="false">
-          <circle cx="9" cy="8" r="3.6" /><path d="M2.8 20.2c0-3.5 2.8-6.2 6.2-6.2 1.7 0 3.2.6 4.3 1.7" /><path d="M15.5 17.5h6.2M19 14.8l2.7 2.7-2.7 2.7" />
-        </svg>
-      </span>
-    );
-  }
-  const Ikon = id === "WEBSITE" ? Globe : id === "UNKNOWN" || id === "UNMAPPED" ? HelpCircle : MoreHorizontal;
-  return <span className={cn(base, "bg-inset text-ink2")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}><Ikon size={Math.round(size * 0.55)} strokeWidth={2} /></span>;
+  const [a1, a2] = UBIN[id] || UBIN.LAINNYA;
+  return (
+    <span className={base} data-logo={id} data-ubin="1" {...aria}
+      style={{ ...bentuk, background: `linear-gradient(180deg, ${a1} 0%, ${a2} 100%)`, boxShadow: `inset 0 1px 0 rgba(255,255,255,.42), inset 0 0 0 0.5px rgba(255,255,255,.22), 0 1px 2px rgba(20,24,60,.2), 0 4px 10px -5px ${a2}` }}>
+      <IkonUbin id={id} ukuran={Math.round(size * 0.6)} />
+    </span>
+  );
 }
 export const namaMerek = (id) => NAMA[id] || id;

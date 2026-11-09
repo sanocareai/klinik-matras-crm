@@ -1,15 +1,20 @@
 # tab Marketing gaya Apple: penanda baru hanya di dist baru; tampilan Marketing lama yang dipertahankan, Gelombang 1-2, dan semua fitur live HARUS tetap ada di KEDUANYA; service worker TIDAK berubah.
 # Pencarian memakai cari_dist (find|xargs) — BUKAN glob: dist aktif >21.000 chunk sehingga glob melampaui ARG_MAX dan gagal diam-diam.
-for c1 in ".mk-kpi-grid" ".mk-strip-butir" ".mk-sumber-kategori" ".mk-pop-isi"; do
+for c1 in ".mk-pakem-blok" ".mk-alat-titik" ".mk-sumber-kontrol"; do
   [ -z "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
-for j1 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber"; do
+for j1 in "Tutup penjelasan" "Peringkat hanya di dalam kelompok" "data-ubin"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$j1")" ] || die "[skrip] '${j1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j1")" ] || die "dist baru TIDAK memuat tampilan Marketing baru: ${j1}"
 done
+# .mk-kpi-grid/.mk-strip-butir/.mk-sumber-kategori (rilis mka1) juga harus tetap ada
+for c9 in ".mk-kpi-grid" ".mk-strip-butir" ".mk-sumber-kategori" ".mk-pop-isi"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c9")" ] || die "[skrip] ${c9} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c9")" ] || die "CSS baru KEHILANGAN ${c9}"
+done
 # fitur Marketing yang sudah live HARUS tetap ada (telusur chat, Per kreatif, iklan tidak terbaca, ekspor Excel server, kelola biaya, impor spend, target, monitoring)
-for m1 in "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do
+for m1 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber" "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$m1")" ] || die "[skrip] teks Marketing lama '${m1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$m1")" ] || die "dist baru KEHILANGAN fitur Marketing: ${m1}"
 done

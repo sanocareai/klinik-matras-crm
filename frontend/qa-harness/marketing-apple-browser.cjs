@@ -92,6 +92,12 @@ const tanpaGulirMendatar = (page) => page.evaluate(() => document.documentElemen
     // baris membuka rincian; tombol info tidak
     await klik(page, '[data-testid="info-META"]');
     ok("tombol info tidak membuka rincian", !/sumber=META/.test(page.url()) && !!(await page.$('[data-testid="pakem-META"]')));
+    const lebarChat = await page.$eval('[data-testid="lihat-chat-META"]', (e) => e.getBoundingClientRect().width).catch(() => 9999);
+    ok("tombol Lihat chat tidak melebar", lebarChat < 260, `${Math.round(lebarChat)} px`);
+    const lebarPakem = await page.$eval('[data-testid="pakem-META"] .mk-pakem-isi', (e) => e.getBoundingClientRect().width);
+    ok("kartu penjelasan maksimal 880 px", lebarPakem <= 881, `${Math.round(lebarPakem)} px`);
+    await page.screenshot({ path: path.join(SHOTS, "09-penjelasan-channel.png") });
+    ok("ikon squircle untuk Website, Dimulai Sales, Lainnya", (await page.$$eval('[data-logo][data-ubin="1"]', (els) => els.map((e) => e.dataset.logo))).join(",").includes("WEBSITE"));
     // menu Ekspor
     await klik(page, '[data-testid="menu-ekspor"]');
     const menu = await page.$$eval('[role="menuitem"]', (els) => els.map((e) => e.textContent.trim()));
