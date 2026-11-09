@@ -19,7 +19,7 @@ const LIB_REH = "scripts/lib/rehearsal-cutover-persediaan.mjs", LIB_SMOKE = "scr
 const GENERATOR = "scripts/gen-release-cutover-persediaan.cjs";
 const TPL_FILES = ["header", "rollback", "fitur-dist"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
-const CAND_BRANCH = "fix/cutover-persediaan-on-1be098c6";
+const CAND_BRANCH = "fix/cutover-persediaan-on-14808e53";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
