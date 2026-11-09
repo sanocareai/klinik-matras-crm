@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# RILIS FRONTEND-SAJA "tab Marketing gaya Apple" — TANPA backend, TANPA migrasi, TANPA schema, TANPA perubahan data, TANPA perubahan atribusi/tracker.
-# Isi: header satu baris (Muat ulang, periode, Kelola biaya iklan, menu Ekspor tiga format lama), strip "Hasil masih sementara", 4 KPI berwarna, panel Kelengkapan data ringkas, tabel Performa sumber dengan cari/saring/urut/Filter/Kolom, rincian sumber dan Meta yang dirapikan. Endpoint, rumus, izin, dan kontrak ekspor tidak berubah.
+# RILIS FRONTEND-SAJA "tab Marketing gaya Apple — perapian 2" — TANPA backend, TANPA migrasi, TANPA schema, TANPA perubahan data, TANPA perubahan atribusi/tracker.
+# Isi: ikon squircle bergradien untuk Website/Dimulai Sales/Lainnya (logo merek tetap asli), kartu penjelasan channel (tombol i) yang ringkas dan menempel kiri, toolbar Performa sumber satu baris yang rapi. Angka, endpoint, rumus, izin, ekspor tidak berubah.
 # ALLOWLIST EKSPLISIT: generator menolak bila himpunan berkas aplikasi di diff berbeda dari daftar yang disetujui.
 # Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
 # BASELINE = release aktif pada saat rilis (argumen BASE_SHA; diverifikasi dari mount container). backend/ harus IDENTIK dengan release aktif (dua berkas tes pemeriksa kontrak metrik dikecualikan HANYA pada perbandingan container-vs-folder, jalur persis); image backend SAMA.
@@ -13,11 +13,11 @@
 # CATATAN GERBANG DATA: kolom "pesan" (jumlah pesan WhatsApp) bertambah sendiri oleh lalu lintas pelanggan selama rilis; hitungan data yang DIJAGA adalah migrasi/stok/MI/ST/koreksi (kolom pesan diabaikan, dicatat).
 # KOORDINASI: jangan dijalankan bersamaan dengan deploy lain — skrip memeriksa kunci rilis lain dan baseline di fase 0, 3, sebelum switch, dan tepat sebelum switch; bila release aktif bergeser, skrip berhenti.
 #
-#   cat scripts/release-marketing-apple.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/mka1.sh'
-#   ssh ubuntu@43.133.152.6 'bash /tmp/mka1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
-#   ssh ubuntu@43.133.152.6 'bash /tmp/mka1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
-#   ssh ubuntu@43.133.152.6 'bash /tmp/mka1.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
-#   ssh ubuntu@43.133.152.6 'bash /tmp/mka1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
+#   cat scripts/release-marketing-apple.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/mka2.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/mka2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/mka2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/mka2.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh
+#   ssh ubuntu@43.133.152.6 'bash /tmp/mka2.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke frontend baseline (folder BASE, image SAMA); tidak ada data yang dihapus
 # (dibangkitkan oleh scripts/gen-release-marketing-apple.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-marketing-apple/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN diedit tangan — jalankan generator lagi)
 set -Eeuo pipefail
 umask 077
@@ -28,10 +28,10 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;; esac; done
 CAND_BRANCH="${CAND_BRANCH:-feat/marketing-apple-on-14808e53}"
-CAND_REF="refs/remotes/origin/cand-mka1"
+CAND_REF="refs/remotes/origin/cand-mka2"
 BUNDLE="${BUNDLE:-}"
-ALLOWED_RE='^(frontend/qa-harness/marketing-apple-browser\.cjs|frontend/src/features/laporan/components/BannerPeriode\.jsx|frontend/src/features/laporan/components/DetailSumberAkuisisi\.jsx|frontend/src/features/laporan/components/KelolaBiayaIklan\.jsx|frontend/src/features/laporan/components/LogoSumber\.jsx|frontend/src/features/laporan/components/MarketingTab\.jsx|frontend/src/features/laporan/components/marketing/DetailSumberMarketing\.jsx|frontend/src/features/laporan/components/marketing/Disclosure\.jsx|frontend/src/features/laporan/components/marketing/KelengkapanData\.jsx|frontend/src/features/laporan/components/marketing/MetaDetail\.jsx|frontend/src/features/laporan/components/marketing/PanelChat\.jsx|frontend/src/features/laporan/components/marketing/RingkasanMarketing\.jsx|frontend/src/features/laporan/components/marketing/StripStatus\.jsx|frontend/src/features/laporan/components/marketing/TabelSumber\.jsx|frontend/src/features/laporan/kanalPakem\.js|frontend/src/features/laporan/marketingLogic\.js|frontend/src/pages/Laporan\.jsx|frontend/src/styles/sanss-mk-apple\.css|frontend/tests/laporanRedesign\.test\.js|frontend/tests/laporanRedesignMarketing\.test\.js|scripts/gen-release-marketing-apple\.cjs|scripts/release-marketing-apple\.sh|scripts/templates/release-marketing-apple/allowlist\.txt|scripts/templates/release-marketing-apple/bandingkan-kode\.txt|scripts/templates/release-marketing-apple/build-only\.txt|scripts/templates/release-marketing-apple/container-baru\.txt|scripts/templates/release-marketing-apple/fitur-dist\.txt|scripts/templates/release-marketing-apple/header\.txt|scripts/templates/release-marketing-apple/verifikasi-hotfix\.txt|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt)$'
-FRONTEND_SRC_EXPECT="frontend/src/features/laporan/components/BannerPeriode.jsx frontend/src/features/laporan/components/DetailSumberAkuisisi.jsx frontend/src/features/laporan/components/KelolaBiayaIklan.jsx frontend/src/features/laporan/components/LogoSumber.jsx frontend/src/features/laporan/components/MarketingTab.jsx frontend/src/features/laporan/components/marketing/DetailSumberMarketing.jsx frontend/src/features/laporan/components/marketing/Disclosure.jsx frontend/src/features/laporan/components/marketing/KelengkapanData.jsx frontend/src/features/laporan/components/marketing/MetaDetail.jsx frontend/src/features/laporan/components/marketing/PanelChat.jsx frontend/src/features/laporan/components/marketing/RingkasanMarketing.jsx frontend/src/features/laporan/components/marketing/StripStatus.jsx frontend/src/features/laporan/components/marketing/TabelSumber.jsx frontend/src/features/laporan/kanalPakem.js frontend/src/features/laporan/marketingLogic.js frontend/src/pages/Laporan.jsx frontend/src/styles/sanss-mk-apple.css"
+ALLOWED_RE='^(frontend/qa-harness/marketing-apple-browser\.cjs|frontend/src/features/laporan/components/LogoSumber\.jsx|frontend/src/features/laporan/components/marketing/TabelSumber\.jsx|frontend/src/styles/sanss-mk-apple\.css|frontend/tests/laporanRedesignMarketing\.test\.js|scripts/gen-release-marketing-apple\.cjs|scripts/release-marketing-apple\.sh|scripts/templates/release-marketing-apple/allowlist\.txt|scripts/templates/release-marketing-apple/bandingkan-kode\.txt|scripts/templates/release-marketing-apple/build-only\.txt|scripts/templates/release-marketing-apple/container-baru\.txt|scripts/templates/release-marketing-apple/fitur-dist\.txt|scripts/templates/release-marketing-apple/header\.txt|scripts/templates/release-marketing-apple/verifikasi-hotfix\.txt|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt)$'
+FRONTEND_SRC_EXPECT="frontend/src/features/laporan/components/LogoSumber.jsx frontend/src/features/laporan/components/marketing/TabelSumber.jsx frontend/src/styles/sanss-mk-apple.css"
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
 PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
@@ -59,7 +59,7 @@ rollback_instructions() {
 Fase saat berhenti : ${PHASE}
 Release sebelumnya : ${PREV_DIR:-<belum terbaca>} (TIDAK dihapus/ditimpa; image sama dengan release baru)
 Berhenti SEBELUM 'Switch' -> backend lama tidak pernah dimatikan. Setelah switch:
-   bash /tmp/mka1.sh ${DEPLOY_SHA:-<sha>} ${BASE_SHA:-<base>} --rollback
+   bash /tmp/mka2.sh ${DEPLOY_SHA:-<sha>} ${BASE_SHA:-<base>} --rollback
    (setara: cd ${PREV_DIR:-<release-sebelumnya>} && SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend)
 Rilis ini hanya mengganti dist web. Tidak ada migrasi/data baru.
 ─────────────────────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ tidak_ada_deploy_lain_lagi() {
     [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-marketing-apple.lock" ] && continue
     ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain mulai berjalan (kunci ${lf} dipegang) — berhenti sebelum switch"
   done
-  OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "mka1\|release-marketing-apple\|pgrep\|node src/index.js" | grep -v "$$" || true)"
+  OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "mka2\|release-marketing-apple\|pgrep\|node src/index.js" | grep -v "$$" || true)"
   [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain tepat sebelum switch — berhenti"; }
   ok "tepat sebelum switch: tidak ada deploy/build/migrasi lain"
 }
@@ -153,7 +153,7 @@ PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"
 for c in git docker curl gzip sha256sum awk grep flock tar sed df node npm; do command -v "$c" >/dev/null 2>&1 || die "perintah '$c' tidak ada"; done
 for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"; done
 exec 9>/tmp/release-marketing-apple.lock; flock -n 9 || die "rilis ini sudah berjalan"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "mka1\|release-marketing-apple\|pgrep\|node src/index.js" | grep -v "$$" || true)"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "mka2\|release-marketing-apple\|pgrep\|node src/index.js" | grep -v "$$" || true)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
 ok "tidak ada deploy lain"
 mkdir -p "$BK_DIR" "$HOME/release-src"; exec > >(tee -a "$BK_DIR/release.log") 2>&1
@@ -252,16 +252,21 @@ MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | t
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # tab Marketing gaya Apple: penanda baru hanya di dist baru; tampilan Marketing lama yang dipertahankan, Gelombang 1-2, dan semua fitur live HARUS tetap ada di KEDUANYA; service worker TIDAK berubah.
 # Pencarian memakai cari_dist (find|xargs) — BUKAN glob: dist aktif >21.000 chunk sehingga glob melampaui ARG_MAX dan gagal diam-diam.
-for c1 in ".mk-kpi-grid" ".mk-strip-butir" ".mk-sumber-kategori" ".mk-pop-isi"; do
+for c1 in ".mk-pakem-blok" ".mk-alat-titik" ".mk-sumber-kontrol"; do
   [ -z "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
-for j1 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber"; do
+for j1 in "Tutup penjelasan" "Peringkat hanya di dalam kelompok" "data-ubin"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$j1")" ] || die "[skrip] '${j1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j1")" ] || die "dist baru TIDAK memuat tampilan Marketing baru: ${j1}"
 done
+# .mk-kpi-grid/.mk-strip-butir/.mk-sumber-kategori (rilis mka1) juga harus tetap ada
+for c9 in ".mk-kpi-grid" ".mk-strip-butir" ".mk-sumber-kategori" ".mk-pop-isi"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c9")" ] || die "[skrip] ${c9} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c9")" ] || die "CSS baru KEHILANGAN ${c9}"
+done
 # fitur Marketing yang sudah live HARUS tetap ada (telusur chat, Per kreatif, iklan tidak terbaca, ekspor Excel server, kelola biaya, impor spend, target, monitoring)
-for m1 in "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do
+for m1 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber" "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$m1")" ] || die "[skrip] teks Marketing lama '${m1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$m1")" ] || die "dist baru KEHILANGAN fitur Marketing: ${m1}"
 done
@@ -386,5 +391,5 @@ sleep 15
 [ "$(docker inspect -f '{{.State.Running}}' "$CID_NEW")" = "true" ] || die "backend tidak berjalan"
 ok "backend stabil: RestartCount=0"
 trap - EXIT
-say "SELESAI — frontend ${DEPLOY_SHORT} aktif (switch ${T_SWITCH}). Rollback: bash /tmp/mka1.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback. Log: ${BK_DIR}/release.log"
-say "CATATAN: rilis FRONTEND-SAJA. Backend, image, migrasi, data, .env, atribusi/tracker/biaya/jadwal/stok/jurnal TIDAK berubah; hotfix performa tetap ada. Rollback = baseline ${BASE_SHA:0:8} (image sama): bash /tmp/mka1.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback. Tidak ada folder release/image/backup/volume yang dihapus."
+say "SELESAI — frontend ${DEPLOY_SHORT} aktif (switch ${T_SWITCH}). Rollback: bash /tmp/mka2.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback. Log: ${BK_DIR}/release.log"
+say "CATATAN: rilis FRONTEND-SAJA. Backend, image, migrasi, data, .env, atribusi/tracker/biaya/jadwal/stok/jurnal TIDAK berubah; hotfix performa tetap ada. Rollback = baseline ${BASE_SHA:0:8} (image sama): bash /tmp/mka2.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback. Tidak ada folder release/image/backup/volume yang dihapus."
