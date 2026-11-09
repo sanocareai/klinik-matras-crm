@@ -2,7 +2,9 @@
 //
 // Beda dengan POST /inventory/movements/adjustment (satu langkah, langsung
 // tertulis — DITUTUP Okt 2026 untuk semua peran, menjawab 409): ini WAJIB
-// approval orang lain (pengaju != penyetuju) sebelum ledger tersentuh. Lihat
+// approval orang lain (pengaju != penyetuju) sebelum ledger tersentuh, KECUALI
+// koreksi langsung ADMIN/OWNER (keputusan Owner 9 Nov 2026, inventory:koreksi_saldo_langsung,
+// lihat services/koreksiSaldoBahan.js). Lihat
 // catatan panjang di schema.prisma di atas model StockAdjustmentRequest —
 // SEMUA request wajib approval tanpa kecuali (tidak ada kolom harga untuk
 // membedakan "tinggi/rendah nilai" secara jujur).
@@ -20,7 +22,7 @@ import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
 import { ASAL_KOREKSI_TIPE, validasiAsalKoreksi, ringkasAsalKoreksi } from "../services/asalKoreksiSaldo.js";
-import { KoreksiSaldoError, keadaanBahan, pratinjauKoreksi, ajukanKoreksi, riwayatKoreksiBahan, wajibSaldoBelumBergeser, konteksKoreksiRequest } from "../services/koreksiSaldoBahan.js";
+import { KoreksiSaldoError, keadaanBahan, pratinjauKoreksi, ajukanKoreksi, koreksiDariPenyesuaian, bolehKoreksiLangsung, adalahKoreksiLangsung, riwayatKoreksiBahan, wajibSaldoBelumBergeser, konteksKoreksiRequest } from "../services/koreksiSaldoBahan.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -72,7 +74,7 @@ stockAdjustmentRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, 
   }
 });
 
-// KOREKSI SALDO PER BAHAN (Stok & Lokasi): pratinjau baca-saja + pengajuan ke jalur resmi Penyesuaian Stok. Tidak menulis ledger; persetujuan orang lain + posting tetap di rute /:id di bawah.
+// KOREKSI SALDO PER BAHAN (Stok & Lokasi): pratinjau baca-saja + pengajuan ke jalur resmi Penyesuaian Stok. Pengaju biasa: tidak menulis ledger; persetujuan orang lain + posting di rute /:id di bawah. Admin/Owner: /ajukan langsung memposting.
 //   GET  /koreksi-saldo/bahan/:materialId  (inventory:read)  keadaan saldo, izin, riwayat koreksi bahan
 //   POST /koreksi-saldo/pratinjau          (inventory:read)  { materialId, jumlahFisik } -> saldo sebelum, jumlah baru, selisih, dampak stok, izin
 //   POST /koreksi-saldo/ajukan             (inventory:write) { materialId, jumlahFisik, saldoDilihat, alasan, catatan?, originType?, originId? } + header Idempotency-Key
@@ -93,7 +95,7 @@ stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaSetujui = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE); const pemohonSama = request.requestedById === req.user.id;
     // Penyetuju murni (mis. Finance) tidak punya izin tulis tetapi boleh menyetujui: hanya aksi SETUJUI yang ditawarkan kepadanya.
     const t = tampilanPenyesuaian(request, { bisaSetujui, pemohonSama });
-    res.json({ ...request, koreksiSaldo: await konteksKoreksiRequest(prisma, request.id, request.status), asal: await ringkasAsalKoreksi(prisma, request), tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
+    res.json({ ...request, koreksiLangsung: adalahKoreksiLangsung(request), koreksiSaldo: await konteksKoreksiRequest(prisma, request.id, request.status), asal: await ringkasAsalKoreksi(prisma, request), tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -111,6 +113,13 @@ stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req
     if (Boolean(originType) !== Boolean(originId)) throw new AdjustmentError("originType dan originId harus diisi bersamaan");
     if (originType && !ASAL_KOREKSI_TIPE.includes(originType)) throw new AdjustmentError("originType tidak dikenal");
     if (originType) await validasiAsalKoreksi(prisma, { originType, originId, materialId }); // asal harus ada dan menyangkut bahan yang sama (AsalKoreksiError membawa statusCode)
+
+    // Admin/Owner: langsung tercatat di stok, tanpa pengajuan. Idempotency-Key wajib agar klik ganda tidak memposting dua kali; tanpa kunci (tab lama) tetap alur pengajuan. Konversi tetap lewat persetujuan karena butuh pasangan.
+    if (req.get("Idempotency-Key") && bolehKoreksiLangsung(req.user) && adjustmentType !== "CONVERSION") {
+      const h = await koreksiDariPenyesuaian(prisma, req.user, { ...req.body, reason: reason.trim() }, req.get("Idempotency-Key"));
+      const dok = await prisma.stockAdjustmentRequest.findUnique({ where: { id: h.id }, include: requestInclude });
+      return res.status(h.ulang ? 200 : 201).json({ ...dok, koreksiLangsung: true });
+    }
 
     const [{ balance }] = await prisma.$queryRaw`
       SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${materialId}::uuid

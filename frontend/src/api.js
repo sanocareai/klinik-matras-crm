@@ -810,7 +810,7 @@ export const api = {
     return request(`/inventory/adjustments${qs ? `?${qs}` : ""}`);
   },
   getAdjustmentRequest: (id) => request(`/inventory/adjustments/${id}`),
-  createAdjustmentRequest: (data) => request("/inventory/adjustments", { method: "POST", body: JSON.stringify(data) }),
+  createAdjustmentRequest: (data, key = mutationKey("penyesuaian")) => request("/inventory/adjustments", { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }), // Admin/Owner: server langsung memposting (status POSTED); peran lain tetap draf pengajuan
   updateAdjustmentRequest: (id, data) => request(`/inventory/adjustments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   postAdjustmentRequest: (id) => request(`/inventory/adjustments/${id}/post`, { method: "POST" }),
   // ── Koreksi Saldo per bahan (Stok & Lokasi): pratinjau baca-saja + pengajuan ke Penyesuaian Stok resmi. Ajukan wajib Idempotency-Key + saldoDilihat dari pratinjau. ──

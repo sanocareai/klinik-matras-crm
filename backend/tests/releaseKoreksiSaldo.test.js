@@ -63,9 +63,14 @@ test("skrip rilis: gerbang berurutan; --rehearsal-only berhenti sebelum migrasi 
   assert.ok(!/backend\/prisma\/migrations\/2026122[0-9]|backend\/prisma\/migrations\/20261230/.test(allow), "tidak membawa migrasi lain");
 });
 
-test("jalur resmi TIDAK dilewati: koreksi hanya mengajukan Penyesuaian Stok; persetujuan tetap orang lain; posting tetap lewat postStockMovement; layanan tidak menulis ledger/valuasi/jurnal/harga", () => {
+test("jalur resmi TIDAK dilewati: non-Admin hanya mengajukan; koreksi langsung Admin (keputusan Owner 9 Nov 2026) hanya menulis stok lewat postStockMovement di blok berizin, tanpa mengaku disetujui; layanan tidak menulis valuasi/jurnal/harga", () => {
   const svc = baca("backend/src/services/koreksiSaldoBahan.js"); const rute = baca("backend/src/routes/stockAdjustment.js");
-  const kode = svc.replace(/\/\/[^\n]*/g, "");
+  const semua = svc.replace(/\r/g, "").replace(/\/\/[^\n]*/g, "");
+  // Satu-satunya penulisan ledger: blok if (langsung) di tulisKoreksi, dan langsung hanya dari izin inventory:koreksi_saldo_langsung.
+  const blokLangsung = semua.match(/if \(langsung\) \{[\s\S]*?\n        \}/)?.[0] ?? "";
+  assert.ok(blokLangsung.includes("postStockMovement(tx,") && blokLangsung.includes('type: "ADJUSTMENT"') && !/fin[A-Z]|materialHargaBerlaku|biayaOperasional|approvedById/.test(blokLangsung), "blok langsung: satu ADJUSTMENT lewat postStockMovement, tanpa Finance/harga/penyetuju");
+  assert.ok(semua.includes("const langsung = bolehKoreksiLangsung(user);") && semua.includes("hasPermission(user, P.INVENTORY_KOREKSI_LANGSUNG)"), "langsung hanya dari izin");
+  const kode = semua.replace(blokLangsung, "").replace("...(langsung ? { postedById: user.id, postedAt: new Date() } : {}),", "").replace('status: langsung ? "POSTED" : "WAITING_APPROVAL"', 'status: "WAITING_APPROVAL"');
   assert.ok(!/stockMovement\.(create|update|delete)|postStockMovement\(|\$executeRaw|fin[A-Z][A-Za-z]*\.(create|update|delete)|finJournal|materialHargaBerlaku\.(create|update)|biayaOperasional/.test(kode), "layanan koreksi tidak menulis stok/valuasi/jurnal/harga");
   assert.ok(kode.includes("stockAdjustmentRequest.create") && kode.includes('status: "WAITING_APPROVAL"') && kode.includes("requestedById: user.id"), "pengajuan = permintaan Penyesuaian Stok berstatus Menunggu persetujuan");
   assert.ok(!/status:\s*"(APPROVED|POSTED)"|\.stockAdjustmentRequest\.update\(|approvedById\s*:|postedById\s*:/.test(kode), "layanan tidak pernah menyetujui/memposting (APPROVED/POSTED hanya dibaca untuk filter status aktif)");

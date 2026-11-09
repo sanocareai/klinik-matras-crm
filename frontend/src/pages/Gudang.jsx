@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
-import { hitungSelisihPengajuan, PESAN_DIAJUKAN } from "@/features/warehouse/penyesuaianLogic.js";
+import { hitungSelisihPengajuan, PESAN_DIAJUKAN, PESAN_LANGSUNG } from "@/features/warehouse/penyesuaianLogic.js";
 
 // GUDANG — Inventory v1 (Phase 3, PRD §8). Scope disepakati dengan Gilang
 // 1 Agustus 2026: katalog material + ledger + goods receipt + issue manual
@@ -251,15 +251,15 @@ function MovementModal({ open, onClose, material, onSaved }) {
         const unitId = await resolveUnitId(unitCode);
         await api.issueStock({ materialId: material.materialId, qty: qtyNum, unitId, note: note || undefined });
       } else if (type === "adjustment") {
-        // Pengajuan → persetujuan ORANG LAIN (Owner/Finance) → posting. Tidak ada penulisan ledger dari sini.
+        // Pengajuan → persetujuan ORANG LAIN (Owner/Finance) → posting. Admin/Owner: server langsung memposting (status POSTED), saldoDilihat menolak hitungan dari saldo basi.
         const h = hitungSelisihPengajuan(material.balance, qty);
         if (!h.ok) { setErr(h.pesan); setBusy(false); return; }
         const req = await api.createAdjustmentRequest({
-          materialId: material.materialId, adjustmentType: "COUNT_DIFFERENCE", adjustmentQty: h.selisih,
+          materialId: material.materialId, adjustmentType: "COUNT_DIFFERENCE", adjustmentQty: h.selisih, saldoDilihat: h.saldo,
           reason: reason.trim(), notes: note || undefined,
         });
-        await api.updateAdjustmentRequest(req.id, { status: "WAITING_APPROVAL" });
-        setDiajukan(`${req.adjustmentNumber}: ${PESAN_DIAJUKAN}`);
+        if (req.status !== "POSTED") await api.updateAdjustmentRequest(req.id, { status: "WAITING_APPROVAL" });
+        setDiajukan(`${req.adjustmentNumber}: ${req.status === "POSTED" ? PESAN_LANGSUNG : PESAN_DIAJUKAN}`);
         return; // modal tetap terbuka menampilkan konfirmasi; muat ulang saat ditutup (onSaved menutup modal induk)
       }
       reset();
@@ -275,7 +275,7 @@ function MovementModal({ open, onClose, material, onSaved }) {
 
   if (diajukan) {
     return (
-      <Modal open={open} onOpenChange={tutupDiajukan} title={`Penyesuaian diajukan — ${material.code}`}>
+      <Modal open={open} onOpenChange={tutupDiajukan} title={`Penyesuaian tercatat — ${material.code}`}>
         <p className="rounded-btn bg-greenbg px-3 py-2.5 text-[13px] text-ink" data-testid="penyesuaian-diajukan">{diajukan}</p>
         <div className="mt-3 flex justify-end"><Button type="button" onClick={tutupDiajukan} data-testid="tutup-diajukan">Tutup</Button></div>
       </Modal>

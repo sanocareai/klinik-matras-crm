@@ -3,6 +3,7 @@
 export const TEKS = Object.freeze({
   judul: "Koreksi saldo",
   jalur: "Koreksi saldo tidak menimpa angka. Ini mengajukan Penyesuaian Stok resmi: stok baru berubah setelah disetujui ORANG LAIN (Owner atau Finance) lalu diposting.",
+  jalurLangsung: "Koreksi saldo tidak menimpa angka. Sebagai Admin, saldo langsung berubah saat disimpan, tanpa persetujuan orang lain. Selisihnya tercatat sebagai Penyesuaian Stok atas nama Anda.",
   tidakDisentuh: "Harga Berlaku, nilai persediaan/jurnal Finance, dan pemakaian lama tidak berubah oleh koreksi ini.",
   fisikBantuan: "Isi jumlah yang benar-benar ada di gudang menurut hitung fisik (isi 0 bila memang kosong). Bukan selisihnya.",
 });

@@ -39,7 +39,7 @@ async function dunia({ gerakan = true, harga = true } = {}) {
   }
   if (harga) await testPrisma.materialHargaBerlaku.create({ data: { materialId: m.id, jenis: "HARGA", unitPrice: 85000, satuan: "ROLL", effectiveFrom: WIB("2026-11-01"), createdAt: WIB("2026-10-30"), reason: "harga uji awal", idempotencyKey: `hb-${m.id}` } });
   const aktor = (u, r) => ({ id: u.user.id, name: u.user.name, roles: [r] });
-  return { admin, owner, A: aktor(admin, "ADMIN"), B: aktor(owner, "OWNER"), m, ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
+  return { admin, owner, A: aktor(admin, "ADMIN"), B: aktor(owner, "OWNER"), m, cg: makeClient(server.baseUrl, (await createTestUser({ roles: ["WAREHOUSE"] })).token), ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
 }
 const saldo = async (id) => Number((await testPrisma.stockMovement.aggregate({ where: { materialId: id }, _sum: { qty: true } }))._sum.qty ?? 0);
 const jumlahGerak = (id) => testPrisma.stockMovement.count({ where: { materialId: id } });
@@ -154,7 +154,7 @@ test("T10. bahan TANPA riwayat: transisi hanya membuka saldo awal (satu pergerak
 
 test("T11. penghalang: permintaan penyesuaian terbuka menolak transisi (berbasis satuan lama); satuan sama ditolak; tidak ada yang ditulis", async () => {
   const w = await dunia(); const pr = (await w.ca.post("/api/inventory/adjustments/koreksi-saldo/pratinjau", { materialId: w.m.id, jumlahFisik: 3 })).body;
-  const aj = await w.ca.post("/api/inventory/adjustments/koreksi-saldo/ajukan", { materialId: w.m.id, jumlahFisik: 3, saldoDilihat: pr.saldoDilihat, alasan: "Koreksi uji sebelum transisi" }, { "Idempotency-Key": `ks-${++seq}-abcdefgh` }); assert.equal(aj.status, 201);
+  const aj = await w.cg.post("/api/inventory/adjustments/koreksi-saldo/ajukan", { materialId: w.m.id, jumlahFisik: 3, saldoDilihat: pr.saldoDilihat, alasan: "Koreksi uji sebelum transisi" }, { "Idempotency-Key": `ks-${++seq}-abcdefgh` }); assert.equal(aj.status, 201);
   const p = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [minta(w)] }); assert.equal(p.bolehDiterapkan, false); assert.ok(p.transisi[0].penghalang.some((x) => x.kode === "PENYESUAIAN_TERBUKA"));
   await assert.rejects(() => terapkan(w, p.transisi[0].hash), (e) => e.code === "TRANSISI_DITOLAK" && e.statusCode === 409); assert.equal(await unitMaster(w.m.id), "ROLL"); assert.equal(await dokumen(w.m.id), 0);
   const p2 = await pratinjauTransisi(testPrisma, { aktor: w.B, transisi: [minta(w, { satuanBaru: "ROLL" })] }); assert.ok(p2.transisi[0].penghalang.some((x) => x.kode === "SATUAN_SAMA"));
