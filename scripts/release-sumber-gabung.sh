@@ -12,7 +12,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-fix/sumber-gabung-on-f8f9cf84}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Package/frontend/compose tidak boleh ikut.
-ALLOWED_RE='^(backend/src/routes/analytics\.js|backend/src/services/leadAttribution\.js|backend/tests/sumberDetailKanonik\.test\.js|scripts/release-sumber-gabung\.sh)$'
+ALLOWED_RE='^(backend/src/routes/analytics\.js|backend/src/services/leadAttribution\.js|backend/tests/atribusiSumberKontrak\.test\.js|backend/tests/sumberDetailKanonik\.test\.js|scripts/release-ctwa-capture-flag-off\.sh|scripts/release-sumber-gabung\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/routes/analytics.js backend/src/services/leadAttribution.js"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"

@@ -88,7 +88,7 @@ test("spend.js dan biayaKpi.js: perubahan hanya di bagian kelengkapan/hari; impo
 
 test("laporan LAIN tidak ikut berubah: /iklan, /d7, importer spend, KPI biaya campaign, kohort, webhook utuh terhadap baseline live", { skip: adaBase ? false : `commit ${BASE_LIVE} tidak ada di klon ini` }, () => {
   for (const f of ["backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/d7.js", "backend/src/services/attribution/cohort.js",
-    "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/routes/analytics.js", "backend/src/index.js"]) {
+    "backend/src/services/attribution/cohortLoader.js", "backend/src/services/attribution/cohortDefinitions.js", "backend/src/routes/settings.js", "backend/src/index.js"]) {
     assert.equal(git(["diff", "--name-only", BASE_LIVE, "--", f]).stdout.trim(), "", `${f} berubah terhadap baseline live`);
   }
   // router: terhadap baseline live TIDAK BOLEH berubah satu baris pun (pemasangan rute biaya sumber sudah ada di baseline), dan pemasangan itu tetap ada
