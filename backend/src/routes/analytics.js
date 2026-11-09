@@ -20,7 +20,7 @@ function avgEffectiveMinutes(pairs) {
   return total / pairs.length;
 }
 import { platformDariDetail, PLATFORM } from "../services/platformIklan.js";
-import { detailCtwaKanonik } from "../services/leadAttribution.js";
+import { detailSumberTampil } from "../services/attribution/keteranganSumber.js";
 import { pctOrNull } from "../services/conversionMetrics.js";
 
 // Definisi OMSET (30 September 2026, keputusan Owner): order berstatus PENDING
@@ -2255,7 +2255,7 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
     // Satu customer hanya punya satu keterangan, jadi penjumlahan antarbentuk tidak menghitung dua kali.
     const perDetail = new Map();
     for (const b of baris) {
-      const detail = detailCtwaKanonik(b.detail);
+      const detail = detailSumberTampil(b.detail);
       const kunci = `${b.source}|${detail}`;
       const ada = perDetail.get(kunci) || { source: b.source, detail, leads: 0, won: 0, spam: 0, totalValue: 0 };
       ada.leads += Number(b.leads);

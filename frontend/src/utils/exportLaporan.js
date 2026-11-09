@@ -378,7 +378,7 @@ function sheetTraffic({ periode, traffic }) {
     num(totalSrc > 0 ? Math.round((s.count / totalSrc) * 1000) / 10 : null, FMT.pct),
   ]));
   sb.blank();
-  sb.row(["PERINGATAN AKURASI: mayoritas lead tercatat \"WhatsApp Langsung\" karena sistem"]);
+  sb.row(["PERINGATAN AKURASI: mayoritas lead tercatat \"WhatsApp tanpa jejak\" karena sistem"]);
   sb.row(["tidak bisa mendeteksi asalnya — BUKAN berarti semua lead organik. Untuk data"]);
   sb.row(["sumber yang bisa dipercaya, pakai Link Pelacakan (1 link per campaign)."]);
 

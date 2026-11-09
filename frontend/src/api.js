@@ -1550,6 +1550,18 @@ export const api = {
   getAtribusiIklan: (params) => request("/atribusi/iklan" + buildQuery(params)),
   // Performa Akuisisi per sumber (ADMIN, baca-saja): label CRM per sumber + Meta atribusi terbukti/biaya. dari/sampai kosong = 30 hari penuh berakhir kemarin.
   getAtribusiSumber: (params) => request("/atribusi/iklan/sumber" + buildQuery(params)),
+  getAtribusiChat: (params) => request("/atribusi/iklan/chat" + buildQuery(params)),
+  // Excel Marketing dibangun server (tiga lembar); klien hanya mengunduh.
+  eksporMarketingExcel: async (params) => {
+    const demo = demoBlock("Export"); if (demo) return demo;
+    const tokenKirim = bacaToken();
+    const res = await fetch(`${BASE}/atribusi/iklan/ekspor.xlsx${buildQuery(params)}`, { headers: { ...authHeaders() } });
+    adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) { let msg = "Gagal membuat berkas Excel"; let code; try { const j = await res.json(); msg = j.error || msg; code = j.code; } catch { /* bukan JSON */ } const e = new Error(msg); e.status = res.status; e.code = code; throw e; }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Marketing.xlsx" };
+  },
   // Kesehatan capture touch, daftar referensi Ad→Ad Set→Campaign (+Ad ID belum terpetakan), dan ekspor ID iklan (ADMIN, baca-saja) — dipakai panel "Kesehatan & referensi" di Marketing → Meta.
   getAtribusiKesehatan: () => request("/atribusi/iklan/kesehatan"),
   getSinkronMetaStatus: () => request("/atribusi/iklan/sync-meta/status"),

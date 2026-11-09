@@ -18,6 +18,6 @@ test("keterangan lain tidak berubah", () => {
 
 test("laporan rincian memakai bentuk kanonik", () => {
   const src = readFileSync(new URL("../src/routes/analytics.js", import.meta.url), "utf8");
-  assert.match(src, /const detail = detailCtwaKanonik\(b\.detail\);/);
-  assert.match(src, /import \{[^}]*detailCtwaKanonik[^}]*\} from "\.\.\/services\/leadAttribution\.js"/);
+  assert.match(src, /const detail = detailSumberTampil\(b\.detail\);/);
+  assert.match(src, /import \{[^}]*detailSumberTampil[^}]*\} from "\.\.\/services\/attribution\/keteranganSumber\.js"/);
 });

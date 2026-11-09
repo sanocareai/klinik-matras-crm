@@ -111,7 +111,7 @@ const PETA_TRAFFIC = { META_ADS: "META", TIKTOK_ADS: "TIKTOK", WHATSAPP_DIRECT: 
 /** Label sumber Traffic (LeadSource) → id sumber Akuisisi. B2B/penjualan karyawan bukan lead pemasaran → null (tidak ada detail akuisisi). */
 export const sumberAkuisisiDariTraffic = (leadSource) => (leadSource === "B2B_DIRECT" || leadSource === "PENJUALAN_KARYAWAN" ? null : PETA_TRAFFIC[leadSource] ?? (leadSource ? "LAINNYA" : null));
 /** Id sumber Akuisisi → label LeadSource untuk daftar Pelanggan (?source=). Sumber gabungan (Website/Lainnya) memakai label utamanya. */
-export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK_ADS", WHATSAPP: "WHATSAPP_DIRECT", INSTAGRAM: "INSTAGRAM", WEBSITE: "WEBSITE_ORGANIC", GOOGLE: "GOOGLE_ADS", LAINNYA: "OTHER" });
+export const LABEL_PELANGGAN = Object.freeze({ META: "META_ADS", TIKTOK: "TIKTOK_ADS", WHATSAPP: "WHATSAPP_DIRECT", INSTAGRAM: "INSTAGRAM", WEBSITE: "WEBSITE_ORGANIC", GOOGLE: "GOOGLE_ADS", LAINNYA: "OTHER", DIMULAI_SALES: "OTHER" });
 
 /** Apa yang bisa dibuka lebih dalam dari satu sumber — hanya yang datanya ADA (tidak ada tabel palsu). */
 export function jalurRincian(id) {

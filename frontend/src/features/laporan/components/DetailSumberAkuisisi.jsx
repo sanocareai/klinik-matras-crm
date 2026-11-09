@@ -27,7 +27,7 @@ const Sel = ({ c }) => <span className={c.kosong ? "text-ink3" : ""}>{c.teks}</s
 
 export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBukaIklan, tanpaJejak = false, sisipanAtas = null }) {
   const b = s.biaya || {};
-  const organik = s.jenis === "ORGANIK";
+  const organik = s.jenis === "ORGANIK" || s.jenis === "INTERNAL";
   const jalur = jalurRincian(s.id);
   const kc = s.biayaCampaignTerbukti;
   const asal = ringkasAsalBiaya(b.cakupan);

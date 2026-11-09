@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronRight, Copy, Download, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Copy, Download, Loader2, MessageSquare } from "lucide-react";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
@@ -9,7 +9,9 @@ import { kueriIklan, drilldown, barisTabel, barisBiaya, statusBiayaLaporan, peri
 import { KRITERIA_META, kriteriaTersedia, urutkanMeta, terapkanUmur, alasanKosong, buatCsvMeta, namaBerkasCsvMeta } from "../../marketingLogic.js";
 import { berurutan, pesanGalat, salinTeks } from "../../marketingData.js";
 import { ImporSpend, PanelTarget, PanelMonitor } from "../IklanBiayaPanel.jsx";
+import { cakupanTelusur, pemilihChatMeta } from "../../kanalPakem.js";
 import KesehatanReferensi from "./KesehatanReferensi.jsx";
+import TabelKreatif from "./TabelKreatif.jsx";
 
 // Meta: campaign → ad set → ad. Sumber: GET /api/atribusi/iklan (service existing; atribusi utama = CTWA_AD terbukti). Ranking dapat dipilih; ber-order, membayar, dan lunas (ledger) adalah TIGA kolom terpisah.
 // UNMAPPED dan UNKNOWN selalu tampil di bawah baris berperingkat (tidak pernah diberi nama campaign) dan ikut rekonsiliasi. CPA/ROAS hanya terisi bila server menyatakan valid (null + alasan selain itu).
@@ -51,7 +53,8 @@ function totalBiaya(lap, kunci, roas = false) {
   return roas ? { teks: Number(v).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "×", kosong: false } : { teks: "Rp" + Math.round(Number(v)).toLocaleString("id-ID"), kosong: false };
 }
 
-export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, onUbah, cache, versi, onMuat }) {
+export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, onUbah, cache, versi, onMuat, onLihatChat }) {
+  const [tampilan, setTampilan] = useState("campaign");   // "campaign" (bertingkat) | "kreatif"; kreatif hanya dari tingkat teratas
   const [lap, setLap] = useState(null);
   const [memuat, setMemuat] = useState(false);
   const [galat, setGalat] = useState(null);
@@ -86,6 +89,8 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
   const lengkap = kolom === "lengkap";
   const kohort = umur !== "semua";
   const total = lap?.jumlahTeratribusi;
+  const telusur = cakupanTelusur(lap);
+  const perKreatif = tampilan === "kreatif" && jalur.level === "campaign";
 
   function turun(g) { const d = drilldown(g, jalur.level); if (d) onUbah({ level: d.level, campaign: d.campaignId, adset: d.adSetId }, { ganti: false }); }
   function ekspor() {
@@ -117,6 +122,15 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
       </div>
 
       {galat && <Card className="!p-4"><p className="flex items-center gap-2 text-sm text-red"><AlertTriangle size={16} /> {galat} <button className="btn btn-ghost btn-sm" onClick={() => muat(true)}>Coba lagi</button></p></Card>}
+      {jalur.level === "campaign" && (
+        <div className="flex flex-wrap items-center justify-between gap-2" data-testid="telusur-meta">
+          {telusur ? <p className="m-0 text-[13px] text-ink2"><b className="text-ink">{angka(telusur.terbukti)} dari {angka(telusur.total)} lead</b> bisa ditelusuri sampai iklan. Penelusuran tersedia sejak {lap?.atribusi?.attributionStartWib ? `${lap.atribusi.attributionStartWib} WIB` : "touch pertama tersimpan"}.</p> : <span />}
+          <div className="inline-flex items-center gap-1 rounded-btn bg-inset p-0.5" role="group" aria-label="Susunan tabel">
+            {[["campaign", "Per campaign"], ["kreatif", "Per kreatif"]].map(([id, label]) => <button key={id} type="button" aria-pressed={tampilan === id} onClick={() => setTampilan(id)} className={cn("rounded-btn px-2 py-1 text-[12px]", tampilan === id ? "bg-surface font-semibold shadow-card" : "text-ink3")} data-testid={`tampilan-${id}`}>{label}</button>)}
+          </div>
+        </div>
+      )}
+      {perKreatif && <TabelKreatif range={range} periode={periode} cache={cache} versi={versi} onLihatChat={onLihatChat} />}
       {lap && (
         <p className="t-secondary flex flex-wrap gap-x-4 gap-y-0.5 text-[12px]" data-testid="status-meta">
           <span>Atribusi sejak <b className="text-ink">{lap.atribusi.attributionStartWib ? `${lap.atribusi.attributionStartWib} WIB` : "belum ada touch"}</b></span>
@@ -129,7 +143,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
       )}
       {semuaNol && <p className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2" role="status">Semua baris bernilai 0 pada kriteria “{kriteria.label}”: peringkat 1 bersama bukan pemenang.</p>}
 
-      <Card className="overflow-x-auto !p-0">
+      {!perKreatif && <Card className="overflow-x-auto !p-0">
         {memuat && !lap ? (
           <div className="flex h-40 items-center justify-center text-ink3"><Loader2 className="animate-spin" size={18} /></div>
         ) : (
@@ -143,6 +157,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
                 {lengkap && <><Th tip="Spam vs bukan spam dari lead baru.">Spam / Bukan</Th><Th tip="Pernah ditandai PROSPECT/TRANSACTION/REVIEWED — manual oleh sales, bukan 'qualified lead'.">Prospek</Th><Th>Order DP</Th><Th tip="Customer dengan order berstatus LUNAS di CRM (status tersimpan). Belum tentu ada bukti uang di ledger.">Lunas CRM</Th>
                   <Th tip="Customer lama yang klik iklan lagi — bukan lead baru.">Reaktivasi</Th><Th tip="Touch berikutnya dari customer yang sudah diakuisisi; kredit tetap pada touch pertama.">Assisted</Th><Th tip="Hasil percakapan versi Meta; BUKAN lead CRM.">Konv. platform</Th><Th>Biaya / konv.</Th><Th>CPL</Th><Th>Cost / qualified</Th><Th>Cost / cust. order</Th></>}
                 {lengkap && <Th kiri tip="Status data biaya baris ini dan (bila target ADMIN diisi) evaluasi. Tanpa target tidak ada warna.">Status biaya</Th>}
+                <Th><span className="sr-only">Lihat chat</span></Th>
               </tr>
             </thead>
             <tbody>
@@ -152,6 +167,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
                 const ent = g.level === "campaign" ? g.campaign : g.level === "adset" ? g.adSet : g.ad;
                 const idEnt = g.status === "MAPPED" ? ent?.id : (g.ad?.id ?? null);
                 const nol = (v) => (v == null ? "—" : angka(v));
+                const pemilih = pemilihChatMeta(g);
                 return (
                   <tr key={b.kunci} className={cn("border-b border-line/60", g.status !== "MAPPED" ? "bg-inset/50" : "", b.bisaDrilldown && "cursor-pointer hover:bg-inset")} onClick={() => b.bisaDrilldown && turun(g)} data-testid={`baris-meta-${g.status === "MAPPED" ? idEnt : g.status}`} data-status={g.status}>
                     <td className="px-3 py-2 align-top text-[12px] tabular-nums text-ink3" title={peringkat == null ? (tanpaPeringkat ? `${tanpaPeringkat}: tidak diperingkat` : alasanKosong(alasan)) : undefined}>{peringkat ?? "—"}</td>
@@ -180,6 +196,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
                       <span className={cn("text-[11.5px] font-semibold", NADA_KELAS[c.nada])}>{c.statusTeks}</span>
                       {c.evaluasiTeks && <span className={cn("block text-[11px] font-semibold", NADA_KELAS[c.evaluasiNada])}>{c.evaluasiTeks}{c.pelanggaran.length > 0 && " (" + c.pelanggaran.map((p) => p.metrik).join(", ") + ")"}</span>}
                     </Td>}
+                    <td className="px-3 py-1.5 text-right align-top">{pemilih && onLihatChat && <button type="button" className="btn btn-ghost btn-sm whitespace-nowrap" data-testid="lihat-chat-iklan" onClick={(e) => { e.stopPropagation(); onLihatChat({ judul: b.label.judul, sub: `${angka(b.leadUnik)} chat`, query: pemilih }); }}><MessageSquare size={14} /> Lihat chat</button>}</td>
                   </tr>
                 );
               })}
@@ -193,12 +210,19 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
                   <Td>{lap.biaya.spend == null ? "—" : rp(lap.biaya.spend)}</Td>
                   <SelBiaya s={totalBiaya(lap, "cpa")} /><SelBiaya s={totalBiaya(lap, "bookedRoas", true)} /><SelBiaya s={totalBiaya(lap, "cashRoas", true)} />
                   {lengkap && <td colSpan={12} />}
+                  <td />
                 </tr>
               </tfoot>
             )}
           </table>
         )}
-      </Card>
+      </Card>}
+      {telusur && telusur.tidakTerbaca > 0 && onLihatChat && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-btn bg-orangebg px-3 py-2" data-testid="iklan-tidak-terbaca">
+          <p className="m-0 text-[13px] text-ink"><b>Iklan tidak terbaca:</b> {angka(telusur.tidakTerbaca)} lead berlabel Meta tanpa bukti iklan. Tidak dikreditkan ke iklan mana pun.</p>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onLihatChat({ judul: "Iklan tidak terbaca", sub: `${angka(telusur.tidakTerbaca)} chat berlabel Meta tanpa bukti iklan`, query: { tanpaIklan: "1" } })}><MessageSquare size={14} /> Lihat chat</button>
+        </div>
+      )}
       <p className="t-secondary text-[11.5px]">Ber-order ≠ membayar ≠ lunas. Nilai order bukan uang diterima; keduanya bukan laba. Nama campaign/ad hanya label — join memakai ID. UNMAPPED dan UNKNOWN tidak dikreditkan ke campaign mana pun. Total CPA/ROAS dihitung server dari pembilang dan penyebut total.</p>
 
       <div className="flex flex-wrap items-center gap-2" data-testid="aksi-meta">

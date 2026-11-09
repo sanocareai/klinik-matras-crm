@@ -1,11 +1,12 @@
-import React, { useMemo } from "react";
-import { ChevronRight, Columns3, Download, GitCompare } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { ChevronRight, Columns3, Download, GitCompare, Info, MessageSquare } from "lucide-react";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { METRIK_URUT, urutkan, penandaPerSumber, teksSorotan, angka, formatPersen, rupiah, selBiayaSumber, selTotalBerbayar, delta, deltaTeks, DASAR_BIAYA_LABEL, BUKTI_LABEL, sementaraTeks } from "../../akuisisiLogic.js";
 import { kolomTampil, konversiTotal } from "../../marketingLogic.js";
+import { PAKEM_KANAL, VARIAN_BUKTI, kelompokkanSumber } from "../../kanalPakem.js";
 import LogoSumber from "../LogoSumber.jsx";
 
 // Peringkat semua sumber (label CRM): tabel (kolom utama; tambahan via "Kolom lengkap"). Klien hanya menampilkan/mengurutkan angka server.
@@ -32,7 +33,7 @@ export const TIP = {
 const BUKAN_BIAYA = "tidak tersedia";
 /** Nilai satu sel: { t, sub, kosong, title }. Satu fungsi untuk tabel desktop dan kartu mobile (angka identik). */
 export function selSumber(s, id, { banding = false, lap } = {}) {
-  const organik = s.jenis === "ORGANIK";
+  const organik = s.jenis === "ORGANIK" || s.jenis === "INTERNAL";
   const d = (kunci) => (banding ? deltaTeks(delta(lap, s.id, kunci)) : null);
   const biaya = (kunci) => {
     if (organik) return { t: BUKAN_BIAYA, kosong: true };
@@ -102,9 +103,12 @@ const Sel = ({ c }) => (
 
 // Performa Sumber (redesain Sales CRM 1 Nov 2026): satu tabel untuk semua lebar layar — angka rata kanan, digulir mendatar DI DALAM panel (teks tidak dikecilkan), kolom Sumber menempel di kiri.
 // Menggantikan kartu per sumber di HP; semua isi kartu (label bukti atribusi, sampel kecil, angka utama dan tambahan) kini ada di tabel (kolom lengkap = tambahan).
-export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah, onBuka, onEkspor, periodeOk }) {
+export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah, onBuka, onEkspor, periodeOk, onLihatChat }) {
+  const [infoId, setInfoId] = useState(null);
   const kolom = useMemo(() => kolomTampil(kolomMode), [kolomMode]);
   const urut = useMemo(() => urutkan(lap?.sumber || [], urutId), [lap, urutId]);
+  const kelompok = useMemo(() => kelompokkanSumber(urut), [urut]);
+  let nomor = 0;
   const penanda = useMemo(() => penandaPerSumber(lap?.sorotan), [lap]);   // sorotan dipilih SERVER dari data (bukan hardcode)
   const lengkap = kolomMode === "lengkap";
   const labelUrut = METRIK_URUT.find((m) => m.id === urutId)?.label?.toLowerCase();
@@ -114,7 +118,7 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
       <div className="crm-mk-sumber-kepala">
         <div className="min-w-0 flex-1">
           <h3 className="t-card-title">Performa Sumber</h3>
-          <p className="crm-mk-deskripsi">Urut menurut <b>{labelUrut}</b>. Sumber dengan sampel kecil (&lt; 30 lead) tidak dibandingkan pada rasio. Klik sumber untuk rincian.</p>
+          <p className="crm-mk-deskripsi">Urut menurut <b>{labelUrut}</b> di dalam tiap kelompok. Sumber dengan sampel kecil (&lt; 30 lead) tidak dibandingkan pada rasio. Klik sumber untuk rincian, atau ikon info untuk penjelasannya.</p>
         </div>
         <div className="crm-mk-sumber-aksi">
           <label className="crm-mk-urut">Urutkan
@@ -138,23 +142,54 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
             </tr>
           </thead>
           <tbody>
-            {urut.map((s, i) => (
-              <tr key={s.id} tabIndex={0} onClick={(e) => buka(e, s.id)} onKeyDown={(e) => buka(e, s.id)} data-testid={`baris-sumber-${s.id}`} aria-label={`Buka rincian ${s.label}`}>
-                <th scope="row" className="crm-mk-kiri">
-                  <span className="crm-mk-sumber-sel">
-                    <span className="crm-mk-no">{i + 1}</span>
-                    <LogoSumber id={s.id} size={32} />
-                    <span className="crm-mk-sumber-teks">
-                      <span className="crm-mk-sumber-nama">{s.label}</span>
-                      <span className="crm-mk-sumber-bukti">{BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"}</span>
-                    </span>
-                    {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil</Badge>}
-                    {(penanda.get(s.id) || []).map((p) => <Badge key={p.id} variant="green" className="normal-case" title={teksSorotan(p)}>{p.label}</Badge>)}
-                  </span>
-                </th>
-                {kolom.map((k) => <Sel key={k.id} c={selSumber(s, k.id, { banding: bandingkan, lap })} />)}
-                <td className="crm-mk-panah"><ChevronRight size={16} aria-hidden="true" /></td>
-              </tr>
+            {kelompok.map((g) => (
+              <React.Fragment key={g.nama}>
+                <tr className="crm-mk-grup" data-testid={`kelompok-${g.nama}`}>
+                  <th scope="colgroup" colSpan={kolom.length + 2} className="crm-mk-kiri"><span className="crm-mk-grup-nama">{g.nama}</span>{g.catatan && <span className="crm-mk-grup-catatan">{g.catatan}</span>}</th>
+                </tr>
+                {g.baris.map((s) => {
+                  nomor += 1;
+                  const pakem = PAKEM_KANAL[s.id];
+                  const terbuka = infoId === s.id;
+                  return (
+                    <React.Fragment key={s.id}>
+                      <tr tabIndex={0} onClick={(e) => buka(e, s.id)} onKeyDown={(e) => buka(e, s.id)} data-testid={`baris-sumber-${s.id}`} aria-label={`Buka rincian ${s.label}`}>
+                        <th scope="row" className="crm-mk-kiri">
+                          <span className="crm-mk-sumber-sel">
+                            <span className="crm-mk-no">{nomor}</span>
+                            <LogoSumber id={s.id} size={32} />
+                            <span className="crm-mk-sumber-teks">
+                              <span className="crm-mk-sumber-nama">{s.label}</span>
+                              <span className="crm-mk-sumber-bukti">{BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"}</span>
+                            </span>
+                            {s.tingkatBukti && <Badge variant={VARIAN_BUKTI[s.tingkatBukti] || "neutral"} className="normal-case">Bukti: {s.tingkatBukti}</Badge>}
+                            {pakem && <button type="button" className="crm-mk-info" aria-expanded={terbuka} aria-label={`Penjelasan ${s.label}`} data-testid={`info-${s.id}`}
+                              onClick={(e) => { e.stopPropagation(); setInfoId(terbuka ? null : s.id); }} onKeyDown={(e) => e.stopPropagation()}><Info size={15} aria-hidden="true" /></button>}
+                            {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil</Badge>}
+                            {(penanda.get(s.id) || []).map((p) => <Badge key={p.id} variant="green" className="normal-case" title={teksSorotan(p)}>{p.label}</Badge>)}
+                          </span>
+                        </th>
+                        {kolom.map((k) => <Sel key={k.id} c={selSumber(s, k.id, { banding: bandingkan, lap })} />)}
+                        <td className="crm-mk-panah"><ChevronRight size={16} aria-hidden="true" /></td>
+                      </tr>
+                      {terbuka && pakem && (
+                        <tr className="crm-mk-pakem" data-testid={`pakem-${s.id}`}>
+                          <td colSpan={kolom.length + 2}>
+                            <div className="crm-mk-pakem-isi">
+                              <div className="crm-mk-pakem-kisi">
+                                <div><p className="crm-mk-pakem-judul">Apa ini</p><p className="crm-mk-pakem-teks">{pakem.apa}</p></div>
+                                <div><p className="crm-mk-pakem-judul">Buktinya</p><p className="crm-mk-pakem-teks">{pakem.bukti}</p></div>
+                                <div><p className="crm-mk-pakem-judul">Tidak termasuk</p><p className="crm-mk-pakem-teks">{pakem.bukan}</p></div>
+                              </div>
+                              {onLihatChat && s.lead > 0 && <button type="button" className="btn btn-ghost btn-sm self-start" data-testid={`lihat-chat-${s.id}`} onClick={() => onLihatChat({ judul: s.label, sub: `${angka(s.lead)} chat`, query: { sumber: s.id } })}><MessageSquare size={14} /> Lihat {angka(s.lead)} chat</button>}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </React.Fragment>
             ))}
             <tr className="crm-mk-total" data-testid="baris-total">
               <th scope="row" className="crm-mk-kiri">Total semua sumber</th>

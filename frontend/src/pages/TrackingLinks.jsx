@@ -6,7 +6,7 @@ const KATEGORI_OPTIONS = [
   { value: "META_ADS",        label: "Iklan Meta (Instagram/Facebook)" },
   { value: "GOOGLE_ADS",      label: "Google Ads" },
   { value: "TIKTOK_ADS",      label: "TikTok Ads" },
-  { value: "WEBSITE_ORGANIC", label: "Website Organik" },
+  { value: "WEBSITE_ORGANIC", label: "Website (kanal belum diketahui)" },
   { value: "OTHER",           label: "Lainnya" },
 ];
 
@@ -14,7 +14,7 @@ const KATEGORI_LABEL = {
   META_ADS:        "Iklan Meta",
   GOOGLE_ADS:      "Google Ads",
   TIKTOK_ADS:      "TikTok Ads",
-  WEBSITE_ORGANIC: "Website Organik",
+  WEBSITE_ORGANIC: "Website (kanal belum diketahui)",
   OTHER:           "Lainnya",
 };
 

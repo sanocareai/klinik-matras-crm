@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { keteranganTampil } from "@/features/laporan/kanalPakem.js";
 import { AlertTriangle, MessageSquare, Users } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -188,7 +189,7 @@ export default function CustomersTable({
           <TD key={k}>
             <div className="truncate text-[12.5px] text-ink2">{SOURCE_LABELS[c.leadSource] || c.leadSource || "—"}</div>
             {c.leadSourceDetail && (
-              <div className="truncate text-[11px] text-ink3" title={c.leadSourceDetail}>{c.leadSourceDetail}</div>
+              <div className="truncate text-[11px] text-ink3" title={keteranganTampil(c.leadSourceDetail)}>{keteranganTampil(c.leadSourceDetail)}</div>
             )}
             {c.leadSource === "WHATSAPP_DIRECT" && !c.leadSourceConfirmed && (
               <div className="text-[10.5px] text-ink3">(belum dikonfirmasi)</div>
