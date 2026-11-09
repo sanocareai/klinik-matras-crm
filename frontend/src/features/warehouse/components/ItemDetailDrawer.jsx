@@ -113,6 +113,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
             </InfoToggleIsi>
           </div>
           <dl className="gud-dl">
+            <Baris label="Deskripsi"><span className="whitespace-pre-line" data-testid="drawer-deskripsi">{item.description || <em>Belum diisi</em>}</span></Baris>
             <Baris label="Satuan">{satuanTeks}</Baris>
             <Baris label="Batas minimum">{item.reorderPoint != null ? formatQty(item.reorderPoint, item.unit) : <em>belum diatur</em>}</Baris>
             <Baris label="Lokasi dari riwayat penerimaan">{lokasiTerima
@@ -180,6 +181,7 @@ export default function ItemDetailDrawer({ item, baris = null, hargaPeta = null,
         <section id="bahan-isi-info" role="tabpanel" aria-labelledby="bahan-tab-info" hidden={tab !== "info"} className="gud-bahan-bagian" data-testid="lipat-detail-bahan">
           <dl className="gud-dl">
             <Baris label="Kode">{item.code}</Baris>
+            <Baris label="Deskripsi"><span className="whitespace-pre-line" data-testid="info-deskripsi">{item.description || <em>Belum diisi</em>}</span></Baris>
             <Baris label="Kategori">{item.category ? `${CATEGORY_REAL[item.category]?.label} · ${CATEGORY_REAL[item.category]?.labelId}` : <em>Tanpa kategori</em>}</Baris>
             <Baris label="Lini layanan">{item.serviceLine ? SERVICE_LINE_REAL[item.serviceLine]?.labelId : <em>Lintas lini</em>}</Baris>
             <Baris label="Satuan">{satuanTeks}</Baris>
