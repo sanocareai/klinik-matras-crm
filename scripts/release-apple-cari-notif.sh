@@ -27,7 +27,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;; esac; done
-CAND_BRANCH="${CAND_BRANCH:-feat/apple-cari-notif-on-1fdef6f2}"
+CAND_BRANCH="${CAND_BRANCH:-feat/apple-cari-notif-on-29e8cad0}"
 CAND_REF="refs/remotes/origin/cand-acn1"
 BUNDLE="${BUNDLE:-}"
 ALLOWED_RE='^(frontend/src/components/Layout\.jsx|frontend/src/components/Topbar\.jsx|frontend/src/components/ui/command-palette\.jsx|frontend/src/features/notifications/NotificationDrawer\.jsx|frontend/src/features/notifications/NotificationItem\.jsx|frontend/src/features/notifications/notificationTypes\.js|frontend/src/lib/cariGlobal\.js|frontend/src/main\.jsx|frontend/src/pages/Notifications\.jsx|frontend/src/pages/Orders\.jsx|frontend/src/styles/sanss-cari\.css|frontend/tests/cariNotifApple\.test\.js|frontend/tests/shellSalesCrm\.test\.js|scripts/gen-release-apple-cari-notif\.cjs|scripts/release-apple-cari-notif\.sh|scripts/templates/release-apple-cari-notif/allowlist\.txt|scripts/templates/release-apple-cari-notif/bandingkan-kode\.txt|scripts/templates/release-apple-cari-notif/build-only\.txt|scripts/templates/release-apple-cari-notif/container-baru\.txt|scripts/templates/release-apple-cari-notif/fitur-dist\.txt|scripts/templates/release-apple-cari-notif/header\.txt|scripts/templates/release-apple-cari-notif/verifikasi-hotfix\.txt|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt)$'
@@ -268,6 +268,15 @@ done
 for j6 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$j6")" ] || die "[skrip] '${j6}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j6")" ] || die "dist baru KEHILANGAN tampilan Marketing: ${j6}"
+done
+# mka2 (ikon sumber, kartu penjelasan channel) dan psm1 (panel sinkron Meta) — live sebelum rilis ini — HARUS tetap ada
+for c7 in ".mk-pakem-blok" ".mk-alat-titik" ".mk-sumber-kontrol"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c7")" ] || die "[skrip] ${c7} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c7")" ] || die "CSS baru KEHILANGAN ${c7}"
+done
+for j7 in "Peringkat hanya di dalam kelompok" "data-ubin" "Sinkron otomatis (Composio)" "Ad belum terpetakan (unik)" "Uji coba (tanpa simpan)"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$j7")" ] || die "[skrip] '${j7}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j7")" ] || die "dist baru KEHILANGAN fitur: ${j7}"
 done
 # fitur Marketing yang sudah live HARUS tetap ada (telusur chat, Per kreatif, iklan tidak terbaca, ekspor Excel server, kelola biaya, impor spend, target, monitoring)
 for m1 in "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do

@@ -17,6 +17,15 @@ for j6 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu o
   [ -n "$(cari_dist "$PREV_DIR" js "$j6")" ] || die "[skrip] '${j6}' tidak ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j6")" ] || die "dist baru KEHILANGAN tampilan Marketing: ${j6}"
 done
+# mka2 (ikon sumber, kartu penjelasan channel) dan psm1 (panel sinkron Meta) — live sebelum rilis ini — HARUS tetap ada
+for c7 in ".mk-pakem-blok" ".mk-alat-titik" ".mk-sumber-kontrol"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c7")" ] || die "[skrip] ${c7} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c7")" ] || die "CSS baru KEHILANGAN ${c7}"
+done
+for j7 in "Peringkat hanya di dalam kelompok" "data-ubin" "Sinkron otomatis (Composio)" "Ad belum terpetakan (unik)" "Uji coba (tanpa simpan)"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$j7")" ] || die "[skrip] '${j7}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j7")" ] || die "dist baru KEHILANGAN fitur: ${j7}"
+done
 # fitur Marketing yang sudah live HARUS tetap ada (telusur chat, Per kreatif, iklan tidak terbaca, ekspor Excel server, kelola biaya, impor spend, target, monitoring)
 for m1 in "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$m1")" ] || die "[skrip] teks Marketing lama '${m1}' tidak ada di dist release aktif — perbaiki daftar pembanding"

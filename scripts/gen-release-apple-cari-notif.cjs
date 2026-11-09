@@ -20,7 +20,7 @@ const TPL_FILES = [`${TPL}/header.txt`, `${TPL}/fitur-dist.txt`, `${TPL}/contain
   `${TPL_P}/gerbang-kode-live.txt`, `${TPL_P}/hitung-pra.txt`, `${TPL_P}/hitung-pasca.txt`];
 const ALLOW = `${TPL}/allowlist.txt`;
 const FILE_TETAP = [OUT, GENERATOR, ALLOW, ...TPL_FILES];
-const CAND_BRANCH = "feat/apple-cari-notif-on-1fdef6f2";
+const CAND_BRANCH = "feat/apple-cari-notif-on-29e8cad0";
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
