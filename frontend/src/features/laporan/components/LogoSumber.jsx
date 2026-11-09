@@ -14,7 +14,7 @@ const PATH = {
 export const WARNA_MEREK = { META: "#0467DF", TIKTOK: "#000000", WHATSAPP: "#25D366", INSTAGRAM: "#FF0069" };
 export const SUMBER_IKON_SUMBER = "Simple Icons 13.21.0 (CC0 1.0)";
 
-const NAMA = { META: "Meta", TIKTOK: "TikTok", GOOGLE: "Google Ads", WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", WEBSITE: "Website", LAINNYA: "Lainnya", UNKNOWN: "Tidak diketahui", UNMAPPED: "Belum terpetakan" };
+const NAMA = { META: "Meta", TIKTOK: "TikTok", GOOGLE: "Google Ads", WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", WEBSITE: "Website", DIMULAI_SALES: "Dimulai Sales", LAINNYA: "Lainnya", UNKNOWN: "Tidak diketahui", UNMAPPED: "Belum terpetakan" };
 
 /** Logo sumber dalam wadah seragam. size = sisi wadah (px). Dekoratif (aria-hidden) karena nama sumber selalu ada di teks sebelahnya; prop `judul` bila dipakai sendiri. */
 export default function LogoSumber({ id, size = 36, judul = null, className }) {
@@ -27,6 +27,30 @@ export default function LogoSumber({ id, size = 36, judul = null, className }) {
     return (
       <span className={cn(base, gelapPutih ? "bg-white ring-1 ring-black/10" : "bg-white ring-1 ring-black/10")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}>
         <svg viewBox="0 0 24 24" width={isi} height={isi} fill={WARNA_MEREK[id]} focusable="false"><path d={PATH[id]} /></svg>
+      </span>
+    );
+  }
+  // Google Ads: tanda dua batang + titik (kuning, biru, hijau) — bukan huruf "G" Google. Digambar dengan bentuk dasar, warna resmi Google.
+  if (id === "GOOGLE") {
+    const isi = Math.round(size * 0.62);
+    return (
+      <span className={cn(base, "bg-white ring-1 ring-black/10")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}>
+        <svg viewBox="0 0 24 24" width={isi} height={isi} focusable="false">
+          <line x1="6.2" y1="17.6" x2="11.3" y2="5.9" stroke="#FBBC04" strokeWidth="5.2" strokeLinecap="round" />
+          <line x1="12.7" y1="5.9" x2="17.8" y2="17.6" stroke="#4285F4" strokeWidth="5.2" strokeLinecap="round" />
+          <circle cx="6.2" cy="17.6" r="2.85" fill="#34A853" />
+        </svg>
+      </span>
+    );
+  }
+  // Dimulai Sales: orang dengan panah keluar (chat dimulai dari pihak Sano).
+  if (id === "DIMULAI_SALES") {
+    const isi = Math.round(size * 0.58);
+    return (
+      <span className={cn(base, "bg-inset text-ink2")} style={{ width: wadah, height: wadah }} data-logo={id} {...aria}>
+        <svg viewBox="0 0 24 24" width={isi} height={isi} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+          <circle cx="9" cy="8" r="3.6" /><path d="M2.8 20.2c0-3.5 2.8-6.2 6.2-6.2 1.7 0 3.2.6 4.3 1.7" /><path d="M15.5 17.5h6.2M19 14.8l2.7 2.7-2.7 2.7" />
+        </svg>
       </span>
     );
   }

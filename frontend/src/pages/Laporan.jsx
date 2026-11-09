@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useTabs, useTabVisibility, useTabId } from "@/lib/TabsContext.jsx";
-import { Download, RefreshCw } from "lucide-react";
+import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, RefreshCw, Wallet } from "lucide-react";
+import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu.jsx";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 // Gaya Laporan (Sales CRM): semua aturan di bawah .crm-lap. Diimpor DI SINI (bukan main.jsx) supaya hanya dimuat bersama halaman ini.
 import "@/styles/sanss-crm-laporan.css";
@@ -146,6 +147,7 @@ export default function Laporan() {
   const marketingRef = useRef(null);   // data Marketing yang sedang tampil, untuk Export XLSX
   const simpanMarketing = useCallback((d) => { marketingRef.current = d; }, []);
   const [versiRefresh, setVersiRefresh] = useState(0);   // menyegarkan juga laporan atribusi tab Marketing
+  const [aksiMk, setAksiMk] = useState(null);   // aksi tab Marketing (Kelola biaya iklan, ekspor) yang ditampilkan di header halaman
 
   const loadData = useCallback(async () => {
     // Preset "Semua" sengaja mengirim from/to kosong (= tanpa filter tanggal),
@@ -240,11 +242,30 @@ export default function Laporan() {
   }
 
   return (
-    <PageContainer fluid className="crm-dash crm-lap">
+    <PageContainer fluid className={tab === "Marketing" ? "crm-dash crm-lap mk-ap-halaman" : "crm-dash crm-lap"}>
       <PageHeader
-        title="Laporan Analitik"
-        subtitle={`Periode: ${formatRangeText(range)}`}
-        actions={(
+        title={tab === "Marketing" ? "Marketing" : "Laporan Analitik"}
+        subtitle={tab === "Marketing" ? "Dari sumber lead sampai hasil penjualan." : `Periode: ${formatRangeText(range)}`}
+        actions={tab === "Marketing" ? (
+          // Marketing: satu baris aksi — Muat ulang, periode, Kelola biaya iklan, menu Ekspor (tiga format lama, cakupan sama).
+          <>
+            <button className="mk-kapsul mk-kapsul--ikon crm-lap-refresh" onClick={() => { loadData(); setVersiRefresh((v) => v + 1); }} disabled={loading} aria-label="Muat ulang" title="Muat ulang">
+              <RefreshCw size={15} className={loading ? "animate-spin" : undefined} />
+            </button>
+            <DateRangePicker value={range} onChange={setRange} />
+            <button type="button" className="mk-kapsul" onClick={() => aksiMk?.kelola()} disabled={!aksiMk} data-testid="kelola-biaya"><Wallet size={15} /> <span>Kelola biaya<span className="crm-lap-teks-aksi"> iklan</span></span></button>
+            <Menu className="mk-ap-portal min-w-[260px]" trigger={(
+              <button type="button" className="mk-kapsul mk-kapsul--utama" disabled={exporting || aksiMk?.mengunduh} data-testid="menu-ekspor">
+                {exporting || aksiMk?.mengunduh ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} {exporting || aksiMk?.mengunduh ? "Menyiapkan…" : "Ekspor"} <ChevronDown size={14} />
+              </button>
+            )}>
+              <MenuLabel>Ekspor periode ini</MenuLabel>
+              <MenuItem icon={FileSpreadsheet} hint="Ringkasan sumber, per iklan, dan daftar chat (nomor lengkap)." disabled={!aksiMk?.siapExcel} onSelect={() => aksiMk?.unduhExcel()} data-testid="ekspor-excel-marketing">Excel daftar chat</MenuItem>
+              <MenuItem icon={FileSpreadsheet} hint="Lembar laporan seperti di layar, dengan definisi angka." disabled={loading} onSelect={() => handleExport()} data-testid="ekspor-laporan-marketing">Excel laporan Marketing</MenuItem>
+              <MenuItem icon={FileText} hint="Tabel performa sumber, kolom lengkap dan alasan bila kosong." disabled={!aksiMk?.siapCsv} onSelect={() => aksiMk?.eksporCsv()} data-testid="ekspor-sumber">CSV performa sumber</MenuItem>
+            </Menu>
+          </>
+        ) : (
           <>
             <button className="btn btn-ghost btn-sm crm-lap-refresh" onClick={() => { loadData(); setVersiRefresh((v) => v + 1); }} disabled={loading} aria-label="Refresh">
               <RefreshCw size={14} /> <span className="crm-lap-teks-aksi">Refresh</span>
@@ -268,7 +289,7 @@ export default function Laporan() {
           {tab === "Marketing" ? (
             // Marketing memuat laporan atribusinya sendiri dengan periode global di atas; tidak ikut skeleton agar state (urutan, drilldown, bagian yang dibuka) tidak hilang saat data traffic dimuat ulang.
             <TabsContent value="Marketing">
-              <MarketingTab range={range} onUbahRentang={setRange} url={dariUrl} onUbah={ubahMarketing} traffic={loading ? null : traffic} memuatTraffic={loading} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} versiRefresh={versiRefresh} onData={simpanMarketing} />
+              <MarketingTab range={range} onUbahRentang={setRange} url={dariUrl} onUbah={ubahMarketing} traffic={loading ? null : traffic} memuatTraffic={loading} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} versiRefresh={versiRefresh} onData={simpanMarketing} onAksi={setAksiMk} />
             </TabsContent>
           ) : loading ? (
             <div className="flex flex-col gap-5">

@@ -108,6 +108,13 @@ export const KOLOM_SUMBER = Object.freeze([
 ]);
 export const MODE_KOLOM = Object.freeze(["ringkas", "lengkap"]);
 export const kolomTampil = (mode) => KOLOM_SUMBER.filter((k) => k.utama || mode === "lengkap");
+/** Kolom awal tabel Performa sumber (redesain Apple). Kolom lain dibuka lewat pilihan kolom; urutan selalu mengikuti KOLOM_SUMBER. */
+export const KOLOM_AWAL_SUMBER = Object.freeze(["lead", "berOrder", "nilai", "uang", "spend"]);
+export function kolomPilihan(mode, pilihan) {
+  if (mode === "lengkap") return KOLOM_SUMBER;
+  const set = new Set(Array.isArray(pilihan) && pilihan.some((id) => KOLOM_SUMBER.some((k) => k.id === id)) ? pilihan : KOLOM_AWAL_SUMBER);
+  return KOLOM_SUMBER.filter((k) => set.has(k.id));
+}
 export const urutSumberValid = (v) => Object.prototype.hasOwnProperty.call(METRIK_BY_ID, v);
 export const URUT_SUMBER_BAWAAN = "berOrder";
 export { METRIK_URUT };

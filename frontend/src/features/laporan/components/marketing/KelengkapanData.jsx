@@ -1,27 +1,23 @@
 import React from "react";
-import { CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
-import { Card } from "@/components/ui/card.jsx";
+import { ArrowRight, Clock3, CreditCard, Receipt } from "lucide-react";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { formatPersen, angka, statusMembayar, ringkasBiayaBerbayar, selTotalBerbayar, statusBiayaTeks } from "../../akuisisiLogic.js";
+import { namaMerek } from "../LogoSumber.jsx";
 
-// Panel "Kelengkapan Data": RINGKASAN keterbatasan data yang memang tersedia — pembayaran/ledger, biaya iklan, hari berjalan — dan akses ke rincian lengkap (bagian Kualitas data).
-// Semua nilai dari objek server yang SAMA dengan kartu & tabel (tidak ada perhitungan/ambang baru). Syarat tampil CPA/ROAS tidak diubah di sini: panel hanya MELAPORKAN bahwa CPA/ROAS kosong
-// (selTotalBerbayar → kosong) beserta alasannya. Data tidak lengkap ≠ nol: yang kosong ditulis sebagai kosong.
+// Panel "Kelengkapan data" (redesain Apple, 10 Nov 2026): ringkas, satu baris per hal. Nilai dari objek server yang SAMA dengan kartu dan tabel — tidak ada ambang baru.
+// Data tidak lengkap ≠ nol: yang kosong ditulis kosong. Rincian penuh tetap di bagian Kualitas data.
 const TIP = {
-  ledger: "Persentase order eligible yang punya pembayaran di ledger. Pembayaran di luar sistem belum terlihat, jadi angka customer membayar/lunas dan uang diterima adalah batas bawah.",
-  biaya: "Biaya iklan terisi hanya bila SEMUA sumber berbayar lengkap setiap hari. Terisi ≠ diverifikasi independen. Kosong ≠ Rp0.",
-  hari: "Rentang yang memuat hari berjalan: lead dan pembayaran masih bertambah dan biaya hari ini belum final, jadi biaya per hasil (CPA/ROAS) sengaja dikosongkan.",
+  biaya: "Biaya iklan per sumber berbayar pada periode yang sama. “Tercatat” = lengkap setiap hari (terisi ≠ diverifikasi independen). Belum lengkap → CPA/ROAS sumber itu kosong, bukan Rp0.",
+  ledger: "Persentase order eligible yang punya pembayaran di ledger. Pembayaran di luar sistem belum terlihat, jadi customer membayar/lunas dan uang diterima adalah batas bawah.",
+  hari: "Rentang memuat hari berjalan: lead dan pembayaran masih bertambah dan biaya hari ini belum final, jadi CPA/ROAS sengaja dikosongkan.",
 };
 
-function Baris({ ok, judul, nilai, teks, tip, testid }) {
-  const Ikon = ok ? CheckCircle2 : AlertTriangle;
+function Baris({ Ikon, judul, chip, nada = "ok", tip, sub, testid }) {
   return (
-    <li className="crm-mk-kel-baris" data-ok={ok ? "1" : "0"} data-testid={testid}>
-      <Ikon size={16} className="crm-mk-kel-ikon" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <p className="crm-mk-kel-judul"><b>{judul}</b> <span className="crm-mk-kel-nilai">{nilai}</span>{tip && <InfoTooltip text={tip} />}</p>
-        {teks && <p className="crm-mk-kel-teks">{teks}</p>}
-      </div>
+    <li className="mk-kel-baris" data-testid={testid}>
+      <span className="mk-kel-ikon" aria-hidden="true"><Ikon size={16} /></span>
+      <span className="mk-kel-judul">{judul}{tip && <InfoTooltip text={tip} />}{sub && <span className="mk-kel-sub">{sub}</span>}</span>
+      <span className="mk-chip" data-nada={nada}>{chip}</span>
     </li>
   );
 }
@@ -31,40 +27,32 @@ export default function KelengkapanData({ lap, periode, onRincian }) {
   const bayar = statusMembayar(lap);
   const rb = ringkasBiayaBerbayar(lap);
   const cpa = selTotalBerbayar(lap?.total?.berbayar, "cpa");
+  const belumId = new Set((rb?.belum || []).map((x) => x.id));
+  const semua = lap?.total?.berbayar?.sumber || [];
+  const lengkap = semua.filter((id) => !belumId.has(id));
   const persen = l && l.orderEligible > 0 ? Math.max(0, Math.min(Number(l.persen) || 0, 100)) : null;
-  const adaCatatan = !bayar.lengkap || (rb && !rb.lengkap) || periode?.termasukHariBerjalan || cpa.kosong;
+  const statusBelum = [...new Set((rb?.belum || []).map((x) => statusBiayaTeks(x.status)))].join(", ");
   return (
-    <Card className="crm-mk-kel" data-testid="kelengkapan-data">
-      <div className="crm-mk-kepala"><h3 className="t-card-title">Kelengkapan Data</h3></div>
-
-      {l && (
-        <div className="crm-mk-kel-ledger" data-testid="kel-ledger">
-          <p className="crm-mk-kel-ledger-label">Cakupan pembayaran di ledger <InfoTooltip text={TIP.ledger} /></p>
-          <div className="crm-mk-kel-bar-baris">
-            <span className="crm-mk-kel-bar" role="img" aria-label={persen == null ? "Cakupan ledger belum ada data" : `Cakupan ledger ${formatPersen(l.persen)}`}>
-              {persen != null && <span style={{ width: `${persen}%` }} data-lengkap={bayar.lengkap ? "1" : "0"} />}
+    <section className="mk-panel mk-kel" data-testid="kelengkapan-data">
+      <h3 className="mk-panel-judul">Kelengkapan data</h3>
+      <ul className="mk-kel-daftar">
+        {lengkap.length > 0 && <Baris testid="kel-biaya" Ikon={Receipt} judul={`Biaya ${lengkap.map(namaMerek).join(" & ")}`} chip="Tercatat" tip={TIP.biaya} />}
+        {belumId.size > 0 && <Baris testid="kel-biaya-belum" Ikon={Receipt} judul={`Biaya ${[...belumId].map(namaMerek).join(" & ")}`} sub={statusBelum} chip="Belum lengkap" nada="peringatan" tip={TIP.biaya} />}
+        {l && (
+          <li className="mk-kel-baris" data-testid="kel-ledger">
+            <span className="mk-kel-ikon" aria-hidden="true"><CreditCard size={16} /></span>
+            <span className="mk-kel-judul">Pembayaran tercatat<InfoTooltip text={TIP.ledger} />
+              <span className="mk-kel-bar" role="img" aria-label={persen == null ? "Cakupan ledger belum ada data" : `Cakupan ledger ${formatPersen(l.persen)}`}>
+                {persen != null && <span style={{ width: `${persen}%` }} data-lengkap={bayar.lengkap ? "1" : "0"} />}
+              </span>
             </span>
-            <b className="crm-mk-kel-persen">{persen == null ? "—" : formatPersen(l.persen)}</b>
-          </div>
-          <p className="crm-mk-kel-teks">{angka(l.orderBerLedger)} dari {angka(l.orderEligible)} order eligible punya pembayaran di ledger.</p>
-        </div>
-      )}
-
-      <ul className="crm-mk-kel-daftar">
-        {rb && <Baris testid="kel-biaya" ok={rb.lengkap} judul="Biaya iklan" nilai={rb.lengkap ? "Lengkap" : "Belum lengkap"} tip={TIP.biaya}
-          teks={rb.lengkap ? `${rb.jumlah} sumber berbayar terisi setiap hari.` : (rb.belum.map((x) => `${x.id}: ${statusBiayaTeks(x.status).toLowerCase()}`).join(" · ") || "Ada sumber berbayar yang belum lengkap.")} />}
-        <Baris testid="kel-hari" ok={!periode?.termasukHariBerjalan} judul="Hari berjalan" nilai={periode?.termasukHariBerjalan ? "Termasuk" : "Tidak termasuk"} tip={TIP.hari}
-          teks={periode?.termasukHariBerjalan ? "Lead dan pembayaran masih bertambah; biaya hari ini belum final." : null} />
+            <span className="mk-chip" data-nada={bayar.lengkap ? "ok" : "peringatan"} title={persen == null ? undefined : `Cakupan ${formatPersen(l.persen)}`}>{angka(l.orderBerLedger)} dari {angka(l.orderEligible)} order</span>
+          </li>
+        )}
+        {periode?.termasukHariBerjalan && <Baris testid="kel-hari" Ikon={Clock3} judul="Hari berjalan" chip="Termasuk" nada="peringatan" tip={TIP.hari} />}
       </ul>
-
-      {cpa.kosong && (
-        <p className="crm-mk-kel-info" data-testid="kel-cpa">
-          <b>CPA dan ROAS belum ditampilkan</b>{cpa.alasan ? ` — ${cpa.alasan}` : ""}. Kosong bukan nol.
-        </p>
-      )}
-      {!adaCatatan && <p className="crm-mk-kel-teks" data-testid="kel-aman">Tidak ada keterbatasan data yang perlu diperhatikan pada periode ini.</p>}
-
-      <button type="button" className="crm-mk-kel-rincian" onClick={onRincian} data-testid="kel-rincian">Lihat rincian <ArrowRight size={14} aria-hidden="true" /></button>
-    </Card>
+      {cpa.kosong && <p className="mk-kel-catatan" data-testid="kel-cpa">CPA dan ROAS total belum ditampilkan{cpa.alasan ? ` — ${cpa.alasan}` : ""}. Kosong bukan nol.</p>}
+      <button type="button" className="mk-tautan mk-kel-rincian" onClick={onRincian} data-testid="kel-rincian">Rincian kualitas data <ArrowRight size={14} aria-hidden="true" /></button>
+    </section>
   );
 }

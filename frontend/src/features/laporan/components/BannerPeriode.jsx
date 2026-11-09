@@ -6,7 +6,8 @@ import { saranRentang, teksPeriode } from "../periodeLaporan.js";
 
 // Banner SATU periode untuk tab Marketing. Rentangnya milik filter global Laporan (kanan atas) — komponen ini hanya MENAMPILKAN (satu baris: basis tanggal lead masuk WIB, cutoff evaluasi, hari berjalan)
 // dan menawarkan pintasan yang MENGUBAH filter global itu (bukan state lokal), supaya semua tab selalu memakai periode yang sama.
-export default function BannerPeriode({ periode, hariIni, onUbahRentang, cutoff, ringkas = false, children }) {
+// `tanpaHariBerjalan`: peringatan hari berjalan sudah tampil di strip "Hasil masih sementara" (Ringkasan Marketing), jadi tidak diulang di sini.
+export default function BannerPeriode({ periode, hariIni, onUbahRentang, cutoff, ringkas = false, tanpaHariBerjalan = false, children }) {
   const saran = saranRentang(hariIni);
   const pilih = (s) => onUbahRentang?.(makeCustomRange(s.dari, s.sampai));
   const Pintasan = () => (
@@ -24,13 +25,13 @@ export default function BannerPeriode({ periode, hariIni, onUbahRentang, cutoff,
     );
   }
   return (
-    <div className="flex flex-col gap-1.5" data-testid="banner-periode">
+    <div className="mk-banner flex flex-col gap-1.5" data-testid="banner-periode">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-ink2">
         <CalendarDays size={15} className="shrink-0 text-accent" aria-hidden />
         <span>Lead masuk (WIB): <b className="text-ink">{teksPeriode(periode.dari, periode.sampai)}</b> <span className="t-secondary">· {periode.hari} hari</span></span>
         {!ringkas && cutoff && <span className="t-secondary">· pembayaran &amp; status order dievaluasi sampai <b className="font-semibold text-ink2">{cutoff}</b></span>}
       </p>
-      {periode.termasukHariBerjalan && (
+      {periode.termasukHariBerjalan && !tanpaHariBerjalan && (
         <div role="status" className="flex flex-wrap items-center gap-2 rounded-card bg-orangebg px-3 py-2 text-[12.5px] font-medium text-orange">
           <AlertTriangle size={15} className="shrink-0" />
           <span>Memuat hari berjalan: lead dan pembayaran masih bertambah, biaya hari ini belum final — CPA/ROAS sengaja kosong.</span>

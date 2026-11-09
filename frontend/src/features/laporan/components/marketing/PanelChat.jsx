@@ -45,17 +45,17 @@ export default function PanelChat({ pilihan, periode, onTutup }) {
 
   const jumlah = data?.jumlah;
   return (
-    <PanelSamping open={!!pilihan} onOpenChange={(o) => { if (!o) onTutup(); }} lebar={560} judul={pilihan?.judul || "Daftar chat"} subjudul={pilihan?.sub || null}>
+    <PanelSamping open={!!pilihan} onOpenChange={(o) => { if (!o) onTutup(); }} lebar={560} className="mk-ap-portal" judul={pilihan?.judul || "Daftar chat"} subjudul={pilihan?.sub || null}>
       <div className="flex flex-col gap-3" data-testid="panel-chat">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Saring chat">
             {SARING.map((f) => (
-              <button key={f.id} type="button" aria-pressed={hasil === f.id} className={cn("btn btn-sm", hasil === f.id ? "btn-primary" : "btn-ghost")} onClick={() => setHasil(f.id)} data-testid={`saring-${f.id}`}>
+              <button key={f.id} type="button" aria-pressed={hasil === f.id} className={cn("mk-kapsul mk-kapsul--kecil", hasil === f.id && "mk-kapsul--aktif")} onClick={() => setHasil(f.id)} data-testid={`saring-${f.id}`}>
                 {f.label}{jumlah ? ` (${Number(jumlah[f.id] || 0).toLocaleString("id-ID")})` : ""}
               </button>
             ))}
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={ekspor} disabled={mengunduh} data-testid="ekspor-chat">
+          <button type="button" className="mk-kapsul mk-kapsul--kecil" onClick={ekspor} disabled={mengunduh} data-testid="ekspor-chat">
             {mengunduh ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {mengunduh ? "Menyiapkan…" : "Export Excel"}
           </button>
         </div>
@@ -75,7 +75,7 @@ export default function PanelChat({ pilihan, periode, onTutup }) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[12.5px] text-ink2"><span className="tabular-nums">{b.nomor || "Tanpa nomor"}</span> · {statusChat(b, formatRupiah)}{b.sales ? ` · ${b.sales}` : ""}</span>
                 {b.conversationId
-                  ? <a className="btn btn-ghost btn-sm" href={`/inbox?conv=${b.conversationId}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Buka chat</a>
+                  ? <a className="mk-kapsul mk-kapsul--kecil" href={`/inbox?conv=${b.conversationId}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Buka chat</a>
                   : <span className="text-[12px] text-ink3">Belum ada percakapan</span>}
               </div>
             </li>

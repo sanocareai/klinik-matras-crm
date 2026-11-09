@@ -1,12 +1,10 @@
-import React, { useMemo, useState } from "react";
-import { ChevronRight, Columns3, Download, GitCompare, Info, MessageSquare } from "lucide-react";
-import { Card } from "@/components/ui/card.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Columns3, Info, ListFilter, MessageSquare, Search } from "lucide-react";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { METRIK_URUT, urutkan, penandaPerSumber, teksSorotan, angka, formatPersen, rupiah, selBiayaSumber, selTotalBerbayar, delta, deltaTeks, DASAR_BIAYA_LABEL, BUKTI_LABEL, sementaraTeks } from "../../akuisisiLogic.js";
-import { kolomTampil, konversiTotal } from "../../marketingLogic.js";
-import { PAKEM_KANAL, VARIAN_BUKTI, kelompokkanSumber } from "../../kanalPakem.js";
+import { KOLOM_SUMBER, kolomPilihan, konversiTotal } from "../../marketingLogic.js";
+import { PAKEM_KANAL, kelompokkanSumber, kategoriSumber, namaKelompok, SARING_SUMBER, saringSumber, rupiahRingkas } from "../../kanalPakem.js";
 import LogoSumber from "../LogoSumber.jsx";
 
 // Peringkat semua sumber (label CRM): tabel (kolom utama; tambahan via "Kolom lengkap"). Klien hanya menampilkan/mengurutkan angka server.
@@ -94,94 +92,166 @@ export function selTotal(lap, id) {
   }
 }
 
-const Sel = ({ c }) => (
-  <td className={cn("crm-mk-sel", c.kosong && "crm-mk-sel--kosong")} title={c.title}>
-    <span className={c.t === BUKAN_BIAYA ? "crm-mk-sel-kecil" : ""}>{c.t}</span>
-    {c.sub && <span className="crm-mk-sel-sub">{c.sub}</span>}
-  </td>
-);
+// ── Tampilan (redesain Apple, 10 Nov 2026) ── hanya penyajian: angka dari selSumber/selTotal di atas, tidak dihitung ulang.
+const KOLOM_UANG = new Set(["nilai", "uang", "spend", "cpa", "biayaProspek"]);
+const KOLOM_BIAYA = new Set(["spend", "cpa", "booked", "cash", "biayaProspek"]);
+const KUNCI_KOLOM = "mk-kolom-sumber";
+const bacaKolom = () => { try { const v = JSON.parse(localStorage.getItem(KUNCI_KOLOM) || "null"); return Array.isArray(v) ? v : null; } catch { return null; } };
+const simpanKolom = (v) => { try { if (v) localStorage.setItem(KUNCI_KOLOM, JSON.stringify(v)); else localStorage.removeItem(KUNCI_KOLOM); } catch { /* penyimpanan tidak tersedia: pilihan berlaku sampai halaman ditutup */ } };
+/** "Rp98.020.000" → "Rp98,02 jt" (nilai penuh tetap di title). Teks lain apa adanya. */
+const ringkasUang = (t) => (/^Rp[\d.]+$/.test(t || "") ? rupiahRingkas(Number(t.slice(2).replace(/\./g, ""))) : t);
 
-// Performa Sumber (redesain Sales CRM 1 Nov 2026): satu tabel untuk semua lebar layar — angka rata kanan, digulir mendatar DI DALAM panel (teks tidak dikecilkan), kolom Sumber menempel di kiri.
-// Menggantikan kartu per sumber di HP; semua isi kartu (label bukti atribusi, sampel kecil, angka utama dan tambahan) kini ada di tabel (kolom lengkap = tambahan).
-export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah, onBuka, onEkspor, periodeOk, onLihatChat }) {
+function Sel({ id, c }) {
+  const bukanBiaya = c.t === BUKAN_BIAYA;
+  const uang = KOLOM_UANG.has(id) && !bukanBiaya;
+  const tampil = bukanBiaya ? "—" : uang ? ringkasUang(c.t) : c.t;
+  const judul = [bukanBiaya ? "Biaya tidak tersedia: sumber ini tidak punya biaya iklan langsung (bukan Rp0)" : uang && tampil !== c.t ? c.t : null, c.title, c.sub].filter(Boolean).join(" · ") || undefined;
+  // Chip hanya untuk status yang memang "sementara" / "belum lengkap"; alasan lain (mis. belum ada customer lunas) tetap ditulis apa adanya.
+  const chip = KOLOM_BIAYA.has(id) && c.sub && !bukanBiaya ? (/sementara/i.test(c.sub) ? "Sementara" : /lengkap|hari berjalan|belum ada data/i.test(c.sub) ? "Belum lengkap" : null) : null;
+  return (
+    <td className={cn("mk-sel", (c.kosong || bukanBiaya) && "mk-sel--kosong")} title={judul}>
+      <span className="mk-sel-nilai">{tampil}</span>
+      {chip ? <span className="mk-chip mk-chip--kecil" data-nada="peringatan">{chip}</span> : c.sub && <span className="mk-sel-sub">{c.sub}</span>}
+    </td>
+  );
+}
+
+/** Popover kecil (Filter, Kolom). Tutup dengan klik di luar atau Escape. */
+function Popover({ label, ikon: Ikon, aktif = false, testid, children }) {
+  const [buka, setBuka] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!buka) return undefined;
+    const luar = (e) => { if (ref.current && !ref.current.contains(e.target)) setBuka(false); };
+    const esc = (e) => { if (e.key === "Escape") setBuka(false); };
+    document.addEventListener("mousedown", luar); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", luar); document.removeEventListener("keydown", esc); };
+  }, [buka]);
+  return (
+    <div className="mk-pop" ref={ref}>
+      <button type="button" className={cn("mk-kapsul", aktif && "mk-kapsul--aktif")} aria-expanded={buka} aria-haspopup="dialog" onClick={() => setBuka((v) => !v)} data-testid={testid}><Ikon size={15} aria-hidden="true" /> {label}</button>
+      {buka && <div className="mk-pop-isi" role="dialog" aria-label={label}>{children}</div>}
+    </div>
+  );
+}
+
+// Performa sumber: satu tabel untuk semua lebar layar (gulir mendatar di dalam panel, kolom Sumber menempel). Kelompok sumber tetap terpisah — tidak ada peringkat gabungan
+// sumber berbayar, internal, dan tanpa atribusi. Baris membuka rincian; tombol di dalam baris tidak ikut membuka rincian.
+export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah, onBuka, periodeOk, onLihatChat }) {
   const [infoId, setInfoId] = useState(null);
-  const kolom = useMemo(() => kolomTampil(kolomMode), [kolomMode]);
+  const [saring, setSaring] = useState("semua");
+  const [cari, setCari] = useState("");
+  const [sembunyikanKosong, setSembunyikanKosong] = useState(false);
+  const [pilihanKolom, setPilihanKolom] = useState(bacaKolom);
+  const kolom = useMemo(() => kolomPilihan(kolomMode, pilihanKolom), [kolomMode, pilihanKolom]);
   const urut = useMemo(() => urutkan(lap?.sumber || [], urutId), [lap, urutId]);
-  const kelompok = useMemo(() => kelompokkanSumber(urut), [urut]);
-  let nomor = 0;
+  const tampil = useMemo(() => saringSumber(urut, { saring, cari, sembunyikanKosong }), [urut, saring, cari, sembunyikanKosong]);
+  const kelompok = useMemo(() => kelompokkanSumber(tampil), [tampil]);
   const penanda = useMemo(() => penandaPerSumber(lap?.sorotan), [lap]);   // sorotan dipilih SERVER dari data (bukan hardcode)
   const lengkap = kolomMode === "lengkap";
-  const labelUrut = METRIK_URUT.find((m) => m.id === urutId)?.label?.toLowerCase();
+  const tersaring = saring !== "semua" || !!cari.trim() || sembunyikanKosong;
+  const labelUrut = METRIK_URUT.find((m) => m.id === urutId)?.label;
   const buka = (e, id) => { if (e.type === "click" || e.key === "Enter" || e.key === " ") { e.preventDefault(); onBuka(id); } };
+  const aturKolom = (ids) => { setPilihanKolom(ids); simpanKolom(ids); if (lengkap) onUbah({ kolom: "ringkas" }); };
+  const toggleKolom = (id) => { const kini = kolom.map((k) => k.id); const baru = kini.includes(id) ? kini.filter((x) => x !== id) : [...kini, id]; if (baru.length) aturKolom(baru); };
+  const kolomAwal = () => { setPilihanKolom(null); simpanKolom(null); if (lengkap) onUbah({ kolom: "ringkas" }); };
+  const semuaKolom = () => onUbah({ kolom: lengkap ? "ringkas" : "lengkap" });
+
   return (
-    <Card className="crm-mk-sumber" data-testid="tabel-sumber" role="region" aria-label="Peringkat semua sumber">
-      <div className="crm-mk-sumber-kepala">
-        <div className="min-w-0 flex-1">
-          <h3 className="t-card-title">Performa Sumber</h3>
-          <p className="crm-mk-deskripsi">Urut menurut <b>{labelUrut}</b> di dalam tiap kelompok. Sumber dengan sampel kecil (&lt; 30 lead) tidak dibandingkan pada rasio. Klik sumber untuk rincian, atau ikon info untuk penjelasannya.</p>
+    <section className="mk-panel mk-sumber" data-testid="tabel-sumber" aria-label="Performa sumber">
+      <div className="mk-sumber-kepala">
+        <h3 className="mk-panel-judul">Performa sumber
+          <InfoTooltip text={`Urut menurut ${labelUrut?.toLowerCase() || "pilihan"} di dalam tiap kelompok — kelompok tidak diperingkat bersama. Sumber dengan sampel kecil (< 30 lead) tidak dibandingkan pada rasio. Klik baris untuk rincian; ikon i untuk penjelasan channel.`} />
+        </h3>
+        <div className="mk-seg" role="group" aria-label="Kelompok sumber">
+          {SARING_SUMBER.map((s) => <button key={s.id} type="button" aria-pressed={saring === s.id} onClick={() => setSaring(s.id)} data-testid={`saring-sumber-${s.id}`}>{s.label}</button>)}
         </div>
-        <div className="crm-mk-sumber-aksi">
-          <label className="crm-mk-urut">Urutkan
-            <select className="crm-mk-select" value={urutId} onChange={(e) => onUbah({ urut: e.target.value })} aria-label="Urutkan peringkat menurut" data-testid="pilih-urut">
+        <div className="mk-toolbar">
+          <label className="mk-cari">
+            <Search size={15} aria-hidden="true" />
+            <input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari sumber…" aria-label="Cari sumber" data-testid="cari-sumber" />
+          </label>
+          <label className="mk-pilih">
+            <span>Urutkan</span>
+            <select value={urutId} onChange={(e) => onUbah({ urut: e.target.value })} aria-label="Urutkan peringkat menurut" data-testid="pilih-urut">
               {METRIK_URUT.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
+            <ChevronDown size={14} aria-hidden="true" />
           </label>
-          <button type="button" className={cn("btn btn-sm", lengkap ? "btn-primary" : "btn-ghost")} aria-pressed={lengkap} onClick={() => onUbah({ kolom: lengkap ? "ringkas" : "lengkap" })} data-testid="toggle-kolom"><Columns3 size={14} /> {lengkap ? "Kolom ringkas" : "Kolom lengkap"}</button>
-          <button type="button" className={cn("btn btn-sm", bandingkan ? "btn-primary" : "btn-ghost")} aria-pressed={bandingkan} onClick={() => onUbah({ banding: !bandingkan })} disabled={!periodeOk} data-testid="toggle-banding"><GitCompare size={14} /> Bandingkan</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onEkspor} disabled={!lap} data-testid="ekspor-sumber"><Download size={14} /> Ekspor CSV</button>
+          <Popover label="Filter" ikon={ListFilter} aktif={sembunyikanKosong || bandingkan} testid="filter-sumber">
+            <label className="mk-cek"><input type="checkbox" checked={sembunyikanKosong} onChange={(e) => setSembunyikanKosong(e.target.checked)} data-testid="sembunyikan-kosong" /> Sembunyikan sumber tanpa lead</label>
+            <label className="mk-cek"><input type="checkbox" checked={!!bandingkan} aria-pressed={bandingkan} disabled={!periodeOk} onChange={() => onUbah({ banding: !bandingkan })} data-testid="toggle-banding" /> Bandingkan dengan periode sebelumnya</label>
+            <p className="mk-pop-catatan">Perbandingan menambah selisih di bawah angka; definisinya tidak berubah.</p>
+          </Popover>
+          <Popover label="Kolom" ikon={Columns3} aktif={lengkap || !!pilihanKolom} testid="toggle-kolom">
+            <div className="mk-pop-preset">
+              <button type="button" className="mk-kapsul mk-kapsul--kecil" onClick={kolomAwal} data-testid="kolom-awal">Kolom awal</button>
+              <button type="button" className={cn("mk-kapsul mk-kapsul--kecil", lengkap && "mk-kapsul--aktif")} aria-pressed={lengkap} onClick={semuaKolom} data-testid="kolom-lengkap">Semua kolom</button>
+            </div>
+            <div className="mk-pop-daftar">
+              {KOLOM_SUMBER.map((k) => (
+                <label key={k.id} className="mk-cek"><input type="checkbox" checked={kolom.some((x) => x.id === k.id)} onChange={() => toggleKolom(k.id)} data-testid={`kolom-${k.id}`} /> {k.label}</label>
+              ))}
+            </div>
+          </Popover>
         </div>
       </div>
 
-      <div className="crm-ss-gulir" tabIndex={0} role="region" aria-label="Tabel performa sumber; gulir mendatar untuk kolom lain">
-        <table className="crm-mk-tabel" data-lengkap={lengkap ? "1" : "0"}>
+      <div className="mk-gulir" tabIndex={0} role="region" aria-label="Tabel performa sumber; gulir mendatar untuk kolom lain">
+        <table className="mk-tabel" style={{ minWidth: 300 + kolom.length * 136 }}>
           <thead>
             <tr>
-              <th scope="col" className="crm-mk-kiri">Sumber</th>
-              {kolom.map((k) => <th key={k.id} scope="col"><span className="crm-mk-th">{k.label}<InfoTooltip text={TIP[k.id]} /></span></th>)}
-              <th scope="col" className="crm-mk-panah"><span className="sr-only">Buka rincian</span></th>
+              <th scope="col" className="mk-kiri">Sumber</th>
+              {kolom.map((k) => <th key={k.id} scope="col"><span className="mk-th">{k.label}<InfoTooltip text={TIP[k.id]} /></span></th>)}
+              <th scope="col" className="mk-panah"><span className="sr-only">Buka rincian</span></th>
             </tr>
           </thead>
           <tbody>
+            {kelompok.length === 0 && <tr><td colSpan={kolom.length + 2} className="mk-tabel-kosong" data-testid="sumber-tersaring-kosong">Tidak ada sumber yang cocok dengan saringan ini.</td></tr>}
             {kelompok.map((g) => (
               <React.Fragment key={g.nama}>
-                <tr className="crm-mk-grup" data-testid={`kelompok-${g.nama}`}>
-                  <th scope="colgroup" colSpan={kolom.length + 2} className="crm-mk-kiri"><span className="crm-mk-grup-nama">{g.nama}</span>{g.catatan && <span className="crm-mk-grup-catatan">{g.catatan}</span>}</th>
+                <tr className="mk-grup" data-testid={`kelompok-${g.nama}`}>
+                  <th scope="colgroup" colSpan={kolom.length + 2} className="mk-kiri"><span className="mk-grup-nama">{namaKelompok(g.nama)}</span>{g.catatan && <span className="mk-grup-catatan">{g.catatan}</span>}</th>
                 </tr>
                 {g.baris.map((s) => {
-                  nomor += 1;
                   const pakem = PAKEM_KANAL[s.id];
                   const terbuka = infoId === s.id;
                   return (
                     <React.Fragment key={s.id}>
-                      <tr tabIndex={0} onClick={(e) => buka(e, s.id)} onKeyDown={(e) => buka(e, s.id)} data-testid={`baris-sumber-${s.id}`} aria-label={`Buka rincian ${s.label}`}>
-                        <th scope="row" className="crm-mk-kiri">
-                          <span className="crm-mk-sumber-sel">
-                            <span className="crm-mk-no">{nomor}</span>
-                            <LogoSumber id={s.id} size={32} />
-                            <span className="crm-mk-sumber-teks">
-                              <span className="crm-mk-sumber-nama">{s.label}</span>
-                              <span className="crm-mk-sumber-bukti">{BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"}</span>
+                      <tr className="mk-baris" tabIndex={0} onClick={(e) => buka(e, s.id)} onKeyDown={(e) => buka(e, s.id)} data-testid={`baris-sumber-${s.id}`} aria-label={`Buka rincian ${s.label}`}>
+                        <th scope="row" className="mk-kiri">
+                          <span className="mk-sumber-sel">
+                            <LogoSumber id={s.id} size={34} />
+                            <span className="mk-sumber-teks">
+                              <span className="mk-sumber-nama">{s.label}
+                                {pakem && <button type="button" className="mk-info" aria-expanded={terbuka} aria-label={`Penjelasan ${s.label}`} data-testid={`info-${s.id}`}
+                                  onClick={(e) => { e.stopPropagation(); setInfoId(terbuka ? null : s.id); }} onKeyDown={(e) => e.stopPropagation()}><Info size={14} aria-hidden="true" /></button>}
+                              </span>
+                              <span className="mk-sumber-kategori">{kategoriSumber(s.id)}</span>
+                              {(s.sampelKecil || (penanda.get(s.id) || []).length > 0) && (
+                                <span className="mk-sumber-tanda">
+                                  {s.sampelKecil && <span className="mk-chip mk-chip--kecil" data-nada="netral" title="Kurang dari 30 lead: tidak dibandingkan pada rasio">Sampel kecil</span>}
+                                  {/* Sorotan dipilih server; satu chip ringkas, semua sorotan lengkap di title. */}
+                                  {(() => { const p = penanda.get(s.id) || []; return p.length > 0 && <span className="mk-chip mk-chip--kecil" data-nada="ok" title={p.map(teksSorotan).join(" · ")} data-testid={`sorotan-${s.id}`}>{p[0].label}{p.length > 1 ? ` +${p.length - 1}` : ""}</span>; })()}
+                                </span>
+                              )}
                             </span>
-                            {s.tingkatBukti && <Badge variant={VARIAN_BUKTI[s.tingkatBukti] || "neutral"} className="normal-case">Bukti: {s.tingkatBukti}</Badge>}
-                            {pakem && <button type="button" className="crm-mk-info" aria-expanded={terbuka} aria-label={`Penjelasan ${s.label}`} data-testid={`info-${s.id}`}
-                              onClick={(e) => { e.stopPropagation(); setInfoId(terbuka ? null : s.id); }} onKeyDown={(e) => e.stopPropagation()}><Info size={15} aria-hidden="true" /></button>}
-                            {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil</Badge>}
-                            {(penanda.get(s.id) || []).map((p) => <Badge key={p.id} variant="green" className="normal-case" title={teksSorotan(p)}>{p.label}</Badge>)}
                           </span>
                         </th>
-                        {kolom.map((k) => <Sel key={k.id} c={selSumber(s, k.id, { banding: bandingkan, lap })} />)}
-                        <td className="crm-mk-panah"><ChevronRight size={16} aria-hidden="true" /></td>
+                        {kolom.map((k) => <Sel key={k.id} id={k.id} c={selSumber(s, k.id, { banding: bandingkan, lap })} />)}
+                        <td className="mk-panah"><ChevronRight size={16} aria-hidden="true" /></td>
                       </tr>
                       {terbuka && pakem && (
-                        <tr className="crm-mk-pakem" data-testid={`pakem-${s.id}`}>
+                        <tr className="mk-pakem" data-testid={`pakem-${s.id}`}>
                           <td colSpan={kolom.length + 2}>
-                            <div className="crm-mk-pakem-isi">
-                              <div className="crm-mk-pakem-kisi">
-                                <div><p className="crm-mk-pakem-judul">Apa ini</p><p className="crm-mk-pakem-teks">{pakem.apa}</p></div>
-                                <div><p className="crm-mk-pakem-judul">Buktinya</p><p className="crm-mk-pakem-teks">{pakem.bukti}</p></div>
-                                <div><p className="crm-mk-pakem-judul">Tidak termasuk</p><p className="crm-mk-pakem-teks">{pakem.bukan}</p></div>
+                            <div className="mk-pakem-isi">
+                              <div className="mk-pakem-kisi">
+                                <div><p className="mk-pakem-judul">Apa ini</p><p>{pakem.apa}</p></div>
+                                <div><p className="mk-pakem-judul">Buktinya</p><p>{pakem.bukti}</p></div>
+                                <div><p className="mk-pakem-judul">Tidak termasuk</p><p>{pakem.bukan}</p></div>
                               </div>
-                              {onLihatChat && s.lead > 0 && <button type="button" className="btn btn-ghost btn-sm self-start" data-testid={`lihat-chat-${s.id}`} onClick={() => onLihatChat({ judul: s.label, sub: `${angka(s.lead)} chat`, query: { sumber: s.id } })}><MessageSquare size={14} /> Lihat {angka(s.lead)} chat</button>}
+                              <p className="mk-pakem-dasar">Dasar angka: {BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"}{s.tingkatBukti ? ` · tingkat bukti ${s.tingkatBukti.toLowerCase()}` : ""}</p>
+                              {onLihatChat && s.lead > 0 && <button type="button" className="mk-kapsul mk-kapsul--kecil" data-testid={`lihat-chat-${s.id}`} onClick={(e) => { e.stopPropagation(); onLihatChat({ judul: s.label, sub: `${angka(s.lead)} chat`, query: { sumber: s.id } }); }}><MessageSquare size={14} /> Lihat {angka(s.lead)} chat</button>}
                             </div>
                           </td>
                         </tr>
@@ -191,15 +261,17 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
                 })}
               </React.Fragment>
             ))}
-            <tr className="crm-mk-total" data-testid="baris-total">
-              <th scope="row" className="crm-mk-kiri">Total semua sumber</th>
-              {kolom.map((k) => <Sel key={k.id} c={selTotal(lap, k.id)} />)}
-              <td />
-            </tr>
+            {!tersaring && (
+              <tr className="mk-total" data-testid="baris-total">
+                <th scope="row" className="mk-kiri">Total semua sumber</th>
+                {kolom.map((k) => <Sel key={k.id} id={k.id} c={selTotal(lap, k.id)} />)}
+                <td />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
-      <p className="crm-mk-catatan">Biaya, CPA, dan ROAS pada baris total hanya untuk sumber berbayar dan hanya bila semuanya lengkap (dihitung dari pembilang dan penyebut total, bukan rata-rata per baris); organik tidak punya biaya dialokasikan. Dasar: {DASAR_BIAYA_LABEL}. Konversi total = Σ ber-order ÷ Σ lead.</p>
-    </Card>
+      <p className="mk-catatan">Tanda — berarti tidak tersedia atau belum lengkap, bukan nol. Biaya, CPA, dan ROAS pada baris total hanya untuk sumber berbayar dan hanya bila semuanya lengkap (dihitung dari pembilang dan penyebut total). Dasar: {DASAR_BIAYA_LABEL}. Konversi total = Σ ber-order ÷ Σ lead.{tersaring ? " Baris total disembunyikan saat tabel disaring." : ""}</p>
+    </section>
   );
 }

@@ -20,7 +20,7 @@ export default function DetailSumberMarketing({ s, lap, periode, range, url, onU
   const labelKreatif = LABEL_PELANGGAN[s.id] || "";
   return (
     <div className="flex flex-col gap-4" data-testid="detail-marketing">
-      <nav aria-label="Jejak" className="flex flex-wrap items-center gap-1 text-[13px]">
+      <nav aria-label="Jejak" className="mk-jejak">
         <button type="button" className="inline-flex items-center gap-1 text-accent hover:underline" onClick={onKembali} data-testid="kembali-ringkasan"><ArrowLeft size={14} /> Marketing</button>
         <ChevronRight size={14} className="text-ink3" />
         {meta && jalur.level !== "campaign"
@@ -35,7 +35,7 @@ export default function DetailSumberMarketing({ s, lap, periode, range, url, onU
       </nav>
 
       {s.lead > 0 && !meta && (
-        <button type="button" className="btn btn-ghost btn-sm self-start" onClick={() => onLihatChat({ judul: s.label, sub: `${Number(s.lead).toLocaleString("id-ID")} chat`, query: { sumber: s.id } })} data-testid="lihat-chat-sumber"><MessageSquare size={14} /> Lihat {Number(s.lead).toLocaleString("id-ID")} chat</button>
+        <button type="button" className="mk-kapsul self-start" onClick={() => onLihatChat({ judul: s.label, sub: `${Number(s.lead).toLocaleString("id-ID")} chat`, query: { sumber: s.id } })} data-testid="lihat-chat-sumber"><MessageSquare size={14} /> Lihat {Number(s.lead).toLocaleString("id-ID")} chat</button>
       )}
       <DetailSumberAkuisisi s={s} lap={lap} periode={periode} tanpaJejak onBukaIklan={null}
         sisipanAtas={meta ? <MetaDetail range={range} periode={periode} jalur={jalur} rank={url.rank} umur={url.umur} kolom={url.kolom} onUbah={onUbah} cache={cacheMeta} versi={versi} onMuat={onMuat} onLihatChat={onLihatChat} /> : null} />
