@@ -971,6 +971,26 @@ export default function Layout({ user, onLogout }) {
       ? hubTerlihat(rolesOf(user)).flatMap((h) => h.items.map((it) => ({ to: it.to, label: it.label, section: h.label })))
       : visibleSections(division.sections, isAdmin).flatMap((sec) => sec.items.map((it) => ({ to: it.to, label: it.label, section: sec.section }))))
     : undefined;
+  // Spotlight (⌘K): halaman dari SEMUA workspace, disaring per menu dengan aturan yang sama dengan sidebar
+  // (peran/divisi/adminOnly). Palette menyaring lagi per portal yang boleh dibuka (/auth/me) — server tetap
+  // penegak akses sungguhan; ini hanya supaya pencarian tidak menawarkan halaman yang pasti buntu.
+  const halamanSemua = React.useMemo(() => {
+    if (IS_DRIVER_APP || driverOnly) return [];
+    const roles = rolesOf(user);
+    const keluar = [];
+    const tambah = (ws, sections) => visibleSections(sections, isAdmin).forEach((sec) => sec.items.forEach((it) => {
+      keluar.push({ to: it.to, label: it.label, section: sec.section, ws, Icon: it.Icon || null });
+    }));
+    tambah("hub", HUB_SECTIONS);
+    Object.keys(DIVISIONS).forEach((k) => {
+      if (k === "finance") {
+        hubTerlihat(roles).forEach((h) => h.items.forEach((it) => keluar.push({ to: it.to, label: it.label, section: h.label, ws: "finance", Icon: null })));
+        return;
+      }
+      tambah(k, filterMenuByPermission(DIVISIONS[k], { roles, divisiSaya }).sections);
+    });
+    return keluar;
+  }, [user, isAdmin, divisiSaya, driverOnly]);
 
   // SSE: saat ada pesan baru, refresh badge unread & notifikasi langsung tanpa tunggu interval
   // Digabung (debounce 1 dtk): rentetan pesan masuk = 1 fetch unread, bukan 1 per pesan.
@@ -1367,6 +1387,8 @@ export default function Layout({ user, onLogout }) {
           hideNotifBell={IS_DRIVER_APP && driverOnly}
           crmShell={crmShell}
           halaman={halamanCari}
+          halamanSemua={halamanSemua}
+          wsSaatIni={onHub ? "hub" : (divisionKey || null)}
         />
 
         {/* Tab strip dalam-app (D-144) — di antara Topbar dan .page-body,

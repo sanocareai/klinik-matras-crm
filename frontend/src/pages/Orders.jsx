@@ -499,8 +499,11 @@ export default function Orders() {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView]       = useState(() => localStorage.getItem("orders-view") || "board");
-  const [cari, setCari]       = useState("");
-  const [debounced, setDebounced] = useState("");
+  // `?cari=` (Spotlight ⌘K, 10 Nov 2026): hasil order dibuka lewat /orders?id=…&cari=<nomor order>. Kata cari diisi SEBELUM
+  // fetch pertama supaya order itu pasti ada di daftar (server menyaring by nomor order, lepas dari batas 200 baris),
+  // lalu deep-link `?id=` di bawah membuka rinciannya.
+  const [cari, setCari]       = useState(() => searchParams.get("cari") || "");
+  const [debounced, setDebounced] = useState(() => (searchParams.get("cari") || "").trim());
   const [fStatus, setFStatus] = useState("");
   const [fKategori, setFKategori] = useState("");
   const [fBayar, setFBayar]   = useState("");
@@ -575,10 +578,10 @@ export default function Orders() {
         unitStatus: fStatusUnit || undefined,
         ...toApiParams(range),
       });
-      setData(res);
+      setData({ ...res, _cari: debounced || "" }); // _cari: kata cari milik daftar ini (deep-link ?cari= menunggu daftar yang cocok)
     } catch (e) {
       console.error("Gagal muat order:", e);
-      setData({ items: [], perStatus: [] });
+      setData({ items: [], perStatus: [], _cari: debounced || "" });
     } finally {
       setLoading(false);
     }
@@ -592,12 +595,20 @@ export default function Orders() {
   // sampai fetch pertama selesai. `id` DIBUANG dari URL setelah dipakai —
   // tanpa itu, refresh manual akan membuka timeline yang sama lagi, dan me-
   // reload data yang sudah difilter dari notifikasi lama terasa aneh.
+  // Tab Order yang SUDAH terbuka (keep-alive) tidak menjalankan useState awal lagi — samakan kata cari dengan `?cari=` di sini.
+  useEffect(() => {
+    const c = searchParams.get("cari");
+    if (c != null && c.trim() !== debounced) { setCari(c); setDebounced(c.trim()); }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const id = searchParams.get("id");
     if (!id || !data?.items) return;
+    // Tunggu daftar hasil pencarian `?cari=` selesai dimuat (bukan daftar lama tanpa saringan).
+    const c = searchParams.get("cari");
+    if (c != null && (data._cari ?? "") !== c.trim()) return;
     const order = data.items.find((o) => o.id === id);
     if (order) setTimelineOrder(order);
-    setSearchParams((prev) => { prev.delete("id"); return prev; }, { replace: true });
+    setSearchParams((prev) => { prev.delete("id"); prev.delete("cari"); return prev; }, { replace: true });
   }, [searchParams, data, setSearchParams]);
 
   // Sub-baris unit (Penjualan Karyawan): buka/tutup di tabel desktop; klik unit → Unit 360 (drawer rincian order ditutup dulu agar tidak bertumpuk).

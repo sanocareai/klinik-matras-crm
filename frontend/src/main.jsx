@@ -110,6 +110,8 @@ import "./styles/sanss-gudang-dok.css";
 import "./styles/sanss-gudang-nilai.css";
 // Bahasa visual Apple bersama (Gelombang 1: Main Hub, Delivery, All Teams)
 import "./styles/sanss-apple.css";
+// Spotlight (⌘K) + Notifikasi gaya Apple (10 Nov 2026) — kelas .sp-*/.nt-*, di-portal ke body (lihat berkasnya).
+import "./styles/sanss-cari.css";
 
 applyPerfMode(); // set <html data-perf> sebelum render pertama
 setTimeout(startPerfMonitor, 3000); // pantau FPS saat scroll & baterai setelah startup selesai

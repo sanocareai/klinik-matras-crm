@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronRight, Menu as MenuIcon, Search, ChevronDown, LogOut, Home } from "lucide-react";
+import { tujuanRemah, anggotaSection, WORKSPACE_CARI } from "@/lib/cariGlobal.js";
 import { formatTanggalIndo } from "../utils/format.js";
 import { CommandPalette } from "@/components/ui/command-palette.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
@@ -137,7 +138,7 @@ function labelFinance(pathname, search) {
 // divisi Sales CRM) menampilkan kolom pencarian yang terlihat + ikon rumah di breadcrumb;
 // `halaman` = daftar menu yang boleh dilihat pengguna (sumber sama dengan sidebar) untuk
 // palette. Tanpa `crmShell` markup & perilaku Topbar IDENTIK dengan sebelumnya (divisi lain).
-export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout, hideNotifBell = false, crmShell = false, halaman }) {
+export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout, hideNotifBell = false, crmShell = false, halaman, halamanSemua, wsSaatIni = null }) {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { openInActiveTab } = useTabs();
@@ -161,9 +162,18 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
     ? [{ text: "Main Hub", to: "/portal" }, { text: commandCenterTitle, to: null }]
     : (labelFinance(pathname, search) || ROUTE_LABELS[pathname] || (pathname.startsWith("/warehouse/dashboard/") ? ["Gudang", "Beranda"] : null) || (pathname.startsWith("/bengkel/production-v2/unit/") ? ["Produksi", "Status Produksi", "Ruang Kerja Unit"] : null) || (pathname.startsWith("/warehouse/perlu-perhatian/") ? ["Gudang", "Perlu Perhatian"] : null) || (pathname.startsWith("/warehouse/barang-akan-datang/") ? ["Gudang", "Barang Akan Datang"] : null) || (pathname.startsWith("/warehouse/goods-receipt/") ? ["Gudang", "Penerimaan Barang"] : null) || (pathname.startsWith("/warehouse/retur-supplier/") ? ["Gudang", "Retur Supplier"] : null) || (pathname.startsWith("/warehouse/goods-receipt/") ? ["Gudang", "Penerimaan Barang", "Detail"] : null) || (pathname.startsWith("/warehouse/material-issue/") ? ["Gudang", "Pengeluaran Material", "Detail"] : null) || (pathname.startsWith("/warehouse/material-pickup/") ? ["Gudang", "Permintaan Bahan"] : null) || (pathname.startsWith("/warehouse/transfers/") ? ["Gudang", "Transfer Stok", "Detail"] : null) || (pathname.startsWith("/warehouse/stock-count/") ? ["Gudang", "Stock Opname", pathname.endsWith("/hitung") ? "Hitung" : "Detail"] : null) || (pathname.startsWith("/warehouse/replenishment/") ? ["Gudang", "Restok", "Detail"] : null) || (pathname.startsWith("/warehouse/adjustments/") ? ["Gudang", "Barang Rusak & Retur", "Detail"] : null) || [pathname.replace("/", "")]).map((text, i, arr) => ({
         text,
-        // Halaman di DALAM sebuah workspace: remah pertama jadi jalan pulang
-        // ke Main Hub. Remah terakhir (halaman sekarang) tidak pernah link.
-        to: i === 0 && arr.length > 1 ? "/portal" : null,
+        // Remah pertama halaman di dalam workspace. DULU selalu ke /portal — bug "klik Analitik malah ke Main Hub"
+        // (10 Nov 2026): remah itu nama SECTION ("Analitik", "Data") atau nama workspace ("Delivery"), bukan Main Hub.
+        // Sekarang: section dengan ≥2 halaman → menu pilihan halaman section itu; satu halaman / nama workspace →
+        // tautan ke halaman pertamanya. Jalan pulang ke Main Hub = ikon rumah (crmShell) atau remah "Main Hub".
+        // Tanpa daftar menu (divisi lama tanpa crmShell) perilaku lama dipertahankan.
+        ...(i === 0 && arr.length > 1
+          ? (Array.isArray(halaman) && halaman.length
+            ? (anggotaSection(text, halaman).length >= 2
+              ? { to: null, menu: anggotaSection(text, halaman) }
+              : { to: tujuanRemah(text, halaman, { wsLabel: WORKSPACE_CARI[wsSaatIni]?.label, pathname }) })
+            : { to: "/portal" })
+          : { to: null }),
       }));
 
   return (
@@ -207,7 +217,24 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
           {crumbs.map((c, i) => (
             <React.Fragment key={i}>
               {i > 0 && <ChevronRight size={13} className="shrink-0 text-ink3" />}
-              {c.to ? (
+              {c.menu ? (
+                <Menu
+                  align="start"
+                  trigger={
+                    <button type="button" className="topbar-remah-menu hidden items-center gap-0.5 truncate rounded text-ink3 transition-colors hover:text-accent sm:inline-flex" aria-label={`${c.text}: pilih halaman`}>
+                      {c.text}
+                      <ChevronDown size={12} className="shrink-0 opacity-70" />
+                    </button>
+                  }
+                >
+                  <MenuLabel>{c.text}</MenuLabel>
+                  {c.menu.map((h) => (
+                    <MenuItem key={h.to} onSelect={() => navigate(h.to)}>
+                      <span className={h.to.split("?")[0] === pathname ? "font-semibold text-accent" : undefined}>{h.label}</span>
+                    </MenuItem>
+                  ))}
+                </Menu>
+              ) : c.to ? (
                 <button
                   type="button"
                   onClick={() => navigate(c.to)}
@@ -246,17 +273,17 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            aria-label="Cari halaman atau menu"
+            aria-label="Cari halaman, pelanggan, order, atau chat"
             className="topbar-searchfield"
           >
             <Search size={17} className="shrink-0" />
-            <span className="topbar-searchfield-teks">Cari halaman atau menu…</span>
+            <span className="topbar-searchfield-teks">Cari halaman, pelanggan, order…</span>
             <kbd className="topbar-searchfield-kbd">{pintasan}</kbd>
           </button>
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            aria-label="Cari halaman atau menu"
+            aria-label="Cari halaman, pelanggan, order, atau chat"
             title="Cari"
             className="topbar-searchbtn"
           >
@@ -369,8 +396,10 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
-        halaman={crmShell ? halaman : undefined}
-        onPilih={crmShell ? (h) => openInActiveTab(h.to, { title: h.label }) : undefined}
+        halaman={halaman}
+        halamanSemua={halamanSemua}
+        wsSaatIni={wsSaatIni}
+        onPilih={(h) => (crmShell ? openInActiveTab(h.to, { title: h.label }) : navigate(h.to))}
       />
     </header>
   );

@@ -1,98 +1,64 @@
 import React from "react";
-import { AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle, MessageCircle, UserRound, ClipboardList, Hammer, ShieldCheck, PackageMinus, PackageOpen, Truck, Bell,
+} from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import {
-  NOTIF_WORKSPACES, NOTIF_TYPES, buildTargetUrl, workspaceOf, relativeTime,
+  NOTIF_WORKSPACES, NOTIF_TYPES, workspaceOf, relativeTime,
 } from "./notificationTypes.js";
 
-// Satu baris notifikasi. Dipakai BERSAMA oleh drawer dan halaman
-// /notifications supaya keduanya tidak pernah bisa berbeda tampilan —
-// dua salinan komponen daftar adalah cara paling cepat membuat drawer dan
-// halaman "yang sama" diam-diam menyimpang.
+// Satu baris notifikasi. Dipakai BERSAMA oleh drawer dan halaman /notifications supaya keduanya tidak pernah
+// berbeda tampilan. Redesain Apple (10 Nov 2026): ubin ikon squircle per TIPE (warna = asal workspace, lembut),
+// judul tebal bila belum dibaca + titik biru di kanan, chip kecil hanya untuk Kritis / Perlu tindakan. Alamat tujuan
+// teknis (/inbox?conv=…) TIDAK ditampilkan lagi — jargon bagi pengguna; `compact` hanya merapatkan jarak.
+// Gaya: styles/sanss-cari.css (.nt-*), berlaku di semua tema lewat token.
+const IKON_TIPE = {
+  SALES_MESSAGE: MessageCircle,
+  CUSTOMER: UserRound,
+  SALES_ORDER: ClipboardList,
+  WORK_ORDER: Hammer,
+  QUALITY_CONTROL: ShieldCheck,
+  LOW_STOCK: PackageMinus,
+  MATERIAL_REQUEST: PackageOpen,
+  DELIVERY_ISSUE: Truck,
+  SYSTEM: Bell,
+};
+
 export default function NotificationItem({ notif, onActivate, compact = false }) {
-  const ws = NOTIF_WORKSPACES[workspaceOf(notif)] || NOTIF_WORKSPACES.system;
+  const wsKey = workspaceOf(notif);
+  const ws = NOTIF_WORKSPACES[wsKey] || NOTIF_WORKSPACES.system;
   const tipe = NOTIF_TYPES[notif.type];
   const belumDibaca = !notif.isRead;
+  const Ikon = IKON_TIPE[notif.type] || Bell;
 
   return (
     <button
       type="button"
       onClick={() => onActivate(notif)}
-      // Tautan tujuan diumumkan ke screen reader: item ini bernavigasi, dan
-      // tanpa ini ia terdengar seperti tombol yang tidak jelas ke mana.
+      // Tautan tujuan diumumkan ke screen reader: item ini bernavigasi.
       aria-label={`${ws.label}: ${notif.title}. ${belumDibaca ? "Belum dibaca. " : ""}Buka.`}
-      className={cn(
-        "relative flex w-full gap-3 border-b border-line px-4 text-left transition-colors last:border-b-0",
-        compact ? "py-3" : "py-3.5",
-        "hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
-        // Belum dibaca (#12): latar biru sangat muda + garis kiri biru.
-        // Yang dibaca dibiarkan warna surface biasa — kontras antar keduanya
-        // yang membuat "belum dibaca" terbaca sekilas tanpa menghitung titik.
-        //
-        // BUG (fix, dark mode): sebelumnya `bg-[#F5F8FF]` — hex MENTAH, bukan
-        // token, jadi TIDAK ikut [data-theme="dark"]. Warna itu (nyaris
-        // putih) dipasang di ATAS surface dark (nyaris hitam) dengan teks
-        // `text-ink` (nyaris putih di dark mode) di atasnya — hasilnya blok
-        // putih penuh dengan tulisan nyaris tak kelihatan, persis laporan
-        // user (screenshot notifikasi 21 Agustus 2026). `bg-accentbg` adalah
-        // token DS v2 yang SAMA PERSIS dengan #F5F8FF secara visual di light
-        // mode (dari --accent-bg light: rgba(20,87,217,0.10)) tapi otomatis
-        // jadi tint biru gelap yang benar di dark mode (rgba(10,132,255,0.16)
-        // di atas surface gelap) — lihat styles/tailwind.css @theme inline.
-        belumDibaca && "bg-accentbg"
-      )}
+      data-belum={belumDibaca ? "true" : "false"}
+      className={cn("nt-item", compact && "nt-item-ringkas")}
     >
-      {belumDibaca && (
-        <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-accent" />
-      )}
-
-      {/* Titik biru penanda belum dibaca — sama alasan token di atas. */}
-      <span className="mt-1.5 flex w-2 shrink-0 justify-center" aria-hidden>
-        {belumDibaca && <span className="h-2 w-2 rounded-full bg-accent" />}
+      <span className={cn("nt-ubin", `nt-ubin-${wsKey in NOTIF_WORKSPACES ? wsKey : "system"}`, notif.priority === "critical" && "nt-ubin-kritis")} aria-hidden>
+        {notif.priority === "critical" ? <AlertTriangle size={17} strokeWidth={2.2} /> : <Ikon size={17} strokeWidth={2.1} />}
       </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className={cn("rounded-chip px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", ws.badge)}>
-            {ws.label}
-          </span>
-          {tipe && <span className="text-[10px] text-ink3">{tipe.label}</span>}
-
-          {/* Prioritas kritis: badge MERAH saja (#14). Kartunya sengaja TIDAK
-              dibuat merah seluruhnya — kalau seluruh kartu merah, daftar yang
-              berisi beberapa item kritis berubah jadi dinding merah dan
-              justru tidak ada yang menonjol. */}
-          {notif.priority === "critical" && (
-            <span className="inline-flex items-center gap-1 rounded-chip bg-redbg px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red">
-              <AlertTriangle size={9} /> Kritis
-            </span>
-          )}
-
-          {/* Perlu tindakan: badge amber (#13) */}
-          {notif.actionRequired && (
-            <span className="rounded-chip bg-orangebg px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange">
-              Perlu tindakan
-            </span>
-          )}
-
-          <time className="ml-auto shrink-0 text-[10px] text-ink3" dateTime={notif.createdAt}>
-            {relativeTime(notif.createdAt)}
-          </time>
-        </div>
-
-        <div className={cn("mt-1 truncate text-[13px] text-ink", belumDibaca ? "font-semibold" : "font-medium")}>
-          {notif.title}
-        </div>
-        <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-ink2">
-          {notif.message}
-        </p>
-
-        {!compact && (
-          <span className="mt-1.5 block truncate text-[10px] text-ink3">
-            {buildTargetUrl(notif)}
+      <span className="nt-isi">
+        <span className="nt-baris1">
+          <span className="nt-asal">{ws.label}{tipe ? ` · ${tipe.label}` : ""}</span>
+          <time className="nt-waktu" dateTime={notif.createdAt}>{relativeTime(notif.createdAt)}</time>
+          {belumDibaca && <span className="nt-titik" aria-hidden />}
+        </span>
+        <span className="nt-judul">{notif.title}</span>
+        {notif.message && <span className="nt-pesan">{notif.message}</span>}
+        {(notif.priority === "critical" || notif.actionRequired) && (
+          <span className="nt-chips">
+            {notif.priority === "critical" && <span className="nt-chip nt-chip-kritis">Kritis</span>}
+            {notif.actionRequired && <span className="nt-chip nt-chip-tindakan">Perlu tindakan</span>}
           </span>
         )}
-      </div>
+      </span>
     </button>
   );
 }

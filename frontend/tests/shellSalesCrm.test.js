@@ -43,11 +43,12 @@ test("Menu, urutan, badge, hak akses tidak disentuh: Layout hanya memetakan ikon
 test("Pencarian: kolom terlihat HANYA saat crmShell; tombol lama utuh untuk divisi lain; palette sama", () => {
   assert.ok(topbar.includes("{!crmShell && ("), "tombol lama tetap untuk divisi lain");
   assert.ok(topbar.includes('className="topbar-searchfield"') && topbar.includes('className="topbar-searchbtn"'));
-  assert.ok(topbar.includes("halaman={crmShell ? halaman : undefined}") && topbar.includes("onPilih={crmShell ?"));
+  // Spotlight (10 Nov 2026): palette sama untuk semua kerangka; pilihan dibuka di tab aktif saat crmShell, selain itu navigate.
+  assert.ok(topbar.includes("halamanSemua={halamanSemua}") && topbar.includes("onPilih={(h) => (crmShell ? openInActiveTab(h.to, { title: h.label }) : navigate(h.to))}"));
   assert.ok(topbar.includes('"⌘ K" : "Ctrl K"'), "pintasan sesuai platform");
-  // placeholder hanya menyebut yang didukung: halaman/menu
-  assert.ok(topbar.includes("Cari halaman atau menu…") && !/Cari pelanggan, order/.test(topbar.slice(topbar.indexOf("topbar-searchfield"))));
-  assert.ok(palette.includes('aktif ? "Cari halaman atau menu…" : "Cari pelanggan, percakapan, halaman…"'), "tanpa halaman: tampilan lama");
+  // placeholder menyebut yang kini didukung: halaman, pelanggan, order (data hanya untuk yang boleh membuka Sales CRM — lihat palette)
+  assert.ok(topbar.includes("Cari halaman, pelanggan, order…"));
+  assert.ok(palette.includes('bolehData ? "Cari halaman, pelanggan, nomor HP, order, chat…" : "Cari halaman atau menu…"'), "tanpa akses Sales CRM: hanya halaman");
 });
 
 test("Palette: daftar halaman = menu yang boleh dilihat (sumber sama dengan sidebar); Enter/panah/Esc", () => {

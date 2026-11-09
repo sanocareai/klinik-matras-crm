@@ -33,10 +33,11 @@
 // benar di dark mode karena tokennya ditukar per tema di tokens.css.
 export const NOTIF_WORKSPACES = {
   growth:    { label: "Sales CRM",  badge: "bg-blue-100 text-blue-700" },
-  bengkel:   { label: "Production", badge: "bg-blue-50 text-blue-600" },
-  warehouse: { label: "Warehouse",  badge: "bg-blue-200 text-blue-800" },
+  // Label Indonesia (10 Nov 2026) — sama dengan nama workspace di sidebar & Spotlight.
+  bengkel:   { label: "Produksi",   badge: "bg-blue-50 text-blue-600" },
+  warehouse: { label: "Gudang",     badge: "bg-blue-200 text-blue-800" },
   armada:    { label: "Delivery",   badge: "bg-blue-50 text-blue-500" },
-  system:    { label: "System",     badge: "bg-inset text-ink3" },
+  system:    { label: "Sistem",     badge: "bg-inset text-ink3" },
 };
 
 // ── Tipe notifikasi → ke mana klik membawanya ────────────────────────────

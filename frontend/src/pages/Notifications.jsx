@@ -85,7 +85,7 @@ export default function Notifications() {
     <PageContainer>
       <PageHeader
         title="Notifikasi"
-        subtitle="Kejadian dari seluruh workspace — terpisah dari Inbox percakapan pelanggan."
+        subtitle="Kejadian dari semua workspace. Chat pelanggan ada di Inbox."
         actions={
           <button
             type="button"
@@ -99,7 +99,7 @@ export default function Notifications() {
       />
 
       {/* ── Penyaring (#20) ─────────────────────────────────────────────── */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="nt-saring mb-4 flex flex-wrap items-center gap-2">
         <input
           type="search"
           value={cari}
@@ -136,43 +136,46 @@ export default function Notifications() {
       </div>
 
       {/* ── Tab ─────────────────────────────────────────────────────────── */}
-      <div role="tablist" aria-label="Saring notifikasi" className="mb-3 flex gap-1 border-b border-line pb-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div role="tablist" aria-label="Saring notifikasi" className="nt-segmen nt-segmen-halaman">
         {TABS.map((t) => (
           <button
             key={t.key}
             role="tab"
             aria-selected={tab === t.key}
+            data-aktif={tab === t.key ? "true" : "false"}
             onClick={() => setTab(t.key)}
-            className={cn(
-              "rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-              tab === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2"
-            )}
+            className="nt-segmen-btn"
           >
             {t.label}
           </button>
         ))}
-        <span className="ml-auto self-center text-[11.5px] text-ink3">
+      </div>
+        <span className="ml-auto self-center text-[12px] text-ink3">
           {hasil.length} notifikasi
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-card border border-border bg-surface">
+      {/* Redesain Apple (10 Nov 2026): kelompok = kartu membulat terpisah (gaya daftar iOS), baris sama dengan drawer. */}
+      <div className="nt-halaman">
         {hasil.length === 0 ? (
-          <EmptyState
-            icon={Bell}
-            title="Tidak ada notifikasi yang cocok"
-            description="Coba longgarkan penyaring atau kata kunci pencarian."
-          />
+          <div className="nt-kartu">
+            <EmptyState
+              icon={Bell}
+              title="Tidak ada notifikasi yang cocok"
+              description="Coba longgarkan penyaring atau kata kunci pencarian."
+            />
+          </div>
         ) : (
           ["new", "today", "earlier"].map((g) =>
             groups[g].length === 0 ? null : (
-              <section key={g}>
-                <h3 className="sticky top-0 z-[1] bg-inset px-4 py-1.5 text-[10px] font-bold uppercase tracking-wide text-ink3">
-                  {GROUP_LABELS[g]}
-                </h3>
-                {groups[g].map((n) => (
-                  <NotificationItem key={n.id} notif={n} onActivate={activate} />
-                ))}
+              <section key={g} className="nt-grup">
+                <h3 className="nt-grup-judul">{GROUP_LABELS[g]}</h3>
+                <div className="nt-kartu">
+                  {groups[g].map((n) => (
+                    <NotificationItem key={n.id} notif={n} onActivate={activate} />
+                  ))}
+                </div>
               </section>
             )
           )
