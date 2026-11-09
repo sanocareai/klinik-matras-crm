@@ -45,7 +45,8 @@ test("CSS Laporan: setiap aturan terpagari .crm-lap, tanpa font-family, tanpa !i
 test("Stylesheet diimpor dari Laporan.jsx (bukan main.jsx); wadah memakai .crm-dash + .crm-lap", () => {
   assert.match(halaman, /import "@\/styles\/sanss-crm-laporan\.css"/);
   assert.doesNotMatch(baca("src/main.jsx"), /sanss-crm-laporan/);
-  assert.match(halaman, /<PageContainer fluid className="crm-dash crm-lap">/);
+  // Marketing (redesain Apple 10 Nov 2026) menambah satu kelas pembatas gaya; tab lain tetap "crm-dash crm-lap".
+  assert.match(halaman, /<PageContainer fluid className=\{tab === "Marketing" \? "crm-dash crm-lap mk-ap-halaman" : "crm-dash crm-lap"\}>/);
 });
 
 test("Komponen bersama (KpiCard, ChartCard, LaporanSkeleton) TIDAK diubah; BarRow default = perilaku lama", () => {

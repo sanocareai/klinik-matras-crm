@@ -70,5 +70,50 @@ export function statusChat(b, rupiah) {
   return TAHAP[b.stage] || b.stage || "";
 }
 
+// ── TAMPILAN (redesain Apple, 10 Nov 2026) ── hanya teks dan format; tidak ada angka yang dihitung ulang.
+/** Kategori di bawah nama sumber. Sumber tanpa bukti asal tidak pernah disebut organik. */
+export const KATEGORI_SUMBER = Object.freeze({
+  META: "Iklan berbayar · Facebook & Instagram",
+  TIKTOK: "Iklan berbayar · TikTok",
+  GOOGLE: "Iklan berbayar · Google Ads",
+  WEBSITE: "Website · belum tentu organik",
+  INSTAGRAM: "Media sosial · masuk lewat website",
+  WHATSAPP: "Sumber belum diketahui",
+  DIMULAI_SALES: "Internal · chat dimulai tim sales",
+  LAINNYA: "Sumber bertag lain",
+});
+export const kategoriSumber = (id) => KATEGORI_SUMBER[id] || "Lainnya";
+
+/** Nama kelompok tampilan. Kunci = nama kelompok dari server (tidak diubah). */
+const NAMA_KELOMPOK = Object.freeze({ "Website dan organik": "Website & media sosial", "Tanpa jejak": "Sumber belum diketahui", "Dimulai internal": "Internal" });
+export const namaKelompok = (nama) => NAMA_KELOMPOK[nama] || nama;
+
+/** Saringan cepat tabel sumber. Hanya menyaring baris yang tampil; tidak membuat peringkat gabungan. */
+export const SARING_SUMBER = Object.freeze([
+  { id: "semua", label: "Semua sumber" },
+  { id: "berbayar", label: "Iklan berbayar" },
+  { id: "lain", label: "Tanpa biaya iklan" },
+]);
+export function saringSumber(baris, { saring = "semua", cari = "", sembunyikanKosong = false } = {}) {
+  const q = String(cari || "").trim().toLowerCase();
+  return (baris || []).filter((s) => {
+    if (saring === "berbayar" && s.kelompok !== "Iklan berbayar") return false;
+    if (saring === "lain" && s.kelompok === "Iklan berbayar") return false;
+    if (sembunyikanKosong && !(s.lead > 0)) return false;
+    if (q && !`${s.label || ""} ${s.id || ""} ${kategoriSumber(s.id)}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+/** Rupiah ringkas untuk kartu dan tabel: ≥ 1 juta jadi "Rp98,02 jt", ≥ 1 miliar "Rp1,25 M". null tetap "—" (bukan Rp0). Nilai penuh tetap dipakai di title. */
+export function rupiahRingkas(n) {
+  if (n == null || n === "" || Number.isNaN(Number(n))) return "—";
+  const v = Number(n); const a = Math.abs(v); const tanda = v < 0 ? "−" : "";
+  const f = (x) => x.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (a >= 1e9) return `${tanda}Rp${f(a / 1e9)} M`;
+  if (a >= 1e6) return `${tanda}Rp${f(a / 1e6)} jt`;
+  return `${tanda}Rp${Math.round(a).toLocaleString("id-ID")}`;
+}
+
 /** Keterangan sumber lama untuk tampilan; datanya tetap tersimpan apa adanya. */
 export const keteranganTampil = (d) => (typeof d === "string" && /^Kemungkinan TikTok\b/i.test(d) ? "Tanpa bukti sumber" : d);

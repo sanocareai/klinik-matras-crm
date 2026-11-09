@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import LogoSumber from "./LogoSumber.jsx";
+import Disclosure from "./marketing/Disclosure.jsx";
+import { kategoriSumber, rupiahRingkas } from "../kanalPakem.js";
 import { verifikasiLabel, angka, formatPersen, rupiah, selBiayaSumber, statusBiayaTeks, sementaraTeks, teksPengecualian, BUKTI_LABEL, DASAR_BIAYA_LABEL, PENYEBUT_LABEL, selBiaya } from "../akuisisiLogic.js";
 import { ringkasAsalBiaya, daftarPemilihan } from "../biayaIklanLogic.js";
 import { jalurRincian, LABEL_PELANGGAN, teksPeriode } from "../periodeLaporan.js";
@@ -41,18 +43,28 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
         <ChevronRight size={14} className="text-ink3" /><span className="text-ink3">Akuisisi</span><ChevronRight size={14} className="text-ink3" /><span className="font-semibold text-ink" aria-current="page">{s.label}</span>
       </nav>}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="mk-detail-kepala">
         <LogoSumber id={s.id} size={48} />
         <div className="min-w-0 flex-1">
-          <h2 className="text-[22px] font-semibold leading-tight text-ink">{s.label}</h2>
-          <p className="t-secondary text-[12.5px]">{BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"} · Periode lead masuk (WIB): <b>{periode?.ok ? teksPeriode(periode.dari, periode.sampai) : "—"}</b></p>
+          <h2 className="mk-detail-judul">{s.label}</h2>
+          <p className="mk-detail-sub">{kategoriSumber(s.id)} · {BUKTI_LABEL[s.buktiAtribusi?.jenis] || "Label CRM"} · lead masuk (WIB) <b>{periode?.ok ? teksPeriode(periode.dari, periode.sampai) : "—"}</b></p>
         </div>
         {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil (&lt; {s.ambangSampel} lead)</Badge>}
       </div>
 
-      {sisipanAtas}
-      {sisipanAtas && <h3 className="-mb-2 text-[15px] font-semibold text-ink">Ringkasan label CRM <span className="t-secondary text-[12.5px] font-normal">· basis berbeda dari atribusi campaign di atas — jangan dipertukarkan</span></h3>}
+      {/* Ringkasan sumber (label CRM): angka sama dengan baris tabel Performa sumber. */}
+      <dl className="mk-ringkas-sumber" data-testid="ringkas-sumber" aria-label={`Ringkasan ${s.label} (label CRM)`}>
+        <div><dt>Lead (termasuk spam)</dt><dd>{angka(s.lead)}</dd><span>{angka(s.leadSah)} sah · {angka(s.spam)} spam</span></div>
+        <div><dt>Customer ber-order</dt><dd>{angka(s.berOrder)}</dd><span>{formatPersen(s.konversiOrder?.nilai)} dari total lead</span></div>
+        <div><dt>Nilai order</dt><dd title={rupiah(s.uang?.nilaiOrderSaatIni)}>{rupiahRingkas(s.uang?.nilaiOrderSaatIni)}</dd><span>bukan uang diterima</span></div>
+        <div><dt>Uang diterima bersih</dt><dd title={rupiah(s.uang?.uangBersih)}>{rupiahRingkas(s.uang?.uangBersih)}</dd><span>ledger − refund</span></div>
+        <div><dt>Biaya iklan</dt><dd className={organik || spend.kosong ? "mk-redup" : undefined} title={organik ? "Tidak tersedia, bukan Rp0" : spend.teks}>{organik || spend.kosong ? "—" : rupiahRingkas(b.spend)}</dd><span>{organik ? "tanpa biaya iklan langsung" : spend.alasan || statusBiayaTeks(b.status)}</span></div>
+      </dl>
 
+      {sisipanAtas}
+
+      {(() => {
+        const rincian = (
       <div className="grid gap-3 md:grid-cols-2">
         <Bagian judul="Funnel label CRM: lead → lunas" tip="Customer unik. Lead = semua customer berlabel sumber ini yang dibuat di periode (spam ikut terhitung); lead sah = bukan spam/internal/B2B/karyawan. Ber-order ≠ sudah membayar.">
           <Baris k="Total lead label CRM (termasuk spam)" v={angka(s.lead)} sub={`${angka(s.leadSah)} sah · ${angka(s.spam)} spam (${formatPersen(s.spamPersen?.nilai)})`} tebal />
@@ -104,6 +116,12 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
           )}
         </Bagian>
       </div>
+        );
+        // Meta: tabel campaign/kreatif adalah isi utama; rincian label CRM (basis berbeda) dibuka bila perlu. Sumber lain: rincian ini isi utamanya.
+        return sisipanAtas
+          ? <Disclosure id="rincian-label" judul="Rincian label CRM, pembayaran, dan biaya" ringkas="Basis label CRM — berbeda dari atribusi campaign di atas; jangan dipertukarkan">{rincian}</Disclosure>
+          : rincian;
+      })()}
 
       <Bagian judul="Rincian lebih dalam" className="gap-2">
         <p className="text-[12.5px] text-ink2">{jalur.penjelasan}</p>

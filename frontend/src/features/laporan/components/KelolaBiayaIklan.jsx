@@ -91,7 +91,7 @@ export default function KelolaBiayaIklan({ open, onOpenChange, periode, hariIni,
   const G = form._sentuh ? v.galat : {};
   return (
     <Modal open={open} onOpenChange={onOpenChange} title="Kelola biaya iklan" description="Biaya tingkat SUMBER — tidak mengubah campaign, ad set, ad, atau budget Meta."
-      className="w-[780px]" footer={<button className="btn btn-ghost btn-sm" onClick={() => onOpenChange(false)}>Tutup</button>}>
+      className="mk-ap-portal w-[780px]" footer={<button className="btn btn-ghost btn-sm" onClick={() => onOpenChange(false)}>Tutup</button>}>
       <div className="flex flex-col gap-4 text-[12.5px] text-ink2">
         <div role="tablist" aria-label="Jenis input biaya" className="inline-flex w-full flex-wrap items-center gap-1 rounded-btn bg-inset p-0.5">
           {TAB.map((t) => (

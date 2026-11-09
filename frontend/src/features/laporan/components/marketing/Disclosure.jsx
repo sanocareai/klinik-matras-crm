@@ -10,7 +10,7 @@ export default function Disclosure({ id, judul, ringkas, bukaAwal = false, buka:
   const buka = terkendali ? bukaLuar : bukaLokal;
   const toggle = () => (terkendali ? onToggle?.(!buka) : setBukaLokal((v) => !v));
   return (
-    <Card className="flex flex-col !p-0" data-testid={`bagian-${id}`} id={`bagian-${id}`}>
+    <Card className="mk-disclosure flex flex-col !p-0" data-testid={`bagian-${id}`} id={`bagian-${id}`}>
       <button type="button" className="flex w-full items-center gap-2 px-4 py-3 text-left" aria-expanded={buka} aria-controls={`isi-${id}`} onClick={toggle}>
         {buka ? <ChevronDown size={16} className="shrink-0 text-ink3" /> : <ChevronRight size={16} className="shrink-0 text-ink3" />}
         <span className="min-w-0 flex-1">
