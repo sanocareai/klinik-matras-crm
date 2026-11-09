@@ -1,0 +1,13 @@
+frontend/src/components/Layout.jsx
+frontend/src/components/Topbar.jsx
+frontend/src/components/ui/command-palette.jsx
+frontend/src/features/notifications/NotificationDrawer.jsx
+frontend/src/features/notifications/NotificationItem.jsx
+frontend/src/features/notifications/notificationTypes.js
+frontend/src/lib/cariGlobal.js
+frontend/src/main.jsx
+frontend/src/pages/Notifications.jsx
+frontend/src/pages/Orders.jsx
+frontend/src/styles/sanss-cari.css
+frontend/tests/cariNotifApple.test.js
+frontend/tests/shellSalesCrm.test.js
