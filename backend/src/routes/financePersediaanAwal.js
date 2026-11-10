@@ -13,6 +13,7 @@
 //   POST /persediaan-awal/:id/balik              OWNER + PIN step-up + alasan — pembalikan resmi
 
 import express from "express";
+import { financeHppOrderRouter } from "./financeHppOrder.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
@@ -26,6 +27,8 @@ import {
 } from "../services/finance/persediaanAwal.js";
 
 export const financePersediaanAwalRouter = express.Router();
+// HPP per order (/hpp-order/*) ikut router Persediaan & HPP ini agar index.js (dipin rilis lain) tidak berubah. Rute HPP membawa requireAuth + izin sendiri.
+financePersediaanAwalRouter.use(financeHppOrderRouter);
 const baca = [requireAuth, requireAnyPermission(P.FINANCE_READ, P.INVENTORY_READ)];
 const tulis = [requireAuth, requireAnyPermission(P.FINANCE_POST, P.INVENTORY_WRITE)];
 
