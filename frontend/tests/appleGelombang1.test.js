@@ -30,7 +30,9 @@ test("Layout: kerangka baru hanya untuk Main Hub, Delivery, All Teams; pekerja l
 test("Main Hub: logika auto-skip & tujuan klik tidak berubah; angka hanya dari server; deskripsi panjang di ikon info", () => {
   const p = baca("pages/Portal.jsx");
   assert.match(p, /landingPathFor\(\{ roles: rolesOf\(/); assert.match(p, /if \(list\.length === 1\)/); assert.match(p, /api\.getPortalSummary\(\)/);
-  assert.match(p, /onOpen=\{\(p\) => navigate\(p\.path\)\}/, "klik kartu langsung ke halaman kerja");
+  // D-200: kartu "hub" ber-path URL absolut (HUB /workspace/sso/start) butuh navigasi penuh; path relatif TETAP navigate(path).
+  assert.match(p, /onOpen=\{\(p\) => openPortal\(p\.path, navigate\)\}/, "klik kartu langsung ke halaman kerja");
+  assert.match(p, /function openPortal\(path, navigate\) \{\n  if \(\/\^https\?:\\\/\\\/\/\.test\(path\)\) \{\n    window\.location\.assign\(path\);\n    return;\n  \}\n  navigate\(path\);\n\}/, "path relatif tetap lewat navigate()");
   assert.match(p, /info=\{portal\.description\}/); assert.doesNotMatch(p, /HeroArt|PortalHero|WORKSPACE_ART/);
   assert.match(p, /\{stat \? \(/); assert.match(p, /Buka workspace/, "tanpa angka = 'Buka workspace', bukan angka karangan");
 });

@@ -3,15 +3,21 @@ import { AlertTriangle, CalendarClock, CheckCircle2, ListChecks, Loader2, Users2
 import { api } from "../../api.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { Ubin } from "@/components/apple/Apple.jsx";
 import { cn } from "@/lib/utils.js";
 
-// Main Hub (Okt 2026, perubahan arah Owner) — "Tugas Saya" / "Pantauan
-// Leader" / "Hasil Meeting" di Portal.jsx. SEMUA data dari
-// GET /hub/summary/me dan GET /hub/summary/leaders (server-to-server di
-// baliknya; lihat backend/src/services/hubSummary.js) — tidak ada angka
-// karangan di sini. Setiap kartu MANDIRI (loading/kosong/error sendiri)
-// supaya HUB yang mati/lambat tidak pernah menjatuhkan Portal secara
-// keseluruhan — hanya kartu itu yang menunjukkan status tidak tersedia.
+// Main Hub — "Tugas Saya" / "Pantauan Leader" / "Hasil Meeting" di
+// Portal.jsx. SEMUA data dari GET /hub/summary/me dan
+// GET /hub/summary/leaders (server-to-server di baliknya; lihat
+// backend/src/services/hubSummary.js) — tidak ada angka karangan di sini.
+// Setiap kartu MANDIRI (loading/kosong/error sendiri) supaya HUB yang
+// mati/lambat tidak pernah menjatuhkan Portal secara keseluruhan — hanya
+// kartu itu yang menunjukkan status tidak tersedia.
+//
+// Gaya visual: bahasa Apple bersama (components/apple/Apple.jsx,
+// styles/sanss-apple.css, di-porting dari Gelombang 1 — lihat catatan di
+// Portal.jsx) — panel `.ap-panel` dengan kepala ber-Ubin, bukan Card DS v2
+// polos seperti versi sebelumnya.
 
 function formatDueDate(iso) {
   if (!iso) return null;
@@ -35,8 +41,12 @@ function PriorityBadge({ priority }) {
  *  /sso/start?next=...) — BUKAN navigasi langsung ke /workspace/..., supaya
  *  sesi HUB terbentuk/diperpanjang dengan benar walau pengguna belum pernah
  *  (atau sudah lama tidak) membuka Task & Meeting sesi ini. Navigasi PENUH
- *  (window.location), bukan React Router — ini lintas origin secara logis
- *  (lihat openPortal() di Portal.jsx). */
+ *  (window.location), bukan React Router: di topologi same-domain yang
+ *  disetujui (HUB di-mount di /workspace, origin SAMA dengan SANSS — lihat
+ *  docs/HUB-SSO.md "Same-domain embedding"), ini BUKAN lintas origin, tapi
+ *  tetap bukan rute yang dikenal React Router SPA ini — HUB adalah aplikasi
+ *  server terpisah di balik proxy yang sama, hanya dijangkau lewat browser
+ *  sungguhan (lihat openPortal() di Portal.jsx, pola yang sama). */
 function openHubDestination(hubPath, destination) {
   if (!hubPath) return;
   window.location.assign(`${hubPath}?next=${encodeURIComponent(destination)}`);
@@ -44,13 +54,12 @@ function openHubDestination(hubPath, destination) {
 
 function TaskRow({ task, hubPath }) {
   return (
-    <button
-      type="button"
+    <li
       onClick={() => openHubDestination(hubPath, `/projects/${task.projectId}/board?task=${task.id}`)}
-      className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint"
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-ink">{task.title}</p>
+        <p className="truncate text-[12.5px] font-semibold text-ink">{task.title}</p>
         <p className="mt-0.5 truncate text-[11px] text-ink3">{task.projectName}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -58,26 +67,25 @@ function TaskRow({ task, hubPath }) {
         {task.dueDate && <span className={cn("text-[11px]", task.overdue ? "font-semibold text-red" : "text-ink3")}>{formatDueDate(task.dueDate)}</span>}
         <PriorityBadge priority={task.priority} />
       </div>
-    </button>
+    </li>
   );
 }
 
 function MeetingRow({ meeting, hubPath }) {
   return (
-    <button
-      type="button"
+    <li
       onClick={() => openHubDestination(hubPath, `/meetings/${meeting.id}`)}
-      className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint"
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-ink">{meeting.title}</p>
+        <p className="truncate text-[12.5px] font-semibold text-ink">{meeting.title}</p>
         <p className="mt-0.5 text-[11px] text-ink3">{formatHeldAt(meeting.heldAt)}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink3">
         <span>{meeting.decisionCount} keputusan</span>
         {meeting.myOpenActionItemCount > 0 && <Badge variant="orange">{meeting.myOpenActionItemCount} tindak lanjut</Badge>}
       </div>
-    </button>
+    </li>
   );
 }
 
@@ -100,7 +108,8 @@ function useOwnSummary() {
       })
       .catch((err) => {
         if (batal) return;
-        setState(err.status === 503 ? "unavailable" : err.status === 403 ? "no-access" : "error");
+        // 404 = HUB_SSO_ENABLED mati (semua /api/hub/* 404): sembunyikan, sama seperti 403.
+        setState(err.status === 503 ? "unavailable" : err.status === 403 || err.status === 404 ? "no-access" : "error");
       });
     return () => {
       batal = true;
@@ -110,12 +119,20 @@ function useOwnSummary() {
   return { state, data };
 }
 
-function CardShell({ title, action, children }) {
+/** Panel ber-gaya Apple (.ap-panel, kepala ber-Ubin + hitungan) — pengganti
+ *  Card DS v2 polos. `nada` = palet Ubin (lihat styles/sanss-apple.css). */
+function ApplePanel({ nada, Icon, title, count, action, children }) {
   return (
-    <section className="flex min-h-[220px] flex-col rounded-card border border-line bg-surface p-4 shadow-card">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[15px] font-bold tracking-[-.01em] text-ink">{title}</h3>
-        {action}
+    <section className="ap-panel flex min-h-[220px] flex-col overflow-hidden border-0 !p-0">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+        <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
+          <Ubin nada={nada} ukuran={26}>
+            <Icon size={14} strokeWidth={1.9} />
+          </Ubin>
+          {title}
+        </h3>
+        {count > 0 && <span className="rounded-full bg-accentbg px-2.5 py-0.5 text-[12px] font-bold text-accent">{count}</span>}
+        {action && <div className="ml-auto">{action}</div>}
       </div>
       <div className="flex-1">{children}</div>
     </section>
@@ -124,7 +141,7 @@ function CardShell({ title, action, children }) {
 
 function LoadingRow({ label }) {
   return (
-    <div className="flex items-center gap-2 py-6 text-ink3">
+    <div className="flex items-center gap-2 px-4 py-6 text-ink3">
       <Loader2 className="h-4 w-4 animate-spin" />
       <span className="text-[13px]">{label}</span>
     </div>
@@ -134,10 +151,14 @@ function LoadingRow({ label }) {
 export function TugasSayaCard({ hubPath, own }) {
   const { state, data } = own;
   if (state === "no-access") return null;
+  const items = state === "ok" && data.connected ? data.summary.tasks.items : [];
 
   return (
-    <CardShell
+    <ApplePanel
+      nada="biru"
+      Icon={ListChecks}
       title="Tugas Saya"
+      count={items.length}
       action={
         hubPath && state === "ok" && data?.connected ? (
           <button type="button" onClick={() => openHubDestination(hubPath, "/my-tasks")} className="text-[11px] font-semibold text-accent hover:underline">
@@ -152,33 +173,34 @@ export function TugasSayaCard({ hubPath, own }) {
       {state === "ok" && !data.connected && (
         <EmptyState compact icon={ListChecks} title="Belum terhubung ke Task & Meeting" description="Buka Task & Meeting sekali untuk mulai mengelola tugas Anda di sini." />
       )}
-      {state === "ok" && data.connected && data.summary.tasks.items.length === 0 && (
-        <EmptyState compact icon={CheckCircle2} title="Tidak ada tugas aktif" description="Semua tugas Anda selesai." />
-      )}
-      {state === "ok" && data.connected && data.summary.tasks.items.length > 0 && (
+      {state === "ok" && data.connected && items.length === 0 && <EmptyState compact icon={CheckCircle2} title="Tidak ada tugas aktif" description="Semua tugas Anda selesai." />}
+      {state === "ok" && data.connected && items.length > 0 && (
         <>
-          <div className="mb-1.5 flex items-center gap-3 px-2 text-[11px] text-ink3">
-            <span>{data.summary.tasks.total} tugas aktif</span>
-            {data.summary.tasks.overdueCount > 0 && <span className="font-semibold text-red">{data.summary.tasks.overdueCount} terlambat</span>}
-          </div>
-          <div className="flex flex-col gap-0.5">
-            {data.summary.tasks.items.map((t) => (
+          {data.summary.tasks.overdueCount > 0 && (
+            <p className="border-b border-line px-4 py-1.5 text-[11px] font-semibold text-red">{data.summary.tasks.overdueCount} terlambat</p>
+          )}
+          <ul className="divide-y divide-line">
+            {items.map((t) => (
               <TaskRow key={t.id} task={t} hubPath={hubPath} />
             ))}
-          </div>
+          </ul>
         </>
       )}
-    </CardShell>
+    </ApplePanel>
   );
 }
 
 export function HasilMeetingCard({ hubPath, own }) {
   const { state, data } = own;
   if (state === "no-access") return null;
+  const items = state === "ok" && data.connected ? data.summary.meetings.items : [];
 
   return (
-    <CardShell
+    <ApplePanel
+      nada="ungu"
+      Icon={CalendarClock}
       title="Hasil Meeting"
+      count={items.length}
       action={
         hubPath && state === "ok" && data?.connected ? (
           <button type="button" onClick={() => openHubDestination(hubPath, "/meetings")} className="text-[11px] font-semibold text-accent hover:underline">
@@ -193,17 +215,15 @@ export function HasilMeetingCard({ hubPath, own }) {
       {state === "ok" && !data.connected && (
         <EmptyState compact icon={CalendarClock} title="Belum terhubung ke Task & Meeting" description="Buka Task & Meeting sekali untuk melihat rapat Anda di sini." />
       )}
-      {state === "ok" && data.connected && data.summary.meetings.items.length === 0 && (
-        <EmptyState compact icon={CalendarClock} title="Belum ada meeting" description="Meeting yang Anda ikuti akan muncul di sini." />
-      )}
-      {state === "ok" && data.connected && data.summary.meetings.items.length > 0 && (
-        <div className="flex flex-col gap-0.5">
-          {data.summary.meetings.items.map((m) => (
+      {state === "ok" && data.connected && items.length === 0 && <EmptyState compact icon={CalendarClock} title="Belum ada meeting" description="Meeting yang Anda ikuti akan muncul di sini." />}
+      {state === "ok" && data.connected && items.length > 0 && (
+        <ul className="divide-y divide-line">
+          {items.map((m) => (
             <MeetingRow key={m.id} meeting={m} hubPath={hubPath} />
           ))}
-        </div>
+        </ul>
       )}
-    </CardShell>
+    </ApplePanel>
   );
 }
 
@@ -227,7 +247,8 @@ export function PantauanLeaderCard({ hubPath }) {
       })
       .catch((err) => {
         if (batal) return;
-        setState(err.status === 503 ? "unavailable" : err.status === 403 ? "no-access" : "error");
+        // 404 = HUB_SSO_ENABLED mati (semua /api/hub/* 404): sembunyikan, sama seperti 403.
+        setState(err.status === 503 ? "unavailable" : err.status === 403 || err.status === 404 ? "no-access" : "error");
       });
     return () => {
       batal = true;
@@ -237,7 +258,7 @@ export function PantauanLeaderCard({ hubPath }) {
   if (state === "no-access") return null;
 
   return (
-    <CardShell title="Pantauan Leader">
+    <ApplePanel nada="jingga" Icon={Users2} title="Pantauan Leader" count={state === "ok" ? leaders?.length ?? 0 : 0}>
       {state === "loading" && <LoadingRow label="Memuat pantauan leader…" />}
       {state === "unavailable" && <EmptyState compact icon={AlertTriangle} title="Task & Meeting tidak tersedia" description="Coba lagi sebentar lagi." />}
       {state === "error" && <EmptyState compact icon={AlertTriangle} title="Gagal memuat Pantauan Leader" description="Terjadi kesalahan. Muat ulang halaman." />}
@@ -250,9 +271,9 @@ export function PantauanLeaderCard({ hubPath }) {
         />
       )}
       {state === "ok" && leaders.length > 0 && (
-        <div className="flex flex-col divide-y divide-line">
+        <div className="flex flex-col divide-y divide-line px-4">
           {leaders.map((l) => (
-            <div key={l.userId} className="py-2.5 first:pt-0 last:pb-0">
+            <div key={l.userId} className="py-2.5 first:pt-2.5 last:pb-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-[13px] font-semibold text-ink">{l.name || "(tanpa nama)"}</p>
@@ -268,17 +289,17 @@ export function PantauanLeaderCard({ hubPath }) {
                 )}
               </div>
               {l.connected && l.summary.tasks.items.length > 0 && (
-                <div className="mt-1.5 flex flex-col gap-0.5">
+                <ul className="-mx-4 mt-1.5 flex flex-col">
                   {l.summary.tasks.items.slice(0, 3).map((t) => (
                     <TaskRow key={t.id} task={t} hubPath={hubPath} />
                   ))}
-                </div>
+                </ul>
               )}
             </div>
           ))}
         </div>
       )}
-    </CardShell>
+    </ApplePanel>
   );
 }
 

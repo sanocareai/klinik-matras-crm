@@ -404,7 +404,7 @@ karena masuk wajib dimulai dari situ (HUB membuat `state` di sana).
 
 ## Data dan audit
 
-Tabel `hub_handoffs` (migrasi aditif `20261227090000_hub_handoff_sso`,
+Tabel `hub_handoffs` (migrasi aditif `20261231170000_hub_handoff_sso`,
 gabungan tahap 3+4 — forward-port ke `main`, lihat catatan identitas migrasi
 baru di commit yang menambahkannya): `code_hash` (SHA-256, unik), `user_id`
 (FK `User`, cascade), `destination`, `state_hash` (nullable — SHA-256 hex
