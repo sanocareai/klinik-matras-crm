@@ -25,8 +25,9 @@ dcp() { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker c
 psql_live() { docker exec -i "$PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
 bebas_kb() { df -Pk "$HOME" | awk 'NR==2{print $4}'; }
 SKEMA_MD5_KOSONG="d41d8cd98f00b204e9800998ecf8427e"; SKEMA_MIN_BARIS="${SKEMA_MIN_BARIS:-50}"
+# Baris CHECK dan baris INDEKS PARSIAL (CREATE ... INDEX ... WHERE): pg_dump merender ulang cast/kurung daftar IN sesudah restore (mis. ARRAY[..]::text[] vs ARRAY[(..)::text]) — makna sama.
 skema_norm() {
-  tr -d '\r' | sed -E '/^--/d; /^[[:space:]]*$/d; /^.?(un)?restrict [A-Za-z0-9]+$/d; s/,$//' | sed -E '/CHECK/{
+  tr -d '\r' | sed -E '/^--/d; /^[[:space:]]*$/d; /^.?(un)?restrict [A-Za-z0-9]+$/d; s/,$//' | sed -E '/CHECK|^CREATE (UNIQUE )?INDEX .* WHERE /{
     s/::character varying(\([0-9]+\))?(\[\])?//g
     s/::text(\[\])?//g
     :a
