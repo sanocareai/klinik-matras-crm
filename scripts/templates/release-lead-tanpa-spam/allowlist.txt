@@ -1,0 +1,8 @@
+frontend/src/features/laporan/components/marketing/RingkasanMarketing.jsx
+frontend/src/features/laporan/components/marketing/TabelSumber.jsx
+frontend/src/features/laporan/marketingLogic.js
+frontend/src/pages/Dashboard.jsx
+frontend/src/styles/sanss-mk-apple.css
+frontend/tests/laporanRedesignMarketing.test.js
+frontend/tests/leadTanpaSpam.test.js
+frontend/tests/marketingLogic.test.js
