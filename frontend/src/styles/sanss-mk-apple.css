@@ -126,7 +126,14 @@
 /* ── KPI (biru · periwinkle · lavender · lime) ───────────────────────────── */
 .mk-ap .mk-kpi-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
 @container laptab (min-width: 600px) { .mk-ap .mk-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container laptab (min-width: 1120px) { .mk-ap .mk-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* 5 kartu (sejak "Lead tanpa spam", 10 Nov 2026): 2 kolom → kartu terakhir selebar baris; ≥1180px satu baris berlima dengan angka sedikit lebih kecil. */
+@container laptab (min-width: 600px) and (max-width: 1179.98px) { .mk-ap .mk-kpi-grid > .mk-kpi:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+@container laptab (min-width: 1180px) {
+  .mk-ap .mk-kpi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .mk-ap .mk-kpi-grid .mk-kpi { gap: 12px; padding: 16px 16px; }
+  .mk-ap .mk-kpi-grid .mk-kpi-ikon { width: 40px; height: 40px; border-radius: 12px; }
+  .mk-ap .mk-kpi-grid .mk-kpi-nilai { font-size: 26px; }
+}
 .mk-ap .mk-kpi {
   --k-bg: #3965FA; --k-ink: #fff; --k-sub: rgba(255, 255, 255, 0.82); --k-ubin: rgba(255, 255, 255, 0.2); --k-ubin-ink: #fff;
   position: relative; display: flex; align-items: flex-start; gap: 14px; min-width: 0; min-height: 112px; padding: 18px 20px; overflow: hidden; isolation: isolate;
@@ -137,6 +144,8 @@
 .mk-ap .mk-kpi[data-nada="periwinkle"] { --k-bg: #99B7FC; --k-ink: #0F1F4D; --k-sub: rgba(15, 31, 77, 0.72); --k-ubin: rgba(255, 255, 255, 0.72); --k-ubin-ink: #2F57E0; }
 .mk-ap .mk-kpi[data-nada="lavender"] { --k-bg: #E9EBFF; --k-ink: #1D1B3F; --k-sub: rgba(29, 27, 63, 0.66); --k-ubin: #fff; --k-ubin-ink: #5B4FE0; box-shadow: 0 14px 28px -22px rgba(91, 79, 224, 0.45); }
 .mk-ap .mk-kpi[data-nada="lime"] { --k-bg: #E0FFB7; --k-ink: #1B2808; --k-sub: rgba(27, 40, 8, 0.7); --k-ubin: rgba(255, 255, 255, 0.78); --k-ubin-ink: #3E7A00; box-shadow: 0 14px 28px -22px rgba(90, 140, 0, 0.45); }
+.mk-ap .mk-kpi[data-nada="langit"] { --k-bg: #D7ECFF; --k-ink: #0B2A4A; --k-sub: rgba(11, 42, 74, 0.7); --k-ubin: rgba(255, 255, 255, 0.8); --k-ubin-ink: #1F6FD1; box-shadow: 0 14px 28px -22px rgba(31, 111, 209, 0.45); }
+:root[data-theme="dark"] .mk-ap .mk-kpi[data-nada="langit"] { --k-bg: #17365A; --k-ink: #E6F2FF; --k-sub: rgba(230, 242, 255, 0.72); --k-ubin: rgba(255, 255, 255, 0.12); --k-ubin-ink: #9CCBFF; }
 :root[data-theme="dark"] .mk-ap .mk-kpi[data-nada="biru"] { --k-bg: linear-gradient(140deg, #3D66F2 0%, #2346C7 100%); }
 :root[data-theme="dark"] .mk-ap .mk-kpi[data-nada="periwinkle"] { --k-bg: #263A7A; --k-ink: #EEF2FF; --k-sub: rgba(238, 242, 255, 0.72); --k-ubin: rgba(255, 255, 255, 0.12); --k-ubin-ink: #C9D6FF; }
 :root[data-theme="dark"] .mk-ap .mk-kpi[data-nada="lavender"] { --k-bg: #2E2A57; --k-ink: #F1EFFF; --k-sub: rgba(241, 239, 255, 0.7); --k-ubin: rgba(255, 255, 255, 0.1); --k-ubin-ink: #C8C1FF; }

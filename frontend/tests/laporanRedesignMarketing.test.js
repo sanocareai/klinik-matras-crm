@@ -24,7 +24,7 @@ const cssLama = baca("src/styles/sanss-crm-laporan.css").replace(/\/\*[\s\S]*?\*
 const css = baca("src/styles/sanss-mk-apple.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
 test("4 KPI: Total lead (termasuk spam), Customer ber-order, Nilai order (bukan uang diterima), Uang diterima bersih (+ cakupan pembayaran); tooltip dari kartuRingkas", () => {
-  for (const f of ['id: "lead"', 'id: "berOrder"', 'id: "nilai"', 'id: "uang"', "termasuk spam", "bukan uang diterima", "cakupan pembayaran", "tip: k.lead.tip", "tip: k.uang.tip"]) assert.ok(ring.includes(f), f);
+  for (const f of ['id: "lead"', 'id: "berOrder"', 'id: "nilai"', 'id: "uang"', 'id: "leadTanpaSpam"', "sama dengan New Leads Dashboard", "termasuk ${angka(t.spam)} spam", "bukan uang diterima", "cakupan pembayaran", "tip: k.lead.tip", "tip: k.uang.tip"]) assert.ok(ring.includes(f), f);
   const lap = { total: { lead: 100, spam: 8, leadSah: 92, berOrder: 12, lunas: 3, nilaiOrderSaatIni: 1, uangBersih: 1, berbayar: { sumber: ["META"], lengkap: false, belumLengkap: [], spend: null, cpa: null, alasanNull: "SPEND_TIDAK_LENGKAP_PADA_SUMBER_WAJIB" } }, status: { ledger: { orderEligible: 10, orderBerLedger: 8, persen: 80 } } };
   const k = Object.fromEntries(kartuRingkas(lap).map((c) => [c.id, c]));
   assert.equal(k.biaya.nilai, "—"); assert.equal(k.biaya.kosong, true, "biaya tidak lengkap = kosong, bukan Rp0");
@@ -58,8 +58,8 @@ test("Tren lead: seri, definisi, dan sumber data lama dipertahankan", () => {
 });
 
 test("Performa sumber: kolom awal hasil→biaya, kolom lain lewat pilihan; kelompok tetap terpisah; fitur lama dipertahankan", () => {
-  assert.deepEqual([...KOLOM_AWAL_SUMBER], ["lead", "berOrder", "nilai", "uang", "spend"]);
-  assert.deepEqual(kolomPilihan("ringkas", null).map((k) => k.id), ["lead", "berOrder", "nilai", "uang", "spend"]);
+  assert.deepEqual([...KOLOM_AWAL_SUMBER], ["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
+  assert.deepEqual(kolomPilihan("ringkas", null).map((k) => k.id), ["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
   assert.equal(kolomPilihan("lengkap", ["lead"]).length, KOLOM_SUMBER.length);
   assert.deepEqual(kolomPilihan("ringkas", ["cpa", "lead"]).map((k) => k.id), ["lead", "cpa"], "urutan mengikuti KOLOM_SUMBER");
   assert.deepEqual(kolomPilihan("ringkas", ["tidak-ada"]).map((k) => k.id), [...KOLOM_AWAL_SUMBER]);

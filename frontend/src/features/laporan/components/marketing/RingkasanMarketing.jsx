@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Layers, Loader2, ShoppingCart, Users, Wallet } from "lucide-react";
+import { Layers, Loader2, ShoppingCart, UserCheck, Users, Wallet } from "lucide-react";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { formatDuration } from "@/utils/format.js";
-import { formatPersen, rupiah } from "../../akuisisiLogic.js";
+import { angka, formatPersen, rupiah } from "../../akuisisiLogic.js";
 import { kartuRingkas, kualitasData } from "../../marketingLogic.js";
 import { rupiahRingkas } from "../../kanalPakem.js";
 import TrenLeadChart from "./TrenLeadChart.jsx";
@@ -23,8 +23,8 @@ function ringkasPola(traffic) {
   return [jam ? `jam tersibuk ${String(jam.jam).padStart(2, "0")}:00` : null, traffic.avgResponseMinutes != null ? `respons rata-rata ${formatDuration(traffic.avgResponseMinutes)}` : "respons belum ada data", `${anomali} hari tidak normal`].filter(Boolean).join(" · ");
 }
 
-const IKON = { lead: Users, berOrder: ShoppingCart, nilai: Layers, uang: Wallet };
-const NADA = { lead: "biru", berOrder: "periwinkle", nilai: "lavender", uang: "lime" };
+const IKON = { lead: Users, leadTanpaSpam: UserCheck, berOrder: ShoppingCart, nilai: Layers, uang: Wallet };
+const NADA = { lead: "biru", leadTanpaSpam: "langit", berOrder: "periwinkle", nilai: "lavender", uang: "lime" };
 
 function KartuKpi({ id, label, nilai, judulPenuh, sub, tip }) {
   const Ikon = IKON[id];
@@ -53,7 +53,9 @@ export default function RingkasanMarketing({ lap, iklan, iklanGalat, traffic, me
   const cakupan = l && l.orderEligible > 0 ? `cakupan pembayaran ${formatPersen(l.persen)}` : null;
 
   const kpi = [
-    k.lead && { id: "lead", label: "Total lead", nilai: k.lead.nilai, sub: `termasuk spam · ${k.lead.sub}`, tip: k.lead.tip },
+    k.lead && { id: "lead", label: "Total lead", nilai: k.lead.nilai, sub: `termasuk ${angka(t.spam)} spam`, tip: k.lead.tip },
+    // Sama dengan "New Leads" di Dashboard Sales CRM (permintaan 10 Nov 2026: dua angka lead dulu tampak tidak cocok).
+    k.leadTanpaSpam && { id: "leadTanpaSpam", label: "Lead tanpa spam", nilai: k.leadTanpaSpam.nilai, sub: `${k.leadTanpaSpam.sub} · sama dengan New Leads Dashboard`, tip: k.leadTanpaSpam.tip },
     k.berOrder && { id: "berOrder", label: "Customer ber-order", nilai: k.berOrder.nilai, sub: k.berOrder.sub === "—" ? "dari kohort lead periode ini" : k.berOrder.sub, tip: k.berOrder.tip },
     k.nilai && { id: "nilai", label: "Nilai order", nilai: rupiahRingkas(t.nilaiOrderSaatIni), judulPenuh: rupiah(t.nilaiOrderSaatIni), sub: "kohort lead · bukan uang diterima", tip: k.nilai.tip },
     k.uang && { id: "uang", label: "Uang diterima bersih", nilai: rupiahRingkas(t.uangBersih), judulPenuh: rupiah(t.uangBersih), sub: ["ledger − refund", cakupan].filter(Boolean).join(" · "), tip: k.uang.tip },

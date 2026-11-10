@@ -100,7 +100,7 @@ export function jejakMeta(jalur, grup) {
 // Kolom utama selalu tampil di desktop; tambahan lewat pilihan kolom (?kolom=lengkap). Mobile memakai kartu (ringkas + detail yang dapat dibuka).
 // Kolom UTAMA (urutan dari hasil ke biaya, mudah dibandingkan): sumber, total lead, ber-order, lunas, konversi ber-order, nilai order, uang diterima bersih, biaya iklan, CPA lunas. Sisanya (spam, membayar, konversi non-spam, ROAS) lewat "Kolom lengkap" (?kolom=lengkap). Semua ukuran memakai tabel yang digulir di dalam panel (kolom Sumber menempel).
 export const KOLOM_SUMBER = Object.freeze([
-  { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "prospek", label: "Prospek eksplisit", utama: true }, { id: "berOrder", label: "Customer ber-order", utama: true }, { id: "lunas", label: "Customer lunas", utama: true },
+  { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "leadTanpaSpam", label: "Lead tanpa spam", utama: true }, { id: "prospek", label: "Prospek eksplisit", utama: true }, { id: "berOrder", label: "Customer ber-order", utama: true }, { id: "lunas", label: "Customer lunas", utama: true },
   { id: "konversi", label: "Konversi ber-order", utama: true }, { id: "nilai", label: "Nilai order", utama: true }, { id: "uang", label: "Uang diterima bersih", utama: true },
   { id: "spend", label: "Biaya iklan", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
   { id: "prospekLanjut", label: "Prospek atau lanjut (rincian)", utama: false }, { id: "biayaProspek", label: "Biaya / prospek eksplisit", utama: false }, { id: "spam", label: "Spam", utama: false }, { id: "membayar", label: "Membayar", utama: false }, { id: "konversiNonSpam", label: "Konversi non-spam", utama: false },
@@ -109,7 +109,15 @@ export const KOLOM_SUMBER = Object.freeze([
 export const MODE_KOLOM = Object.freeze(["ringkas", "lengkap"]);
 export const kolomTampil = (mode) => KOLOM_SUMBER.filter((k) => k.utama || mode === "lengkap");
 /** Kolom awal tabel Performa sumber (redesain Apple). Kolom lain dibuka lewat pilihan kolom; urutan selalu mengikuti KOLOM_SUMBER. */
-export const KOLOM_AWAL_SUMBER = Object.freeze(["lead", "berOrder", "nilai", "uang", "spend"]);
+export const KOLOM_AWAL_SUMBER = Object.freeze(["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
+/** Lead tanpa spam = total lead − lead bertanda SPAM (rumus sama dengan rekonLead). Definisinya sama dengan "New Leads" di Dashboard Sales CRM
+ *  (customer baru di periode, SPAM dan label B2B/penjualan karyawan tidak dihitung; staf internal tetap dihitung). null bila total lead tidak ada. */
+export const leadTanpaSpam = (x) => (x?.lead == null ? null : x.lead - (x.spam ?? 0));
+/** Pilihan kolom tersimpan dari versi sebelum kolom "Lead tanpa spam" ada: sisipkan kolom itu sekali bila "Total lead" dipilih. */
+export function migrasiPilihanKolom(pilihan) {
+  if (!Array.isArray(pilihan)) return pilihan;
+  return pilihan.includes("lead") && !pilihan.includes("leadTanpaSpam") ? [...pilihan, "leadTanpaSpam"] : pilihan;
+}
 export function kolomPilihan(mode, pilihan) {
   if (mode === "lengkap") return KOLOM_SUMBER;
   const set = new Set(Array.isArray(pilihan) && pilihan.some((id) => KOLOM_SUMBER.some((k) => k.id === id)) ? pilihan : KOLOM_AWAL_SUMBER);
@@ -132,6 +140,7 @@ export function kartuRingkas(lap) {
   const spend = selTotalBerbayar(bb, "spend"); const rb = ringkasBiayaBerbayar(lap);
   return [
     { id: "lead", judul: "Total lead (termasuk spam)", nilai: angka(t.lead), sub: `${angka(t.leadSah)} sah · ${angka(t.spam)} spam`, tip: "Customer baru dibuat di periode, semua sumber pemasaran. Spam ikut terhitung (sama dengan penyebut konversi utama); lead sah = bukan spam/staf/karyawan." },
+    { id: "leadTanpaSpam", judul: "Lead tanpa spam", nilai: angka(leadTanpaSpam(t)), sub: `${angka(t.spam)} spam dikeluarkan dari ${angka(t.lead)} lead`, tip: "Total lead dikurangi lead yang ditandai SPAM. Definisinya sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama (B2B/penjualan karyawan juga tidak dihitung; staf internal tetap dihitung, sama seperti Dashboard)." },
     { id: "berOrder", judul: "Customer ber-order", nilai: angka(t.berOrder), sub: konversiTotal(t).nilai == null ? "—" : `${formatPersen(konversiTotal(t).nilai)} dari total lead (termasuk spam)`, tip: "Customer unik dengan ≥ 1 order eligible. Konversi utama = ber-order ÷ total lead (termasuk spam); konversi non-spam ada di tabel (kolom lengkap). Ber-order BUKAN berarti sudah membayar." },
     { id: "lunas", judul: "Customer lunas terbukti ledger", nilai: angka(t.lunas), sub: "customer lunas terbukti ledger", catatan: bayar.lengkap ? null : teksCakupanLedger(lap), tip: "Customer unik yang ledger pembayarannya (setelah refund disetujui) menutup seluruh tagihan — angka hitung, bukan perkiraan. Cakupan ledger dinilai terpisah (catatan di bawah angka). Bukan status LUNAS di CRM." },
     { id: "nilai", judul: "Nilai order", nilai: rupiah(t.nilaiOrderSaatIni), sub: "kohort lead · nilai saat ini", tip: "Σ nilai order eligible kohort lead periode ini. Bukan uang diterima dan bukan laba." },

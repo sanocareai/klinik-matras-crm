@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, CircleSlash, Columns3, Info, ListFilter, Mes
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { METRIK_URUT, urutkan, penandaPerSumber, teksSorotan, angka, formatPersen, rupiah, selBiayaSumber, selTotalBerbayar, delta, deltaTeks, DASAR_BIAYA_LABEL, BUKTI_LABEL, sementaraTeks } from "../../akuisisiLogic.js";
-import { KOLOM_SUMBER, kolomPilihan, konversiTotal } from "../../marketingLogic.js";
+import { KOLOM_SUMBER, kolomPilihan, konversiTotal, leadTanpaSpam, migrasiPilihanKolom } from "../../marketingLogic.js";
 import { PAKEM_KANAL, kelompokkanSumber, kategoriSumber, namaKelompok, SARING_SUMBER, saringSumber, rupiahRingkas } from "../../kanalPakem.js";
 import LogoSumber from "../LogoSumber.jsx";
 
@@ -11,6 +11,7 @@ import LogoSumber from "../LogoSumber.jsx";
 // Sumber tanpa hasil TETAP tampil (lead 0 bukan dihilangkan). Biaya organik = "tidak tersedia", bukan Rp0. Konversi UTAMA = ber-order ÷ TOTAL lead (termasuk spam); non-spam kolom terpisah.
 export const TIP = {
   lead: "TOTAL lead berlabel sumber itu (label CRM): customer baru dibuat di periode. Spam ikut terhitung; lead sah = bukan spam/internal/B2B/karyawan.",
+  leadTanpaSpam: "Total lead dikurangi lead yang ditandai SPAM. Baris total sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama.",
   prospek: "METRIK UTAMA. Lead sah yang PERNAH dipindah ke stage PROSPECT oleh sales (riwayat transisi sejak 25 Jul 2026; lead lama tanpa riwayat dihitung bila stage-nya sekarang PROSPECT). Keputusan MANUAL sales, bukan skor otomatis dan bukan qualified lead objektif. Tidak termasuk lead yang langsung ke transaksi tanpa catatan PROSPECT.",
   prospekLanjut: "RINCIAN (definisi lama, label tersendiri). Lead sah yang pernah di stage PROSPECT, TRANSACTION, atau REVIEWED. Lebih besar dari prospek eksplisit karena memuat lead yang langsung ke transaksi tanpa catatan PROSPECT (belum dapat dipastikan sales menilainya prospek). Selisihnya ditampilkan di bawah angka.",
   biayaProspek: "Biaya sumber ÷ PROSPEK EKSPLISIT (bukan prospek-atau-lanjut). Terisi hanya bila biaya sumber lengkap setiap hari dan ada prospek eksplisit; selain itu kosong dengan alasan, bukan Rp0.",
@@ -40,6 +41,7 @@ export function selSumber(s, id, { banding = false, lap } = {}) {
   };
   switch (id) {
     case "lead": return { t: angka(s.lead), sub: d("lead") ? `${d("lead")} vs sebelumnya` : null };
+    case "leadTanpaSpam": return { t: angka(leadTanpaSpam(s)), kosong: s.lead == null, sub: s.spam > 0 ? `−${angka(s.spam)} spam` : null, title: `${s.lead} lead dikurangi ${s.spam ?? 0} spam` };
     case "prospek": {
       const e = s.prospek?.prospekEksplisit; if (!e) return { t: "—", kosong: true };
       const q = s.prospek;
@@ -73,6 +75,7 @@ export function selTotal(lap, id) {
   const tb = (kunci) => { const c = selTotalBerbayar(bb, kunci); return { t: c.teks, kosong: c.kosong, sub: c.kosong ? c.alasan : c.sementara ? "sementara" : null }; };
   switch (id) {
     case "lead": return { t: angka(t.lead) };
+    case "leadTanpaSpam": return { t: angka(leadTanpaSpam(t)), sub: "= New Leads Dashboard", title: `${t.lead} lead dikurangi ${t.spam ?? 0} spam; sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama` };
     case "prospek": return t.prospek ? { t: angka(t.prospek.prospekEksplisit), sub: t.leadSah > 0 ? `${formatPersen(Math.round((t.prospek.prospekEksplisit / t.leadSah) * 10000) / 100)} dari lead sah` : "—", title: `Total prospek eksplisit; saat ini PROSPECT ${t.prospek.saatIniProspect}.` } : { t: "—", kosong: true };
     case "prospekLanjut": return t.prospek ? { t: angka(t.prospek.pernahProspekAtauLanjut), sub: `+${angka(t.prospek.selisihAtauLanjutMinusEksplisit)} lanjut tanpa catatan PROSPECT`, title: `Total prospek atau lanjut (definisi lama); langsung ke transaksi ${t.prospek.langsungKeTransaksiTanpaProspect}.` } : { t: "—", kosong: true };
     case "biayaProspek": return { t: "—", kosong: true, sub: "hanya per sumber" };
@@ -96,7 +99,7 @@ export function selTotal(lap, id) {
 const KOLOM_UANG = new Set(["nilai", "uang", "spend", "cpa", "biayaProspek"]);
 const KOLOM_BIAYA = new Set(["spend", "cpa", "booked", "cash", "biayaProspek"]);
 const KUNCI_KOLOM = "mk-kolom-sumber";
-const bacaKolom = () => { try { const v = JSON.parse(localStorage.getItem(KUNCI_KOLOM) || "null"); return Array.isArray(v) ? v : null; } catch { return null; } };
+const bacaKolom = () => { try { const v = JSON.parse(localStorage.getItem(KUNCI_KOLOM) || "null"); return Array.isArray(v) ? migrasiPilihanKolom(v) : null; } catch { return null; } };
 const simpanKolom = (v) => { try { if (v) localStorage.setItem(KUNCI_KOLOM, JSON.stringify(v)); else localStorage.removeItem(KUNCI_KOLOM); } catch { /* penyimpanan tidak tersedia: pilihan berlaku sampai halaman ditutup */ } };
 /** "Rp98.020.000" → "Rp98,02 jt" (nilai penuh tetap di title). Teks lain apa adanya. */
 const ringkasUang = (t) => (/^Rp[\d.]+$/.test(t || "") ? rupiahRingkas(Number(t.slice(2).replace(/\./g, ""))) : t);
@@ -284,7 +287,7 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
           </tbody>
         </table>
       </div>
-      <p className="mk-catatan">Tanda — berarti tidak tersedia atau belum lengkap, bukan nol. Biaya, CPA, dan ROAS pada baris total hanya untuk sumber berbayar dan hanya bila semuanya lengkap (dihitung dari pembilang dan penyebut total). Dasar: {DASAR_BIAYA_LABEL}. Konversi total = Σ ber-order ÷ Σ lead.{tersaring ? " Baris total disembunyikan saat tabel disaring." : ""}</p>
+      <p className="mk-catatan">Tanda — berarti tidak tersedia atau belum lengkap, bukan nol. Biaya, CPA, dan ROAS pada baris total hanya untuk sumber berbayar dan hanya bila semuanya lengkap (dihitung dari pembilang dan penyebut total). Dasar: {DASAR_BIAYA_LABEL}. Konversi total = Σ ber-order ÷ Σ lead. Lead tanpa spam = total lead − spam, sama dengan New Leads di Dashboard Sales CRM.{tersaring ? " Baris total disembunyikan saat tabel disaring." : ""}</p>
     </section>
   );
 }

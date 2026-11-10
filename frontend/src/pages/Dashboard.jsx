@@ -108,7 +108,7 @@ export default function Dashboard({ user }) {
             format={(n) => Math.round(n).toLocaleString("id-ID")}
             delta={ov?.growthCustomers} deltaSuffix={cmp}
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
-            tooltip="Pelanggan baru (Customer dibuat) di periode yang dipilih, chat SPAM dikecualikan. Klik kartu untuk lihat daftarnya."
+            tooltip="Pelanggan baru (Customer dibuat) di periode yang dipilih, chat SPAM dikecualikan — sama dengan &quot;Lead tanpa spam&quot; di Laporan › Marketing. Total lead di Marketing lebih besar karena ikut menghitung spam. Klik kartu untuk lihat daftarnya."
           />
           <KpiTile
             tone="orders" label="Total Orders"

@@ -132,7 +132,7 @@ const LAP = (o = {}) => ({
 });
 test("kartu ringkas: enam kartu; biaya iklan tidak lengkap = '—' dengan alasan (bukan Rp0); lunas = batas bawah saat ledger parsial; label eksplisit (tanpa 'Closing')", () => {
   const k = kartuRingkas(LAP());
-  assert.deepEqual(k.map((x) => x.id), ["lead", "berOrder", "lunas", "nilai", "uang", "biaya"]);
+  assert.deepEqual(k.map((x) => x.id), ["lead", "leadTanpaSpam", "berOrder", "lunas", "nilai", "uang", "biaya"]);
   const biaya = k.find((x) => x.id === "biaya"); assert.equal(biaya.nilai, "—"); assert.equal(biaya.kosong, true); assert.match(biaya.sub, /spend belum lengkap|belum lengkap/i);
   const lunas = k.find((x) => x.id === "lunas");
   assert.equal(lunas.nilai, "3", "hasil hitung ditampilkan apa adanya, tanpa awalan ≥"); assert.match(lunas.judul, /Customer lunas terbukti ledger/); assert.match(lunas.sub, /customer lunas terbukti ledger/);
@@ -178,9 +178,9 @@ test("kualitas data: coverage, ledger parsial, spend hilang, UNKNOWN, UNMAPPED, 
 
 // ── kolom & ekspor ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test("kolom sumber: ringkas = 9 kolom utama (hasil → biaya: lead, PROSPEK EKSPLISIT, ber-order, lunas, konversi, nilai, uang, biaya, CPA); lengkap menambah spam, membayar, konversi non-spam, ROAS", () => {
-  assert.deepEqual(kolomTampil("ringkas").map((k) => k.id), ["lead", "prospek", "berOrder", "lunas", "konversi", "nilai", "uang", "spend", "cpa"]);
-  assert.equal(kolomTampil("lengkap").length, KOLOM_SUMBER.length); assert.deepEqual(kolomTampil("lengkap").slice(9).map((k) => k.id), ["prospekLanjut", "biayaProspek", "spam", "membayar", "konversiNonSpam", "booked", "cash"]);
-  assert.equal(new Set(KOLOM_SUMBER.map((k) => k.id)).size, 16, "tidak ada kolom yang hilang atau ganda");
+  assert.deepEqual(kolomTampil("ringkas").map((k) => k.id), ["lead", "leadTanpaSpam", "prospek", "berOrder", "lunas", "konversi", "nilai", "uang", "spend", "cpa"]);
+  assert.equal(kolomTampil("lengkap").length, KOLOM_SUMBER.length); assert.deepEqual(kolomTampil("lengkap").slice(10).map((k) => k.id), ["prospekLanjut", "biayaProspek", "spam", "membayar", "konversiNonSpam", "booked", "cash"]);
+  assert.equal(new Set(KOLOM_SUMBER.map((k) => k.id)).size, 17, "tidak ada kolom yang hilang atau ganda");
 });
 
 test("ekspor CSV Meta: kolom ber-order/membayar/lunas terpisah; null dikosongkan + alasan; UNMAPPED/UNKNOWN ikut; formula injection dinetralkan", () => {
