@@ -39,6 +39,7 @@ const TIDAK_DIEKSPOR = {
   "FinanceCash.jsx": "Kas & Bank: Pemasukan Lain tercakup export Pemasukan; tab Mutasi & Rekonsiliasi punya tombol export sendiri per tab (modul mutasi-rekening, mutasi-bank, pencocokan-bank, rekonsiliasi-rekening)",
   "FinanceInvoices.jsx": "faktur pelanggan; tercakup Piutang & Refund dan Pembayaran",
   "FinancePersediaanAwal.jsx": "alur input/pemeriksaan snapshot cutover",
+  "FinanceHppOrder.jsx": "modul baru (Nov 2026): antrean kerja PIC + laporan sementara (bukan final); export dibuat bila Finance minta",
   "FinanceAccounts.jsx": "master bagan akun",
   "FinanceSettings.jsx": "konfigurasi",
   "FinancePurchaseOrders.jsx": "modul baru (Okt 2026): dokumen komitmen tanpa jurnal; belum ada kebutuhan laporan — export dibuat bila Finance minta (tagihan & stok yang lahir darinya sudah tercakup export Supplier & Utang dan Jurnal)",

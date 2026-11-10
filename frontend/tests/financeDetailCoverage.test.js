@@ -23,6 +23,7 @@ const DETAIL_SENDIRI = {
   "FinanceInvoices.jsx": "klik baris memanggil onBuka(inv) → RincianInvoice (panel samping sendiri, features/finance/InvoicePanels.jsx); tombol chevron membuka rincian yang sama",
   "FinanceJournal.jsx": "klik baris membuka detail jurnal (setDetail)",
   "FinanceBiayaBahan.jsx": "klik unit membuka panel jejak biaya (JejakBiayaBahan) di sebelah daftar",
+  "FinanceHppOrder.jsx": "klik baris antrean membuka PanelUnit (baris biaya, catatan tertahan, form biaya tanpa stok); persetujuan menampilkan rincian per entri; laporan punya jembatan per baris jurnal",
   "FinancePurchaseOrders.jsx": "klik baris membuka ModalDetailPO (setDetailId): item, progres penerimaan, tagihan, riwayat",
   "FinanceReturSupplier.jsx": "klik kartu retur / debit note membuka dialog rincian (DetailRetur, DialogDebitNote: jurnal & dampak dari server); saldo kredit punya dialog pakai/batal sendiri",
   "FinanceLaporanDivisi.jsx": "drill-down sendiri di features/laporanDivisi: kategori → Transaksi (dokumen sumber + aturan atribusi) → tombol 'Buka di Finance' ke modul sumber",

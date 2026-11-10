@@ -12043,14 +12043,20 @@ model OrderBiayaTanpaStok {
   tanggalPemakaian DateTime  @map("tanggal_pemakaian") @db.Date
   soTanggal        DateTime  @map("so_tanggal") @db.Date
   soTautanId       String?   @map("so_tautan_id")
-  statusHarga      String    @map("status_harga") @db.VarChar(16) // DINILAI | TANPA_HARGA
+  statusHarga      String    @map("status_harga") @db.VarChar(16) // DINILAI | TANPA_HARGA | PERLU_KEPUTUSAN
+  waktuPemakaian   DateTime? @map("waktu_pemakaian") // diisi bila JAM pemakaian diketahui dari sumber; harga dipilih pada waktu itu
+  kandidatHarga    Json?     @map("kandidat_harga") // PERLU_KEPUTUSAN: harga awal hari + tiap perubahan harga pada hari itu
+  keputusanHargaOleh   String? @map("keputusan_harga_oleh")
+  keputusanHargaAlasan String? @map("keputusan_harga_alasan")
   hargaSatuan      Decimal?  @map("harga_satuan") @db.Decimal(18, 4)
   nilai            Decimal?  @db.Decimal(18, 2)
   priceId          String?   @map("price_id") @db.Uuid
   basisHarga       String    @map("basis_harga") @db.VarChar(40)
   sidikHarga       String    @map("sidik_harga")
   sumberJenis      String    @map("sumber_jenis") @db.VarChar(24) // CATATAN_HISTORIS | LAPORAN_PIC | DOKUMEN
-  sumberRef        String?   @map("sumber_ref")
+  sumberRef        String    @map("sumber_ref") // identitas sumber per baris (catatan historis = id catatan; lainnya = rujukan dokumen/baris yang dinormalkan)
+  sidikGanda       String    @map("sidik_ganda") // sidik daftar kandidat ganda saat diajukan; berubah → persetujuan ditolak
+  kandidatGanda    Json?     @map("kandidat_ganda")
   bukti            String
   alasan           String
   status           String    @default("DIAJUKAN") @db.VarChar(12) // DIAJUKAN | DISETUJUI | DITOLAK | DIBATALKAN | DIGANTI

@@ -12,11 +12,14 @@ import { api } from "@/api.js";
 import { HalamanFinance, KartuAngka, JudulKartu, Penjelasan, PeriodePicker, Pilihan, Uang } from "@/features/finance/shared.jsx";
 
 // HPP PER ORDER — antrean PIC untuk melengkapi pemakaian unit terkirim, persetujuan biaya tanpa stok (pemakaian pra-SO), dan laporan berdampingan
-// (laba rugi jurnal | HPP operasional per order | hasil manajemen sementara). Semua aturan ditegakkan server; halaman ini tidak menghitung nilai sendiri.
+// (laba rugi jurnal | HPP operasional per order | hasil manajemen sementara + jembatan per baris jurnal). Semua aturan ditegakkan server; halaman ini tidak menghitung nilai sendiri.
 
 const TONE = { red: "red", orange: "orange", amber: "orange", blue: "accent", green: "green" };
 const angka = (v) => (v == null ? "—" : Number(v).toLocaleString("id-ID", { maximumFractionDigits: 4 }));
+const LABEL_HARGA = { TANPA_HARGA: "Tanpa harga (belum diketahui)", PERLU_KEPUTUSAN: "Harga perlu keputusan", BELUM_DIBEKUKAN: "Belum dibekukan", GAGAL: "Pembekuan gagal" };
 const rpAtauKosong = (v) => (v == null ? <span className="text-ink3">belum diketahui</span> : <Uang value={v} />);
+const jamWib = (iso) => new Date(iso).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" });
+const labelKandidat = (k) => `${k.jenis === "AWAL_HARI" ? "Awal hari" : `Mulai ${jamWib(k.mulai)} WIB`}${k.harga != null ? ` — Rp${Number(k.harga).toLocaleString("id-ID")}` : ""}`;
 const awalBulan = () => { const w = new Date(Date.now() + 7 * 3600e3); const p = (n) => String(n).padStart(2, "0"); return { from: `${w.getUTCFullYear()}-${p(w.getUTCMonth() + 1)}-01`, to: `${w.getUTCFullYear()}-${p(w.getUTCMonth() + 1)}-${p(w.getUTCDate())}` }; };
 
 function Pesan({ pesan, onTutup }) {
@@ -35,7 +38,7 @@ export default function FinanceHppOrder({ awal = "antrean" }) {
   const [error, setError] = useState(null);
   useEffect(() => { api.getHppOrderMeta().then(setMeta).catch((e) => setError(e.message || "Gagal memuat")); }, []);
   return (
-    <HalamanFinance title="HPP per Order" subtitle="Lengkapi pemakaian bahan unit terkirim dan baca laba November berdampingan: jurnal, HPP operasional, hasil manajemen sementara."
+    <HalamanFinance title="HPP per Order" subtitle="Lengkapi pemakaian bahan unit terkirim dan baca laba berdampingan: jurnal, HPP operasional, hasil manajemen sementara."
       actions={<PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />} loading={!meta && !error} error={error}>
       {meta && (
         <Tabs value={tab} onValueChange={setTab}>
@@ -90,13 +93,13 @@ function TabAntrean({ periode, meta }) {
       </div>
       <Penjelasan>{data.catatan} {data.tautanSO.teks}</Penjelasan>
       <div className="flex flex-wrap items-end gap-2">
-        <Field label="Status"><Pilihan value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Field label="Status"><Pilihan value={status} onChange={setStatus}>
           <option value="">Semua ({r.unit})</option>
           {Object.values(data.status).map((s) => <option key={s.key} value={s.key}>{s.label} ({r.perStatus[s.key] ?? 0})</option>)}
         </Pilihan></Field>
         <Field label="Cari order / unit / pelanggan"><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="RES-…" /></Field>
         {meta.izin.mencatat && siap.length > 0 && (
-          <div className="ml-auto flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2 md:ml-auto">
             <Field label={`Konfirmasi lengkap (${pilih.size} dipilih)`}><Input value={ket} onChange={(e) => setKet(e.target.value)} placeholder="Diperiksa oleh … dari buku kerja …" /></Field>
             <Button disabled={!pilih.size || ket.trim().length < 5 || proses} onClick={konfirmasiTerpilih}><CheckCircle2 size={14} className="mr-1" /> Konfirmasi terpilih</Button>
           </div>
@@ -115,9 +118,9 @@ function TabAntrean({ periode, meta }) {
                 <TD>{(b.status === "SIAP_DIKONFIRMASI" || b.status === "KONFIRMASI_BASI") && meta.izin.mencatat && <input type="checkbox" aria-label={`Pilih ${b.unitKode}`} checked={pilih.has(b.unitId)} onChange={() => toggle(b.unitId)} />}</TD>
                 <TD className="whitespace-nowrap">{b.diserahkan}</TD>
                 <TD><div className="font-medium">{b.orderNomor}</div><div className="text-xs text-ink3">{b.unitKode}{b.pelanggan ? ` · ${b.pelanggan}` : ""}</div></TD>
-                <TD><Badge variant={TONE[b.tone] ?? "neutral"}>{b.statusLabel}</Badge></TD>
+                <TD><Badge variant={TONE[b.tone] ?? "neutral"}>{b.statusLabel}</Badge>{b.pernyataan && <div className="text-xs text-ink3">oleh {b.pernyataan.oleh ?? "—"}: {b.pernyataan.alasan}</div>}</TD>
                 <TD>{b.pemakaian.baris ? <span>{b.pemakaian.baris} baris{b.pemakaian.biayaTanpaStok ? ` (${b.pemakaian.biayaTanpaStok} tanpa stok)` : ""}<div className="text-xs text-ink3">{b.pemakaian.bahan.slice(0, 3).join(", ")}{b.pemakaian.bahan.length > 3 ? ` +${b.pemakaian.bahan.length - 3}` : ""}</div></span> : <span className="text-ink3">—</span>}</TD>
-                <TD className="text-right">{b.biayaKosong || "—"}</TD>
+                <TD className="text-right">{b.biayaKosong || "—"}{b.perluKeputusanHarga ? <div className="text-xs text-orange">{b.perluKeputusanHarga} harga perlu keputusan</div> : null}</TD>
                 <TD className="text-right">{b.catatanTertahan + b.sementara + b.biayaDiajukan || "—"}</TD>
                 {meta.izin.nominal && <TD className="text-right">{rpAtauKosong(b.nilaiDiketahui)}</TD>}
                 <TD className="max-w-xs text-xs text-ink2">{b.langkah}</TD>
@@ -139,19 +142,22 @@ function PanelUnit({ baris, meta, onTutup, onBerubah }) {
   useEffect(() => { muat(); }, [muat]);
   const selesai = (teks) => { setPesan({ jenis: "ok", teks }); setForm(null); muat(); onBerubah(); };
   async function konfirmasi() { try { await api.konfirmasiHppUnit(baris.unitId, d.status.sidik, ket); selesai("Pemakaian unit dikonfirmasi lengkap."); } catch (e) { setPesan({ jenis: "galat", teks: e.message }); } }
-  async function tanpaBahan() { try { await api.nyatakanTanpaBahan(baris.unitId, ket); selesai("Pernyataan tanpa bahan baru tersimpan."); } catch (e) { setPesan({ jenis: "galat", teks: e.message }); } }
+  async function tanpaBahan() { try { await api.nyatakanTanpaBahan(baris.unitId, ket); selesai("Pernyataan tanpa bahan baru tersimpan (pelaku, waktu, dan alasan tercatat)."); } catch (e) { setPesan({ jenis: "galat", teks: e.message }); } }
   return (
     <PanelSamping open onOpenChange={(o) => !o && onTutup()} judul={`${baris.orderNomor} · ${baris.unitKode}`} subjudul={`Diserahkan ${baris.diserahkan}`} lebar={900}>
       <Pesan pesan={pesan} onTutup={() => setPesan(null)} />
       {!d ? <div className="text-ink2">Memuat…</div> : (
         <div className="space-y-4">
-          <div className="flex items-center gap-2"><Badge variant={TONE[d.status.tone] ?? "neutral"}>{d.status.label}</Badge><span className="text-sm text-ink2">{d.status.langkah}</span></div>
+          <div className="flex flex-wrap items-center gap-2"><Badge variant={TONE[d.status.tone] ?? "neutral"}>{d.status.label}</Badge><span className="text-sm text-ink2">{d.status.langkah}</span></div>
+          {d.pernyataan && <div className="rounded-lg bg-inset p-2 text-sm">Pernyataan &ldquo;tanpa bahan baru&rdquo; oleh <b>{d.pernyataan.oleh ?? "—"}</b> pada {new Date(d.pernyataan.pada).toLocaleString("id-ID")}: {d.pernyataan.alasan} <span className="text-xs text-ink3">(tercatat di riwayat unit; dicabut lewat Order Produksi)</span></div>}
           <section>
-            <JudulKartu title="Baris biaya tercatat" description="Pengeluaran stok unit + biaya tanpa stok yang disetujui. Harga kosong = belum diketahui." />
+            <JudulKartu title="Baris biaya tercatat" description="Pengeluaran stok unit + biaya tanpa stok. Harga kosong = belum diketahui." />
             <TableWrap><Table><THead><TR><TH>Sumber</TH><TH>Bahan</TH><TH className="text-right">Jumlah</TH><TH>Tanggal pakai</TH><TH>Status harga</TH>{meta.izin.nominal && <TH className="text-right">Nilai</TH>}</TR></THead>
               <TBody>{[...d.baris, ...d.diajukan].map((x) => (
-                <TR key={x.id}><TD className="text-xs">{x.sumber === "STOK" ? `Stok (${x.jenis})` : `Tanpa stok${x.statusEntri === "DIAJUKAN" ? " — menunggu persetujuan" : ""}`}</TD><TD>{x.kode}</TD><TD className="text-right">{angka(x.qty)} {x.satuan}</TD><TD>{x.tanggalPemakaian}</TD>
-                  <TD>{x.status === "DIBEKUKAN" ? <Badge variant="green">Bernilai</Badge> : <Badge variant="orange">{x.status === "TANPA_HARGA" ? "Tanpa harga" : x.status}</Badge>}</TD>{meta.izin.nominal && <TD className="text-right">{rpAtauKosong(x.subtotal)}</TD>}</TR>))}
+                <TR key={x.id}><TD className="text-xs">{x.sumber === "STOK" ? `Stok (${x.jenis})` : `Tanpa stok${x.statusEntri === "DIAJUKAN" ? " — menunggu persetujuan" : ""}`}</TD><TD>{x.kode}</TD><TD className="text-right">{angka(x.qty)} {x.satuan}</TD>
+                  <TD>{x.tanggalPemakaian}{x.waktuPemakaian ? ` ${jamWib(x.waktuPemakaian)}` : ""}</TD>
+                  <TD>{x.status === "DIBEKUKAN" ? <Badge variant="green">Bernilai</Badge> : <Badge variant="orange">{LABEL_HARGA[x.status] ?? x.status}</Badge>}{x.sumber !== "STOK" && x.teksDasarHarga && <div className="text-xs text-ink3">{x.teksDasarHarga}</div>}</TD>
+                  {meta.izin.nominal && <TD className="text-right">{rpAtauKosong(x.subtotal)}</TD>}</TR>))}
                 {!d.baris.length && !d.diajukan.length && <TR><TD colSpan={6} className="text-center text-ink3">Belum ada pemakaian tercatat.</TD></TR>}</TBody></Table></TableWrap>
           </section>
           {d.catatanTertahan.length > 0 && (
@@ -161,7 +167,7 @@ function PanelUnit({ baris, meta, onTutup, onBerubah }) {
                 <TBody>{d.catatanTertahan.map((c) => (
                   <TR key={c.id}><TD>{c.nama ?? "—"}<div className="text-xs text-ink3">{c.state}</div></TD><TD className="text-right">{angka(c.qty)}</TD><TD>{c.tanggal ?? "—"}</TD><TD>{c.soTanggal ?? "—"}</TD>
                     <TD>{c.jalurDisarankan === "BIAYA_TANPA_STOK" ? "Biaya tanpa stok" : c.jalurDisarankan === "STOK" ? "Posting Historis / pengeluaran resmi" : "Lengkapi tanggal/bahan dulu"}</TD>
-                    <TD>{c.jalurDisarankan === "BIAYA_TANPA_STOK" && meta.izin.mencatat && <Button size="sm" variant="secondary" onClick={() => setForm({ materialId: c.materialId, qty: c.qty, tanggalPemakaian: c.tanggal, sumberJenis: "CATATAN_HISTORIS", sumberRef: c.id, bukti: `Catatan historis ${c.nama ?? c.id}`, kunciMaterial: true })}>Catat dari catatan ini</Button>}</TD></TR>))}</TBody></Table></TableWrap>
+                    <TD>{c.jalurDisarankan === "BIAYA_TANPA_STOK" && meta.izin.mencatat && c.materialId && c.qty != null && <Button size="sm" variant="secondary" onClick={() => setForm({ materialId: c.materialId, qty: c.qty, tanggalPemakaian: c.tanggal, sumberJenis: "CATATAN_HISTORIS", sumberRef: c.id, bukti: `Catatan historis ${c.nama ?? c.id}`, kunciMaterial: true })}>Catat dari catatan ini</Button>}</TD></TR>))}</TBody></Table></TableWrap>
             </section>
           )}
           {meta.izin.mencatat && (
@@ -171,15 +177,16 @@ function PanelUnit({ baris, meta, onTutup, onBerubah }) {
                 <Button variant="secondary" onClick={() => setForm({ sumberJenis: "LAPORAN_PIC" })}>Catat biaya tanpa stok (pada/sebelum SO)</Button>
                 <Button variant="tertiary" asChild><a href={`/bengkel/order-produksi?q=${encodeURIComponent(baris.orderNomor ?? baris.unitKode)}`}>Pengeluaran stok resmi (sesudah SO) di Order Produksi</a></Button>
               </div>
-              {form && <FormBiaya unit={d.unit} awal={form} meta={meta} onBatal={() => setForm(null)} onSelesai={() => selesai("Biaya tanpa stok diajukan; berlaku sesudah disetujui orang lain.")} />}
+              {form && <FormBiaya key={JSON.stringify(form)} unit={d.unit} awal={form} meta={meta} onBatal={() => setForm(null)} onSelesai={() => selesai("Biaya tanpa stok diajukan; berlaku sesudah disetujui orang lain.")} />}
               {(d.status.key === "SIAP_DIKONFIRMASI" || d.status.key === "KONFIRMASI_BASI" || d.status.key === "BELUM_ADA_PEMAKAIAN") && (
                 <div className="flex flex-wrap items-end gap-2 rounded-lg bg-inset p-3">
                   <Field label={d.status.key === "BELUM_ADA_PEMAKAIAN" ? "Keterangan (hanya bila memang tanpa bahan baru)" : "Keterangan pemeriksaan"}><Input value={ket} onChange={(e) => setKet(e.target.value)} placeholder="Diperiksa oleh … dari …" /></Field>
                   {d.status.key === "BELUM_ADA_PEMAKAIAN"
-                    ? <Button variant="neutral" disabled={ket.trim().length < 5} onClick={tanpaBahan}>Nyatakan tanpa bahan baru</Button>
+                    ? (meta.izin.menyatakanTanpaBahan ? <Button variant="neutral" disabled={ket.trim().length < 5} onClick={tanpaBahan}>Nyatakan tanpa bahan baru</Button> : <span className="text-xs text-ink3">Pernyataan tanpa bahan baru hanya oleh pemegang izin rute unit (Production Lead/Admin).</span>)
                     : <Button disabled={ket.trim().length < 5} onClick={konfirmasi}><CheckCircle2 size={14} className="mr-1" /> Konfirmasi pemakaian lengkap</Button>}
                 </div>
               )}
+              {["BELUM_LENGKAP", "MENUNGGU_PERSETUJUAN"].includes(d.status.key) && <div className="text-xs text-ink3">Konfirmasi lengkap belum tersedia: masih ada biaya kosong, sumber tertunda, atau biaya yang menunggu persetujuan.</div>}
             </section>
           )}
         </div>
@@ -189,44 +196,58 @@ function PanelUnit({ baris, meta, onTutup, onBerubah }) {
 }
 
 function FormBiaya({ unit, awal, meta, onBatal, onSelesai }) {
-  const [m, setM] = useState({ qty: "", tanggalPemakaian: "", bukti: "", alasan: "", ...awal });
+  const [m, setM] = useState({ qty: "", tanggalPemakaian: "", jam: "", sumberRef: "", bukti: "", alasan: "", alasanBukanGanda: "", ...awal });
   const [bahan, setBahan] = useState([]); const [pr, setPr] = useState(null); const [galat, setGalat] = useState(null); const [bukanGanda, setBukanGanda] = useState(false); const [kirim, setKirim] = useState(false);
+  const [kunci] = useState(() => `biaya-tanpa-stok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`); // satu kunci per formulir: kirim ulang = entri yang sama
   useEffect(() => { api.getMaterials({ active: "true" }).then((r) => setBahan(Array.isArray(r) ? r : r?.items ?? r?.materials ?? [])).catch(() => setBahan([])); }, []);
   const ubah = (k) => (e) => { setM((x) => ({ ...x, [k]: e.target.value })); setPr(null); };
-  const masukan = () => ({ unitId: unit.id, materialId: m.materialId, qty: Number(m.qty), tanggalPemakaian: m.tanggalPemakaian, sumberJenis: m.sumberJenis, sumberRef: m.sumberRef ?? null, bukti: m.bukti, alasan: m.alasan, konfirmasiBukanGanda: bukanGanda });
+  const pilihNilai = (k) => (v) => { setM((x) => ({ ...x, [k]: v })); setPr(null); }; // Pilihan memanggil onChange(nilai), bukan event
+  const catatan = m.sumberJenis === "CATATAN_HISTORIS";
+  const masukan = () => ({ unitId: unit.id, materialId: m.materialId, qty: Number(m.qty), tanggalPemakaian: m.tanggalPemakaian, waktuPemakaian: m.jam && m.tanggalPemakaian ? `${m.tanggalPemakaian}T${m.jam}+07:00` : null,
+    sumberJenis: m.sumberJenis, sumberRef: m.sumberRef || null, bukti: m.bukti, alasan: m.alasan, konfirmasiBukanGanda: bukanGanda, alasanBukanGanda: m.alasanBukanGanda });
   async function lihat() { setGalat(null); try { setPr(await api.pratinjauBiayaTanpaStok(masukan())); } catch (e) { setGalat(e.message); } }
-  async function ajukan() { setKirim(true); setGalat(null); try { await api.ajukanBiayaTanpaStok({ ...masukan(), sidikHarga: pr?.harga?.sidik }); onSelesai(); } catch (e) { setGalat(e.message); } finally { setKirim(false); } }
+  async function ajukan() { setKirim(true); setGalat(null); try { await api.ajukanBiayaTanpaStok({ ...masukan(), sidikHarga: pr?.harga?.sidik, sidikGanda: pr?.ganda?.sidik }, kunci); onSelesai(); } catch (e) { setGalat(e.message); } finally { setKirim(false); } }
+  const gandaOk = !pr?.ganda?.perluKonfirmasi || (bukanGanda && m.alasanBukanGanda.trim().length >= 5);
   return (
     <div className="space-y-2 rounded-lg border border-line p-3">
       <div className="grid gap-2 md:grid-cols-3">
-        <Field label="Bahan"><Pilihan value={m.materialId ?? ""} onChange={ubah("materialId")} disabled={awal.kunciMaterial}>
-          <option value="">Pilih bahan…</option>{bahan.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}</Pilihan></Field>
-        <Field label="Jumlah (satuan stok)"><Input inputMode="decimal" value={m.qty ?? ""} onChange={ubah("qty")} /></Field>
-        <Field label="Tanggal pemakaian (dilaporkan)"><Input type="date" value={m.tanggalPemakaian ?? ""} onChange={ubah("tanggalPemakaian")} /></Field>
-        <Field label="Sumber"><Pilihan value={m.sumberJenis} onChange={ubah("sumberJenis")} disabled={m.sumberJenis === "CATATAN_HISTORIS"}>
-          {Object.entries(meta.sumberJenis).filter(([k]) => k !== "CATATAN_HISTORIS" || m.sumberJenis === "CATATAN_HISTORIS").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Pilihan></Field>
-        <Field label="Bukti / rujukan"><Input value={m.bukti} onChange={ubah("bukti")} placeholder="Siapa melapor, dokumen/foto apa" /></Field>
+        <Field label="Bahan"><Pilihan value={m.materialId ?? ""} onChange={pilihNilai("materialId")} disabled={awal.kunciMaterial}>
+          <option value="">Pilih bahan…</option>{bahan.map((x) => <option key={x.id} value={x.id}>{x.code} — {x.name}</option>)}</Pilihan></Field>
+        <Field label="Jumlah (satuan stok)"><Input inputMode="decimal" value={m.qty ?? ""} onChange={ubah("qty")} disabled={catatan} /></Field>
+        <Field label="Tanggal pemakaian (dilaporkan)"><Input type="date" value={m.tanggalPemakaian ?? ""} onChange={ubah("tanggalPemakaian")} disabled={catatan} /></Field>
+        <Field label="Jam pemakaian (isi HANYA bila tertulis di sumber)"><Input type="time" value={m.jam} onChange={ubah("jam")} /></Field>
+        <Field label="Sumber"><Pilihan value={m.sumberJenis} onChange={pilihNilai("sumberJenis")} disabled={catatan}>
+          {Object.entries(meta.sumberJenis).filter(([k]) => k !== "CATATAN_HISTORIS" || catatan).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Pilihan></Field>
+        {!catatan && <Field label="Rujukan sumber (unik per baris)"><Input value={m.sumberRef} onChange={ubah("sumberRef")} placeholder="mis. laporan PIC 05/11 lembar 2 baris 3" /></Field>}
+        <Field label="Bukti"><Input value={m.bukti} onChange={ubah("bukti")} placeholder="Siapa melapor, dokumen/foto apa" /></Field>
         <Field label="Alasan"><Input value={m.alasan} onChange={ubah("alasan")} placeholder="Mengapa belum tercatat" /></Field>
       </div>
       {galat && <div className="text-sm text-red">{galat}</div>}
       {pr && (
         <div className="space-y-1 rounded-lg bg-inset p-3 text-sm">
           <div><b>Jalur:</b> {pr.jalur.label} — {pr.jalur.teks}</div>
-          {pr.penghalang.map((p) => <div key={p.kode} className="text-red">{p.pesan}</div>)}
-          {pr.harga && <div><b>Harga:</b> {pr.harga.status === "DINILAI" ? (meta.izin.nominal ? <>Rp{Number(pr.harga.harga).toLocaleString("id-ID")} → <Uang value={pr.harga.nilai} /></> : "bernilai") : "tanpa harga (belum diketahui)"} · {pr.harga.dasar}{pr.harga.berubahPadaHari ? ` · ${pr.harga.berubahPadaHari}` : ""}</div>}
+          {pr.penghalang.map((x) => <div key={x.kode} className="text-red">{x.pesan}</div>)}
+          {pr.harga && (
+            <div><b>Harga:</b> {pr.harga.status === "DINILAI" ? (meta.izin.nominal ? <>Rp{Number(pr.harga.harga).toLocaleString("id-ID")} → <Uang value={pr.harga.nilai} /></> : "bernilai") : pr.harga.status === "PERLU_KEPUTUSAN" ? "perlu keputusan penyetuju" : "tanpa harga (belum diketahui)"}
+              <div className="text-xs text-ink2">{pr.harga.teks}</div>
+              {pr.harga.kandidat && <ul className="ml-4 list-disc text-xs">{pr.harga.kandidat.map((k) => <li key={k.priceId}>{labelKandidat(k)}</li>)}</ul>}
+            </div>
+          )}
+          {pr.ganda.identik.length > 0 && <div className="text-red">Pemakaian identik sudah tercatat ({pr.ganda.identik.map((k) => k.kind).join(", ")}). Tidak bisa diajukan.</div>}
           {pr.ganda.perluKonfirmasi && (
-            <div className="text-orange">
-              Mungkin sudah tercatat: {pr.ganda.tertaut.length} pengeluaran stok bahan ini pada unit, {pr.ganda.kemungkinan.length} catatan lain.
-              <ul className="ml-4 list-disc">{[...pr.ganda.tertaut, ...pr.ganda.kemungkinan].slice(0, 6).map((k) => <li key={`${k.kind}-${k.id}`}>{k.kind}: {angka(k.qty)} {k.uom ?? ""} {k.dilaporkan ?? ""} {k.catatan ?? ""}</li>)}</ul>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={bukanGanda} onChange={(e) => setBukanGanda(e.target.checked)} /> Saya sudah memeriksa: ini biaya yang BELUM tercatat.</label>
+            <div className="space-y-1 text-orange">
+              Mungkin sudah tercatat ({pr.ganda.mirip.length}):
+              <ul className="ml-4 list-disc">{pr.ganda.mirip.slice(0, 8).map((k) => <li key={`${k.kind}-${k.id}`}>{k.kind}: {angka(k.qty)} {k.tanggal ?? ""} {k.catatan ?? ""}</li>)}</ul>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={bukanGanda} onChange={(e) => setBukanGanda(e.target.checked)} /> Saya sudah memeriksa: ini pemakaian yang BELUM tercatat.</label>
+              <Field label="Alasan bukan duplikat (wajib)"><Input value={m.alasanBukanGanda} onChange={(e) => setM((x) => ({ ...x, alasanBukanGanda: e.target.value }))} placeholder="mis. ISSUE lama untuk panel atas, ini panel bawah" /></Field>
             </div>
           )}
           <ul className="ml-4 list-disc text-ink2">{pr.dampak.map((t) => <li key={t}>{t}</li>)}</ul>
         </div>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={lihat}>Lihat dampak</Button>
-        <Button disabled={!pr?.boleh || kirim || (pr.ganda.perluKonfirmasi && !bukanGanda)} onClick={ajukan}>Ajukan</Button>
+        <Button disabled={!pr?.boleh || kirim || !gandaOk} onClick={ajukan}>Ajukan</Button>
         <Button variant="neutral" onClick={onBatal}>Batal</Button>
       </div>
     </div>
@@ -236,13 +257,23 @@ function FormBiaya({ unit, awal, meta, onBatal, onSelesai }) {
 // ───────────────────────────── PERSETUJUAN ─────────────────────────────
 function TabPersetujuan({ meta }) {
   const [data, setData] = useState(null); const [pilih, setPilih] = useState(new Set()); const [pesan, setPesan] = useState(null); const [proses, setProses] = useState(false); const [alasan, setAlasan] = useState("");
+  const [harga, setHarga] = useState({}); // id → { priceId, alasan } untuk entri PERLU_KEPUTUSAN
   const muat = useCallback(async () => { try { setData(await api.getBiayaTanpaStok("DIAJUKAN")); setPilih(new Set()); } catch (e) { setPesan({ jenis: "galat", teks: e.message }); } }, []);
   useEffect(() => { muat(); }, [muat]);
   const bisa = (b) => b.diajukanOleh !== meta.userId;
+  const setH = (id, k, v) => setHarga((h) => ({ ...h, [id]: { ...h[id], [k]: v } }));
   async function massal(aksi) {
     const ids = (data?.baris ?? []).filter((b) => pilih.has(b.id) && bisa(b)); if (!ids.length) return;
     setProses(true); const gagal = [];
-    for (const b of ids) { try { if (aksi === "setujui") await api.setujuiBiayaTanpaStok(b.id, alasan || null); else await api.tolakBiayaTanpaStok(b.id, alasan); } catch (e) { gagal.push(`${b.unitKode} ${b.kode}: ${e.message}`); } }
+    for (const b of ids) {
+      try {
+        if (aksi === "setujui") {
+          const k = b.statusHarga === "PERLU_KEPUTUSAN" ? harga[b.id] : null;
+          if (b.statusHarga === "PERLU_KEPUTUSAN" && (!k?.priceId || (k.alasan ?? "").trim().length < 5)) throw new Error("pilih harga + alasan dulu");
+          await api.setujuiBiayaTanpaStok(b.id, alasan || null, k);
+        } else await api.tolakBiayaTanpaStok(b.id, alasan);
+      } catch (e) { gagal.push(`${b.unitKode} ${b.kode}: ${e.message}`); }
+    }
     setProses(false); setPesan(gagal.length ? { jenis: "galat", teks: `${ids.length - gagal.length} berhasil; ${gagal.length} gagal — ${gagal.join("; ")}` } : { jenis: "ok", teks: `${ids.length} biaya ${aksi === "setujui" ? "disetujui" : "ditolak"}.` });
     muat();
   }
@@ -250,26 +281,33 @@ function TabPersetujuan({ meta }) {
   return (
     <div className="space-y-3">
       <Pesan pesan={pesan} onTutup={() => setPesan(null)} />
-      <Penjelasan>Biaya bahan per order TANPA pengurangan stok (pemakaian pada/sebelum SO). Persetujuan memeriksa ulang tautan SO, catatan sumber, dan dasar harga per baris; pengajuan Anda sendiri tidak bisa Anda setujui.</Penjelasan>
+      <Penjelasan>Biaya bahan per order TANPA pengurangan stok (pemakaian pada/sebelum SO). Persetujuan memeriksa ulang tautan SO, sumber, kemungkinan duplikat, dan dasar harga per baris. Bila harga berubah pada hari pemakaian, Anda memilih harga dengan alasan (atau tolak dan minta jam pemakaian). Pengajuan Anda sendiri tidak bisa Anda setujui.</Penjelasan>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Catatan / alasan (wajib untuk tolak)"><Input value={alasan} onChange={(e) => setAlasan(e.target.value)} /></Field>
         <Button disabled={!pilih.size || proses} onClick={() => massal("setujui")}>Setujui terpilih ({pilih.size})</Button>
         <Button variant="destructive" disabled={!pilih.size || proses || alasan.trim().length < 5} onClick={() => massal("tolak")}>Tolak terpilih</Button>
       </div>
       <TableWrap><Table>
-        <THead><TR><TH className="w-8" /><TH>Diajukan</TH><TH>Order / unit</TH><TH>Bahan</TH><TH className="text-right">Jumlah</TH><TH>Tgl pakai / SO</TH><TH>Sumber & bukti</TH>{meta.izin.nominal && <TH className="text-right">Nilai</TH>}</TR></THead>
+        <THead><TR><TH className="w-8" /><TH>Diajukan</TH><TH>Order / unit</TH><TH>Bahan</TH><TH className="text-right">Jumlah</TH><TH>Tgl pakai / SO</TH><TH>Sumber & bukti</TH><TH>Dasar harga</TH>{meta.izin.nominal && <TH className="text-right">Nilai</TH>}</TR></THead>
         <TBody>
           {data.baris.map((b) => (
             <TR key={b.id}>
               <TD>{bisa(b) ? <input type="checkbox" aria-label={`Pilih ${b.unitKode}`} checked={pilih.has(b.id)} onChange={() => setPilih((s) => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} /> : <span className="text-xs text-ink3" title="Pengajuan Anda sendiri">milik Anda</span>}</TD>
               <TD className="whitespace-nowrap text-xs">{new Date(b.diajukanPada).toLocaleString("id-ID")}</TD>
               <TD><div className="font-medium">{b.orderNomor}</div><div className="text-xs text-ink3">{b.unitKode}{b.menggantikanId ? " · koreksi" : ""}</div></TD>
-              <TD>{b.kode}</TD><TD className="text-right">{angka(b.qty)} {b.satuan}</TD><TD className="text-xs">{b.tanggalPemakaian} / SO {b.soTanggal}</TD>
-              <TD className="max-w-xs text-xs">{meta.sumberJenis[b.sumberJenis]}: {b.bukti}<div className="text-ink3">{b.alasan}</div></TD>
+              <TD>{b.kode}</TD><TD className="text-right">{angka(b.qty)} {b.satuan}</TD><TD className="text-xs">{b.tanggalPemakaian}{b.waktuPemakaian ? ` ${jamWib(b.waktuPemakaian)}` : ""} / SO {b.soTanggal}</TD>
+              <TD className="max-w-xs text-xs">{meta.sumberJenis[b.sumberJenis]} · <span className="text-ink3">{b.sumberJenis === "CATATAN_HISTORIS" ? "catatan historis" : b.sumberRef}</span><div>{b.bukti}</div><div className="text-ink3">{b.alasan}</div>
+                {b.kandidatGanda?.alasanBukanGanda && <div className="text-orange">Bukan duplikat ({b.kandidatGanda.mirip?.length ?? 0} kandidat): {b.kandidatGanda.alasanBukanGanda}</div>}</TD>
+              <TD className="text-xs">{b.statusHarga === "PERLU_KEPUTUSAN" ? (
+                <div className="space-y-1"><Badge variant="orange">Harga berubah di hari itu</Badge>
+                  <Pilihan aria-label={`Harga ${b.unitKode}`} value={harga[b.id]?.priceId ?? ""} onChange={(v) => setH(b.id, "priceId", v)}>
+                    <option value="">Pilih harga…</option>{(b.kandidatHarga ?? []).map((k) => <option key={k.priceId} value={k.priceId}>{labelKandidat(k)}</option>)}</Pilihan>
+                  <Input value={harga[b.id]?.alasan ?? ""} onChange={(e) => setH(b.id, "alasan", e.target.value)} placeholder="Alasan pilihan harga" /></div>
+              ) : <span>{b.teksDasarHarga}</span>}</TD>
               {meta.izin.nominal && <TD className="text-right">{rpAtauKosong(b.subtotal)}</TD>}
             </TR>
           ))}
-          {!data.baris.length && <TR><TD colSpan={8} className="py-6 text-center text-ink3">Tidak ada biaya yang menunggu persetujuan.</TD></TR>}
+          {!data.baris.length && <TR><TD colSpan={9} className="py-6 text-center text-ink3">Tidak ada biaya yang menunggu persetujuan.</TD></TR>}
         </TBody>
       </Table></TableWrap>
     </div>
@@ -306,18 +344,30 @@ function TabLaporan({ periode, meta }) {
           <Baris label="Belum diketahui" nilai={`${c.orderBelumDiketahui} order`} />
           <Baris label="Unit lengkap / total" nilai={`${c.unitLengkap} / ${c.unitDiakui}`} />
           {meta.izin.nominal && <Baris label="Bahan diketahui (order diakui)" nilai={<Uang value={L.operasional.bahanDiakui} />} tebal catatan={`Biaya ${c.unitBelumDiketahui} unit belum diketahui — tidak dihitung Rp0.`} />}
-          {meta.izin.nominal && <Baris label="Susut periode (operasional)" nilai={<Uang value={L.operasional.susutPeriode} />} />}
+          {meta.izin.nominal && L.operasional.dikeluarkanKarenaNilaiJurnal ? <Baris label="Tidak dihitung lagi (nilai jurnalnya dipakai)" nilai={<Uang value={L.operasional.dikeluarkanKarenaNilaiJurnal} />} catatan="Pergerakan yang belum seluruhnya bernilai operasional memakai nilai jurnal." /> : null}
+          {meta.izin.nominal && <Baris label="Susut unit belum dijurnal (operasional)" nilai={<Uang value={L.operasional.susutBelumDijurnal} />} catatan={L.operasional.susutTanpaNilai ? `${L.operasional.susutTanpaNilai} baris susut tanpa nilai — belum diketahui` : null} />}
         </CardContent></Card>
         <Card><CardContent className="space-y-1 p-4">
-          <JudulKartu title="3 · Hasil manajemen sementara" description="Pendapatan jurnal − HPP operasional order diakui − upah/overhead/beban operasional jurnal." />
+          <JudulKartu title="3 · Hasil manajemen sementara" description="Laba jurnal dijembatani per baris: hanya yang terbukti terwakili HPP operasional, milik order belum diakui, atau koreksi saldo lama yang dibalik." />
           <Badge variant={mg.status === "LENGKAP" ? "green" : "orange"}>{mg.status === "LENGKAP" ? "HPP lengkap (bukan jurnal)" : "SEMENTARA — belum final"}</Badge>
           <div className="text-xs text-ink2">{mg.teksStatus}</div>
           {mg.baris ? mg.baris.map((x) => <Baris key={x.kunci} label={x.label} nilai={<Uang value={x.nilai} />} tebal={["hpp", "laba"].includes(x.kunci)} />) : <div className="text-sm text-ink3">Nominal hanya untuk pemegang akses Finance.</div>}
-          {mg.dikeluarkan && (<div className="mt-2 rounded-lg bg-inset p-2 text-xs"><b>Dikeluarkan dari hasil manajemen (cegah hitung ganda):</b>
-            {mg.dikeluarkan.akun.length ? mg.dikeluarkan.akun.map((a) => <div key={a.kode} className="flex justify-between"><span>{a.kode} {a.nama}</span><Uang value={a.nilai} /></div>) : <div>tidak ada</div>}
-            <div className="mt-1 text-ink3">{mg.dikeluarkan.teks}</div></div>)}
+          {mg.jembatan && (<div className="mt-2 rounded-lg bg-inset p-2 text-xs"><b>Jembatan dari laba jurnal</b>
+            {mg.jembatan.map((x) => <div key={x.kunci} className={`flex justify-between gap-2 ${x.kunci === "hasil" ? "border-t border-line font-semibold" : ""}`}><span>{x.label}</span><Uang value={x.nilai} /></div>)}
+            <div className={`mt-1 ${mg.kontrol.cocok ? "text-green" : "text-red"}`}>{mg.kontrol.cocok ? "Kontrol cocok: setiap baris jurnal masuk tepat satu kelompok; jembatan = perhitungan langsung." : `Kontrol TIDAK cocok (selisih ${mg.kontrol.selisih} / klasifikasi ${mg.kontrol.selisihKlasifikasi}) — jangan dipakai.`}</div></div>)}
+          {!mg.baris && <div className={`text-xs ${mg.kontrolCocok ? "text-green" : "text-red"}`}>{mg.kontrolCocok ? "Kontrol jembatan cocok." : "Kontrol jembatan tidak cocok."}</div>}
         </CardContent></Card>
       </div>
+      {mg.kelompok && (
+        <Card><CardContent className="p-4">
+          <JudulKartu title="Klasifikasi baris jurnal beban pokok" description={`Tidak ada akun yang dikeluarkan utuh; setiap baris punya alasan. Batas SO bertaut: ${mg.batasSO ?? "tidak ada"}.`} />
+          <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-5">{mg.kelompok.map((k) => <KartuAngka key={k.key} label={k.label} value={<Uang value={k.nilai} />} sub={`${k.baris} baris · ${k.dibalik ? "dibalik" : "tetap dihitung"}`} info={k.teks} tone={k.key === "PERLU_KLASIFIKASI" && k.baris ? "orange" : "default"} />)}</div>
+          <TableWrap><Table><THead><TR><TH>Tanggal</TH><TH>Jurnal</TH><TH>Akun</TH><TH>Order</TH><TH>Kelompok</TH><TH>Alasan</TH><TH className="text-right">Nilai</TH></TR></THead>
+            <TBody>{mg.barisJurnal.map((r) => <TR key={r.id}><TD className="whitespace-nowrap text-xs">{r.tanggal}</TD><TD className="text-xs">{r.nomorJurnal}<div className="text-ink3">{r.sumber}</div></TD><TD className="text-xs">{r.akunKode} {r.akunNama}</TD><TD className="text-xs">{r.orderNomor ?? "—"}</TD>
+              <TD><Badge variant={r.kelompok === "BEBAN_TETAP_DIHITUNG" ? "neutral" : r.kelompok === "PERLU_KLASIFIKASI" ? "orange" : "accent"}>{L.kelompokJurnal[r.kelompok]?.label ?? r.kelompok}</Badge></TD><TD className="max-w-xs text-xs text-ink2">{r.alasan}</TD><TD className="text-right"><Uang value={r.nilai} /></TD></TR>)}
+              {!mg.barisJurnal.length && <TR><TD colSpan={7} className="text-center text-ink3">Tidak ada baris jurnal beban pokok pada periode.</TD></TR>}</TBody></Table></TableWrap>
+        </CardContent></Card>
+      )}
       <Card><CardContent className="p-4">
         <JudulKartu title="Order berpendapatan diakui" description="Margin hanya ditampilkan bila HPP order lengkap." />
         <TableWrap><Table><THead><TR><TH>Order</TH><TH>Status HPP</TH><TH className="text-right">Unit lengkap</TH>{meta.izin.nominal && <><TH className="text-right">Pendapatan</TH><TH className="text-right">Bahan diketahui</TH><TH className="text-right">Dipakai sebelum periode</TH><TH className="text-right">Margin (bila lengkap)</TH></>}</TR></THead>
