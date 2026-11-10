@@ -133,7 +133,7 @@ async function bukaUnit(page, kode) {
     // ── 7. Finance: laporan + jembatan ──
     await klikTeks(F, "button,[role=tab]", "Laporan berdampingan");
     ok("Finance: jembatan laba jurnal tampil dan kontrol cocok", await adaTeks(F, "Jembatan dari laba jurnal") && await adaTeks(F, "Kontrol cocok"));
-    ok("Finance: selisih opname sesudah SO tetap dihitung (perlu klasifikasi), sebelum SO = saldo lama", await adaTeks(F, "Selisih stok sesudah SO: tetap dihitung") && await adaTeks(F, "Selisih opname bertanggal pada/sebelum SO bertaut"));
+    ok("Finance: selisih stok tanpa dokumen koreksi tetap dihitung (perlu klasifikasi) — tanggal jurnal tidak menentukan", await adaTeks(F, "Selisih stok tanpa dokumen koreksi yang menyebut periode dikoreksi"));
     await foto(F, "05-finance-laporan-desktop");
 
     // ── 8. PIC: konfirmasi massal ──

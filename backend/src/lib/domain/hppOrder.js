@@ -9,8 +9,10 @@
 //      milik order yang pendapatannya tidak diakui pada periode, atau koreksi saldo lama yang dibalik; SEMUA baris lain tetap dihitung (tidak ada akun yang dikeluarkan utuh).
 //   5. Dasar harga: jam pemakaian diketahui → harga pada jam itu; hanya tanggal → harga awal hari HANYA bila harga tidak berubah pada hari itu (harga awal hari = harga sepanjang hari);
 //      harga berubah pada hari itu → PERLU_KEPUTUSAN (kandidat disimpan, penyetuju memilih dengan alasan); tidak ada harga → TANPA_HARGA (belum diketahui).
-//   6. Ganda: identitas = sumber (jenis + rujukan baris) + kunci idempotensi. Pemakaian sah berulang pada bahan/unit/tanggal yang sama BOLEH. Pemakaian IDENTIK (bahan, tanggal, jumlah sama)
-//      yang sudah terwakili ISSUE / catatan lain / biaya lain → ditolak keras; konfirmasi "bukan duplikat" hanya untuk kandidat yang TIDAK identik.
+//   6. Ganda: penolakan MUTLAK hanya untuk identitas yang sama — sumber yang sama (jenis + rujukan baris; indeks unik), kunci idempotensi, atau tautan transaksi yang sama
+//      (catatan sumber sudah tertaut ke pengeluaran stok). Tanggal + jumlah yang sama hanyalah INDIKATOR kuat: wajib konfirmasi "bukan duplikat" beralasan + persetujuan orang lain.
+//   7. Koreksi saldo lama ditentukan ASAL DOKUMEN dan PERIODE YANG DIKOREKSI (Persediaan Awal → saldo s.d. sehari sebelum cutover; penyesuaian stok → tanggal catatan/pergerakan
+//      asalnya), bukan jenis sumber saja dan bukan tanggal jurnal terhadap tanggal SO. Dokumen tanpa periode dikoreksi → tetap dihitung, perlu klasifikasi.
 import crypto from "node:crypto";
 
 export const JALUR = Object.freeze({
@@ -111,7 +113,8 @@ export function dasarHargaBiaya({ waktuDiketahui = false, awalHari = null, berub
 export const normalRujukan = (t) => String(t ?? "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
- * Pisahkan kandidat ganda: IDENTIK (tanggal pemakaian sama DAN jumlah sama) → penghalang keras; lainnya → cukup konfirmasi "bukan duplikat" beralasan.
+ * Pisahkan kandidat ganda menurut kekuatan indikator: identik = tanggal pemakaian sama DAN jumlah sama (indikator KUAT, BUKAN penolakan mutlak); mirip = lainnya.
+ * Keduanya butuh konfirmasi "bukan duplikat" beralasan. Penolakan mutlak hanya untuk sumber/tautan transaksi yang sama (diperiksa layanan, bukan di sini).
  * kandidat = [{ kind, id, qty, tanggal|null }] dalam satuan stok / YYYY-MM-DD.
  */
 export function pisahkanGanda(kandidat, { qty, tanggal }) {
@@ -135,7 +138,7 @@ export const KELOMPOK_JURNAL = Object.freeze({
   ORDER_BELUM_DIAKUI: Object.freeze({ key: "ORDER_BELUM_DIAKUI", label: "Pemakaian untuk order yang pendapatannya tidak diakui pada periode", dibalik: true,
     teks: "Dicocokkan dengan pendapatannya: ditampilkan terpisah, tidak masuk hasil periode ini." }),
   KOREKSI_SALDO_LAMA: Object.freeze({ key: "KOREKSI_SALDO_LAMA", label: "Koreksi saldo lama (paket terpisah)", dibalik: true,
-    teks: "Jurnal Persediaan Awal/cutover dan selisih opname pada/sebelum tanggal SO bertaut: bukan biaya periode ini; diselesaikan di paket saldo lama." }),
+    teks: "Dokumen asalnya (Persediaan Awal, penyesuaian stok bertautan catatan/pergerakan) mengoreksi periode SEBELUM periode laporan: bukan biaya periode ini; diselesaikan di paket saldo lama." }),
   BEBAN_TETAP_DIHITUNG: Object.freeze({ key: "BEBAN_TETAP_DIHITUNG", label: "Beban pokok yang tetap dihitung", dibalik: false,
     teks: "Tidak terbukti terwakili HPP operasional dan bukan koreksi saldo lama: tetap dihitung apa adanya dari jurnal." }),
   PERLU_KLASIFIKASI: Object.freeze({ key: "PERLU_KLASIFIKASI", label: "Tetap dihitung — perlu keputusan klasifikasi", dibalik: false,
@@ -146,15 +149,22 @@ const asal = (r) => (r.sumber === "REVERSAL" && r.membalik?.sumber ? r.membalik.
 
 /**
  * Klasifikasi SATU baris jurnal beban pokok (murni). Setiap baris masuk TEPAT SATU kelompok.
- * r   = { akunKode, sumber, membalik:{sumber}|null, unitId|null, tanggal(YYYY-MM-DD), kunciKelompok }
- * ctx = { unitDiakui:Set, kelompokBernilai: Map(kunciKelompok → true|false), batasSO: 'YYYY-MM-DD'|null }
+ * r   = { entryId, akunKode, sumber, membalik:{sumber}|null, unitId|null, tanggal(YYYY-MM-DD), kunciKelompok }
+ * ctx = { unitDiakui:Set, kelompokBernilai: Map(kunciKelompok → true|false), periodeMulai:'YYYY-MM-DD',
+ *         asalKoreksi: Map(entryId → { jenis, nomor|null, periodeAkhir:'YYYY-MM-DD'|null, bukti }) — dokumen koreksi di balik jurnal (pembalik memakai dokumen jurnal yang dibalik) }
  *   kelompokBernilai: true = semua pergerakan di balik baris bernilai operasional; false = ada yang belum; tidak ada = pergerakan tidak ditemukan.
  */
 export function klasifikasiBarisJurnal(r, ctx) {
   const s = asal(r); const K = KELOMPOK_JURNAL;
   if (r.akunKode === AKUN_UPAH) return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "UPAH", alasan: "Upah produksi" };
   if (r.akunKode === AKUN_OVERHEAD) return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "OVERHEAD", alasan: "Overhead produksi" };
-  if (s === "PERSEDIAAN_AWAL") return { kelompok: K.KOREKSI_SALDO_LAMA.key, peran: "SALDO_LAMA", alasan: "Jurnal Persediaan Awal / penutupan periodik" };
+  const ak = ctx.asalKoreksi?.get(r.entryId) ?? null;
+  if (s === "PERSEDIAAN_AWAL" || ak) {
+    const dok = ak ? `${ak.bukti}${ak.nomor ? ` ${ak.nomor}` : ""}` : "Persediaan Awal (dokumen tidak ditemukan)";
+    if (ak?.periodeAkhir && ctx.periodeMulai && ak.periodeAkhir < ctx.periodeMulai) return { kelompok: K.KOREKSI_SALDO_LAMA.key, peran: "SALDO_LAMA", alasan: `${dok}: mengoreksi saldo s.d. ${ak.periodeAkhir}, sebelum periode laporan` };
+    if (ak?.periodeAkhir) return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "KOREKSI_PERIODE_INI", alasan: `${dok}: mengoreksi periode laporan ini (s.d. ${ak.periodeAkhir}) — tetap dihitung` };
+    return { kelompok: K.PERLU_KLASIFIKASI.key, peran: "KOREKSI_TANPA_PERIODE", alasan: `${dok}: periode yang dikoreksi tidak tercatat di dokumen — tetap dihitung sampai Finance memutuskan` };
+  }
   if (s === "PEMAKAIAN_BAHAN" && r.unitId) {
     if (r.akunKode === AKUN_SUSUT) return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "SUSUT", alasan: "Susut unit: bukan bagian HPP operasional bahan, tetap dihitung dari jurnal" };
     if (!ctx.unitDiakui.has(r.unitId)) return { kelompok: K.ORDER_BELUM_DIAKUI.key, peran: "BAHAN", alasan: "Unit milik order yang pendapatannya tidak diakui pada periode" };
@@ -163,10 +173,7 @@ export function klasifikasiBarisJurnal(r, ctx) {
     return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "BAHAN_NILAI_JURNAL",
       alasan: bernilai === false ? "Sebagian pergerakan belum bernilai operasional: nilai jurnal dipakai, nilai operasional pergerakan itu dikeluarkan agar tidak ganda" : "Pergerakan di balik baris tidak ditemukan: nilai jurnal tetap dihitung" };
   }
-  if (r.akunKode === AKUN_SELISIH_OPNAME) {
-    if (ctx.batasSO && r.tanggal <= ctx.batasSO) return { kelompok: K.KOREKSI_SALDO_LAMA.key, peran: "SALDO_LAMA", alasan: `Selisih opname bertanggal pada/sebelum SO bertaut (${ctx.batasSO})` };
-    return { kelompok: K.PERLU_KLASIFIKASI.key, peran: "SELISIH_STOK", alasan: "Selisih stok sesudah SO: tetap dihitung sampai Finance memutuskan" };
-  }
+  if (r.akunKode === AKUN_SELISIH_OPNAME) return { kelompok: K.PERLU_KLASIFIKASI.key, peran: "SELISIH_STOK", alasan: "Selisih stok tanpa dokumen koreksi yang menyebut periode dikoreksi: tetap dihitung sampai Finance memutuskan (tanggal jurnal saja tidak cukup)" };
   if (r.akunKode === "5-1150" || ((s === "TAGIHAN_SUPPLIER" || s === "PEMBELIAN") && r.akunKode === "5-1100")) return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "PEMBELIAN_LANGSUNG", alasan: "Pembelian dibebankan langsung (tanpa stok): tetap dihitung" };
   return { kelompok: K.BEBAN_TETAP_DIHITUNG.key, peran: "LAIN", alasan: "Beban pokok lain" };
 }

@@ -7,7 +7,8 @@
 //       pada/sebelum SO           → biaya tanpa stok di sini.
 //   • Tidak menebak jumlah, tanggal, atau harga (dasarHargaBiaya): jam diketahui → harga pada jam itu; hanya tanggal & harga tak berubah hari itu → harga awal hari (= sepanjang hari);
 //     harga berubah hari itu → PERLU_KEPUTUSAN (penyetuju memilih dari kandidat, beralasan); tidak ada harga → TANPA_HARGA (null, bukan Rp0).
-//   • Ganda dicegah per IDENTITAS SUMBER + kunci idempotensi (indeks unik database); pemakaian identik yang sudah terwakili ISSUE/catatan/biaya lain ditolak keras.
+//   • Ganda ditolak MUTLAK hanya per identitas sumber, kunci idempotensi, atau tautan transaksi yang sama (indeks unik database). Tanggal + jumlah sama = indikator kuat:
+//     wajib alasan "bukan duplikat" dari pengaju dan persetujuan orang lain.
 //   • Biaya tanpa stok berlaku (masuk HPP operasional) hanya sesudah DISETUJUI orang lain dari pengaju; koreksi = entri pengganti yang disetujui atomik; tidak ada hapus (trigger database).
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { hasPermission } from "../../middleware/authorize.js";
@@ -240,8 +241,9 @@ async function periksaMasukan(db, user, m) {
 
 /**
  * Pemeriksaan ganda (baca-saja):
- *   sumberDipakai = entri aktif lain dengan identitas sumber yang sama (selain entri yang dikoreksi) → ditolak keras.
- *   identik       = ISSUE tertaut unit / catatan historis lain / pemakaian sementara / biaya tanpa stok lain dengan tanggal DAN jumlah sama → ditolak keras.
+ *   sumberDipakai = entri aktif lain dengan identitas sumber yang sama (selain entri yang dikoreksi) → DITOLAK MUTLAK (bersama tautan transaksi: catatan sumber yang
+ *                   sudah tertaut ke pengeluaran stok, diperiksa di periksaMasukan/persetujuan).
+ *   identik       = ISSUE unit / catatan lain / pemakaian sementara / biaya lain dengan tanggal DAN jumlah sama → INDIKATOR KUAT, bukan penolakan: konfirmasi beralasan + persetujuan.
  *   mirip         = kandidat lain (jumlah atau tanggal berbeda, tanpa unit, unit lain, Material Issue belum final) → konfirmasi "bukan duplikat" beralasan.
  */
 async function periksaGanda(db, v, { menggantikanId = null, kecualiId = null, sebelum = null } = {}) {
@@ -276,7 +278,6 @@ export async function pratinjauBiayaTanpaStok(db, user, masukan) {
   if (masukan.menggantikanId) { menggantikan = await bacaPengganti(db, masukan.menggantikanId, v.unit.id); if (!menggantikan) penghalang.push({ kode: "KOREKSI_TIDAK_SAH", pesan: "Yang dikoreksi harus biaya tanpa stok DISETUJUI pada unit yang sama." }); }
   const g = await periksaGanda(db, v, { menggantikanId: menggantikan?.id ?? null });
   if (g.sumberDipakai.length) penghalang.push({ kode: "SUMBER_SUDAH_DIPAKAI", pesan: "Sumber ini sudah menjadi biaya tanpa stok yang aktif. Satu baris sumber hanya dicatat sekali; koreksi lewat entri pengganti." });
-  if (g.identik.length) penghalang.push({ kode: "GANDA_IDENTIK", pesan: `Pemakaian identik (bahan, tanggal ${v.tanggal}, jumlah ${v.qty}) sudah terwakili: ${g.identik.map((k) => k.kind).join(", ")}. Tidak bisa dikonfirmasi "bukan duplikat"; selesaikan catatan lama lebih dulu.` });
   const h = v.jalur.key === "BIAYA_TANPA_STOK" ? await hargaBiaya(db, { materialId: v.bahan.id, tanggal: v.tanggal, waktu: v.waktu, qty: v.qty }) : null;
   const izinHarga = bolehNominal(user);
   return {
@@ -285,7 +286,8 @@ export async function pratinjauBiayaTanpaStok(db, user, masukan) {
     qty: v.qty, konversi: v.konversi, tanggalPemakaian: v.tanggal, waktuPemakaian: v.waktu ? v.waktu.toISOString() : null, terlambatHari: v.terlambatHari, soTanggal: v.pra?.soTanggal ?? null,
     harga: h ? { status: h.status, basis: h.basis, teks: h.teks, harga: izinHarga && h.harga ? Number(h.harga) : null, nilai: izinHarga && h.nilai ? Number(h.nilai) : null, sidik: h.sidik,
       kandidat: h.kandidat ? h.kandidat.map((k) => ({ ...k, harga: izinHarga ? Number(k.harga) : null })) : null } : null,
-    ganda: { identik: g.identik, mirip: g.mirip, perluKonfirmasi: g.mirip.length > 0, sidik: g.sidik },
+    ganda: { identik: g.identik, mirip: g.mirip, perluKonfirmasi: g.kandidat.length > 0, sidik: g.sidik,
+      teks: g.identik.length ? `${g.identik.length} catatan/pengeluaran lain bertanggal dan berjumlah SAMA — indikator kuat duplikat. Boleh dicatat hanya bila sumbernya memang berbeda: tulis alasan; penyetuju memeriksa.` : null },
     dampak: ["Stok Gudang TIDAK berubah (hitung fisik SO sudah mencakup pemakaian ini).", "Tidak ada jurnal Finance; saldo kas/bank tidak berubah.", "HPP operasional order bertambah hanya sesudah DISETUJUI orang lain dari pengaju.", "Koreksi kelak = entri pengganti; entri ini tidak bisa diubah atau dihapus."],
     sumber: { jenis: v.sumberJenis, label: SUMBER_JENIS[v.sumberJenis], ref: v.sumberRef },
   };
@@ -315,20 +317,19 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
       }
       const g = await periksaGanda(tx, v, { menggantikanId: ganti?.id ?? null });
       wajib(!g.sumberDipakai.length, "Sumber ini sudah menjadi biaya tanpa stok yang aktif. Satu baris sumber hanya dicatat sekali; koreksi lewat entri pengganti.", "SUMBER_SUDAH_DIPAKAI", 409, { entri: g.sumberDipakai.map((x) => x.id) });
-      wajib(!g.identik.length, `Pemakaian identik sudah terwakili (${g.identik.map((k) => k.kind).join(", ")}). Konfirmasi "bukan duplikat" tidak berlaku untuk sumber identik.`, "GANDA_IDENTIK", 409, { identik: g.identik });
       const alasanBukan = String(masukan.alasanBukanGanda ?? "").trim();
-      wajib(!g.mirip.length || (masukan.konfirmasiBukanGanda === true && alasanBukan.length >= 5), `Ada ${g.mirip.length} catatan/pengeluaran lain bahan ini yang mungkin mencatat pemakaian yang sama. Periksa daftarnya, lalu konfirmasi "bukan duplikat" dengan alasan (min. 5 karakter).`, "KEMUNGKINAN_GANDA", 409, { mirip: g.mirip });
+      wajib(!g.kandidat.length || (masukan.konfirmasiBukanGanda === true && alasanBukan.length >= 5), `Ada ${g.kandidat.length} catatan/pengeluaran lain bahan ini yang mungkin mencatat pemakaian yang sama${g.identik.length ? ` (${g.identik.length} bertanggal dan berjumlah sama — indikator kuat)` : ""}. Periksa daftarnya, lalu konfirmasi "bukan duplikat" dengan alasan (min. 5 karakter).`, "KEMUNGKINAN_GANDA", 409, { identik: g.identik, mirip: g.mirip });
       wajib(!masukan.sidikGanda || masukan.sidikGanda === g.sidik, "Daftar kemungkinan ganda berubah sejak pratinjau. Lihat pratinjau lagi; tidak ada yang tersimpan.", "KANDIDAT_GANDA_BERUBAH", 409);
       const h = await hargaBiaya(tx, { materialId: v.bahan.id, tanggal: v.tanggal, waktu: v.waktu, qty: v.qty });
       wajib(!masukan.sidikHarga || masukan.sidikHarga === h.sidik, "Dasar harga berubah sejak pratinjau. Lihat pratinjau lagi; tidak ada yang tersimpan.", "DASAR_HARGA_BERGESER", 409);
       const e = await tx.orderBiayaTanpaStok.create({ data: {
         unitId: v.unit.id, orderId: v.unit.orderId, materialId: v.bahan.id, qty: new Decimal(String(v.qty)), satuan: v.bahan.unit, tanggalPemakaian: tglDate(v.tanggal), waktuPemakaian: v.waktu, soTanggal: tglDate(v.pra.soTanggal), soTautanId: v.tautan?.id ?? null,
         statusHarga: h.status, hargaSatuan: h.harga, nilai: h.nilai, priceId: h.priceId, basisHarga: h.basis, sidikHarga: h.sidik, kandidatHarga: h.kandidat ?? undefined,
-        sumberJenis: v.sumberJenis, sumberRef: v.sumberRef, sidikGanda: g.sidik, kandidatGanda: { kunci: g.kunci, mirip: g.mirip, alasanBukanGanda: alasanBukan || null },
+        sumberJenis: v.sumberJenis, sumberRef: v.sumberRef, sidikGanda: g.sidik, kandidatGanda: { kunci: g.kunci, identik: g.identik, mirip: g.mirip, alasanBukanGanda: alasanBukan || null },
         bukti: v.bukti, alasan: v.alasan, menggantikanId: ganti?.id ?? null, diajukanOleh: user.id, idempotencyKey: kunci,
       } });
       await catatEvent(tx, e.id, "DIAJUKAN", user.id, v.alasan, null, { qty: v.qty, tanggal: v.tanggal, waktu: v.waktu ? v.waktu.toISOString() : null, soTanggal: v.pra.soTanggal, statusHarga: e.statusHarga, basisHarga: h.basis,
-        nilai: e.nilai == null ? null : Number(e.nilai), menggantikanId: ganti?.id ?? null, sumber: `${v.sumberJenis}:${v.sumberRef}`, kandidatGandaMirip: g.mirip.length, alasanBukanGanda: alasanBukan || null });
+        nilai: e.nilai == null ? null : Number(e.nilai), menggantikanId: ganti?.id ?? null, sumber: `${v.sumberJenis}:${v.sumberRef}`, kandidatGandaIdentik: g.identik.length, kandidatGandaMirip: g.mirip.length, alasanBukanGanda: alasanBukan || null });
       return { ulang: false, entri: e };
     }, { isolationLevel: "Serializable", timeout: 30_000 });
   } catch (err) {
@@ -338,7 +339,7 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
 }
 
 /**
- * Setujui (FINANCE_APPROVE, orang lain dari pengaju). Memeriksa ulang: jalur SO, dasar harga (sidik), sumber, ganda identik, dan daftar kemungkinan ganda (sidik).
+ * Setujui (FINANCE_APPROVE, orang lain dari pengaju). Memeriksa ulang: jalur SO, dasar harga (sidik), sumber/tautan transaksi yang sama (mutlak), dan kandidat ganda BARU sejak diajukan.
  * PERLU_KEPUTUSAN: keputusanHarga { priceId, alasan } wajib dan harus salah satu kandidat yang disimpan. Koreksi: entri lama → DIGANTI lalu pengganti → DISETUJUI, satu transaksi.
  */
 export async function setujuiBiayaTanpaStok(prisma, user, { id, catatan = null, keputusanHarga = null }) {
@@ -377,7 +378,7 @@ export async function setujuiBiayaTanpaStok(prisma, user, { id, catatan = null, 
       // Biaya tanpa stok yang diajukan SESUDAH entri ini sudah memperhitungkan entri ini saat diajukan → tidak dihitung sebagai kandidat baru di sini.
       const g = await periksaGanda(tx, v, { menggantikanId: e.menggantikanId, kecualiId: e.id, sebelum: e.diajukanPada });
       wajib(!g.sumberDipakai.some((x) => x.status === "DISETUJUI"), "Sumber ini sudah disetujui pada entri lain.", "SUMBER_SUDAH_DIPAKAI", 409);
-      wajib(!g.identik.length, `Pemakaian yang sama sudah terwakili sejak diajukan (${g.identik.map((k) => k.kind).join(", ")}). Tolak entri ini.`, "GANDA_IDENTIK", 409, { identik: g.identik });
+      // Indikator (tanggal+jumlah sama) yang SUDAH diakui pengaju dengan alasan tidak menolak; yang BARU muncul sesudah diajukan menahan persetujuan di bawah.
       const lamaKunci = new Set(e.kandidatGanda?.kunci ?? []); const baru = g.kandidat.filter((k) => !lamaKunci.has(`${k.kind}|${k.id}`));
       wajib(!baru.length, "Ada catatan/pengeluaran baru bahan ini yang mungkin ganda sejak diajukan. Tolak lalu ajukan ulang supaya pengaju memeriksa daftar terbaru.", "KANDIDAT_GANDA_BERUBAH", 409, { baru });
       const sekarang = new Date();
@@ -463,6 +464,47 @@ export async function cabutKonfirmasi(prisma, user, { unitId, alasan }) {
   return prisma.unitHppKonfirmasi.update({ where: { id: k.id }, data: { status: "REVOKED", dicabutOleh: user.id, dicabutPada: new Date(), alasanCabut: t } });
 }
 
+// ───────────────────────────── ASAL DOKUMEN KOREKSI (BACA-SAJA) ─────────────────────────────
+/**
+ * Dokumen koreksi di balik jurnal beban pokok + PERIODE YANG DIKOREKSINYA (bukan tanggal jurnal). Map(entryId → { jenis, nomor, periodeAkhir|null, bukti }).
+ *   PERSEDIAAN_AWAL (FinInventoryOpening) → saldo s.d. sehari sebelum cutoverDate.
+ *   PEMAKAIAN_BAHAN tanpa unit bersumber StockAdjustmentRequest → periode = tanggal asal koreksinya (USAGE_NOTE: tanggal pakai catatan; MOVEMENT: tanggal pergerakan); asal lain/kosong → null.
+ *   PEMAKAIAN_BAHAN tanpa unit bersumber StockCount (opname) → null: hasil hitung fisik tidak menyebut periode yang dikoreksi.
+ * Pembalik memakai dokumen jurnal yang dibaliknya. Baris tanpa dokumen koreksi tidak ada di peta.
+ */
+async function muatAsalKoreksi(db, barisBebanPokok, sumberAsal) {
+  const dok = new Map(); // entryId → { sumber, id }
+  for (const r of barisBebanPokok) {
+    const s = r.sumber === "REVERSAL" ? r.membalik?.sumber : r.sumber; const id = r.sumber === "REVERSAL" ? sumberAsal.get(r.entryId) : r.sourceId;
+    if (!id || !UUID.test(String(id))) continue;
+    if (s === "PERSEDIAAN_AWAL" || (s === "PEMAKAIAN_BAHAN" && !r.unitId)) dok.set(r.entryId, { sumber: s, id });
+  }
+  const ids = (s) => [...new Set([...dok.values()].filter((d) => d.sumber === s).map((d) => d.id))];
+  const sebelum = (d) => tglStr(new Date(new Date(d).getTime() - 86_400_000));
+  const [buka, adj, sc] = await Promise.all([
+    ids("PERSEDIAAN_AWAL").length ? db.finInventoryOpening.findMany({ where: { id: { in: ids("PERSEDIAAN_AWAL") } }, select: { id: true, number: true, cutoverDate: true } }) : [],
+    ids("PEMAKAIAN_BAHAN").length ? db.stockAdjustmentRequest.findMany({ where: { id: { in: ids("PEMAKAIAN_BAHAN") } }, select: { id: true, adjustmentNumber: true, originType: true, originId: true } }) : [],
+    ids("PEMAKAIAN_BAHAN").length ? db.stockCount.findMany({ where: { id: { in: ids("PEMAKAIAN_BAHAN") } }, select: { id: true, countNumber: true } }) : [],
+  ]);
+  const noteIds = adj.filter((a) => a.originType === "USAGE_NOTE" && UUID.test(String(a.originId))).map((a) => a.originId);
+  const mvIds = adj.filter((a) => a.originType === "MOVEMENT" && UUID.test(String(a.originId))).map((a) => a.originId);
+  const [notes, mvs] = await Promise.all([
+    noteIds.length ? db.unitUsageNote.findMany({ where: { id: { in: noteIds } }, select: { id: true, usedAt: true } }) : [],
+    mvIds.length ? db.stockMovement.findMany({ where: { id: { in: mvIds } }, select: { id: true, createdAt: true } }) : [],
+  ]);
+  const tglNote = new Map(notes.map((n) => [n.id, n.usedAt ? wibKeyDari(n.usedAt) : null])); const tglMv = new Map(mvs.map((m) => [m.id, wibKeyDari(m.createdAt)]));
+  const info = new Map();
+  for (const o of buka) info.set(o.id, { jenis: "PERSEDIAAN_AWAL", nomor: o.number, periodeAkhir: sebelum(o.cutoverDate), bukti: `Persediaan Awal (cutover ${tglStr(o.cutoverDate)})` });
+  for (const a of adj) {
+    const p = a.originType === "USAGE_NOTE" ? tglNote.get(a.originId) ?? null : a.originType === "MOVEMENT" ? tglMv.get(a.originId) ?? null : null;
+    info.set(a.id, { jenis: "PENYESUAIAN_STOK", nomor: a.adjustmentNumber, periodeAkhir: p, bukti: `Penyesuaian stok${a.originType ? ` (asal ${a.originType})` : " (tanpa asal)"}` });
+  }
+  for (const c of sc) info.set(c.id, { jenis: "STOK_OPNAME", nomor: c.countNumber ?? null, periodeAkhir: null, bukti: "Stok opname" });
+  const hasil = new Map();
+  for (const [entryId, d] of dok) { const i = info.get(d.id); if (i) hasil.set(entryId, i); else if (d.sumber === "PERSEDIAAN_AWAL") hasil.set(entryId, { jenis: "PERSEDIAAN_AWAL", nomor: null, periodeAkhir: null, bukti: "Persediaan Awal (dokumen tidak ditemukan)" }); }
+  return hasil;
+}
+
 // ───────────────────────────── LAPORAN BERDAMPINGAN (BACA-SAJA) ─────────────────────────────
 /**
  * Tiga kolom: (1) laba rugi menurut jurnal, (2) HPP operasional per order + cakupan, (3) hasil manajemen sementara + JEMBATAN dari laba jurnal.
@@ -513,9 +555,8 @@ export async function laporanHppOrder(prisma, { fromStr, toStr, izinHarga = fals
     kelompokBernilai.set(r.kunciKelompok, ok);
     if (!ok && unitDiakui.has(r.unitId)) for (const b of dibalik) pakaiNilaiJurnal.add(b.id);
   }
-  const tautan = await tautanSOAktif(prisma);
-  const batasSO = [...tautan.values()].map((t) => t.soTanggal).filter(Boolean).sort().pop() ?? null;
-  const klas = bebanPokokBaris.map((r) => ({ ...r, ...klasifikasiBarisJurnal(r, { unitDiakui, kelompokBernilai, batasSO }) }));
+  const asalKoreksi = await muatAsalKoreksi(prisma, bebanPokokBaris, sumberAsal);
+  const klas = bebanPokokBaris.map((r) => ({ ...r, ...klasifikasiBarisJurnal(r, { unitDiakui, kelompokBernilai, periodeMulai: fromStr, asalKoreksi }) }));
 
   // (2) per order berpendapatan diakui — pergerakan yang nilai jurnalnya dipakai dikeluarkan dari nilai operasional (tidak ganda)
   const nilaiOperasionalUnit = (u) => { const f = fakta.get(u); return r2([...f.stok.filter((b) => b.tipe !== "WASTE" && !pakaiNilaiJurnal.has(b.id)), ...f.biaya].filter((b) => b.status === "DIBEKUKAN").reduce((a, b) => a + Number(b.subtotal), 0)); };
@@ -566,13 +607,14 @@ export async function laporanHppOrder(prisma, { fromStr, toStr, izinHarga = fals
     operasional: { cakupan, bahanDiakui: sembunyi(bahanDiakui), dikeluarkanKarenaNilaiJurnal: sembunyi(dikeluarkanKarenaJurnal), susutBelumDijurnal: sembunyi(r2(susutBelumDijurnal)), susutTanpaNilai, order: perOrder, pendapatanTanpaOrder: sembunyi(moneyToNumber(sumMoney(pendapatanTanpaOrder))),
       belumDiakui: { order: daftarBelum, nilaiDiketahui: sembunyi(r2(daftarBelum.reduce((a, g) => a + (g.nilaiDiketahui ?? 0), 0))), teks: "Pemakaian bahan pada periode untuk order yang pendapatannya TIDAK diakui pada periode ini (belum diserahkan, atau diakui di periode lain). Ditampilkan terpisah; tidak masuk hasil manajemen." },
       teks: "HPP operasional = Harga Berlaku Gudang pada waktu pemakaian (pengeluaran stok + biaya tanpa stok yang disetujui). Bukan jurnal. Nilai order hanya disebut lengkap bila semua unitnya lengkap." },
-    manajemen: izinHarga ? { ...mgmt, barisJurnal: barisJembatan, batasSO } : { status: mgmt.status, final: false, teksStatus: mgmt.teksStatus, kontrolCocok: mgmt.kontrol.cocok },
+    manajemen: izinHarga ? { ...mgmt, barisJurnal: barisJembatan, periodeMulai: fromStr } : { status: mgmt.status, final: false, teksStatus: mgmt.teksStatus, kontrolCocok: mgmt.kontrol.cocok },
     kelompokJurnal: KELOMPOK_JURNAL,
     pencegahanGanda: [
       "Tidak ada akun yang dikeluarkan utuh: setiap baris jurnal beban pokok diklasifikasi sendiri — hanya yang terbukti terwakili HPP operasional, milik order yang belum diakui, atau koreksi saldo lama yang dibalik; sisanya tetap dihitung.",
       "Baris jurnal pemakaian yang pergerakannya belum bernilai operasional: nilai jurnal dipakai dan nilai operasional pergerakan itu dikeluarkan (satu kali).",
       "Susut unit yang sudah dijurnal dihitung dari jurnal; susut tercatat Gudang yang belum dijurnal ditambahkan dari nilai operasional — tidak keduanya.",
-      "Biaya tanpa stok: satu baris sumber = satu biaya (indeks unik database); pemakaian identik yang sudah ada ISSUE/catatan/biaya lain ditolak.",
+      "Biaya tanpa stok: satu baris sumber = satu biaya (indeks unik database); tanggal + jumlah yang sama dengan ISSUE/catatan/biaya lain hanya boleh dengan alasan pengaju + persetujuan orang lain.",
+      "Koreksi saldo lama ditentukan dokumen asal dan periode yang dikoreksinya, bukan tanggal jurnal; dokumen tanpa periode dikoreksi tetap dihitung (perlu klasifikasi).",
       "Biaya order yang pendapatannya belum diakui ditampilkan terpisah, tidak ikut hasil periode.",
     ],
     saldoLama: "Selisih saldo persediaan lama (PSA/rekonsiliasi) adalah paket terpisah dan TIDAK dibebankan ke periode ini.",

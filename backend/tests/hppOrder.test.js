@@ -52,7 +52,14 @@ test("status order: LENGKAP hanya bila semua unit lengkap; PARSIAL bila sebagian
   assert.equal(statusOrderHpp([K]).key, "BELUM_DIKETAHUI"); assert.equal(statusOrderHpp([K]).nilaiDiketahui, null);
 });
 
-const ctx = (o = {}) => ({ unitDiakui: new Set(["uD"]), kelompokBernilai: new Map([["k-ok", true], ["k-part", false]]), batasSO: "2026-11-04", ...o });
+const asalKoreksi = new Map([
+  ["e-psa-lama", { jenis: "PERSEDIAAN_AWAL", nomor: "PA-1", periodeAkhir: "2026-09-30", bukti: "Persediaan Awal (cutover 2026-10-01)" }],
+  ["e-psa-ini", { jenis: "PERSEDIAAN_AWAL", nomor: "PA-2", periodeAkhir: "2026-11-03", bukti: "Persediaan Awal (cutover 2026-11-04)" }],
+  ["e-adj-lama", { jenis: "PENYESUAIAN_STOK", nomor: "ADJ-1", periodeAkhir: "2026-10-12", bukti: "Penyesuaian stok (asal USAGE_NOTE)" }],
+  ["e-adj-tanpa", { jenis: "PENYESUAIAN_STOK", nomor: "ADJ-2", periodeAkhir: null, bukti: "Penyesuaian stok (tanpa asal)" }],
+  ["e-so", { jenis: "STOK_OPNAME", nomor: "SO-1", periodeAkhir: null, bukti: "Stok opname" }],
+]);
+const ctx = (o = {}) => ({ unitDiakui: new Set(["uD"]), kelompokBernilai: new Map([["k-ok", true], ["k-part", false]]), periodeMulai: "2026-11-01", asalKoreksi, ...o });
 const kl = (r, c) => klasifikasiBarisJurnal({ tanggal: "2026-11-10", membalik: null, unitId: null, kunciKelompok: null, ...r }, ctx(c)).kelompok;
 
 test("klasifikasi: akun 5-1150/5-1900/5-1950/5-1960 TIDAK dikeluarkan utuh — per baris menurut bukti", () => {
@@ -65,11 +72,22 @@ test("klasifikasi: akun 5-1150/5-1900/5-1950/5-1960 TIDAK dikeluarkan utuh — p
   assert.equal(kl({ akunKode: "5-1900", sumber: "PEMAKAIAN_BAHAN" }), "BEBAN_TETAP_DIHITUNG", "susut opname/rusak tetap dihitung");
   assert.equal(kl({ akunKode: "5-1150", sumber: "PEMBELIAN" }), "BEBAN_TETAP_DIHITUNG");
   assert.equal(kl({ akunKode: "5-1950", sumber: "TAGIHAN_SUPPLIER" }), "BEBAN_TETAP_DIHITUNG");
-  assert.equal(kl({ akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN", tanggal: "2026-11-04" }), "KOREKSI_SALDO_LAMA", "selisih opname pada/sebelum SO bertaut");
-  assert.equal(kl({ akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN", tanggal: "2026-11-05" }), "PERLU_KLASIFIKASI", "selisih sesudah SO tetap dihitung, ditandai");
-  assert.equal(kl({ akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN", tanggal: "2026-11-01" }, { batasSO: null }), "PERLU_KLASIFIKASI", "tanpa SO bertaut tidak ada yang dianggap saldo lama");
-  assert.equal(kl({ akunKode: "5-1100", sumber: "PERSEDIAAN_AWAL" }), "KOREKSI_SALDO_LAMA");
   assert.equal(kl({ akunKode: "5-1200", sumber: "PENGELUARAN" }), "BEBAN_TETAP_DIHITUNG");
+});
+
+test("koreksi saldo lama: ditentukan dokumen asal + periode yang dikoreksi — bukan jenis sumber saja, bukan tanggal jurnal vs SO", () => {
+  // PSA tidak otomatis dibalik: hanya bila dokumennya mengoreksi periode SEBELUM periode laporan
+  assert.equal(kl({ entryId: "e-psa-lama", akunKode: "5-1100", sumber: "PERSEDIAAN_AWAL" }), "KOREKSI_SALDO_LAMA");
+  assert.equal(kl({ entryId: "e-psa-ini", akunKode: "5-1100", sumber: "PERSEDIAAN_AWAL" }), "BEBAN_TETAP_DIHITUNG", "PSA yang mengoreksi periode laporan ini tetap dihitung");
+  assert.equal(kl({ entryId: "e-psa-hilang", akunKode: "5-1100", sumber: "PERSEDIAAN_AWAL" }), "PERLU_KLASIFIKASI", "PSA tanpa dokumen terbaca tidak dibalik");
+  assert.equal(kl({ entryId: "e-psa-lama", akunKode: "5-1100", sumber: "REVERSAL", membalik: { sumber: "PERSEDIAAN_AWAL" } }), "KOREKSI_SALDO_LAMA", "pembalik mengikuti dokumen yang dibalik");
+  // penyesuaian stok: periode dari asal koreksinya
+  assert.equal(kl({ entryId: "e-adj-lama", akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN", tanggal: "2026-11-08" }), "KOREKSI_SALDO_LAMA", "jurnal November, tetapi mengoreksi pemakaian 12 Okt");
+  assert.equal(kl({ entryId: "e-adj-tanpa", akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN" }), "PERLU_KLASIFIKASI", "tanpa asal → tidak dianggap saldo lama");
+  assert.equal(kl({ entryId: "e-so", akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN", tanggal: "2026-10-20" }), "PERLU_KLASIFIKASI", "opname: tanggal jurnal lama pun tidak cukup");
+  // tanpa dokumen koreksi: tanggal jurnal (sebelum/sesudah SO) tidak menentukan apa pun
+  for (const t of ["2026-11-01", "2026-11-04", "2026-11-09"]) assert.equal(kl({ entryId: "e-manual", akunKode: "5-1960", sumber: "MANUAL", tanggal: t }), "PERLU_KLASIFIKASI", t);
+  assert.match(klasifikasiBarisJurnal({ entryId: "e-adj-lama", akunKode: "5-1960", sumber: "PEMAKAIAN_BAHAN", unitId: null }, ctx()).alasan, /ADJ-1.*2026-10-12/);
 });
 
 test("jembatan: laba jurnal → hasil manajemen cocok, tidak ada biaya hilang atau ganda", () => {

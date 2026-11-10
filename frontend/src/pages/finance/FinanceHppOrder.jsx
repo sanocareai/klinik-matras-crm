@@ -233,10 +233,13 @@ function FormBiaya({ unit, awal, meta, onBatal, onSelesai }) {
               {pr.harga.kandidat && <ul className="ml-4 list-disc text-xs">{pr.harga.kandidat.map((k) => <li key={k.priceId}>{labelKandidat(k)}</li>)}</ul>}
             </div>
           )}
-          {pr.ganda.identik.length > 0 && <div className="text-red">Pemakaian identik sudah tercatat ({pr.ganda.identik.map((k) => k.kind).join(", ")}). Tidak bisa diajukan.</div>}
+          {pr.ganda.identik.length > 0 && (
+            <div className="text-red">{pr.ganda.teks}
+              <ul className="ml-4 list-disc">{pr.ganda.identik.slice(0, 8).map((k) => <li key={`${k.kind}-${k.id}`}>{k.kind}: {angka(k.qty)} {k.tanggal ?? ""} {k.catatan ?? ""}</li>)}</ul></div>
+          )}
           {pr.ganda.perluKonfirmasi && (
             <div className="space-y-1 text-orange">
-              Mungkin sudah tercatat ({pr.ganda.mirip.length}):
+              {pr.ganda.mirip.length > 0 && <>Mungkin sudah tercatat ({pr.ganda.mirip.length}):</>}
               <ul className="ml-4 list-disc">{pr.ganda.mirip.slice(0, 8).map((k) => <li key={`${k.kind}-${k.id}`}>{k.kind}: {angka(k.qty)} {k.tanggal ?? ""} {k.catatan ?? ""}</li>)}</ul>
               <label className="flex items-center gap-2"><input type="checkbox" checked={bukanGanda} onChange={(e) => setBukanGanda(e.target.checked)} /> Saya sudah memeriksa: ini pemakaian yang BELUM tercatat.</label>
               <Field label="Alasan bukan duplikat (wajib)"><Input value={m.alasanBukanGanda} onChange={(e) => setM((x) => ({ ...x, alasanBukanGanda: e.target.value }))} placeholder="mis. ISSUE lama untuk panel atas, ini panel bawah" /></Field>
@@ -297,7 +300,7 @@ function TabPersetujuan({ meta }) {
               <TD><div className="font-medium">{b.orderNomor}</div><div className="text-xs text-ink3">{b.unitKode}{b.menggantikanId ? " · koreksi" : ""}</div></TD>
               <TD>{b.kode}</TD><TD className="text-right">{angka(b.qty)} {b.satuan}</TD><TD className="text-xs">{b.tanggalPemakaian}{b.waktuPemakaian ? ` ${jamWib(b.waktuPemakaian)}` : ""} / SO {b.soTanggal}</TD>
               <TD className="max-w-xs text-xs">{meta.sumberJenis[b.sumberJenis]} · <span className="text-ink3">{b.sumberJenis === "CATATAN_HISTORIS" ? "catatan historis" : b.sumberRef}</span><div>{b.bukti}</div><div className="text-ink3">{b.alasan}</div>
-                {b.kandidatGanda?.alasanBukanGanda && <div className="text-orange">Bukan duplikat ({b.kandidatGanda.mirip?.length ?? 0} kandidat): {b.kandidatGanda.alasanBukanGanda}</div>}</TD>
+                {b.kandidatGanda?.alasanBukanGanda && <div className={b.kandidatGanda.identik?.length ? "text-red" : "text-orange"}>Bukan duplikat menurut pengaju ({b.kandidatGanda.identik?.length ? `${b.kandidatGanda.identik.length} bertanggal & berjumlah SAMA — periksa sumbernya, ` : ""}{b.kandidatGanda.mirip?.length ?? 0} mirip): {b.kandidatGanda.alasanBukanGanda}</div>}</TD>
               <TD className="text-xs">{b.statusHarga === "PERLU_KEPUTUSAN" ? (
                 <div className="space-y-1"><Badge variant="orange">Harga berubah di hari itu</Badge>
                   <Pilihan aria-label={`Harga ${b.unitKode}`} value={harga[b.id]?.priceId ?? ""} onChange={(v) => setH(b.id, "priceId", v)}>
@@ -360,7 +363,7 @@ function TabLaporan({ periode, meta }) {
       </div>
       {mg.kelompok && (
         <Card><CardContent className="p-4">
-          <JudulKartu title="Klasifikasi baris jurnal beban pokok" description={`Tidak ada akun yang dikeluarkan utuh; setiap baris punya alasan. Batas SO bertaut: ${mg.batasSO ?? "tidak ada"}.`} />
+          <JudulKartu title="Klasifikasi baris jurnal beban pokok" description={`Tidak ada akun yang dikeluarkan utuh; setiap baris punya alasan. Koreksi saldo lama hanya bila dokumen asalnya mengoreksi periode sebelum ${mg.periodeMulai}.`} />
           <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-5">{mg.kelompok.map((k) => <KartuAngka key={k.key} label={k.label} value={<Uang value={k.nilai} />} sub={`${k.baris} baris · ${k.dibalik ? "dibalik" : "tetap dihitung"}`} info={k.teks} tone={k.key === "PERLU_KLASIFIKASI" && k.baris ? "orange" : "default"} />)}</div>
           <TableWrap><Table><THead><TR><TH>Tanggal</TH><TH>Jurnal</TH><TH>Akun</TH><TH>Order</TH><TH>Kelompok</TH><TH>Alasan</TH><TH className="text-right">Nilai</TH></TR></THead>
             <TBody>{mg.barisJurnal.map((r) => <TR key={r.id}><TD className="whitespace-nowrap text-xs">{r.tanggal}</TD><TD className="text-xs">{r.nomorJurnal}<div className="text-ink3">{r.sumber}</div></TD><TD className="text-xs">{r.akunKode} {r.akunNama}</TD><TD className="text-xs">{r.orderNomor ?? "—"}</TD>
