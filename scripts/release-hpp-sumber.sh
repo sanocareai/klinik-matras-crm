@@ -11,7 +11,7 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ && "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen harus DEPLOY_SHA BASE_SHA 40 karakter" >&2; exit 1; }
 MODE=release; for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --rehearsal-only) MODE=rehearsal;; --rollback) MODE=rollback;; esac; done
-BUNDLE="${BUNDLE:-}"; CAND_BRANCH="${CAND_BRANCH:-feat/hpp-order-on-ee5eff42}"; CAND_REF="refs/remotes/origin/cand-hos"
+BUNDLE="${BUNDLE:-}"; CAND_BRANCH="${CAND_BRANCH:-feat/hpp-sumber-on-5dda7971}"; CAND_REF="refs/remotes/origin/cand-hos"
 ALLOWED_RE='^(backend/prisma/migrations/20261231180000_hpp_sumber_historis_satu_jalur/migration\.sql|backend/src/lib/domain/hppOrder\.js|backend/src/routes/financeHppOrder\.js|backend/src/services/finance/hppOrder\.js|backend/src/services/postingPemakaianHistoris\.js|backend/src/services/sumberBiayaTanpaStok\.js|backend/tests/integration/hppOrder\.integration\.test\.js|frontend/qa-harness/hpp-order-browser\.cjs|frontend/qa-harness/hpp-order-server\.mjs|frontend/src/pages/finance/FinanceHppOrder\.jsx|scripts/release-hpp-sumber\.sh)$'
 MIG_NAME='20261231180000_hpp_sumber_historis_satu_jalur'; MIG_SHA='c3912ce2b6f64e9b8f0732ccc05a351ef682ab57c4b699265d0cf5cd9179100a'; DIFF_SHA='a3445e832cca8fbea0a15a0f0f60273c7e59ec23f7ff737d7795e1336a261e9c'
 TRIGGER_BARU="uun_tolak_posting_sumber_biaya obts_tolak_sumber_tertaut"
