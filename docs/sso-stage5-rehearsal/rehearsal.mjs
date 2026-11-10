@@ -15,6 +15,7 @@ import * as A from "./run-apps.mjs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
+import fsp from "node:fs/promises";
 
 const SANSS_DIR = A.SANSS_DIR;
 const HUB_DIR = A.HUB_DIR;
@@ -318,7 +319,23 @@ async function main() {
   // teruji sungguhan: leaderA tidak boleh pernah melihat judul milik
   // leaderB di Main Hub-nya, dan sebaliknya.
   //
-  // CATATAN JUJUR (keputusan eksplisit, bukan terlewat): HUB sendiri TIDAK
+  // SUPERSEDED (10 Nov 2026): catatan di bawah ini bilang HUB tidak punya
+  // kontrol akses per-task/per-project sama sekali — itu SEKARANG SALAH.
+  // server/policy/access.ts (repo HUB) menambahkan kontrol itu, gated di
+  // belakang HUB_RESOURCE_ACL_ENABLED (lihat docs/SSO.md "Access control"
+  // dan skenario 14 di bawah untuk bukti lintas-proyek). KONSEKUENSI untuk
+  // bagian INI: auth.ts sekarang MENOLAK sesi HUB MEMBER/GUEST sama sekali
+  // (dialihkan ke /acl-pending) kalau flag itu OFF — jadi mulai baris
+  // startHub di bawah, flag DINYALAKAN untuk sisa skenario 12-14 (leaderA/
+  // leaderB tidak akan bisa login ke HUB sama sekali kalau tidak), dan
+  // DIMATIKAN lagi di skenario 14's finally. Paragraf ASLI di bawah (kenapa
+  // ringkasan Main Hub SANSS sendiri aman TANPA kontrol akses proyek sejak
+  // awal — ia baca langsung dari identitas sesi, tidak pernah menerima ID
+  // dari browser) masih BENAR dan tetap relevan untuk MENGAPA bagian itu
+  // sendiri tidak perlu diuji ulang di sini; yang berubah hanya bahwa
+  // SESI HUB leaderA/leaderB kini butuh flag itu untuk bisa ada sama sekali.
+  //
+  // CATATAN ASLI (sebagian sudah basi — lihat di atas): HUB sendiri TIDAK
   // PUNYA kontrol akses per-task/per-project sama sekali — SIAPA PUN anggota
   // workspace (MEMBER/ADMIN/OWNER) bisa melihat DAN MENGUBAH task/meeting
   // siapa pun begitu mereka benar-benar masuk ke HUB (desain asli HUB sejak
@@ -333,6 +350,12 @@ async function main() {
   // dari browser sama sekali, jadi tidak ada "ID" untuk dimanipulasi di
   // lapisan itu.
   console.log("\n== Main Hub: dua leader MEMBER (grant eksplisit) + Owner ==");
+  // Resource ACL — MEMBER/GUEST butuh flag ON untuk bisa login ke HUB sama
+  // sekali (lihat catatan SUPERSEDED di atas). Dinyalakan di sini, bukan
+  // cuma di skenario 14, supaya leaderA/leaderB (dipakai sejak bagian ini)
+  // berhasil JIT-provisioning. stopProc dulu (lihat alasannya di skenario 14).
+  await A.stopProc("hub");
+  check(await A.startHub({ SANSS_SSO_ENABLED: "true", HUB_RESOURCE_ACL_ENABLED: "true" }), "12. HUB dinyalakan ulang dengan HUB_RESOURCE_ACL_ENABLED=true (MEMBER/GUEST butuh ini untuk bisa login sama sekali)");
   try {
     // ── Routing: non-leader satu-portal TETAP auto-skip (regresi, bukan diubah) ──
     const ctxPlainSales = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -534,6 +557,336 @@ async function main() {
     const shotPath = path.join(os.tmpdir(), "sso-rehearsal-mainhub-leaders-fail.png");
     await page.screenshot({ path: shotPath, fullPage: true }).catch(() => {});
     check(false, "12. Main Hub Pantauan Leader: skenario gagal", `${e.message} — screenshot: ${shotPath} — url=${page.url()}`);
+  }
+
+  // ═══ 13. QA visual Main Hub — redesain Apple-style (desktop, mobile,     ══
+  //         disclosure, HUB mati, smoke CSS layar lain) ═══════════════════
+  // Kandidat visual sendiri (92aaea3ab / sumber 62f660978) SUDAH ditutup —
+  // bagian ini MEMBUKTIKANNYA dengan browser sungguhan, bukan mengubahnya
+  // lagi. Akun fixture existing saja (page = Owner, sudah login sejak
+  // skenario 1; leaderA/leaderB login ulang di bawah memakai email/password
+  // staging yang sama seperti skenario 12) — tidak ada bypass auth baru.
+  console.log("\n== QA visual Main Hub: desktop, mobile, disclosure, HUB mati, smoke CSS ==");
+  const shotDir = path.join(os.tmpdir(), "sso-rehearsal-mainhub-qa");
+  await fsp.mkdir(shotDir, { recursive: true }).catch(() => {});
+  try {
+    // ── Desktop: Portal penuh, data nyata Owner (dari skenario 4/12) ──────
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    const shotDesktop = path.join(shotDir, "portal-desktop.png");
+    await page.screenshot({ path: shotDesktop, fullPage: true });
+    check(true, "13. Screenshot DESKTOP /portal disimpan", shotDesktop);
+
+    const capsuleCount = await page.locator(".ap-tombol").count();
+    check(capsuleCount >= 2, "13. Tombol capsule Apple (.ap-tombol) tampil di Main Hub", `jumlah=${capsuleCount}`);
+    const widgetCount = await page.locator(".ap-widget").count();
+    check(widgetCount >= 1, "13. Kartu widget workspace (.ap-widget) tampil", `jumlah=${widgetCount}`);
+    const panelCount = await page.locator(".ap-panel").count();
+    check(panelCount === 3, "13. Ketiga panel Main Hub (.ap-panel: Tugas Saya/Hasil Meeting/Pantauan Leader) tampil", `jumlah=${panelCount}`);
+
+    // ── Disclosure ikon info "i": buka via klik, tutup via Esc (bukan hover) ──
+    const infoBtn = page.locator('[data-testid="ap-info"]').first();
+    if ((await infoBtn.count()) > 0) {
+      await infoBtn.click();
+      await page.waitForTimeout(300);
+      const openVisible = await page.locator('[data-testid="ap-info-isi"]').first().isVisible().catch(() => false);
+      check(openVisible, "13. Ikon info 'i' membuka penjelasan saat diklik (bukan hover)");
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+      check((await page.locator('[data-testid="ap-info-isi"]').count()) === 0, "13. Ikon info 'i' tertutup dengan Esc");
+    } else {
+      check(false, "13. Ikon info 'i' tidak ditemukan di Main Hub untuk diuji");
+    }
+
+    // ── Tiga kartu Main Hub: Owner (terhubung ke HUB) -> state DATA NYATA, bukan kosong/galat ──
+    check((await page.locator('text="Tugas Saya"').count()) > 0, "13. Panel 'Tugas Saya' tampil untuk Owner");
+    check((await page.locator('text="Hasil Meeting"').count()) > 0, "13. Panel 'Hasil Meeting' tampil untuk Owner");
+    check((await page.locator('text="Pantauan Leader"').count()) > 0, "13. Panel 'Pantauan Leader' tampil untuk Owner");
+    check((await page.locator('text="Belum terhubung ke Task & Meeting"').count()) === 0, "13. Owner TERHUBUNG -> tidak menampilkan state 'belum terhubung' (data nyata, bukan kosong)");
+
+    // ── Klik detail dari Pantauan Leader (tugas leaderA, judul stabil/idempoten
+    //    dari seed-leader-tasks.mjs) -> HUB -> refresh -> kembali ke Main Hub,
+    //    URL tetap SATU origin /workspace sepanjang jalan (same-domain, bukan
+    //    cross-origin — lihat perbaikan komentar di Portal.jsx). ──
+    const leaderATaskForClick = page.locator('text="Tugas Leader A (terlambat)"').first();
+    if ((await leaderATaskForClick.count()) > 0) {
+      await Promise.all([page.waitForURL(/\/workspace\/projects\/.+\/board\?task=/, { timeout: 15000 }).catch(() => {}), leaderATaskForClick.click()]);
+      await page.waitForTimeout(1000);
+      const urlAfterClick = page.url();
+      check(urlAfterClick.startsWith(`${A.PUBLIC}/workspace`), "13. ALUR: kartu -> SSO -> detail mendarat di ORIGIN SAMA (/workspace), tanpa login ulang", urlAfterClick);
+      await page.reload({ waitUntil: "load" });
+      await page.waitForTimeout(1000);
+      check(page.url().startsWith(`${A.PUBLIC}/workspace`), "13. ALUR: refresh di halaman detail HUB tetap di origin yang sama (sesi tidak hilang)", page.url());
+      await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+      await page.waitForTimeout(1000);
+      check(page.url() === `${A.PUBLIC}/portal` && (await page.locator('text="Pantauan Leader"').count()) > 0, "13. ALUR: kembali ke Main Hub dari HUB berhasil, Pantauan Leader tampil lagi", page.url());
+    } else {
+      check(false, "13. ALUR: tugas leaderA tidak ditemukan di Pantauan Leader Owner untuk diklik");
+    }
+
+    // ── Isolasi dua leader MEMBER (ulang ringkas dgn SCREENSHOT — logika lengkapnya sudah dibuktikan skenario 12) ──
+    const ctxLeaderAQa = await browser.newContext({ ignoreHTTPSErrors: true });
+    const pageLeaderAQa = await loginViaUI(ctxLeaderAQa, seed.leaderA.email, seed.password);
+    await pageLeaderAQa.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await pageLeaderAQa.waitForTimeout(1500);
+    const shotLeaderA = path.join(shotDir, "portal-leaderA-desktop.png");
+    await pageLeaderAQa.screenshot({ path: shotLeaderA, fullPage: true });
+    check((await pageLeaderAQa.locator('text="Tugas Leader A (terlambat)"').count()) > 0, "13. leaderA (screenshot): melihat tugas miliknya sendiri", shotLeaderA);
+    check((await pageLeaderAQa.locator('text="Tugas Leader B (terlambat)"').count()) === 0, "13. leaderA (screenshot): TIDAK melihat tugas leaderB");
+    check((await pageLeaderAQa.locator('text="Pantauan Leader"').count()) === 0, "13. leaderA (screenshot): Pantauan Leader tetap tersembunyi (MEMBER, bukan Owner)");
+    await pageLeaderAQa.close();
+    await ctxLeaderAQa.close();
+
+    // ── HUB mati -> Main Hub bilang "tidak tersedia", SISA Portal (kartu workspace, tombol capsule) TIDAK ikut jatuh ──
+    await A.stopProc("hub");
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    // Backend SANSS sendiri butuh sampai SUMMARY_TIMEOUT_MS (8 dtk,
+    // services/hubSummary.js) untuk gagal-tertutup saat HUB tak terjangkau —
+    // tunggu KONDISI nyata (bukan sleep pendek yang kebetulan lolos/gagal
+    // tergantung kecepatan mesin) sampai 12 dtk sebelum menilai.
+    await page.waitForSelector('text="Task & Meeting tidak tersedia"', { timeout: 12000 }).catch(() => {});
+    const shotHubDown = path.join(shotDir, "portal-hub-down.png");
+    await page.screenshot({ path: shotHubDown, fullPage: true });
+    check((await page.locator('text="Task & Meeting tidak tersedia"').count()) > 0, "13. HUB MATI: panel Main Hub menampilkan 'tidak tersedia' (bukan diam/kosong)", shotHubDown);
+    check((await page.locator('.ap-widget').count()) >= 1, "13. HUB MATI: kartu widget workspace (data SANSS sendiri) TETAP tampil, Portal tidak ikut jatuh");
+    check((await page.locator('.ap-tombol-utama').count()) > 0, "13. HUB MATI: tombol capsule header tetap berfungsi/tampil");
+    const hubDownStatus = await page.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const r = await fetch("/api/hub/summary/me", { headers: { authorization: `Bearer ${token}` } });
+      return r.status;
+    });
+    check(hubDownStatus === 503, "13. HUB MATI: GET /hub/summary/me menjawab 503 (bukan 500/hang)", `status=${hubDownStatus}`);
+    // Nyalakan lagi HUB (dibutuhkan skenario 5-8 setelah ini) — flag SANA tetap
+    // ON, sama seperti skenario 2. HUB_RESOURCE_ACL_ENABLED SENGAJA tidak
+    // disertakan di sini (balik ke default OFF) — tidak ada sesi MEMBER/GUEST
+    // HUB yang disentuh lagi setelah titik ini sampai skenario 14 menyalakan
+    // ulang sendiri; sisa skenario 13 (mobile/CSS smoke) hanya memakai `page`
+    // (Owner), yang tidak terdampak flag ini.
+    check(await A.startHub({ SANSS_SSO_ENABLED: "true" }), "13. HUB dinyalakan ulang setelah uji 'HUB mati' (dibutuhkan skenario berikutnya)");
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    check((await page.locator('text="Task & Meeting tidak tersedia"').count()) === 0, "13. HUB NYALA LAGI: Main Hub pulih normal (bukan nyangkut di state 'tidak tersedia')");
+
+    // ── Mobile: Portal + overflow horizontal ──────────────────────────────
+    await page.setViewportSize({ width: 390, height: 844 }); // iPhone 12/13
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    const shotMobile = path.join(shotDir, "portal-mobile.png");
+    await page.screenshot({ path: shotMobile, fullPage: true });
+    check(true, "13. Screenshot MOBILE /portal disimpan", shotMobile);
+    const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(mobileOverflow <= 2, "13. MOBILE: tidak ada overflow horizontal di /portal", `selisih=${mobileOverflow}px`);
+    check((await page.locator(".ap-widget").count()) >= 1 && (await page.locator(".ap-panel").count()) === 3, "13. MOBILE: kartu widget + ketiga panel Main Hub tetap tampil (bukan hilang di breakpoint sempit)");
+
+    // ── Smoke CSS: layar operasional LAIN tidak ikut berubah gara-gara sanss-apple.css global ──
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const [route, label] of [["/dashboard", "dashboard-sales-crm"], ["/kendali", "kendali-all-teams"]]) {
+      await page.goto(`${A.PUBLIC}${route}`, { waitUntil: "load" });
+      await page.waitForTimeout(1200);
+      const shotOther = path.join(shotDir, `smoke-${label}.png`);
+      await page.screenshot({ path: shotOther, fullPage: true });
+      const bodyText = await page.locator("body").innerText().catch(() => "");
+      check(!/something went wrong|terjadi kesalahan/i.test(bodyText), `13. SMOKE CSS: ${route} render tanpa boundary galat`, shotOther);
+      const overflowOther = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      check(overflowOther <= 2, `13. SMOKE CSS: ${route} tidak overflow horizontal (CSS Apple global tidak bocor)`, `selisih=${overflowOther}px`);
+    }
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" }); // kembalikan page ke /portal untuk skenario berikutnya
+  } catch (e) {
+    const shotPath = path.join(shotDir, "qa-mainhub-fail.png");
+    await page.screenshot({ path: shotPath, fullPage: true }).catch(() => {});
+    check(false, "13. QA visual Main Hub: skenario gagal", `${e.message} — screenshot: ${shotPath} — url=${page.url()}`);
+  }
+
+  // ═══ 14. Smoke browser — resource ACL (server/policy/access.ts, repo HUB) ═
+  // Kandidat implementasi QA-tertutup sendiri lewat skrip langsung terhadap
+  // DB staging (scripts/verify-resource-acl.ts, repo HUB, 53/53 lulus) — ini
+  // MEMBUKTIKAN wiring-nya lewat browser sungguhan: Server Action HUB yang
+  // benar-benar menolak, bukan cuma fungsi kebijakannya terisolasi. Flag
+  // default OFF di produksi — DINYALAKAN di sini khusus untuk skenario ini,
+  // DIMATIKAN lagi sebelum skenario berikutnya lanjut.
+  console.log("\n== Smoke browser: resource ACL (dua MEMBER, dua proyek terpisah) ==");
+  // Dideklarasikan di sini (bukan `const` di dalam try) supaya tetap
+  // terjangkau dari blok 14c SETELAH try/catch/finally ini (14c sengaja di
+  // luar, bukan di dalam `finally` — lihat alasan di komentar finally-nya).
+  let loginA, pageAclA, loginB, pageAclB;
+  try {
+    // startHub() TIDAK menghentikan proses lama sendiri (lihat run-apps.mjs)
+    // — memanggilnya tanpa stopProc dulu membiarkan proses HUB SEBELUMNYA
+    // (flag lama) tetap hidup di port yang sama, dan waitReady() bisa lolos
+    // membaca balasan dari proses LAMA itu, bukan yang baru. Setiap
+    // panggilan startHub di bawah (di sini maupun di `finally`) didahului
+    // stopProc("hub") sendiri, persis pola bookend-awal/akhir file ini.
+    await A.stopProc("hub");
+    check(await A.startHub({ SANSS_SSO_ENABLED: "true", HUB_RESOURCE_ACL_ENABLED: "true" }), "14. HUB dinyalakan ulang dengan HUB_RESOURCE_ACL_ENABLED=true");
+
+    const aclSeed = parseResult(
+      sh("node", ["scripts/stage5-rehearsal/seed-acl-fixture.mjs", A.HUB_DB, A.HUB_WORKSPACE_ID, seed.leaderA.id, seed.leaderB.id], HUB_DIR),
+    );
+    check(aclSeed?.ok === true, "14. Fixture dua proyek terpisah (ACL Proyek A/B, ProjectMember satu-satu) dibuat", JSON.stringify(aclSeed));
+
+    async function loginIntoHub(email) {
+      const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+      const p = await loginViaUI(ctx, email, seed.password);
+      await p.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+      const hubCard = p.locator('text="Task & Meeting"').first();
+      const seen = await hubCard.waitFor({ state: "visible", timeout: 10000 }).then(() => true).catch(() => false);
+      if (seen) await Promise.all([p.waitForURL(`${A.PUBLIC}/workspace/meetings`, { timeout: 20000 }).catch(() => {}), hubCard.click()]);
+      return { ctx, page: p };
+    }
+
+    loginA = await loginIntoHub(seed.leaderA.email);
+    pageAclA = loginA.page;
+    loginB = await loginIntoHub(seed.leaderB.email);
+    pageAclB = loginB.page;
+    check(pageAclA.url() === `${A.PUBLIC}/workspace/meetings` && pageAclB.url() === `${A.PUBLIC}/workspace/meetings`, "14. leaderA dan leaderB masuk sesi HUB (browser nyata, bukan panggilan API langsung)");
+
+    // ── leaderA: proyek SENDIRI (A) terbuka, tugasnya terlihat ──────────────
+    await pageAclA.goto(`${A.PUBLIC}${aclSeed.projectA.boardUrl}`, { waitUntil: "load" });
+    await pageAclA.waitForTimeout(1200);
+    check((await pageAclA.locator(`text="${aclSeed.projectA.taskTitle}"`).count()) > 0, "14. leaderA membuka board proyek SENDIRI (A) -> tugasnya terlihat", pageAclA.url());
+
+    // ── leaderA: proyek LEADERB (B) lewat deep link paksa -> DITOLAK, bukan bocor ──
+    await pageAclA.goto(`${A.PUBLIC}${aclSeed.projectB.boardUrl}`, { waitUntil: "load" });
+    await pageAclA.waitForTimeout(1200);
+    const leakedToA = (await pageAclA.locator(`text="${aclSeed.projectB.taskTitle}"`).count()) > 0;
+    check(!leakedToA, "14. leaderA deep-link ke board proyek B (BUKAN anggota) -> judul tugas rahasia B TIDAK terlihat", pageAclA.url());
+    const bodyTextA = await pageAclA.locator("body").innerText().catch(() => "");
+    check(/not found|tidak ditemukan|404/i.test(bodyTextA), "14. leaderA ke board proyek B -> halaman menyatakan tidak ditemukan (404), bukan diam kosong", bodyTextA.slice(0, 200));
+
+    // ── leaderA: tugas B lewat deep link task id langsung (bukan cuma board) ──
+    const taskDeepLinkA = `${A.PUBLIC}${aclSeed.projectB.boardUrl}?task=${aclSeed.projectB.taskId}`;
+    await pageAclA.goto(taskDeepLinkA, { waitUntil: "load" });
+    await pageAclA.waitForTimeout(1000);
+    check((await pageAclA.locator(`text="${aclSeed.projectB.taskTitle}"`).count()) === 0, "14. leaderA deep-link LANGSUNG ke taskId milik B (?task=...) -> judul tetap TIDAK terlihat");
+
+    // ── leaderB: simetris — proyek sendiri (B) ok, proyek A ditolak ─────────
+    await pageAclB.goto(`${A.PUBLIC}${aclSeed.projectB.boardUrl}`, { waitUntil: "load" });
+    await pageAclB.waitForTimeout(1200);
+    check((await pageAclB.locator(`text="${aclSeed.projectB.taskTitle}"`).count()) > 0, "14. leaderB membuka board proyek SENDIRI (B) -> tugasnya terlihat");
+
+    await pageAclB.goto(`${A.PUBLIC}${aclSeed.projectA.boardUrl}`, { waitUntil: "load" });
+    await pageAclB.waitForTimeout(1200);
+    const leakedToB = (await pageAclB.locator(`text="${aclSeed.projectA.taskTitle}"`).count()) > 0;
+    check(!leakedToB, "14. leaderB deep-link ke board proyek A (BUKAN anggota) -> judul tugas rahasia A TIDAK terlihat", pageAclB.url());
+
+    // ── Sidebar: proyek orang lain tidak muncul dalam daftar yang bisa dipilih ──
+    await pageAclA.goto(`${A.PUBLIC}/workspace/projects`, { waitUntil: "load" });
+    await pageAclA.waitForTimeout(1000);
+    check((await pageAclA.locator('text="ACL Proyek B"').count()) === 0, "14. leaderA: daftar /projects TIDAK menampilkan 'ACL Proyek B' (sidebar/daftar ikut gerbang visibleProjectIds)");
+    check((await pageAclA.locator('text="ACL Proyek A"').count()) > 0, "14. leaderA: daftar /projects TETAP menampilkan proyeknya sendiri ('ACL Proyek A')");
+
+    // Screenshot bukti untuk laporan.
+    const aclShotDir = path.join(os.tmpdir(), "sso-rehearsal-resource-acl");
+    await fsp.mkdir(aclShotDir, { recursive: true }).catch(() => {});
+    await pageAclA.goto(`${A.PUBLIC}${aclSeed.projectA.boardUrl}`, { waitUntil: "load" });
+    await pageAclA.screenshot({ path: path.join(aclShotDir, "leaderA-own-project-board.png"), fullPage: true });
+    await pageAclA.goto(`${A.PUBLIC}${aclSeed.projectB.boardUrl}`, { waitUntil: "load" });
+    await pageAclA.screenshot({ path: path.join(aclShotDir, "leaderA-denied-project-b-board.png"), fullPage: true });
+    check(true, "14. Screenshot bukti (proyek sendiri vs proyek ditolak) disimpan", aclShotDir);
+
+    // ── 14a. Dashboard analytics: OWNER/ADMIN-only, server-side, bukan cuma halaman ──
+    // ADMIN (`pageAdmin`, sesi sejak skenario 2) vs leaderA (MEMBER, pageAclA)
+    // — sengaja BUKAN `page` (Owner): `page` dipakai skenario 5/8 (Logout)
+    // tepat setelah ini untuk menguji sesi Owner yang SUDAH TIDAK disentuh
+    // sejak skenario 13 masih dianggap basi oleh cache introspeksi (<=60dtk)
+    // SETELAH logout SANSS — menyentuh `page` di sini menyegarkan cache itu
+    // tepat sebelum pengujiannya sendiri dan membuatnya flaky. `pageAdmin`
+    // sama validnya untuk membuktikan klausa "OWNER/ADMIN" kebijakan ini.
+    await pageAdmin.goto(`${A.PUBLIC}/workspace/dashboard`, { waitUntil: "load" });
+    await pageAdmin.waitForTimeout(800);
+    check((await pageAdmin.locator('text="Status breakdown"').count()) > 0, "14a. ADMIN membuka /workspace/dashboard -> analitik workspace TERLIHAT");
+    await pageAclA.goto(`${A.PUBLIC}/workspace/dashboard`, { waitUntil: "load" });
+    await pageAclA.waitForTimeout(800);
+    const memberSeesAnalytics = (await pageAclA.locator('text="Status breakdown"').count()) > 0;
+    check(!memberSeesAnalytics, "14a. leaderA (MEMBER) membuka /workspace/dashboard -> analitik TIDAK terlihat (PermissionDenied), bukan cuma menu disembunyikan");
+    const deniedBodyText = await pageAclA.locator("body").innerText().catch(() => "");
+    check(/don.?t have access/i.test(deniedBodyText), "14a. leaderA -> halaman menyatakan tidak punya akses (PermissionDenied), bukan kosong diam", deniedBodyText.slice(0, 200));
+    check((await pageAclA.locator('a:has-text("Go to My Tasks")').count()) > 0, "14a. PermissionDenied di /dashboard mengarahkan ke /my-tasks (bukan link balik ke /dashboard itu sendiri)");
+    // Sidebar: link "Overview" (/dashboard) juga disembunyikan untuk MEMBER, bukan cuma halamannya yang menolak.
+    await pageAclA.goto(`${A.PUBLIC}/workspace/my-tasks`, { waitUntil: "load" });
+    await pageAclA.waitForTimeout(500);
+    check((await pageAclA.locator('nav a[href="/workspace/dashboard"]').count()) === 0, "14a. Sidebar leaderA (MEMBER) TIDAK menampilkan link Overview/Dashboard");
+
+    // ── 14b. Panel pengelolaan akses (OWNER/ADMIN-only) benar-benar mengubah akses ──
+    // Tambah leaderB sebagai ProjectMember proyek A (sebelumnya hanya leaderA), lewat UI nyata.
+    // Dipakai `pageAdmin`, bukan `page` — lihat alasan di 14a.
+    const projectASettingsUrl = aclSeed.projectA.boardUrl.replace(/\/board$/, "/settings");
+    await pageAdmin.goto(`${A.PUBLIC}${projectASettingsUrl}`, { waitUntil: "load" });
+    await pageAdmin.locator("#members").getByRole("button", { name: "Add member" }).click();
+    const picker = pageAdmin.locator("#members select");
+    await picker.waitFor({ state: "visible", timeout: 10000 });
+    await pageAdmin.waitForFunction(
+      (sel) => !sel.disabled && Array.from(sel.options).some((o) => o.textContent?.toLowerCase().includes("leader gudang")),
+      await picker.elementHandle(),
+      { timeout: 10000 },
+    ).catch(() => {});
+    const leaderBOptionValue = await picker.evaluate((sel) => {
+      const opt = Array.from(sel.options).find((o) => o.textContent?.toLowerCase().includes("leader gudang"));
+      return opt ? opt.value : null;
+    });
+    check(!!leaderBOptionValue, "14b. leaderB (Leader Gudang) muncul sebagai kandidat yang BISA ditambahkan ke proyek A");
+    if (leaderBOptionValue) {
+      await picker.selectOption(leaderBOptionValue);
+      await pageAdmin.locator("#members").getByRole("button", { name: "Add" }).click();
+      await pageAdmin.locator("#members li").nth(1).waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+      check((await pageAdmin.locator("#members li").count()) === 2, "14b. Setelah menambah: panel Members proyek A menunjukkan 2 orang (leaderA + leaderB)");
+    }
+
+    // leaderB (sesi browser YANG SAMA, tanpa login ulang) sekarang bisa membuka proyek A.
+    await pageAclB.goto(`${A.PUBLIC}${aclSeed.projectA.boardUrl}`, { waitUntil: "load" });
+    await pageAclB.waitForTimeout(1000);
+    check((await pageAclB.locator(`text="${aclSeed.projectA.taskTitle}"`).count()) > 0, "14b. SETELAH ditambahkan: leaderB membuka board proyek A -> tugasnya kini TERLIHAT, tanpa login ulang");
+
+    // Cabut lagi lewat UI yang sama — baris yang BARU ditambahkan selalu paling akhir (orderBy createdAt asc).
+    await pageAdmin.locator("#members li").last().getByRole("button", { name: "Remove" }).click();
+    await pageAdmin.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+    await pageAdmin.locator("#members li").nth(1).waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
+    check((await pageAdmin.locator("#members li").count()) === 1, "14b. Setelah mencabut: panel Members proyek A kembali ke 1 orang (hanya leaderA)");
+
+    // leaderB (request BERIKUTNYA, sesi browser yang sama) ditolak lagi — pencabutan berlaku tanpa logout.
+    await pageAclB.goto(`${A.PUBLIC}${aclSeed.projectA.boardUrl}`, { waitUntil: "load" });
+    await pageAclB.waitForTimeout(1000);
+    check((await pageAclB.locator(`text="${aclSeed.projectA.taskTitle}"`).count()) === 0, "14b. SETELAH dicabut: leaderB membuka board proyek A lagi -> tugasnya TIDAK terlihat lagi, request berikutnya saja (tanpa logout)");
+  } catch (e) {
+    check(false, "14. Smoke browser resource ACL: skenario gagal", e.message);
+  } finally {
+    // Flag SELALU dikembalikan OFF sebelum skenario lain (5 dst.) lanjut —
+    // sama disiplinnya dengan bookend awal/akhir file ini. stopProc dulu —
+    // lihat komentar di awal blok try di atas untuk alasannya. SATU restart
+    // di sini saja (bukan restart tambahan di 14c lalu restart lagi di
+    // sini) — dua restart balik-balik sempat terbukti memicu flake baru di
+    // skenario 9 (SSO handoff admin-target macet di /sso/start) saat
+    // pertama kali skrip ini ditulis; 14c's sendiri DIPINDAH ke bawah,
+    // SETELAH restart ini, supaya cukup SATU restart ke flag OFF.
+    await A.stopProc("hub");
+    check(await A.startHub({ SANSS_SSO_ENABLED: "true" }), "14. HUB dinyalakan ulang dengan HUB_RESOURCE_ACL_ENABLED kembali OFF (default)");
+  }
+
+  // ── 14c. Gerbang fail-closed MEMBER/GUEST saat flag OFF — termasuk sesi yang SUDAH aktif ──
+  // leaderA (pageAclA) MASIH login sejak awal skenario 14 (flag ON) — HUB
+  // baru saja dinyalakan ulang dengan flag OFF (restart TUNGGAL di atas,
+  // finally-nya skenario 14) TANPA leaderA logout; diuji permintaan
+  // BERIKUTNYA di sesi browser yang SAMA (bukan sesi baru) ditolak.
+  if (!pageAclA || !loginA) {
+    check(false, "14c. Gerbang fail-closed: dilewati — prasyarat (login leaderA skenario 14) gagal lebih dulu");
+  } else {
+    try {
+      await pageAclA.goto(`${A.PUBLIC}/workspace/my-tasks`, { waitUntil: "load" });
+      check(pageAclA.url() === `${A.PUBLIC}/workspace/acl-pending`, "14c. leaderA (MEMBER, SESI AKTIF, tanpa logout): request berikutnya saat flag OFF -> dialihkan ke /acl-pending", pageAclA.url());
+      const pendingBodyText = await pageAclA.locator("body").innerText().catch(() => "");
+      check(/belum diaktifkan/i.test(pendingBodyText), "14c. /acl-pending menjelaskan akses belum diaktifkan (bukan pesan 'tidak ada akun')", pendingBodyText.slice(0, 200));
+      // ADMIN TIDAK terdampak flag ini sama sekali (lagi-lagi `pageAdmin`, bukan `page` — lihat 14a).
+      await pageAdmin.goto(`${A.PUBLIC}/workspace/my-tasks`, { waitUntil: "load" });
+      check(pageAdmin.url() === `${A.PUBLIC}/workspace/my-tasks`, "14c. ADMIN TETAP bisa akses HUB meski flag OFF (gerbang pilot ini tidak berlaku untuk OWNER/ADMIN)", pageAdmin.url());
+    } catch (e) {
+      check(false, "14c. Gerbang fail-closed: skenario gagal", e.message);
+    } finally {
+      await pageAclA.close().catch(() => {});
+      await loginA.ctx.close().catch(() => {});
+      if (pageAclB) await pageAclB.close().catch(() => {});
+      if (loginB) await loginB.ctx.close().catch(() => {});
+    }
   }
 
   // ═══ 5. Logout SANSS -> sesi HUB tercabut (browser nyata) ══════════════

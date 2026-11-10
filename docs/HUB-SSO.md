@@ -209,18 +209,33 @@ tampil seperti biasa. Tidak ada perubahan kode routing yang diperlukan —
 diverifikasi langsung lewat rehearsal (leader satu-portal mendarat di
 `/portal`, non-leader satu-portal tetap auto-skip seperti sebelumnya).
 
-**Batas yang JUJUR, bukan terlewat:** `HUB_MEMBER` membatasi apa yang
-TERLIHAT DARI MAIN HUB SANSS (ringkasan milik sendiri saja, tanpa Pantauan
-Leader). Begitu seorang `HUB_MEMBER` benar-benar MASUK ke HUB itu sendiri
-(klik kartu "Task & Meeting", bukan cuma lihat Main Hub), ia tunduk pada
-model otorisasi HUB SENDIRI — **workspace flat, tanpa kontrol akses per-
-task/per-project apa pun**: siapa pun anggota workspace (MEMBER/ADMIN/
-OWNER) bisa melihat DAN MENGUBAH task/meeting siapa pun di workspace yang
-sama. Ini desain ASLI HUB sejak sebelum Main Hub ada — `HUB_MEMBER` TIDAK
-mengubahnya, dan membangun kontrol akses per-task/per-project di dalam HUB
-adalah keputusan terpisah yang jauh lebih besar (bukan bagian dari
-perubahan ini — keputusan Owner eksplisit: dokumentasikan batas ini, jangan
-bangun sekarang).
+**SUPERSEDED (10 Nov 2026) — lihat repo SANO-HUB, `docs/SSO.md` "Access
+control" + `src/server/policy/access.ts`:** paragraf di bawah ini dulu
+menyatakan keputusan "dokumentasikan batas ini, jangan bangun sekarang"
+sebagai final. Itu TIDAK LAGI benar — HUB sekarang punya kontrol akses
+per-proyek terpusat (OWNER/ADMIN: akses penuh; MEMBER: hanya proyek yang
+`ProjectMember`-nya; GUEST: baca-saja pada proyek yang diizinkan; task
+mengikuti akses proyek, bukan assignment; meeting dibaca organizer+attendee,
+diubah organizer/OWNER/ADMIN saja), diterapkan lewat
+`HUB_RESOURCE_ACL_ENABLED` (default OFF — nonaktif berarti perilaku lama di
+bawah ini TETAP berlaku apa adanya sampai Owner menyalakannya untuk pilot
+tertentu). Dibuktikan lewat `scripts/verify-resource-acl.ts` (53/53 lulus)
+dan rehearsal Tahap 5 skenario 14 (dua leader, dua proyek terpisah, deep
+link browser nyata). Paragraf asli di bawah tetap benar untuk MENJELASKAN
+kenapa `HUB_MEMBER` sendirian (tanpa flag ini) tidak pernah cukup — hanya
+klaim "ini final, tidak akan dibangun" yang sekarang salah.
+
+**Batas yang JUJUR, bukan terlewat (sebelum kebijakan di atas):** `HUB_MEMBER`
+membatasi apa yang TERLIHAT DARI MAIN HUB SANSS (ringkasan milik sendiri
+saja, tanpa Pantauan Leader). Begitu seorang `HUB_MEMBER` benar-benar MASUK
+ke HUB itu sendiri (klik kartu "Task & Meeting", bukan cuma lihat Main
+Hub), ia tunduk pada model otorisasi HUB SENDIRI — tanpa `HUB_RESOURCE_ACL_ENABLED=true`,
+itu masih **workspace flat, tanpa kontrol akses per-task/per-project apa
+pun**: siapa pun anggota workspace (MEMBER/ADMIN/OWNER) bisa melihat DAN
+MENGUBAH task/meeting siapa pun di workspace yang sama. Ini desain ASLI HUB
+sejak sebelum Main Hub ada — `HUB_MEMBER` TIDAK mengubahnya; mengubahnya
+butuh flag terpisah di atas, dinyalakan sadar oleh Owner, bukan efek
+samping dari `HUB_MEMBER`.
 
 ## Endpoint
 

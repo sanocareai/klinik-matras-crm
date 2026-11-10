@@ -154,6 +154,11 @@ function hubEnv(overrides = {}) {
     SANSS_INTERNAL_URL: `http://127.0.0.1:${SANSS_PORT}`, // langsung, BUKAN lewat nginx; SANSS tanpa basePath, tetap origin saja
     SANSS_SERVICE_TOKEN: SHARED_TOKEN,
     SANSS_PUBLIC_ORIGIN: PUBLIC,
+    // Resource ACL (src/server/policy/access.ts, HUB repo) — default OFF
+    // seperti produksi; skenario 14 menyalakannya sendiri lewat override ini
+    // untuk membuktikan isolasi lintas-proyek, lalu kembali OFF sebelum
+    // skenario lain lanjut (lihat bookend di rehearsal.mjs).
+    HUB_RESOURCE_ACL_ENABLED: overrides.HUB_RESOURCE_ACL_ENABLED ?? "false",
   };
 }
 export async function startHub(overrides = {}) {
