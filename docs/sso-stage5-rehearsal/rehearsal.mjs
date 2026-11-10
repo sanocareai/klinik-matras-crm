@@ -38,9 +38,22 @@ async function main() {
   // create+migrate aman dipanggil berkali-kali (lihat scripts/stage5-rehearsal/staging-db.mjs) —
   // kalau database sudah ada & sudah bermigrasi, ini cuma memverifikasi.
   console.log("== Provisioning database staging ==");
+  // Pasangan DB staging WAJIB konsisten (penanda sama, migrasi dikenal repo
+  // ini, identitas HUB menunjuk pengguna SANSS yang ada) — fixture dicari
+  // per judul, jadi pasangan setengah-reset diam-diam memakai fixture lama.
+  // Reset hanya atas permintaan eksplisit, dan hanya DB bertanda harness.
+  const pairArgs = [`"${A.SANSS_DB}"`, `"${A.HUB_DB}"`];
+  if (process.env.STAGE5_RESET_STAGING === "1") {
+    console.log("reset staging:", parseResult(sh("node", ["scripts/stage5-rehearsal/staging-pair.mjs", "reset", ...pairArgs], SANSS_DIR)));
+  }
+  const pair = parseResult(sh("node", ["scripts/stage5-rehearsal/staging-pair.mjs", "check", ...pairArgs, `"${HUB_DIR}"`], SANSS_DIR));
+  console.log("pasangan staging:", pair);
   sh("node", ["scripts/stage5-rehearsal/staging-db.mjs", "create"], SANSS_DIR);
   sh("node", ["scripts/stage5-rehearsal/staging-db.mjs", "migrate"], SANSS_DIR);
   sh("node", ["scripts/stage5-rehearsal/staging-db.mjs", "create"], HUB_DIR);
+  if (pair?.state === "fresh") {
+    console.log("penanda pasangan:", parseResult(sh("node", ["scripts/stage5-rehearsal/staging-pair.mjs", "mark", ...pairArgs], SANSS_DIR)));
+  }
   const hubMigrate = parseResult(sh("node", ["scripts/stage5-rehearsal/staging-db.mjs", "migrate"], HUB_DIR));
   if (hubMigrate?.workspaceId) A.setHubWorkspaceId(hubMigrate.workspaceId);
   console.log("HUB_WORKSPACE_ID:", A.HUB_WORKSPACE_ID);
