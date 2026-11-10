@@ -174,10 +174,15 @@ test("HUB_SSO_ENABLED tidak 'true' → SEMUA endpoint 404, tidak ada baris tertu
 
 test("enabled tapi konfigurasi cacat → 503 HUB_SSO_MISCONFIGURED (tidak jalan setengah benar)", async () => {
   const { token } = await mkUser();
-  for (const over of [{ HUB_BASE_URL: undefined }, { HUB_BASE_URL: "http://hub.example.com" }, { HUB_BASE_URL: "https://hub.example.com/x" },
+  // Path dasar sederhana ("/workspace") SAH sejak efd3a919c (same-domain); yang tetap cacat:
+  // trailing slash, titik di segmen, slash ganda, query bersama path.
+  for (const over of [{ HUB_BASE_URL: undefined }, { HUB_BASE_URL: "http://hub.example.com" },
+    { HUB_BASE_URL: "https://hub.example.com/workspace/" }, { HUB_BASE_URL: "https://hub.example.com/a.b" },
+    { HUB_BASE_URL: "https://hub.example.com//workspace" }, { HUB_BASE_URL: "https://hub.example.com/workspace?x=1" },
     { HUB_SERVICE_TOKEN: "pendek" }, { HUB_SERVICE_TOKEN: process.env.JWT_SECRET },
-    // HUB_INTERNAL_URL (tahap 4) — alamat PRIVAT untuk SANSS→HUB revoke; publik/path/tak ada = cacat.
-    { HUB_INTERNAL_URL: undefined }, { HUB_INTERNAL_URL: "https://public.example.com" }, { HUB_INTERNAL_URL: `${fakeHubServer.baseUrl}/x` }]) {
+    // HUB_INTERNAL_URL (tahap 4) — alamat PRIVAT untuk SANSS→HUB revoke; publik/path liar/tak ada = cacat.
+    { HUB_INTERNAL_URL: undefined }, { HUB_INTERNAL_URL: "https://public.example.com" },
+    { HUB_INTERNAL_URL: `${fakeHubServer.baseUrl}/workspace/` }, { HUB_INTERNAL_URL: `${fakeHubServer.baseUrl}/a.b` }]) {
     enableSso(over);
     const r = await handoff(token);
     assert.equal(r.status, 503, JSON.stringify(over));
