@@ -13,6 +13,7 @@ import {
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
 import { confirmBuildCorner, recordBuildMaterials, requestBuildReworkMaterial, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
+import { gerbangBahanRunV2 } from "../services/pengajuanPemakaian.js";
 import {
   getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setQcGateDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
@@ -227,10 +228,13 @@ productionExperienceRouter.post("/runs/:runId/build/rework-material", requireAny
 productionExperienceRouter.post("/runs/:runId/build/materials", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
   try {
     if (!(await assertRunInCohort(res, req.params.runId))) return;
-    res.json(await recordBuildMaterials(prisma, {
-      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
-      expectedRevision: req.body?.expectedRevision, racikan: req.body?.racikan ?? null, materials: req.body?.materials ?? [], note: req.body?.note ?? null,
-    }));
+    // Aturan ADMIN (services/pengajuanPemakaian.js): ADMIN langsung; non-ADMIN → semua pemeriksaan tanpa menulis, lalu PENGAJUAN (stok & HPP berubah sesudah verifikasi ADMIN lain).
+    const masukan = { runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
+      expectedRevision: req.body?.expectedRevision, racikan: req.body?.racikan ?? null, materials: req.body?.materials ?? [], note: req.body?.note ?? null };
+    const g = await gerbangBahanRunV2(prisma, req.user, masukan, { kunci: idem(req), jalankan: () => recordBuildMaterials(prisma, masukan), cobaSaja: () => recordBuildMaterials(prisma, { ...masukan, cobaSaja: true }),
+      catatTanpaBahan: (sah) => recordBuildMaterials(prisma, { ...masukan, materials: sah, idempotencyKey: masukan.idempotencyKey ? `${masukan.idempotencyKey}-rac`.slice(-128) : masukan.idempotencyKey }) });
+    if (g.langsung) return res.json(g.hasil);
+    res.status(g.ulang ? 200 : 202).json({ menungguVerifikasi: true, ulang: g.ulang, pengajuan: g.pengajuan, runId: g.runId, pesan: "Pemakaian bahan dilaporkan sebagai PENGAJUAN; stok dan HPP berubah sesudah diverifikasi ADMIN. Pekerjaan tetap bisa dilanjutkan." });
   } catch (err) { handleErr(err, res); }
 });
 

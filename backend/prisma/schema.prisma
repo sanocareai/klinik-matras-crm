@@ -1888,6 +1888,7 @@ model Unit {
   materialDeclarations UnitMaterialDeclaration[]
   biayaTanpaStok    OrderBiayaTanpaStok[]
   hppKonfirmasi     UnitHppKonfirmasi[]
+  pengajuanPemakaian PengajuanPemakaianProduksi[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -12111,4 +12112,51 @@ model UnitHppKonfirmasi {
 
   @@index([unitId, status])
   @@map("unit_hpp_konfirmasi")
+}
+
+/// Pengajuan pemakaian bahan Produksi oleh akun NON-ADMIN (unit V1, perubahan pemakaian, bahan run V2). Stok & HPP berubah hanya saat diverifikasi ADMIN berbeda
+/// (eksekusi memakai jalur tulis lama dengan pelaku = pengaju). Isi immutable (trigger ppp_jaga). Lihat services/pengajuanPemakaian.js.
+model PengajuanPemakaianProduksi {
+  id              String    @id @default(uuid()) @db.Uuid
+  jalur           String    @db.VarChar(16) // UNIT_BAHAN | PERUBAHAN | RUN_V2
+  unitId          String    @map("unit_id") @db.Uuid
+  unit            Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  runId           String?   @map("run_id")
+  materialIds     String[]  @default([]) @map("material_ids")
+  masukan         Json
+  ringkasan       Json
+  dasar           Json
+  sidikDasar      String    @map("sidik_dasar")
+  hargaAmbigu     Boolean   @default(false) @map("harga_ambigu")
+  status          String    @default("DIAJUKAN") @db.VarChar(12) // DIAJUKAN | DITAHAN | DISETUJUI | DITOLAK | DIBATALKAN
+  diajukanOleh    String    @map("diajukan_oleh")
+  peranPengaju    String[]  @default([]) @map("peran_pengaju")
+  diajukanPada    DateTime  @default(now()) @map("diajukan_pada")
+  diputuskanOleh  String?   @map("diputuskan_oleh")
+  diputuskanPada  DateTime? @map("diputuskan_pada")
+  alasanKeputusan String?   @map("alasan_keputusan")
+  alasanTahan     Json?     @map("alasan_tahan")
+  hasil           Json?
+  idempotencyKey  String    @map("idempotency_key")
+  events          PengajuanPemakaianProduksiEvent[]
+
+  @@unique([diajukanOleh, idempotencyKey], map: "ppp_kunci_pengaju")
+  @@index([status, diajukanPada], map: "ppp_status_waktu")
+  @@index([unitId, status], map: "ppp_unit_status")
+  @@index([runId, status], map: "ppp_run_status")
+  @@map("pengajuan_pemakaian_produksi")
+}
+
+model PengajuanPemakaianProduksiEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  pengajuanId String   @map("pengajuan_id") @db.Uuid
+  pengajuan   PengajuanPemakaianProduksi @relation(fields: [pengajuanId], references: [id], onDelete: Restrict)
+  kind        String   @db.VarChar(20)
+  actorId     String?  @map("actor_id")
+  reason      String?
+  detail      Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([pengajuanId, createdAt], map: "pppe_pengajuan_waktu")
+  @@map("pengajuan_pemakaian_produksi_events")
 }

@@ -37,7 +37,7 @@ test("Navigasi Production (P12B.2): OPERASIONAL 6 menu; MODE KERJA akordeon defa
   assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]); // Slice 1: QC disembunyikan sementara
   assert.deepEqual(sec["MODE KERJA"].items.map((i) => i.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Aplikasi PIC QC", "Andon TV"]);
   assert.ok(sec["MODE KERJA"].collapsible && sec["MODE KERJA"].defaultClosed, "akordeon, default tertutup");
-  assert.deepEqual(sec["KONTROL & LAPORAN"].items.map((i) => i.label), ["Lengkapi HPP Order", "KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]); // +Lengkapi HPP Order (Nov 2026)
+  assert.deepEqual(sec["KONTROL & LAPORAN"].items.map((i) => i.label), ["Lengkapi HPP Order", "Verifikasi Pemakaian", "KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]); // +Lengkapi HPP Order, +Verifikasi Pemakaian (Nov 2026)
   assert.deepEqual(sec["ADMINISTRASI"].items.map((i) => i.label), ["Pengaturan"]);
   assert.match(LAYOUT, /PRODUCTION_NAV\.map/, "Layout membangun menu dari lib/productionNav.js");
   assert.doesNotMatch(LAYOUT, /LEGACY \(ADMIN\)|Inspeksi QC \(lama\)/, "tanpa section Legacy");

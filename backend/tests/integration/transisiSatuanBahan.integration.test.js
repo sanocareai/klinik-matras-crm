@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { rencanakanImpor, terapkanImpor, evaluasiUlang, resetKeadaanEfektif, tungguPenyegaran } from "../../src/services/catatanPemakaianHistoris.js";
 import { rencanakanPosting } from "../../src/services/postingPemakaianHistoris.js";
 import { daftarPengaman } from "../../src/services/pengamanHistorisPascaSO.js";
@@ -39,7 +40,7 @@ async function dunia({ gerakan = true, harga = true } = {}) {
   }
   if (harga) await testPrisma.materialHargaBerlaku.create({ data: { materialId: m.id, jenis: "HARGA", unitPrice: 85000, satuan: "ROLL", effectiveFrom: WIB("2026-11-01"), createdAt: WIB("2026-10-30"), reason: "harga uji awal", idempotencyKey: `hb-${m.id}` } });
   const aktor = (u, r) => ({ id: u.user.id, name: u.user.name, roles: [r] });
-  return { admin, owner, A: aktor(admin, "ADMIN"), B: aktor(owner, "OWNER"), m, cg: makeClient(server.baseUrl, (await createTestUser({ roles: ["WAREHOUSE"] })).token), ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
+  return { admin, owner, A: aktor(admin, "ADMIN"), B: aktor(owner, "OWNER"), m, cg: makeClient(server.baseUrl, (await createTestUser({ roles: ["WAREHOUSE"] })).token), ca: denganVerifikasiOtomatis(makeClient(server.baseUrl, admin.token), server.baseUrl), co: denganVerifikasiOtomatis(makeClient(server.baseUrl, owner.token), server.baseUrl) };
 }
 const saldo = async (id) => Number((await testPrisma.stockMovement.aggregate({ where: { materialId: id }, _sum: { qty: true } }))._sum.qty ?? 0);
 const jumlahGerak = (id) => testPrisma.stockMovement.count({ where: { materialId: id } });

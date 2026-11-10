@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import * as PT from "./setup/preTeardown.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 import { setAdaptationDefault, setQcGateDefault } from "../../src/services/productionSettingsService.js";
@@ -38,7 +39,7 @@ async function world() {
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-PT-${++seq}`, name: "Gudang PT" } });
   const rcv = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-PT-${++seq}` } });
   const nadyaOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
-  const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
+  const c = (u) => ({ ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) });
   return { lead: c(lead), nadya: c(nadya), qc: c(qc), doc: c(doc), reader: c(reader), admin: c(admin), driver: c(driver), rcv, wc: workCenter.id, nadyaOp };
 }
 async function mkOrder({ category = "LAYANAN", productLine = "KASUR" } = {}) {
@@ -336,7 +337,7 @@ test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V2; Run lama (
 
 test("bawaan gerbang QC: TANPA setting = kebijakan lama (NULL); Admin mengaktifkan V1/V2 (tercatat); dipin saat Run lahir; tidak retroaktif; Run lama tidak berubah; penerapan eksplisit bertrail", async () => {
   const w = await world();
-  const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: makeClient(server.baseUrl, adminU.token) };
+  const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, adminU.token), server.baseUrl) };
   const getDefault = async () => (await admin.api.get(`${V2}/settings`)).body.qcGateDefault;
   const evCount = () => testPrisma.activityEvent.count({ where: { eventType: "PRODUCTION_SETTING_CHANGED", entityId: "qc_gate_default_policy" } });
   const pinned = async (runId) => (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: runId } })).qcGatePolicyVersion;

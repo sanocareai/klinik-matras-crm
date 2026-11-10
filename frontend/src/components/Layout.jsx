@@ -75,7 +75,7 @@ import { ApSkinContext } from "@/components/apple/Apple.jsx";
 // disatukan, ubah DUA-DUANYA sekaligus, jangan cuma satu lalu terasa lebih
 // tidak konsisten.
 // P12B.2 — nama ikon di lib/productionNav.js → komponen lucide (ikon konsisten: satu ikon per menu, tanpa duplikat dalam satu sidebar).
-const NAV_ICONS = { Gauge, Boxes, CalendarClock, ClipboardList, ClipboardCheck, ArrowUpFromLine, ListChecks, Wrench, Scissors, Camera, Tv, BarChart3, Receipt, AlertTriangle, Settings };
+const NAV_ICONS = { Gauge, Boxes, CalendarClock, ClipboardList, ClipboardCheck, ArrowUpFromLine, ListChecks, ShieldCheck, Wrench, Scissors, Camera, Tv, BarChart3, Receipt, AlertTriangle, Settings };
 
 const DIVISION_ACCENT = {
   text: "text-blue-700",

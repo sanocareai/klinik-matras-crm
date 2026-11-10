@@ -27,7 +27,7 @@ test("struktur final: urutan section & menu persis sesuai keputusan", () => {
   assert.deepEqual(PRODUCTION_NAV.map((s) => [s.section, s.items.map((i) => i.label)]), [
     ["OPERASIONAL", ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]], // Slice 1: menu QC disembunyikan sementara (rute & halaman tetap ada)
     ["MODE KERJA", ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Aplikasi PIC QC", "Andon TV"]],
-    ["KONTROL & LAPORAN", ["Lengkapi HPP Order", "KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]], // +Lengkapi HPP Order (Nov 2026, perubahan menu disetujui untuk kandidat HPP per order)
+    ["KONTROL & LAPORAN", ["Lengkapi HPP Order", "Verifikasi Pemakaian", "KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]], // +Lengkapi HPP Order (Nov 2026); +Verifikasi Pemakaian (ADMIN saja, keputusan Owner Nov 2026)
     ["ADMINISTRASI", ["Pengaturan"]],
   ]);
   assert.equal(PRODUCTION_NAV.at(-1).section, "ADMINISTRASI", "Pengaturan paling bawah");
@@ -53,11 +53,13 @@ test("ikon: satu ikon per menu, tidak ada duplikat, dan semuanya terpetakan di L
 
 test("matriks menu per peran (ADMIN/OWNER, Lead, Operator, QC, Gudang, Dokumenter, Finance, Sales)", () => {
   const ALL = flat(menuFor(["ADMIN"]));
-  assert.equal(ALL.length, 15, "ADMIN: seluruh 15 menu (menu QC desktop tetap disembunyikan; +Antrean PIC QC, Fase 2 LAYANAN; +Lengkapi HPP Order)");
-  assert.deepEqual(flat(menuFor(["OWNER"])), ALL, "OWNER = ADMIN");
+  assert.equal(ALL.length, 16, "ADMIN: seluruh 16 menu (menu QC desktop tetap disembunyikan; +Antrean PIC QC, Fase 2 LAYANAN; +Lengkapi HPP Order; +Verifikasi Pemakaian)");
+  // Verifikasi Pemakaian: HANYA peran ADMIN (bukan OWNER/Lead/Finance) — penyetuju operasional bahan per keputusan Owner
+  assert.deepEqual(flat(menuFor(["OWNER"])), ALL.filter((l) => l !== "Verifikasi Pemakaian"), "OWNER = ADMIN kecuali Verifikasi Pemakaian");
+  for (const role of ["OWNER", "PRODUCTION_LEAD", "FINANCE", "PRODUCTION_WORKER", "WAREHOUSE"]) assert.ok(!flat(menuFor([role])).includes("Verifikasi Pemakaian"), `${role} tidak melihat Verifikasi Pemakaian`);
   // Production Lead: semuanya (KPI, Biaya, Pengaturan sesuai gerbang peran)
   // (kecuali "Antrean PIC QC": izin tulis uji = QC_WRITE/PRODUCTION_EXECUTE_ANY, yang Lead TIDAK punya — tidak ditawari tombol yang pasti 403)
-  assert.deepEqual(flat(menuFor(["PRODUCTION_LEAD"])), ALL.filter((l) => l !== "Aplikasi PIC QC"));
+  assert.deepEqual(flat(menuFor(["PRODUCTION_LEAD"])), ALL.filter((l) => l !== "Aplikasi PIC QC" && l !== "Verifikasi Pemakaian"));
   assert.ok(flat(menuFor(["QC_LEAD"])).includes("Aplikasi PIC QC") && !flat(menuFor(["QC_LEAD"])).includes("Quality Control"), "PIC QC melihat antrean sendiri; menu QC desktop tetap tersembunyi");
   // Operator / QC / Gudang / Dokumenter: tanpa KPI & Laporan, Biaya Produksi, Pengaturan; section ADMINISTRASI tidak muncul sama sekali
   for (const role of ["PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE", "PRODUCTION_DOCUMENTER"]) {

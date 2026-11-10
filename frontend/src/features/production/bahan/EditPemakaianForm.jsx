@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, Info, Pencil } from "lucide-react";
 import { api } from "@/api.js";
+import { kabarkanPengajuan } from "@/features/production/pengajuan/pengajuanModel.js";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatJumlah, kunciIdempoten, pesanGalatAdopsi } from "@/features/production/orderProduksiModel.js";
@@ -62,7 +63,7 @@ export default function EditPemakaianForm({ unitId, selesai, baris, izin, menung
     try {
       let h;
       if (pra.jalur === "AJUKAN") { const r = await api.ajukanKoreksiPemakaian(unitId, badanPengajuan({ materialId: baris.materialId, v }), kunciRef.current); h = { jenis: "AJUKAN", nomor: r.nomor ?? r.correctionNumber ?? null }; }
-      else { const r = await api.perubahanPemakaian(unitId, badanPenerapan(pra, { mode, materialId: baris.materialId, v, keBahan, sudahPeriksa }), kunciRef.current); h = { jenis: "LANGSUNG", ulang: !!r.ulang }; }
+      else { const r = await api.perubahanPemakaian(unitId, badanPenerapan(pra, { mode, materialId: baris.materialId, v, keBahan, sudahPeriksa }), kunciRef.current); h = r?.menungguVerifikasi ? { jenis: "VERIFIKASI", ulang: !!r.ulang } : { jenis: "LANGSUNG", ulang: !!r.ulang }; if (r?.menungguVerifikasi) kabarkanPengajuan(); }
       await onSelesai?.(h); // induk menutup formulir dan menampilkan pesan hasil (LANGSUNG = tersimpan; AJUKAN = menunggu persetujuan)
     } catch (e) { setGalat(e); } finally { kirimRef.current = false; setSibuk(false); }
   }

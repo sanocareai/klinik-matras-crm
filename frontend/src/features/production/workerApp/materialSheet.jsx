@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { api } from "@/api.js";
+import { kabarkanPengajuan } from "@/features/production/pengajuan/pengajuanModel.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import MaterialRowsEditor from "@/features/production/components/MaterialRowsEditor.jsx";
 import { fromRecord, rowsPayload, validateMaterialRows } from "@/features/production/materialRows.js";
@@ -28,6 +29,17 @@ export default function MaterialRecordSheet({ card, onClose, onSubmitted }) {
   // Baris pemakaian (pola "+ Tambah baris"): bahan HANYA dari yang diserahkan Gudang; baris kosong terakhir tidak dikirim.
   const [rows, setRows] = useState(() => fromRecord(record?.materials || []));
   const [rowErrors, setRowErrors] = useState({});
+  // Pemakaian yang sudah DILAPORKAN tetapi belum diverifikasi ADMIN: isian dibuka dari pengajuan itu (bukan dari catatan sah terakhir), supaya tidak dilaporkan ulang dari nol.
+  const [tertunda, setTertunda] = useState(null);
+  useEffect(() => {
+    let hidup = true;
+    api.daftarPengajuanPemakaian({ runId: card.runId }).then((d) => {
+      const p = (d.pengajuan || []).find((x) => x.jalur === "RUN_V2"); if (!hidup || !p) return;
+      setTertunda(p); const baris = (p.ringkasan?.baris || []).filter((b) => b.materialId);
+      if (baris.length) setRows(fromRecord(baris.map((b) => ({ materialId: b.materialId, qty: b.qty }))));
+    }).catch(() => {});
+    return () => { hidup = false; };
+  }, [card.runId]);
   const issuedMap = useMemo(() => new Map(issued.map((m) => [m.materialId, m])), [issued]);
   const options = useMemo(() => issued.map((m) => ({ id: m.materialId, label: `${m.name || m.code}${m.code ? ` (${m.code})` : ""}`, unit: m.uom || null, hint: `Diserahkan ${m.qty} ${String(m.uom || "").toLowerCase()}`.trim() })), [issued]);
   const availableOf = (id) => { const m = issuedMap.get(id); return m ? Number(m.qty) : null; };
@@ -50,6 +62,7 @@ export default function MaterialRecordSheet({ card, onClose, onSubmitted }) {
     try {
       const result = await api.recordProductionV2BuildMaterials(card.runId, body, key);
       intentKeysMaterial.release(card.runId, "materials", card.revision);
+      if (result?.menungguVerifikasi) kabarkanPengajuan(); // daftar "Sudah dilaporkan" di detail pekerjaan dimuat ulang
       onSubmitted(result);
     } catch (e) {
       if (isRetryableError(e)) setCanRetry(true); else intentKeysMaterial.release(card.runId, "materials", card.revision);
@@ -80,6 +93,7 @@ export default function MaterialRecordSheet({ card, onClose, onSubmitted }) {
         </div>
         <div><label htmlFor="mat-note" className={labelCls}>Catatan (opsional)</label>
           <textarea id="mat-note" rows={2} className={field} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
+        {tertunda && <p data-testid="material-tertunda-note" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-ink">Pemakaian terakhir yang Anda laporkan masih <b>menunggu verifikasi ADMIN</b> — isian di atas dibuka dari laporan itu. Mengirim lagi menggantikan laporan tersebut (tidak dihitung dua kali).</p>}
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>
       <div className="space-y-2 border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>

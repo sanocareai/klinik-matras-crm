@@ -6,6 +6,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { rencanakanImpor, terapkanImpor, ambilCatatanHistoris } from "../../src/services/catatanPemakaianHistoris.js";
 import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian, tolakKoreksiPemakaian, batalkanKoreksiPemakaian, pratinjauKoreksiPemakaian, riwayatKoreksiPemakaian } from "../../src/services/koreksiPemakaian.js";
 import { rencanakanPosting, jalankanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
@@ -26,7 +27,7 @@ const WIB = (iso) => new Date(`${iso}T00:00:00+07:00`);
 let seq = 0; const kunciUji = (t) => `uji-${t}-${Date.now().toString(36)}-${++seq}-aaaaaaaa`;
 
 async function dunia({ csvExtra = [] } = {}) {
-  const admin = await createTestUser({ roles: ["ADMIN"] }); const owner = await createTestUser({ roles: ["OWNER"] });
+  const admin = await createTestUser({ roles: ["ADMIN"] }); const owner = await createTestUser({ roles: ["OWNER"] }); const admin2 = await createTestUser({ roles: ["ADMIN"] }); // penyetuju koreksi pemakaian = ADMIN lain (keputusan Owner Nov 2026; Finance/Owner bukan penyetuju operasional bahan)
   const kain = await createTestMaterial({ code: "R-KAIN", name: "KAIN LAVA REKON", unit: "METER" }); const soft = await createTestMaterial({ code: "R-SOFT", name: "BUSA SOFT REKON", unit: "SHEET" });
   await seedBalance(kain.id, 20, { createdAt: WIB("2026-09-01"), unitCost: 25000 }); await seedBalance(soft.id, 10, { createdAt: WIB("2026-09-01"), unitCost: 110000 });
   const mk = async (no) => { const { order, unit } = await createTestUnit({ status: "DELIVERED" }); await testPrisma.order.update({ where: { id: order.id }, data: { orderNumber: no, status: "DELIVERED" } }); return unit; };
@@ -35,8 +36,8 @@ async function dunia({ csvExtra = [] } = {}) {
   const csv = ["J", "D", HDR, baris(1, "RES-01092026-801", "1 Sep 26", "Bahan Lapisan", "KAIN LAVA REKON", "1,7", "METER"), baris(2, "RES-01092026-801", "1 Sep 26", "Bahan Fondasi", "BUSA SOFT REKON", "1,0", "LEMBAR"),
     baris(3, "RES-02092026-802", "2 Sep 26", "Bahan Lapisan", "KAIN LAVA REKON", "3,0", "METER"), baris(4, "RES-02092026-802", "2 Sep 26", "Bahan Fondasi", "BUSA SOFT REKON", "2,0", "LEMBAR"), ...csvExtra].join("\n");
   await terapkanImpor(testPrisma, await rencanakanImpor(testPrisma, { csvText: csv, namaBerkas: "uji.csv" }), {});
-  const A = { id: admin.user.id, name: admin.user.name, roles: ["ADMIN"] }; const B = { id: owner.user.id, name: owner.user.name, roles: ["OWNER"] };
-  return { admin, owner, A, B, kain, soft, u1, u2, ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
+  const A = { id: admin.user.id, name: admin.user.name, roles: ["ADMIN"] }; const B = { id: owner.user.id, name: owner.user.name, roles: ["OWNER"] }; const C = { id: admin2.user.id, name: admin2.user.name, roles: ["ADMIN"] };
+  return { admin, owner, A, B, C, c2: denganVerifikasiOtomatis(makeClient(server.baseUrl, admin2.token), server.baseUrl), kain, soft, u1, u2, ca: denganVerifikasiOtomatis(makeClient(server.baseUrl, admin.token), server.baseUrl), co: denganVerifikasiOtomatis(makeClient(server.baseUrl, owner.token), server.baseUrl) };
 }
 const saldo = async (id) => Number((await testPrisma.stockMovement.aggregate({ where: { materialId: id }, _sum: { qty: true } }))._sum.qty);
 const catatan = (unitId, nama) => testPrisma.unitUsageNote.findFirst({ where: { unitId, rawName: nama, origin: "EXCEL" } });
@@ -79,37 +80,38 @@ test("K3. koreksi PEMAKAIAN per order: ajukan → penyetuju LAIN → pergerakan 
   assert.equal((await ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 1.7, alasan: "Excel terverifikasi 1,7 m", kunci: k1, aktor: w.A })).ulang, true);
   await assert.rejects(() => ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 1.5, alasan: "kedua belum disetujui", kunci: kunciUji("p2"), aktor: w.A }), /menunggu persetujuan/);
   await assert.rejects(() => setujuiKoreksiPemakaian(testPrisma, { koreksiId: a.id, aktor: w.A }), /sendiri/);
-  const ok = await setujuiKoreksiPemakaian(testPrisma, { koreksiId: a.id, aktor: w.B, catatan: "OK" });
+  const ok = await setujuiKoreksiPemakaian(testPrisma, { koreksiId: a.id, aktor: w.C, catatan: "OK" });
   assert.equal(ok.status, "POSTED"); assert.equal(ok.hasil.pemakaianSebelum, 2.1); assert.equal(ok.hasil.pemakaianSesudah, 1.7);
   assert.ok(Math.abs((await saldo(w.kain.id)) - (s0 + 0.4)) < 1e-9, "stok hanya bertambah selisih, sekali");
   const mv = await testPrisma.stockMovement.findUnique({ where: { id: ok.hasil.pergerakanId } });
-  assert.equal(mv.type, "RETURN"); assert.equal(mv.unitId, w.u1.id); assert.equal(mv.correctsMovementId, asal.id); assert.equal(mv.correctionId, a.id); assert.equal(mv.createdById, w.B.id);
+  assert.equal(mv.type, "RETURN"); assert.equal(mv.unitId, w.u1.id); assert.equal(mv.correctsMovementId, asal.id); assert.equal(mv.correctionId, a.id); assert.equal(mv.createdById, w.C.id);
   const asalSesudah = await testPrisma.stockMovement.findUnique({ where: { id: asal.id } }); assert.equal(String(asalSesudah.qty), String(asal.qty), "pergerakan asal TIDAK diubah");
   assert.ok(await testPrisma.finStockMovementValuation.findUnique({ where: { movementId: mv.id } }), "pergerakan koreksi bernilai (valuasi beku)");
-  assert.equal((await setujuiKoreksiPemakaian(testPrisma, { koreksiId: a.id, aktor: w.B })).ulang, true, "setujui ulang = hasil sama");
+  assert.equal((await setujuiKoreksiPemakaian(testPrisma, { koreksiId: a.id, aktor: w.C })).ulang, true, "setujui ulang = hasil sama");
   assert.equal(await testPrisma.stockMovement.count({ where: { correctionId: a.id } }), 1);
   // catatan Excel kini sama dengan stok → tertaut
   assert.equal((await catatan(w.u1.id, "KAIN LAVA REKON")).state, "TERCATAT_DI_STOK");
   // koreksi BERULANG: 1,7 → 1,0 (terhadap pemakaian bersih saat itu)
   const b = await ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 1.0, alasan: "Koreksi kedua oleh PIC", kunci: kunciUji("p3"), aktor: w.A });
   assert.equal(b.perubahan.sebelum.pemakaianBersih, 1.7);
-  const ok2 = await setujuiKoreksiPemakaian(testPrisma, { koreksiId: b.id, aktor: w.B }); assert.equal(ok2.hasil.pemakaianSesudah, 1.0);
+  const ok2 = await setujuiKoreksiPemakaian(testPrisma, { koreksiId: b.id, aktor: w.C }); assert.equal(ok2.hasil.pemakaianSesudah, 1.0);
   assert.ok(Math.abs((await saldo(w.kain.id)) - (s0 + 1.1)) < 1e-9);
   // token basi: ajukan, lalu pemakaian berubah (koreksi lain tak mungkin karena tertunda → ubah ledger langsung), setujui → KEADAAN_BERUBAH
   const c = await ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 0.5, alasan: "Koreksi ketiga akan basi", kunci: kunciUji("p4"), aktor: w.A });
   await testPrisma.stockMovement.create({ data: { materialId: w.kain.id, type: "ISSUE", qty: -0.1, unitId: w.u1.id, note: "pemakaian lain" } });
-  await assert.rejects(() => setujuiKoreksiPemakaian(testPrisma, { koreksiId: c.id, aktor: w.B }), /sudah berubah/);
-  await tolakKoreksiPemakaian(testPrisma, { koreksiId: c.id, aktor: w.B, catatan: "Basi, ajukan ulang" });
+  await assert.rejects(() => setujuiKoreksiPemakaian(testPrisma, { koreksiId: c.id, aktor: w.C }), /sudah berubah/);
+  await tolakKoreksiPemakaian(testPrisma, { koreksiId: c.id, aktor: w.C, catatan: "Basi, ajukan ulang" });
   // riwayat unit: diajukan + disetujui, sebelum–sesudah
-  const rw = await riwayatKoreksiPemakaian(testPrisma, w.u1.id); assert.ok(rw.some((e) => e.kind === "KOREKSI_PEMAKAIAN_POSTED" && e.actor === w.B.name)); assert.ok(rw.some((e) => /2,1 → 1,7/.test(e.label)));
+  const rw = await riwayatKoreksiPemakaian(testPrisma, w.u1.id); assert.ok(rw.some((e) => e.kind === "KOREKSI_PEMAKAIAN_POSTED" && e.actor === w.C.name)); assert.ok(rw.some((e) => /2,1 → 1,7/.test(e.label)));
 });
 
 test("K4. koreksi pemakaian NAIK ditolak bila saldo kurang; pembatalan oleh pemohon; hanya penyetuju (izin) lewat HTTP", async () => {
   const w = await dunia();
   await assert.rejects(() => ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 500, alasan: "terlalu besar", kunci: kunciUji("n1"), aktor: w.A }), /saldo bahan negatif|diblokir/i);
   const a = await ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 3.0, alasan: "naik wajar 3 meter", kunci: kunciUji("n2"), aktor: w.A });
-  const h = await w.ca.post(`/api/production/koreksi-pemakaian/${a.id}/setujui`, {}); assert.equal(h.status, 403, "ADMIN tanpa izin persetujuan tidak bisa menyetujui");
-  const hb = await w.co.post(`/api/production/koreksi-pemakaian/${a.id}/setujui`, { catatan: "oke" }); assert.equal(hb.status, 200, JSON.stringify(hb.body)); assert.equal(hb.body.status, "POSTED");
+  const h = await w.ca.post(`/api/production/koreksi-pemakaian/${a.id}/setujui`, {}); assert.equal(h.status, 403, "pemohon tidak menyetujui sendiri");
+  assert.equal((await w.co.post(`/api/production/koreksi-pemakaian/${a.id}/setujui`, {})).status, 403, "Owner/Finance bukan penyetuju operasional bahan (ADMIN saja)");
+  const hb = await w.c2.post(`/api/production/koreksi-pemakaian/${a.id}/setujui`, { catatan: "oke" }); assert.equal(hb.status, 200, JSON.stringify(hb.body)); assert.equal(hb.body.status, "POSTED");
   assert.equal((await testPrisma.stockMovement.findUnique({ where: { id: hb.body.hasil.pergerakanId } })).type, "ISSUE", "koreksi naik = ISSUE bertaut asal");
   const b = await ajukanKoreksiPemakaian(testPrisma, { unitId: w.u1.id, materialId: w.kain.id, qtyBaru: 1.0, alasan: "akan dibatalkan", kunci: kunciUji("n3"), aktor: w.A });
   await assert.rejects(() => batalkanKoreksiPemakaian(testPrisma, { koreksiId: b.id, aktor: w.B }), /Hanya pemohon/);
@@ -202,7 +204,7 @@ test("M1. bahan belum di katalog: master baru dibuat TANPA stok; catatan terpeta
 });
 
 test("H1. rute catatan: baca per unit, koreksi lewat HTTP (Idempotency-Key wajib), izin baca saja tidak boleh menulis", async () => {
-  const w = await dunia(); const sales = await createTestUser({ roles: ["SALES"] }); const cs = makeClient(server.baseUrl, sales.token);
+  const w = await dunia(); const sales = await createTestUser({ roles: ["SALES"] }); const cs = denganVerifikasiOtomatis(makeClient(server.baseUrl, sales.token), server.baseUrl);
   const g = await w.ca.get(`/api/production/units/${w.u1.id}/catatan-historis`); assert.equal(g.status, 200); assert.equal(g.body.ringkas.total, 2);
   const n = await catatan(w.u1.id, "KAIN LAVA REKON");
   const tanpaKunci = await w.ca.post(`/api/production/catatan-historis/${n.id}/koreksi`, { qty: 2.1, alasan: "konfirmasi 2,1 m" }); assert.equal(tanpaKunci.status, 428);

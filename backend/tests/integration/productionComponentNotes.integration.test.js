@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUnit, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 import { EVIDENCE_URL_PREFIX } from "../../src/lib/domain/productionSteps.js";
 
@@ -29,7 +30,7 @@ async function setCohort(...unitIds) {
   }
 }
 async function world() {
-  const mk = async (roles) => { const u = await createTestUser({ roles }); return { ...u, api: makeClient(server.baseUrl, u.token) }; };
+  const mk = async (roles) => { const u = await createTestUser({ roles }); return { ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) }; };
   const [meja, corner, lead, doc, sales, gudang, driver, admin] = await Promise.all([
     mk(["PRODUCTION_WORKER"]), mk(["PRODUCTION_WORKER"]), mk(["PRODUCTION_LEAD"]), mk(["PRODUCTION_DOCUMENTER"]), mk(["SALES"]), mk(["WAREHOUSE"]), mk(["DRIVER"]), mk(["ADMIN"]),
   ]);

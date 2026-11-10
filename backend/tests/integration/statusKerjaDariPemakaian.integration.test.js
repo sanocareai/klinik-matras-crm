@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -18,7 +19,7 @@ let seq = 0; const kunci = (t) => `uji-${t}-${Date.now().toString(36)}-${++seq}-
 async function dunia() {
   const admin = await createTestUser({ roles: ["ADMIN"] }); const sales = await createTestUser({ roles: ["SALES"] });
   const { unit } = await createTestUnit({ status: "RECEIVED" });
-  const c = (u) => makeClient(server.baseUrl, u.token);
+  const c = (u) => denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl);
   return { a: c(admin), s: c(sales), admin: { id: admin.user.id, token: admin.token }, unit };
 }
 const adopsi = async (w, unit = w.unit) => (await w.a.get(`/api/production/units/${unit.id}/adopsi`)).body;

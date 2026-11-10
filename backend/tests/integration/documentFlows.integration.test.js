@@ -13,6 +13,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUnit, createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server, api;
 
@@ -29,13 +30,13 @@ test.afterEach(async () => { await truncateAll(); });
 
 async function client() {
   const { token } = await createTestUser();
-  return makeClient(server.baseUrl, token);
+  return denganVerifikasiOtomatis(makeClient(server.baseUrl, token), server.baseUrl);
 }
 
 // Penyetuju penyesuaian stok = OWNER/FINANCE yang BUKAN pemohon (pemisahan tugas, Okt 2026).
 async function penyetujuClient() {
   const { token } = await createTestUser({ roles: ["OWNER"] });
-  return makeClient(server.baseUrl, token);
+  return denganVerifikasiOtomatis(makeClient(server.baseUrl, token), server.baseUrl);
 }
 
 async function balanceOf(materialId) {

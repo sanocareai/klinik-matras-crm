@@ -22,7 +22,7 @@ async function dunia({ cutover = "" } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   await testPrisma.finSetting.upsert({ where: { key: SETTING_KEYS.INVENTORY_CUTOVER_DATE }, update: { value: cutover }, create: { key: SETTING_KEYS.INVENTORY_CUTOVER_DATE, value: cutover } });
   const gudang = await createTestUser({ roles: ["WAREHOUSE"] });
-  const prod = await createTestUser({ roles: ["PRODUCTION_LEAD"] });
+  const prod = await createTestUser({ roles: ["ADMIN"] }); // ADMIN = pencatatan langsung (non-ADMIN = pengajuan → jalur tulis yang sama saat diverifikasi)
   const fin = await createTestUser({ roles: ["FINANCE"] });
   const c = (u) => makeClient(server.baseUrl, u.token);
   const { unit } = await createTestUnit();

@@ -21,6 +21,8 @@ import { pratinjauPosting } from "../services/postingPratinjau.js";
 import { daftarPengaman, tautkanSO, buatMasterBertautan, batalkanTautan, nyatakanCatatan, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
 import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
 import { pratinjauPerubahan, terapkanPerubahanPemakaian } from "../services/perubahanPemakaianUnit.js";
+import { gerbangPerubahanPemakaian, daftarPengajuan, riwayatPengajuan, verifikasiPemakaian, tolakPemakaian, batalkanPemakaian } from "../services/pengajuanPemakaian.js";
+import { adminBahan } from "../services/peranAdminBahan.js";
 
 export const pemakaianKoreksiRouter = express.Router();
 pemakaianKoreksiRouter.use(requireAuth);
@@ -57,21 +59,32 @@ pemakaianKoreksiRouter.post("/units/:id/perubahan-pemakaian/pratinjau", tulisBah
   try { res.json(await pratinjauPerubahan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, keMaterialId: req.body?.keMaterialId ?? null, qtyKe: req.body?.qtyKe ?? null, tanggalPemakaian: req.body?.tanggalPemakaian ?? null, ajukan: req.body?.ajukan === true })); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/units/:id/perubahan-pemakaian", requirePermission(P.UNIT_MATERIAL_WRITE), wajibUuid(), async (req, res) => {
-  try { const h = await terapkanPerubahanPemakaian(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, keMaterialId: req.body?.keMaterialId ?? null, qtyKe: req.body?.qtyKe ?? null, tanggalPemakaian: req.body?.tanggalPemakaian ?? null, alasan: req.body?.alasan, dilihat: req.body?.dilihat, konfirmasiBukanGanda: req.body?.konfirmasiBukanGanda === true }, { kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+  try {
+    const input = { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, keMaterialId: req.body?.keMaterialId ?? null, qtyKe: req.body?.qtyKe ?? null, tanggalPemakaian: req.body?.tanggalPemakaian ?? null, alasan: req.body?.alasan, dilihat: req.body?.dilihat, konfirmasiBukanGanda: req.body?.konfirmasiBukanGanda === true };
+    // Aturan ADMIN: ADMIN langsung; non-ADMIN (ganti bahan) atau harga ambigu → PENGAJUAN (stok & HPP berubah sesudah verifikasi ADMIN lain).
+    const g = await gerbangPerubahanPemakaian(prisma, req.user, input, { kunci: kunci(req), terapkan: () => terapkanPerubahanPemakaian(prisma, req.user, input, { kunci: kunci(req) }) });
+    if (g.langsung) return res.status(g.hasil.ulang ? 200 : 201).json(g.hasil);
+    res.status(g.ulang ? 200 : 202).json({ menungguVerifikasi: true, ulang: g.ulang, pengajuan: g.pengajuan, pesan: "Perubahan pemakaian tercatat sebagai PENGAJUAN; stok dan HPP berubah sesudah diverifikasi ADMIN." });
+  } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
   try { res.json(await pratinjauKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru })); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian", tulisBahan, wajibUuid(), async (req, res) => {
-  try { const h = await ajukanKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user, tanggalPemakaian: req.body?.tanggalPemakaian, tanggalEfektif: req.body?.tanggalEfektif }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+  try {
+    const h = await ajukanKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user, tanggalPemakaian: req.body?.tanggalPemakaian, tanggalEfektif: req.body?.tanggalEfektif });
+    // Koreksi berpersetujuan (dipakai bila pemakaian asal dari Material Issue, atau diminta sebagai pengajuan): disahkan ADMIN LAIN dari pemohon (dijaga juga oleh CHECK
+    // warehouse_corrections_keputusan_chk). ADMIN yang ingin mengoreksi LANGSUNG memakai "Ubah jumlah" (perubahan-pemakaian, langsung + jejak audit). Angka lama berlaku sampai disahkan.
+    res.status(h.ulang ? 200 : 201).json({ ...h, menungguVerifikasi: h.status === "PENDING_APPROVAL" });
+  } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.get("/koreksi-pemakaian", requireAnyPermission(P.INVENTORY_READ, P.UNIT_MATERIAL_WRITE), async (req, res) => {
   try { res.json({ koreksi: await daftarKoreksiPemakaian(prisma, { status: req.query.status ? String(req.query.status) : null, unitId: req.query.unitId ? String(req.query.unitId) : null }) }); } catch (e) { handleErr(e, res); }
 });
-pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/setujui", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
+pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/setujui", tulisBahan, wajibUuid(), /* peran ADMIN ditegakkan layanan */ async (req, res) => {
   try { res.json(await setujuiKoreksiPemakaian(prisma, { koreksiId: req.params.id, aktor: req.user, catatan: req.body?.catatan })); } catch (e) { handleErr(e, res); }
 });
-pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/tolak", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
+pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/tolak", tulisBahan, wajibUuid(), /* peran ADMIN ditegakkan layanan */ async (req, res) => {
   try { res.json(await tolakKoreksiPemakaian(prisma, { koreksiId: req.params.id, aktor: req.user, catatan: req.body?.catatan })); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/batal", tulisBahan, wajibUuid(), async (req, res) => {
@@ -150,4 +163,27 @@ pemakaianKoreksiRouter.post("/posting-historis/batch/:id/lanjut", requirePermiss
 });
 pemakaianKoreksiRouter.post("/posting-historis/batch/:id/hentikan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
   try { res.json(await hentikanBatch(prisma, req.params.id, req.user)); } catch (e) { handleErr(e, res); }
+});
+
+// ── PENGAJUAN PEMAKAIAN BAHAN (non-ADMIN; keputusan Owner Nov 2026) ──
+//   GET  /pengajuan-pemakaian?status&unitId&runId     antrean ADMIN / tertunda per unit-run (operator & admin produksi)
+//   GET  /pengajuan-pemakaian/:id/riwayat
+//   POST /pengajuan-pemakaian/verifikasi { item:[{id, konfirmasi?, konfirmasiHarga?}], catatan }   ADMIN ≠ pengaju; hasil per pengajuan
+//   POST /pengajuan-pemakaian/tolak { ids, alasan }    ADMIN ≠ pengaju; tidak mengubah stok/HPP
+//   POST /pengajuan-pemakaian/:id/batalkan { alasan }  pengaju
+const bacaPengajuan = requireAnyPermission(P.UNIT_READ, P.UNIT_MATERIAL_WRITE, P.UNIT_STAGE_WRITE, P.INVENTORY_READ);
+pemakaianKoreksiRouter.get("/pengajuan-pemakaian", bacaPengajuan, async (req, res) => {
+  try { res.set("Cache-Control", "no-store"); res.json({ pengajuan: await daftarPengajuan(prisma, { status: req.query.status ?? "DIAJUKAN,DITAHAN", unitId: req.query.unitId || null, runId: req.query.runId || null }), bolehVerifikasi: adminBahan(req.user), userId: req.user.id }); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.get("/pengajuan-pemakaian/:id/riwayat", bacaPengajuan, wajibUuid(), async (req, res) => {
+  try { res.json({ events: await riwayatPengajuan(prisma, req.params.id) }); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/pengajuan-pemakaian/verifikasi", tulisBahan, async (req, res) => {
+  try { res.json(await verifikasiPemakaian(prisma, req.user, { item: req.body?.item ?? [], catatan: req.body?.catatan ?? null })); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/pengajuan-pemakaian/tolak", tulisBahan, async (req, res) => {
+  try { res.json(await tolakPemakaian(prisma, req.user, { ids: req.body?.ids ?? [], alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/pengajuan-pemakaian/:id/batalkan", requireAnyPermission(P.UNIT_MATERIAL_WRITE, P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try { res.json(await batalkanPemakaian(prisma, req.user, { id: req.params.id, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
 });

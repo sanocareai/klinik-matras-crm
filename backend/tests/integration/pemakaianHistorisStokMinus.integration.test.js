@@ -7,6 +7,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -25,7 +26,7 @@ async function dunia({ status = "DELIVERED" } = {}) {
   const kain = await createTestMaterial({ code: `KAIN-${++seq}`, name: "KAIN UJI", unit: "METER" });
   const list = await createTestMaterial({ code: `LIST-WIBING-UJI-${++seq}`, name: "LIST WIBING UJI", unit: "ROLL" });
   const { unit, order } = await createTestUnit({ status, createdAt: new Date(Date.now() - 20 * HARI) });
-  const c = (u) => makeClient(server.baseUrl, u.token);
+  const c = (u) => denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl);
   return { lead, pekerja, admin, l: c(lead), p: c(pekerja), a: c(admin), kain, list, unit, order };
 }
 const saldo = async (id) => Number((await testPrisma.$queryRaw`SELECT COALESCE(SUM(qty),0)::float AS s FROM stock_movements WHERE material_id = ${id}::uuid`)[0].s);
@@ -111,7 +112,7 @@ test("H5. klik ganda / retry (kunci sama) = SATU ISSUE dan SATU audit; kunci sam
 });
 
 test("H6. DUA PETUGAS bersamaan: saldo akhir dan audit konsisten (yang kalah lomba mendapat UNIT_SALDO_BERGESER, lihat dampak lagi, lalu berhasil)", async () => {
-  const w = await dunia(); const lead2 = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const l2 = makeClient(server.baseUrl, lead2.token); await saldoNol(w.kain);
+  const w = await dunia(); const lead2 = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const l2 = denganVerifikasiOtomatis(makeClient(server.baseUrl, lead2.token), server.baseUrl); await saldoNol(w.kain);
   const pra1 = await w.l.post(PRA(w), { materialId: w.kain.id, jenis: "TAMBAH", qty: 1.5, tanggalPemakaian: tgl(3), pengecualianStokTidakCukup: true });
   const pra2 = await l2.post(PRA(w), { materialId: w.kain.id, jenis: "TAMBAH", qty: 2, tanggalPemakaian: tgl(3), pengecualianStokTidakCukup: true });
   const [a, b] = await Promise.all([catat(w, w.l, { materialId: w.kain.id, qty: 1.5, ...EXC }, { pra: pra1 }), catat(w, l2, { materialId: w.kain.id, qty: 2, ...EXC }, { pra: pra2 })]);

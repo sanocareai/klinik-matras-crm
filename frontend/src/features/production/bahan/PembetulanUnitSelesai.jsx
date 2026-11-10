@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Wrench } from "lucide-react";
 import { api } from "@/api.js";
+import { kabarkanPengajuan, menunggu } from "@/features/production/pengajuan/pengajuanModel.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
@@ -131,7 +132,7 @@ export default function PembetulanUnitSelesai({ unitId, kodeUnit, izin, cara, on
     kirimRef.current = true; setSibuk(true); setGalat(null); kunciRef.current ??= kunciIdempoten("pembetulan");
     try {
       if (cara === "SEMENTARA") { await api.catatPemakaianSementara(unitId, { name: nama.trim(), qty: v.qty, uom, originNote: asal.trim() || undefined, note: catatan.trim() || undefined, alasanPembetulan: v.alasan, tanggalPemakaian: v.tanggal }, kunciRef.current); setHasil({ jenis: "sementara" }); }
-      else { await api.addUnitMaterial(unitId, tubuhPembetulan({ cara, bahan, qty: v.qty, alasan: v.alasan, tanggal: v.tanggal, pra, sudahPeriksa, satuan: satuanKirim, pengecualian: pakaiPengecualian ? { alasan: valPeng.alasan, konfirmasi: konfSaldo } : null }), kunciRef.current); setHasil({ jenis: "tambah", pengecualian: pakaiPengecualian }); }
+      else { const mv = await api.addUnitMaterial(unitId, tubuhPembetulan({ cara, bahan, qty: v.qty, alasan: v.alasan, tanggal: v.tanggal, pra, sudahPeriksa, satuan: satuanKirim, pengecualian: pakaiPengecualian ? { alasan: valPeng.alasan, konfirmasi: konfSaldo } : null }), kunciRef.current); if (menunggu(mv)) { setHasil({ jenis: "aju", hargaAmbigu: !!mv.pengajuan?.hargaAmbigu }); kabarkanPengajuan(); } else setHasil({ jenis: "tambah", pengecualian: pakaiPengecualian }); }
       await onDone?.();
     } catch (e) {
       setGalat(e);
@@ -150,8 +151,9 @@ export default function PembetulanUnitSelesai({ unitId, kodeUnit, izin, cara, on
 
       {!bolehTulis ? <p className="m-0 text-[12.5px] text-ink3" data-testid="pembetulan-hanya-lihat">{PESAN.tanpaIzin}</p> : hasil ? (
         <div className="space-y-2">
-          <p role="status" data-testid="pembetulan-hasil" className="m-0 flex items-start gap-2 rounded-btn bg-greenbg px-3 py-2 text-[12.5px] text-green"><CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />
-            {hasil.jenis === "tambah" ? (hasil.pengecualian ? "PENGELUARAN STOK baru dicatat dengan pengecualian stok tidak cukup: saldo bahan kini minus sampai dibereskan lewat stock opname. Alasan pengecualian tersimpan di riwayat dan audit; tidak ada penerimaan atau koreksi otomatis. HPP order sudah diperbarui." : "PENGELUARAN STOK baru dicatat sebagai baris baru di riwayat; stok dan HPP order sudah diperbarui.")
+          <p role="status" data-testid="pembetulan-hasil" data-jenis={hasil.jenis} className={`m-0 flex items-start gap-2 rounded-btn px-3 py-2 text-[12.5px] ${hasil.jenis === "aju" ? "bg-orangebg text-ink" : "bg-greenbg text-green"}`}><CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />
+            {hasil.jenis === "aju" ? `Pembetulan DILAPORKAN dan menunggu verifikasi ADMIN${hasil.hargaAmbigu ? " lain (harga bahan berubah pada hari pemakaian — dasar harga perlu disahkan)" : ""}. Stok dan HPP order belum berubah sampai diverifikasi.`
+            : hasil.jenis === "tambah" ? (hasil.pengecualian ? "PENGELUARAN STOK baru dicatat dengan pengecualian stok tidak cukup: saldo bahan kini minus sampai dibereskan lewat stock opname. Alasan pengecualian tersimpan di riwayat dan audit; tidak ada penerimaan atau koreksi otomatis. HPP order sudah diperbarui." : "PENGELUARAN STOK baru dicatat sebagai baris baru di riwayat; stok dan HPP order sudah diperbarui.")
               : "Catatan pemakaian sementara ditambahkan (stok tidak berubah). Tampil di bagian “Bahan belum ada di katalog” berstatus Perlu rekonsiliasi Gudang."}</p>
           <div className="flex justify-end"><Button variant="neutral" className="min-h-[44px]" onClick={onTutup} data-testid="pembetulan-tutup">Tutup</Button></div>
         </div>

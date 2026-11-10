@@ -216,7 +216,7 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
   wajib(unitSelesai(unit.status), "Pembetulan lewat layar ini hanya untuk unit yang sudah TERKIRIM. Unit yang masih berjalan memakai pencatatan pemakaian biasa.", "UNIT_BELUM_TERKIRIM", 409);
   const waktuDilaporkan = tanggalDilaporkan(tanggalPemakaian, { unitDibuat: unit.createdAt, sekarang });
   const waktu = bangunWaktu(waktuDilaporkan, sekarang);
-  const izin = { bolehMencatat: hasPermission(user, P.UNIT_MATERIAL_WRITE), bolehMengajukanKoreksiJumlah: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_MATERIAL_WRITE), penyetujuKoreksi: "Owner atau Finance (orang lain dari pemohon)" };
+  const izin = { bolehMencatat: hasPermission(user, P.UNIT_MATERIAL_WRITE), bolehMengajukanKoreksiJumlah: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_MATERIAL_WRITE), penyetujuKoreksi: "ADMIN (orang lain dari pemohon)" };
   const tindakan = TINDAKAN[jenis];
   if (!tindakan.menulisStok) {
     return {

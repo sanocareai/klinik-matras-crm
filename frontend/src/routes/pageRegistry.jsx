@@ -125,6 +125,7 @@ const ProductionQcHub = lazy(() => import("../pages/bengkel/ProductionQcHub.jsx"
 const ProductionOrdersHub = lazy(() => import("../pages/bengkel/ProductionOrdersHub.jsx"));
 // P12B.2 — hub gabungan baru (reuse halaman & endpoint lama): Biaya Produksi, Komplain & Revisi, Pengaturan Produksi.
 const ProductionCostHub = lazy(() => import("../pages/bengkel/ProductionCostHub.jsx"));
+const VerifikasiPemakaian = lazy(() => import("../pages/bengkel/VerifikasiPemakaian.jsx"));
 const ProductionComplaintsHub = lazy(() => import("../pages/bengkel/ProductionComplaintsHub.jsx"));
 const ProductionSettings = lazy(() => import("../pages/bengkel/ProductionSettings.jsx"));
 
@@ -281,6 +282,7 @@ const PAGES_DASAR = [
   { path: "/bengkel/quality-control", render: () => <DemoPage><ProductionQcHub /></DemoPage> },
   { path: "/bengkel/order-produksi", render: () => <ProductionOrdersHub /> },
   { path: "/bengkel/biaya-produksi", render: () => <ProductionCostHub /> },
+  { path: "/bengkel/verifikasi-pemakaian", render: () => <VerifikasiPemakaian /> }, // ADMIN: verifikasi pengajuan pemakaian bahan non-ADMIN + koreksi pemakaian (Nov 2026)
   { path: "/bengkel/komplain-revisi", render: () => <ProductionComplaintsHub /> },
   { path: "/bengkel/pengaturan", render: () => <ProductionSettings /> },
   { path: "/warehouse/antrean-produksi", render: () => <DemoPage><WarehouseProductionQueue /></DemoPage> },

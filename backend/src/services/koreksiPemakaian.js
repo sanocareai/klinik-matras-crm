@@ -15,6 +15,7 @@ import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { evaluasiUlang, kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
 import { STATE, koma } from "../lib/domain/pemakaianHistoris.js";
 import { tanggalDilaporkan, periksaPraSO } from "./pembetulanBahanUnit.js";
+import { adminBahan } from "./peranAdminBahan.js";
 
 const TIPE_DOK = "UNIT_USAGE";
 const EPS = 1e-6;
@@ -177,7 +178,9 @@ async function ambilKunciKoreksi(tx, id) {
   return k;
 }
 /** Setujui + terapkan. Penyetuju ≠ pemohon; keadaan pemakaian dihitung ULANG di dalam kunci dan token dicocokkan; invarian saldo ditegakkan oleh postStockMovement. */
+// Keputusan Owner (Nov 2026): verifikator koreksi pemakaian = peran ADMIN yang BERBEDA dari pemohon (Finance bukan penyetuju operasional bahan).
 export async function setujuiKoreksiPemakaian(prisma, { koreksiId, aktor, catatan = null, sekarang = new Date() }) {
+  if (!adminBahan(aktor)) throw new KoreksiError("Verifikasi koreksi pemakaian bahan hanya untuk peran ADMIN", 403, "TIDAK_BERWENANG");
   const hasil = await prisma.$transaction(async (tx) => {
     await kunciEvaluasiCatatan(tx); // kunci evaluasi → baris koreksi → unit → bahan (urutan seragam dengan posting)
     let k = await ambilKunciKoreksi(tx, koreksiId);
@@ -212,6 +215,7 @@ async function akhiri(prisma, { koreksiId, aktor, catatan, sekarang, status, han
     if (k.status === status) return { ...bentukKoreksi(k), ulang: true };
     if (k.status !== STATUS.PENDING) throw new KoreksiError(`Koreksi berstatus ${k.status} tidak bisa diubah`, 409, "STATUS_FINAL");
     if (hanyaPemohon && k.requestedById !== aktor.id) throw new KoreksiError("Hanya pemohon yang dapat membatalkan koreksinya", 403, "BUKAN_PEMOHON");
+    if (!hanyaPemohon && !adminBahan(aktor)) throw new KoreksiError("Penolakan koreksi pemakaian bahan hanya untuk peran ADMIN", 403, "TIDAK_BERWENANG");
     if (!hanyaPemohon && k.requestedById && k.requestedById === aktor.id) throw new KoreksiError("Pemohon tidak memutuskan koreksinya sendiri — gunakan Batalkan", 403, "PEMOHON_SAMA");
     await tx.warehouseCorrection.update({ where: { id: k.id }, data: { status, decidedById: aktor.id, decidedAt: sekarang, decisionNote: catatan ? String(catatan).slice(0, 500) : null } });
     return { ...bentukKoreksi(await tx.warehouseCorrection.findUnique({ where: { id: k.id }, include: sertakan })), ulang: false };

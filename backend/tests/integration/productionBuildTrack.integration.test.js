@@ -576,23 +576,40 @@ test("PIC Bahan per pekerjaan: penugasan resmi, racikan + pemakaian oleh PIC Bah
   const notIssued = await rec(w.febri, { racikan: RACIKAN, materials: [{ materialId: other.id, qty: 1 }] }, null, rev);
   assert.equal(notIssued.status, 422); assert.equal(notIssued.body.code, "STEP_MATERIAL_NOT_ISSUED");
   assert.equal((await rec(w.febri, {}, null, rev)).status, 400, "kosong ditolak");
-  // pencatatan sah + idempoten
-  const r1 = ok(await rec(w.febri, good, "bt-rec-febri-v1-aaaaaaaa", rev));
-  assert.equal(r1.version, 1);
-  const r1b = ok(await rec(w.febri, good, "bt-rec-febri-v1-aaaaaaaa", rev));
-  assert.equal(r1b.replayed, true); assert.equal(await testPrisma.productionBuildMaterialRecord.count({ where: { runId: run.id } }), 1, "replay tidak menggandakan");
+  // pencatatan sah + idempoten. Aturan ADMIN (Nov 2026): PIC Bahan non-ADMIN → racikan LANGSUNG tercatat (tidak mengubah stok/HPP; PIC Meja tidak tertahan),
+  // PEMAKAIAN bahan menjadi PENGAJUAN (202) sampai diverifikasi ADMIN.
+  const aju = (res) => { assert.equal(res.status, 202, JSON.stringify(res.body)); assert.equal(res.body.menungguVerifikasi, true); return res.body.pengajuan; };
+  const r1 = aju(await rec(w.febri, good, "bt-rec-febri-v1-aaaaaaaa", rev));
+  assert.equal(r1.jalur, "RUN_V2"); assert.equal(r1.status, "DIAJUKAN");
+  let recs = await testPrisma.productionBuildMaterialRecord.findMany({ where: { runId: run.id }, orderBy: { version: "asc" } });
+  assert.equal(recs.length, 1); assert.deepEqual(recs[0].materials, [], "racikan tercatat; pemakaian belum (menunggu verifikasi)"); assert.equal(recs[0].racikan.fondasi, RACIKAN.fondasi);
+  assert.deepEqual([(await card(w, run.id)).next.stepNo, (await card(w, run.id)).next.action], [6, "EVIDENCE"], "pengajuan tidak menghambat PIC Meja");
+  const r1b = await rec(w.febri, good, "bt-rec-febri-v1-aaaaaaaa", rev);
+  assert.equal(r1b.status, 200); assert.equal(r1b.body.ulang, true); assert.equal(r1b.body.pengajuan.id, r1.id);
+  assert.equal(await testPrisma.productionBuildMaterialRecord.count({ where: { runId: run.id } }), 1, "replay tidak menggandakan"); assert.equal(await testPrisma.pengajuanPemakaianProduksi.count(), 1);
   rev = (await card(w, run.id)).revision;
-  const same = ok(await rec(w.febri, good, null, rev));
-  assert.equal(same.changed, false, "isi sama tidak membuat versi baru"); assert.equal(await testPrisma.productionBuildMaterialRecord.count({ where: { runId: run.id } }), 1);
-  const r2 = ok(await rec(w.febri, { racikan: RACIKAN, materials: [{ materialId: w.bahanA.id, qty: 1 }, { materialId: w.bahanB.id, qty: 2 }], note: "Revisi pemakaian" }, null, rev));
-  assert.equal(r2.version, 2);
+  const r2 = aju(await rec(w.febri, { racikan: RACIKAN, materials: [{ materialId: w.bahanA.id, qty: 1 }, { materialId: w.bahanB.id, qty: 2 }], note: "Revisi pemakaian" }, null, rev));
+  assert.equal((await testPrisma.pengajuanPemakaianProduksi.findUniqueOrThrow({ where: { id: r1.id } })).status, "DIBATALKAN", "pengajuan lama digantikan keadaan terbaru");
+  const tertunda = ok(await w.nadya.api.get(`/api/production/pengajuan-pemakaian?runId=${run.id}`));
+  assert.deepEqual(tertunda.pengajuan.map((p) => [p.id, p.ringkasan.baris.length]), [[r2.id, 2]], "PIC Meja melihat pemakaian yang sudah dilaporkan (tertunda)");
+  assert.equal(ok(await w.lead.api.get(`${V2}/units/${unit.id}/overview`)).materials.lines.find((m) => m.materialId === w.bahanA.id)?.usedQty ?? 0, 0, "pengajuan belum dihitung sebagai pemakaian");
+  assert.equal((await w.febri.api.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: r2.id }] })).status, 403, "PIC Bahan tidak memverifikasi");
+  const v = ok(await w.admin.api.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: r2.id }] }));
+  assert.equal(v.hasil[0].status, "DISETUJUI", JSON.stringify(v));
+  recs = await testPrisma.productionBuildMaterialRecord.findMany({ where: { runId: run.id }, orderBy: { version: "asc" } });
+  assert.equal(recs.length, 3); assert.equal(recs[2].actorId, w.febri.user.id, "dicatat atas nama PIC Bahan"); assert.equal(recs[2].materials.length, 2);
+  assert.equal(ok(await w.admin.api.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: r2.id }] })).hasil[0].ulang, true);
+  assert.equal(await testPrisma.productionBuildMaterialRecord.count({ where: { runId: run.id } }), 3, "verifikasi ulang tidak menambah versi");
+  rev = (await card(w, run.id)).revision;
+  const same = ok(await rec(w.febri, { racikan: RACIKAN, materials: [{ materialId: w.bahanA.id, qty: 1 }, { materialId: w.bahanB.id, qty: 2 }], note: "Revisi pemakaian" }, null, rev));
+  assert.equal(same.changed, false, "isi sama tidak membuat versi/pengajuan baru"); assert.equal(await testPrisma.productionBuildMaterialRecord.count({ where: { runId: run.id } }), 3);
   assert.equal(await issueMoves(unit.id), movesAtIssue, "pencatatan pemakaian TIDAK menulis stok keluar (tepat sekali, oleh Gudang)");
   // catatan append-only
   await assert.rejects(() => testPrisma.productionBuildMaterialRecord.updateMany({ where: { runId: run.id }, data: { note: "ubah" } }), /append-only|integrity/i);
 
   // tampilan: kartu, antrean PIC Bahan, Unit 360
   c = await card(w, run.id);
-  assert.equal(c.build.record.version, 2); assert.equal(c.racikan.fondasi, RACIKAN.fondasi);
+  assert.equal(c.build.record.version, 3); assert.equal(c.racikan.fondasi, RACIKAN.fondasi);
   assert.deepEqual(c.build.record.materials.map((m) => [m.code, m.qty]).sort(), [[(await testPrisma.material.findUniqueOrThrow({ where: { id: w.bahanA.id } })).code, 1], [(await testPrisma.material.findUniqueOrThrow({ where: { id: w.bahanB.id } })).code, 2]].sort());
   assert.deepEqual([c.next.stepNo, c.next.action], [6, "EVIDENCE"], "racikan tercatat -> PIC Meja bisa menutup pengerjaan");
   const q = ok(await w.febri.api.get(`${V2}/worker/material`));
@@ -633,7 +650,7 @@ test("PIC Bahan per pekerjaan: penugasan resmi, racikan + pemakaian oleh PIC Bah
   assert.equal(report.materials.foundation.length, 2, "pemakaian PIC Bahan masuk laporan"); assert.match(report.message, /PIC Bahan/);
   assert.match(report.message, /Racikan Fondasi/);
   // histori: Run yang sama tetap bisa ditinjau; tidak ada peran/akun baru yang dibuat
-  assert.equal(await testPrisma.activityEvent.count({ where: { eventType: { in: ["PRODUCTION_BUILD_MATERIAL_OPERATOR_SET", "PRODUCTION_BUILD_MATERIALS_RECORDED"] } } }), 3);
+  assert.equal(await testPrisma.activityEvent.count({ where: { eventType: { in: ["PRODUCTION_BUILD_MATERIAL_OPERATOR_SET", "PRODUCTION_BUILD_MATERIALS_RECORDED"] } } }), 4);
 });
 
 test("PIC Bahan: tanpa penugasan ditolak (403); ADMIN/OWNER boleh lewat izin yang sudah ada; produk non-kasur menolak racikan; penugasan ditolak bila pemakaian sudah ada di bukti PIC Meja", async () => {
@@ -814,4 +831,54 @@ test("Corner di modal Jadwalkan: satu command atomik (POST /plans) — validasi 
   ok(await w.qc.api.post(`${P}/qc/runs/${run.id}/inspect`, { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], referenceWeightKg: 70, fitVerdict: "PAS" }, key("qc-lock")));
   const locked = await confirmCorner(w, run.id, true);
   assert.ok(locked.status >= 400, "keputusan Corner terkunci setelah gerbang QC"); assert.equal((await card(w, run.id)).build.corner.locked, true);
+});
+
+// PENGAJUAN pemakaian PIC Bahan (aturan ADMIN, Nov 2026): pekerjaan tetap bisa diselesaikan; disahkan SESUDAH serah-terima → retur sisa yang masih PENDING disesuaikan;
+// retur sudah diterima Gudang → DITAHAN (periksa manual), tidak pernah disesuaikan diam-diam. Stok keluar tetap tepat sekali (Gudang).
+async function selesaikanDenganPicBahan(w, run) {
+  ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Pengerjaan selesai sesuai racikan" }, media: await media(w.nadya, run.id, "i") }));
+  ok(await step(w, w.nadya, run.id, 8, { payload: { verdict: "PAS", testerWeightKg: 80 }, media: await media(w.nadya, run.id, "v") }));
+  const qcRun = (await w.qc.api.get(`${P}/qc/runs/${run.id}`)).body;
+  ok(await w.qc.api.post(`${P}/qc/runs/${run.id}/inspect`, { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], referenceWeightKg: 80, fitVerdict: "PAS", note: "lulus" }, key("qc")));
+  ok(await step(w, w.nadya, run.id, 9, { payload: { note: "siap" }, media: await media(w.nadya, run.id, "i") }));
+  ok(await step(w, w.corner, run.id, 10, { payload: { mattressStyle: "PILLOWTOP", fabricSpec: "Knit", borderColor: "Abu" } }));
+  ok(await step(w, w.corner, run.id, 11, { payload: { checklist: { jahitan: true, list: true, resleting: true, kebersihan: true } }, media: await media(w.nadya, run.id, "i") }));
+  return ok(await step(w, w.corner, run.id, 12, { payload: { confirm: true }, media: await media(w.nadya, run.id, "i") }));
+}
+test("PENGAJUAN PIC Bahan: pekerjaan selesai tanpa menunggu verifikasi; disahkan sesudah serah-terima menyesuaikan retur PENDING; retur sudah diterima → DITAHAN", async () => {
+  const w = await world();
+  const siapkan = async (station) => {
+    const { unit } = await mkOrder({ category: "BARU", productLine: "KASUR", productType: "KASUR_SPRING" });
+    const { planId, run } = await scheduleOrder(w, unit, { stationCode: station });
+    await issueMaterials(w, planId, [{ materialId: w.bahanA.id, qty: 2 }]);
+    ok(await w.lead.api.post(`${V2}/runs/${run.id}/build/material-operator`, { operatorId: w.febriOp.id, expectedRevision: (await card(w, run.id)).revision }, key("as")));
+    ok(await step(w, w.nadya, run.id, 6, {}));
+    const r = await w.febri.api.post(`${V2}/runs/${run.id}/build/materials`, { expectedRevision: (await card(w, run.id)).revision, racikan: RACIKAN, materials: [{ materialId: w.bahanA.id, qty: 1 }] }, key("rec"));
+    assert.equal(r.status, 202, JSON.stringify(r.body));
+    return { unit, run, pengajuan: r.body.pengajuan, issue: await issueMoves(unit.id) };
+  };
+  // (1) sesudah serah-terima, retur PENDING
+  const a = await siapkan("TABLE_1");
+  const fin = await selesaikanDenganPicBahan(w, a.run); assert.ok(fin.handoffId, "operator menyelesaikan pekerjaan walau pemakaian belum diverifikasi");
+  let ret = await testPrisma.productionMaterialReturn.findMany({ where: { runId: a.run.id } });
+  assert.deepEqual(ret.map((x) => [Number(x.qty), x.status]), [[2, "PENDING"]], "sebelum disahkan: pemakaian lama (0) → sisa = seluruh yang diserahkan");
+  const v = ok(await w.admin.api.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: a.pengajuan.id }] }));
+  assert.equal(v.hasil[0].status, "DISETUJUI", JSON.stringify(v));
+  ret = await testPrisma.productionMaterialReturn.findMany({ where: { runId: a.run.id } });
+  assert.deepEqual(ret.map((x) => [Number(x.qty), x.status]), [[1, "PENDING"]], "retur PENDING disesuaikan dengan pemakaian yang disahkan");
+  assert.equal(await issueMoves(a.unit.id), a.issue, "stok keluar tetap tepat sekali");
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: a.unit.id, type: "RETURN" } }), 0, "stok baru berubah saat Gudang menerima retur");
+  // (2) retur sudah diterima Gudang sebelum verifikasi
+  const b = await siapkan("TABLE_2");
+  await selesaikanDenganPicBahan(w, b.run);
+  for (const r of await testPrisma.productionMaterialReturn.findMany({ where: { runId: b.run.id } })) ok(await w.nadya.api.post(`${V2}/material-returns/${r.id}/receive`, { expectedRevision: r.revision }, key("ret")));
+  const n0 = await testPrisma.stockMovement.count({ where: { unitId: b.unit.id } });
+  const h1 = ok(await w.admin.api.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: b.pengajuan.id }] })).hasil[0];
+  assert.equal(h1.status, "DITAHAN"); assert.ok(h1.beda.some((x) => x.jenis === "SUMBER"), JSON.stringify(h1));
+  const h2 = ok(await w.admin.api.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: b.pengajuan.id, konfirmasi: "Sudah dicek fisik, mohon disahkan" }] })).hasil[0];
+  assert.equal(h2.status, "DITAHAN"); assert.equal(h2.beda[0].kode, "BUILD_RETUR_SUDAH_DITERIMA", "eksekusi tetap menolak: tidak menyesuaikan retur yang sudah diterima");
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: b.unit.id } }), n0); assert.equal(await testPrisma.productionBuildMaterialRecord.findFirst({ where: { runId: b.run.id }, orderBy: { version: "desc" } }).then((x) => x.materials.length), 0);
+  // penolakan oleh ADMIN: tidak mengubah apa pun
+  const t = ok(await w.admin.api.post("/api/production/pengajuan-pemakaian/tolak", { ids: [b.pengajuan.id], alasan: "Retur sudah diterima; pemakaian dibetulkan lewat koreksi" }));
+  assert.equal(t.hasil[0].status, "DITOLAK"); assert.equal(await testPrisma.stockMovement.count({ where: { unitId: b.unit.id } }), n0);
 });
