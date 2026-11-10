@@ -3225,13 +3225,30 @@ const PIC_INCLUDE_FOR_POD = {
 // sudah wajib diisi driver sejak Phase 2), dan kemampuan BARU menjadwalkan
 // ulangnya — itu satu-satunya bagian yang sebelumnya benar-benar buntu.
 function deriveIssueStatus(job) {
+  // BUG DIPERBAIKI (laporan nyata 10 Nov 2026 — job RSC-09112026-019/040:
+  // badge tampil "Sudah Dijadwalkan Ulang" padahal job itu GAGAL LAGI dan
+  // form "Jadwalkan Ulang" masih kosong menunggu diisi). Sebelum ini, job
+  // berstatus FAILED yang PERNAH direschedule sebelumnya (siklus gagal ->
+  // reschedule -> gagal LAGI) tetap dibaca "RESCHEDULED" karena
+  // rescheduleReason/rescheduleCaseId dari siklus LAMA belum pernah
+  // dikosongkan — padahal job itu BUKAN sudah ditangani, dia GAGAL SAAT
+  // INI dan butuh tindakan baru. Dampak nyata: job begini tidak pernah
+  // tersaring ?status=OPEN di GET /armada/issues DAN tidak pernah memicu
+  // exception GAGAL_ANTAR di Delivery Control Tower (lihat
+  // frontend/src/features/armada/controlTowerRules.js) — hilang dari
+  // radar dispatcher. job.status SEKARANG SELALU jadi penentu pertama:
+  // FAILED = OPEN, titik, tidak peduli riwayat reschedule-nya. Riwayat
+  // (rescheduleReason/rescheduleCaseId) cuma relevan untuk MENANDAI job
+  // yang SUDAH LEWAT dari FAILED (branch kedua di bawah — supaya tetap
+  // tertelusuri di daftar/riwayat), bukan untuk menyamarkan kegagalan yang
+  // sedang terjadi SEKARANG.
+  if (job.status === "FAILED") return "OPEN";
   // rescheduleCaseId (D-160, 13 September 2026) — OR tambahan, BUKAN
   // pengganti rescheduleReason. Jalur PROACTIVE sekarang MENULIS
   // rescheduleReason juga (lihat PATCH /jobs/:id di atas), tapi data lama
   // dari SEBELUM perbaikan ini cuma punya rescheduleCaseId sebagai
   // penanda — dua-duanya dicek supaya job lama & baru sama-sama kebaca.
   const pernahDireschedule = !!(job.rescheduleReason || job.rescheduleCaseId);
-  if (job.status === "FAILED") return pernahDireschedule ? "RESCHEDULED" : "OPEN";
   // Job yang sudah lewat dari FAILED (SCHEDULED/ASSIGNED/dst setelah
   // di-reschedule) tapi PERNAH gagal — riwayatnya tetap relevan ditelusuri.
   if (pernahDireschedule) return "RESCHEDULED";
