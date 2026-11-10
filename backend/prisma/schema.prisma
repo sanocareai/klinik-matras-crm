@@ -2644,6 +2644,19 @@ model Job {
   // SELESAI/DIBATALKAN — dibiarkan menunjuk kasus terakhirnya utk jejak
   // historis ("job ini PERNAH direschedule, lihat kasusnya"), badge di
   // UI yang membaca status kasus (AKTIF vs tidak), bukan ada/tidaknya FK.
+  //
+  // ⚠️ JEBAKAN NYATA (bug diperbaiki 10 Nov 2026, lihat deriveIssueStatus
+  // di routes/armada.js & issueStatusOf di frontend/.../issueStatus.js):
+  // field ini (dan rescheduleReason di atas) TIDAK PERNAH dikosongkan saat
+  // job gagal LAGI setelah sempat direschedule — keduanya SNAPSHOT SIKLUS
+  // TERAKHIR, bukan "apakah job ini SEDANG butuh tindakan". Siapa pun
+  // menulis fungsi turunan status BARU yang membaca kedua field ini WAJIB
+  // mengecek `job.status` (field otoritatif, LIVE) LEBIH DULU — job.status
+  // === "FAILED" SELALU berarti "butuh tindakan SEKARANG", titik, TIDAK
+  // PEDULI apa pun isi rescheduleReason/rescheduleCaseId/RescheduleCase.status.
+  // Cek field-field ini HANYA boleh jadi fallback untuk job yang SUDAH
+  // LEWAT dari FAILED (riwayat), tidak pernah untuk menyamarkan FAILED
+  // yang sedang terjadi.
   rescheduleCaseId String?         @map("reschedule_case_id") @db.Uuid
   rescheduleCase   RescheduleCase? @relation("JobCurrentRescheduleCase", fields: [rescheduleCaseId], references: [id], onDelete: SetNull)
 
