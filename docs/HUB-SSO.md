@@ -225,6 +225,21 @@ link browser nyata). Paragraf asli di bawah tetap benar untuk MENJELASKAN
 kenapa `HUB_MEMBER` sendirian (tanpa flag ini) tidak pernah cukup — hanya
 klaim "ini final, tidak akan dibangun" yang sekarang salah.
 
+**UPDATE (10 Nov 2026, irisan kedua) — paragraf "Batas yang JUJUR" di bawah
+JUGA sudah sebagian basi:** skenario yang digambarkannya ("`HUB_MEMBER` klik
+kartu Task & Meeting, MASUK ke HUB, lalu mendapati workspace flat") sekarang
+TIDAK BISA TERJADI SAMA SEKALI tanpa `HUB_RESOURCE_ACL_ENABLED=true` —
+gerbang sesi baru (`hubSessionAllowed`, `src/server/membership.ts` repo HUB)
+menolak SELURUH sesi MEMBER/GUEST di HUB (dialihkan ke `/acl-pending`) kalau
+flag itu mati, jadi mereka tidak pernah sampai ke titik "masuk lalu
+mendapati flat" — ditolak sebelum itu. Ini juga berarti fitur Main Hub
+leader pilot yang dijelaskan di bagian atas dokumen ini (leaderA/leaderB
+klik kartu Task & Meeting, landing di `/workspace/meetings`) SEKARANG
+BUTUH flag itu menyala untuk berhasil — dibuktikan ulang lewat rehearsal
+Tahap 5 skenario 12 (lihat `docs/SSO.md` repo HUB, §Pengujian). Paragraf
+asli di bawah tetap akurat untuk MENJELASKAN desain lama; hanya bagian
+"begitu MASUK ke HUB" yang sekarang tidak pernah tercapai tanpa flag ini.
+
 **Batas yang JUJUR, bukan terlewat (sebelum kebijakan di atas):** `HUB_MEMBER`
 membatasi apa yang TERLIHAT DARI MAIN HUB SANSS (ringkasan milik sendiri
 saja, tanpa Pantauan Leader). Begitu seorang `HUB_MEMBER` benar-benar MASUK
