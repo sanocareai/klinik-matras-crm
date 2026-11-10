@@ -11,7 +11,7 @@ import LogoSumber from "../LogoSumber.jsx";
 // Sumber tanpa hasil TETAP tampil (lead 0 bukan dihilangkan). Biaya organik = "tidak tersedia", bukan Rp0. Konversi UTAMA = ber-order ÷ TOTAL lead (termasuk spam); non-spam kolom terpisah.
 export const TIP = {
   lead: "TOTAL lead berlabel sumber itu (label CRM): customer baru dibuat di periode. Spam ikut terhitung; lead sah = bukan spam/internal/B2B/karyawan.",
-  leadTanpaSpam: "Total lead dikurangi lead yang ditandai SPAM. Baris total sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama.",
+  leadTanpaSpam: "Total lead dikurangi lead yang ditandai SPAM. Baris total sama dengan dasar Conversion di Dashboard Sales CRM; New Leads Dashboard = Total lead (termasuk spam).",
   prospek: "METRIK UTAMA. Lead sah yang PERNAH dipindah ke stage PROSPECT oleh sales (riwayat transisi sejak 25 Jul 2026; lead lama tanpa riwayat dihitung bila stage-nya sekarang PROSPECT). Keputusan MANUAL sales, bukan skor otomatis dan bukan qualified lead objektif. Tidak termasuk lead yang langsung ke transaksi tanpa catatan PROSPECT.",
   prospekLanjut: "RINCIAN (definisi lama, label tersendiri). Lead sah yang pernah di stage PROSPECT, TRANSACTION, atau REVIEWED. Lebih besar dari prospek eksplisit karena memuat lead yang langsung ke transaksi tanpa catatan PROSPECT (belum dapat dipastikan sales menilainya prospek). Selisihnya ditampilkan di bawah angka.",
   biayaProspek: "Biaya sumber ÷ PROSPEK EKSPLISIT (bukan prospek-atau-lanjut). Terisi hanya bila biaya sumber lengkap setiap hari dan ada prospek eksplisit; selain itu kosong dengan alasan, bukan Rp0.",
@@ -74,8 +74,8 @@ export function selTotal(lap, id) {
   const bb = t.berbayar; const k = konversiTotal(t);
   const tb = (kunci) => { const c = selTotalBerbayar(bb, kunci); return { t: c.teks, kosong: c.kosong, sub: c.kosong ? c.alasan : c.sementara ? "sementara" : null }; };
   switch (id) {
-    case "lead": return { t: angka(t.lead) };
-    case "leadTanpaSpam": return { t: angka(leadTanpaSpam(t)), sub: "= New Leads Dashboard", title: `${t.lead} lead dikurangi ${t.spam ?? 0} spam; sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama` };
+    case "lead": return { t: angka(t.lead), sub: "= New Leads Dashboard", title: "Total lead termasuk spam; sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama" };
+    case "leadTanpaSpam": return { t: angka(leadTanpaSpam(t)), sub: "= dasar Conversion", title: `${t.lead} lead dikurangi ${t.spam ?? 0} spam; sama dengan penyebut Conversion di Dashboard Sales CRM untuk periode yang sama` };
     case "prospek": return t.prospek ? { t: angka(t.prospek.prospekEksplisit), sub: t.leadSah > 0 ? `${formatPersen(Math.round((t.prospek.prospekEksplisit / t.leadSah) * 10000) / 100)} dari lead sah` : "—", title: `Total prospek eksplisit; saat ini PROSPECT ${t.prospek.saatIniProspect}.` } : { t: "—", kosong: true };
     case "prospekLanjut": return t.prospek ? { t: angka(t.prospek.pernahProspekAtauLanjut), sub: `+${angka(t.prospek.selisihAtauLanjutMinusEksplisit)} lanjut tanpa catatan PROSPECT`, title: `Total prospek atau lanjut (definisi lama); langsung ke transaksi ${t.prospek.langsungKeTransaksiTanpaProspect}.` } : { t: "—", kosong: true };
     case "biayaProspek": return { t: "—", kosong: true, sub: "hanya per sumber" };
@@ -287,7 +287,7 @@ export default function TabelSumber({ lap, urutId, kolomMode, bandingkan, onUbah
           </tbody>
         </table>
       </div>
-      <p className="mk-catatan">Tanda — berarti tidak tersedia atau belum lengkap, bukan nol. Biaya, CPA, dan ROAS pada baris total hanya untuk sumber berbayar dan hanya bila semuanya lengkap (dihitung dari pembilang dan penyebut total). Dasar: {DASAR_BIAYA_LABEL}. Konversi total = Σ ber-order ÷ Σ lead. Lead tanpa spam = total lead − spam, sama dengan New Leads di Dashboard Sales CRM.{tersaring ? " Baris total disembunyikan saat tabel disaring." : ""}</p>
+      <p className="mk-catatan">Tanda — berarti tidak tersedia atau belum lengkap, bukan nol. Biaya, CPA, dan ROAS pada baris total hanya untuk sumber berbayar dan hanya bila semuanya lengkap (dihitung dari pembilang dan penyebut total). Dasar: {DASAR_BIAYA_LABEL}. Konversi total = Σ ber-order ÷ Σ lead. Total lead (termasuk spam) = New Leads di Dashboard Sales CRM; lead tanpa spam = total lead − spam = dasar Conversion Dashboard.{tersaring ? " Baris total disembunyikan saat tabel disaring." : ""}</p>
     </section>
   );
 }

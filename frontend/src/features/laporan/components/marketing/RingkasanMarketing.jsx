@@ -53,9 +53,9 @@ export default function RingkasanMarketing({ lap, iklan, iklanGalat, traffic, me
   const cakupan = l && l.orderEligible > 0 ? `cakupan pembayaran ${formatPersen(l.persen)}` : null;
 
   const kpi = [
-    k.lead && { id: "lead", label: "Total lead", nilai: k.lead.nilai, sub: `termasuk ${angka(t.spam)} spam`, tip: k.lead.tip },
-    // Sama dengan "New Leads" di Dashboard Sales CRM (permintaan 10 Nov 2026: dua angka lead dulu tampak tidak cocok).
-    k.leadTanpaSpam && { id: "leadTanpaSpam", label: "Lead tanpa spam", nilai: k.leadTanpaSpam.nilai, sub: `${k.leadTanpaSpam.sub} · sama dengan New Leads Dashboard`, tip: k.leadTanpaSpam.tip },
+    // Total lead (termasuk spam) = "New Leads" Dashboard Sales CRM; Lead tanpa spam = dasar Conversion Dashboard (keputusan 10 Nov 2026).
+    k.lead && { id: "lead", label: "Total lead", nilai: k.lead.nilai, sub: `termasuk ${angka(t.spam)} spam · sama dengan New Leads Dashboard`, tip: `${k.lead.tip} Sama dengan New Leads di Dashboard Sales CRM.` },
+    k.leadTanpaSpam && { id: "leadTanpaSpam", label: "Lead tanpa spam", nilai: k.leadTanpaSpam.nilai, sub: `${k.leadTanpaSpam.sub} · dasar Conversion Dashboard`, tip: k.leadTanpaSpam.tip },
     k.berOrder && { id: "berOrder", label: "Customer ber-order", nilai: k.berOrder.nilai, sub: k.berOrder.sub === "—" ? "dari kohort lead periode ini" : k.berOrder.sub, tip: k.berOrder.tip },
     k.nilai && { id: "nilai", label: "Nilai order", nilai: rupiahRingkas(t.nilaiOrderSaatIni), judulPenuh: rupiah(t.nilaiOrderSaatIni), sub: "kohort lead · bukan uang diterima", tip: k.nilai.tip },
     k.uang && { id: "uang", label: "Uang diterima bersih", nilai: rupiahRingkas(t.uangBersih), judulPenuh: rupiah(t.uangBersih), sub: ["ledger − refund", cakupan].filter(Boolean).join(" · "), tip: k.uang.tip },

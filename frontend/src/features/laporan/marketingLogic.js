@@ -110,8 +110,9 @@ export const MODE_KOLOM = Object.freeze(["ringkas", "lengkap"]);
 export const kolomTampil = (mode) => KOLOM_SUMBER.filter((k) => k.utama || mode === "lengkap");
 /** Kolom awal tabel Performa sumber (redesain Apple). Kolom lain dibuka lewat pilihan kolom; urutan selalu mengikuti KOLOM_SUMBER. */
 export const KOLOM_AWAL_SUMBER = Object.freeze(["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
-/** Lead tanpa spam = total lead − lead bertanda SPAM (rumus sama dengan rekonLead). Definisinya sama dengan "New Leads" di Dashboard Sales CRM
- *  (customer baru di periode, SPAM dan label B2B/penjualan karyawan tidak dihitung; staf internal tetap dihitung). null bila total lead tidak ada. */
+/** Lead tanpa spam = total lead − lead bertanda SPAM (rumus sama dengan rekonLead). Sama dengan penyebut Conversion Dashboard Sales CRM
+ *  (customer baru di periode, SPAM dan label B2B/penjualan karyawan tidak dihitung; staf internal tetap dihitung). "New Leads" Dashboard = total lead TERMASUK spam
+ *  (sejak 10 Nov 2026). null bila total lead tidak ada. */
 export const leadTanpaSpam = (x) => (x?.lead == null ? null : x.lead - (x.spam ?? 0));
 /** Pilihan kolom tersimpan dari versi sebelum kolom "Lead tanpa spam" ada: sisipkan kolom itu sekali bila "Total lead" dipilih. */
 export function migrasiPilihanKolom(pilihan) {
@@ -140,7 +141,7 @@ export function kartuRingkas(lap) {
   const spend = selTotalBerbayar(bb, "spend"); const rb = ringkasBiayaBerbayar(lap);
   return [
     { id: "lead", judul: "Total lead (termasuk spam)", nilai: angka(t.lead), sub: `${angka(t.leadSah)} sah · ${angka(t.spam)} spam`, tip: "Customer baru dibuat di periode, semua sumber pemasaran. Spam ikut terhitung (sama dengan penyebut konversi utama); lead sah = bukan spam/staf/karyawan." },
-    { id: "leadTanpaSpam", judul: "Lead tanpa spam", nilai: angka(leadTanpaSpam(t)), sub: `${angka(t.spam)} spam dikeluarkan dari ${angka(t.lead)} lead`, tip: "Total lead dikurangi lead yang ditandai SPAM. Definisinya sama dengan New Leads di Dashboard Sales CRM untuk periode yang sama (B2B/penjualan karyawan juga tidak dihitung; staf internal tetap dihitung, sama seperti Dashboard)." },
+    { id: "leadTanpaSpam", judul: "Lead tanpa spam", nilai: angka(leadTanpaSpam(t)), sub: `${angka(t.spam)} spam dikeluarkan dari ${angka(t.lead)} lead`, tip: "Total lead dikurangi lead yang ditandai SPAM. Sama dengan dasar (penyebut) Conversion di Dashboard Sales CRM untuk periode yang sama (B2B/penjualan karyawan juga tidak dihitung; staf internal tetap dihitung). New Leads Dashboard = Total lead (termasuk spam)." },
     { id: "berOrder", judul: "Customer ber-order", nilai: angka(t.berOrder), sub: konversiTotal(t).nilai == null ? "—" : `${formatPersen(konversiTotal(t).nilai)} dari total lead (termasuk spam)`, tip: "Customer unik dengan ≥ 1 order eligible. Konversi utama = ber-order ÷ total lead (termasuk spam); konversi non-spam ada di tabel (kolom lengkap). Ber-order BUKAN berarti sudah membayar." },
     { id: "lunas", judul: "Customer lunas terbukti ledger", nilai: angka(t.lunas), sub: "customer lunas terbukti ledger", catatan: bayar.lengkap ? null : teksCakupanLedger(lap), tip: "Customer unik yang ledger pembayarannya (setelah refund disetujui) menutup seluruh tagihan — angka hitung, bukan perkiraan. Cakupan ledger dinilai terpisah (catatan di bawah angka). Bukan status LUNAS di CRM." },
     { id: "nilai", judul: "Nilai order", nilai: rupiah(t.nilaiOrderSaatIni), sub: "kohort lead · nilai saat ini", tip: "Σ nilai order eligible kohort lead periode ini. Bukan uang diterima dan bukan laba." },

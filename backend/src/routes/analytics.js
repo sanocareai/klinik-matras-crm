@@ -177,6 +177,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       customersWithOrdersCount,
       customersWithOrdersCountPrev,
       repeatCustomersCount,
+      newLeadsTermasukSpam, newLeadsTermasukSpamPrev,
     ] = await Promise.all([
       prisma.customer.count({ where: custWhereFunnel }),
       prevRange ? prisma.customer.count({ where: { createdAt: prevRange, pipelineStage: { not: "SPAM" }, leadSource: { notIn: LEAD_SOURCE_BUKAN_FUNNEL } } }) : Promise.resolve(null),
@@ -303,6 +304,12 @@ analyticsRouter.get("/overview", async (req, res) => {
       // dengan customersWithOrdersCount di atas (repeatRate = repeat/withOrders,
       // dua-duanya harus dari populasi yang sama).
       prisma.customer.count({ where: { ...custWhereFunnel, orderCount: { gte: 2 } } }),
+
+      // KPI "New Leads" Dashboard (keputusan user 10 Nov 2026): SEMUA customer baru TERMASUK SPAM — sama dengan "Total lead (+spam)" di
+      // Laporan › Marketing (/atribusi/iklan/sumber) dan dengan daftar yang dibuka kartu itu (/dashboard/leads-detail). B2B/penjualan karyawan
+      // tetap di luar (bukan lead pemasaran, sama seperti Marketing). Conversion TIDAK berubah: penyebutnya tetap totalCustomers (tanpa spam).
+      prisma.customer.count({ where: { ...custWhere, leadSource: { notIn: LEAD_SOURCE_BUKAN_FUNNEL } } }),
+      prevRange ? prisma.customer.count({ where: { createdAt: prevRange, leadSource: { notIn: LEAD_SOURCE_BUKAN_FUNNEL } } }) : Promise.resolve(null),
     ]);
 
     // Conversion rate periode ini vs sebelumnya (dipakai kartu "Conversion"
@@ -315,6 +322,10 @@ analyticsRouter.get("/overview", async (req, res) => {
       // Pelanggan
       newCustomers: totalCustomers,
       totalCustomers,
+      // New Leads Dashboard (termasuk spam); spam = selisihnya. Field lama di atas TIDAK diubah (dipakai Conversion & konsumen lain).
+      newLeadsTermasukSpam,
+      newLeadsSpam: newLeadsTermasukSpam - totalCustomers,
+      growthNewLeadsTermasukSpam: growth(newLeadsTermasukSpam, newLeadsTermasukSpamPrev),
       growthCustomers: growth(totalCustomers, totalCustomersPrev),
       customersWithOrders: customersWithOrdersCount,
       growthConversion: growth(conversionRateCurr, conversionRatePrev),

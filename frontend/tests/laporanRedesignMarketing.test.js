@@ -24,7 +24,7 @@ const cssLama = baca("src/styles/sanss-crm-laporan.css").replace(/\/\*[\s\S]*?\*
 const css = baca("src/styles/sanss-mk-apple.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
 test("4 KPI: Total lead (termasuk spam), Customer ber-order, Nilai order (bukan uang diterima), Uang diterima bersih (+ cakupan pembayaran); tooltip dari kartuRingkas", () => {
-  for (const f of ['id: "lead"', 'id: "berOrder"', 'id: "nilai"', 'id: "uang"', 'id: "leadTanpaSpam"', "sama dengan New Leads Dashboard", "termasuk ${angka(t.spam)} spam", "bukan uang diterima", "cakupan pembayaran", "tip: k.lead.tip", "tip: k.uang.tip"]) assert.ok(ring.includes(f), f);
+  for (const f of ['id: "lead"', 'id: "berOrder"', 'id: "nilai"', 'id: "uang"', 'id: "leadTanpaSpam"', "sama dengan New Leads Dashboard", "termasuk ${angka(t.spam)} spam", "bukan uang diterima", "cakupan pembayaran", "tip: `${k.lead.tip}", "tip: k.uang.tip"]) assert.ok(ring.includes(f), f);
   const lap = { total: { lead: 100, spam: 8, leadSah: 92, berOrder: 12, lunas: 3, nilaiOrderSaatIni: 1, uangBersih: 1, berbayar: { sumber: ["META"], lengkap: false, belumLengkap: [], spend: null, cpa: null, alasanNull: "SPEND_TIDAK_LENGKAP_PADA_SUMBER_WAJIB" } }, status: { ledger: { orderEligible: 10, orderBerLedger: 8, persen: 80 } } };
   const k = Object.fromEntries(kartuRingkas(lap).map((c) => [c.id, c]));
   assert.equal(k.biaya.nilai, "—"); assert.equal(k.biaya.kosong, true, "biaya tidak lengkap = kosong, bukan Rp0");
