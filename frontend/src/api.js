@@ -1954,7 +1954,7 @@ export const api = {
   ajukanBiayaTanpaStok: (data, idempotencyKey = mutationKey("biaya-tanpa-stok")) => request("/finance/hpp-order/biaya-tanpa-stok", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   getBiayaTanpaStok: (status = "DIAJUKAN") => request(`/finance/hpp-order/biaya-tanpa-stok?status=${encodeURIComponent(status)}`),
   getRiwayatBiayaTanpaStok: (id) => request(`/finance/hpp-order/biaya-tanpa-stok/${id}/riwayat`),
-  setujuiBiayaTanpaStok: (id, catatan = null) => request(`/finance/hpp-order/biaya-tanpa-stok/${id}/setujui`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  setujuiBiayaTanpaStok: (id, catatan = null, keputusanHarga = null) => request(`/finance/hpp-order/biaya-tanpa-stok/${id}/setujui`, { method: "POST", body: JSON.stringify({ catatan, keputusanHarga }) }),
   tolakBiayaTanpaStok: (id, alasan) => request(`/finance/hpp-order/biaya-tanpa-stok/${id}/tolak`, { method: "POST", body: JSON.stringify({ alasan }) }),
   batalkanBiayaTanpaStok: (id, alasan) => request(`/finance/hpp-order/biaya-tanpa-stok/${id}/batalkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
   konfirmasiHppUnit: (unitId, sidik, alasan, idempotencyKey = mutationKey("hpp-konfirmasi")) => request(`/finance/hpp-order/unit/${unitId}/konfirmasi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ sidik, alasan }) }),
