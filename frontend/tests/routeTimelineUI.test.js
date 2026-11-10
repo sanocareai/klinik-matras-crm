@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8");
+const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8").replace(/\r\n/g, "\n");   // checkout Windows = CRLF
 
 test("api web: semua aksi eksekusi mengirim X-Action-Source + X-Event-Occurred-At; bawaan ADMIN_WEB; Driver Web = DRIVER_WEB", () => {
   const api = src("api.js");

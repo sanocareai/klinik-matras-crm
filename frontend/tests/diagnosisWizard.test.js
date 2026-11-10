@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WIZARD = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "DiagnosisWizard.jsx"), "utf8");
+const WIZARD = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "DiagnosisWizard.jsx"), "utf8").replace(/\r\n/g, "\n");   // checkout Windows = CRLF
 // P12C: Aplikasi Meja/Corner dipecah ke src/features/production/workerApp/* (WorkerLane.jsx tinggal perangkai). Kontrak yang diuji tetap: sumber gabungan keduanya.
 const WORKER_LANE = (() => {
   const root = path.join(__dirname, "..", "src"); const dir = path.join(root, "features", "production", "workerApp");

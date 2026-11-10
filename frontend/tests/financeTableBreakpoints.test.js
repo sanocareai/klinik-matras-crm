@@ -72,7 +72,22 @@ test("Invoice Pelanggan: daftar satu-DOM dengan container query; tanpa class tam
 // FinanceSuppliers.jsx (B3.3.1, 25 Sep 2026) ikut pola ini: tier dari lebar container dengan fungsi tier sendiri
 // (useContainerTier(tierTagihan) — lihat features/finance/tierTagihan.js), colgroup per tier, tanpa hideBelow.
 // Pengeluaran (FinanceExpenses.jsx) KELUAR dari pola tier-hook/CardList sejak redesain sfp1: satu daftar <li> + CSS container query di panel (tes di bawah).
-const HARUS_PAKAI_TIER_HOOK = ["FinancePurchases.jsx", "FinanceSuppliers.jsx"];
+// Pembelian & Supplier (redesain spt2/spu1-3, Nov 2026) KELUAR dari pola tier-hook/CardList juga: satu daftar .fin-dl-* (role=table) + CSS container query
+// (sanss-finance-daftar.css, @container tgp). Perlindungan intinya (tanpa hideBelow/mid, tanpa tampil/sembunyi viewport, tanpa DOM ganda) diuji di tes "fin-dl" di bawah.
+const HARUS_PAKAI_TIER_HOOK = [];
+const POLA_FIN_DL = ["FinancePurchases.jsx", "FinanceSuppliers.jsx"];
+
+test("Pembelian & Supplier (redesain): daftar satu-DOM .fin-dl dengan container query; tanpa hideBelow/mid, class viewport, CardList/TableWrap ganda", () => {
+  const css = fs.readFileSync(path.join(__dirname, "..", "src", "styles", "sanss-finance-daftar.css"), "utf8");
+  assert.ok(/@container tgp \(min-width: \d+px\)/.test(css), "tabel lebar dipilih lewat container query lebar panel, bukan viewport");
+  for (const nama of POLA_FIN_DL) {
+    const src = bacaSumber(nama);
+    assert.ok(src.includes('className="fin-dl-tabel" role="table"'), nama + ": memakai daftar .fin-dl-tabel");
+    assert.ok(!/<CardList|<TableWrap|CARD_VIEW_CLASS/.test(src), nama + ": tidak boleh merender CardList/TableWrap ganda");
+    assert.ok(!src.includes('hideBelow="') && !/<T[HD]\s[^>]*\bmid\b/.test(src), nama + ": tanpa hideBelow/mid (pola lama yang mengolapskan kolom Keterangan)");
+    assert.ok(!/\b(md|lg|xl|2xl|max-md|max-lg):(hidden|block|flex|grid)\b/.test(src), nama + ": tanpa class tampil/sembunyi viewport");
+  }
+});
 
 test("Pengeluaran (sfp1): daftar satu-DOM dengan container query; tanpa class tampil/sembunyi viewport, tanpa hideBelow/mid, tanpa CardList/TableWrap ganda", () => {
   const rd = (p) => fs.readFileSync(path.join(__dirname, "..", p), "utf8").split("\r\n").join("\n");
