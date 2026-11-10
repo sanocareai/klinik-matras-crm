@@ -20,6 +20,7 @@ import {
   HppOrderError, antreanHpp, rincianUnit, pratinjauBiayaTanpaStok, ajukanBiayaTanpaStok, daftarBiayaTanpaStok, riwayatBiayaTanpaStok,
   setujuiBiayaTanpaStok, akhiriBiayaTanpaStok, konfirmasiLengkap, cabutKonfirmasi, laporanHppOrder, bolehNominal, SUMBER_JENIS,
 } from "../services/finance/hppOrder.js";
+import { DASAR_HARGA } from "../lib/domain/hppOrder.js";
 import { LaporanTerinciError } from "../services/finance/laporanTerinci/index.js";
 import { PembetulanError } from "../services/pembetulanBahanUnit.js";
 
@@ -37,7 +38,8 @@ const kunciDari = (req) => String(req.get("Idempotency-Key") || req.body?.kunci 
 const periode = (q) => ({ fromStr: String(q.from || ""), toStr: String(q.to || "") });
 
 financeHppOrderRouter.get("/hpp-order/meta", ...baca, (req, res) => {
-  res.json({ izin: { nominal: bolehNominal(req.user), mencatat: hasPermission(req.user, P.UNIT_MATERIAL_WRITE), menyetujui: hasPermission(req.user, P.FINANCE_APPROVE) }, sumberJenis: SUMBER_JENIS, userId: req.user.id });
+  res.json({ izin: { nominal: bolehNominal(req.user), mencatat: hasPermission(req.user, P.UNIT_MATERIAL_WRITE), menyetujui: hasPermission(req.user, P.FINANCE_APPROVE),
+    menyatakanTanpaBahan: hasPermission(req.user, P.UNIT_ROUTING_WRITE) }, sumberJenis: SUMBER_JENIS, dasarHarga: DASAR_HARGA, userId: req.user.id });
 });
 financeHppOrderRouter.get("/hpp-order/antrean", ...baca, async (req, res) => {
   try { res.set("Cache-Control", "no-store"); res.json(await antreanHpp(prisma, { ...periode(req.query), izinHarga: bolehNominal(req.user), status: req.query.status ?? "", q: req.query.q ?? "" })); } catch (e) { galat(e, res); }
@@ -58,7 +60,7 @@ financeHppOrderRouter.get("/hpp-order/biaya-tanpa-stok/:id/riwayat", ...baca, as
   try { res.json({ events: await riwayatBiayaTanpaStok(prisma, req.params.id) }); } catch (e) { galat(e, res); }
 });
 financeHppOrderRouter.post("/hpp-order/biaya-tanpa-stok/:id/setujui", ...tulis, async (req, res) => {
-  try { res.json(await setujuiBiayaTanpaStok(prisma, req.user, { id: req.params.id, catatan: req.body?.catatan ?? null })); } catch (e) { galat(e, res); }
+  try { res.json(await setujuiBiayaTanpaStok(prisma, req.user, { id: req.params.id, catatan: req.body?.catatan ?? null, keputusanHarga: req.body?.keputusanHarga ?? null })); } catch (e) { galat(e, res); }
 });
 financeHppOrderRouter.post("/hpp-order/biaya-tanpa-stok/:id/tolak", ...tulis, async (req, res) => {
   try { res.json(await akhiriBiayaTanpaStok(prisma, req.user, { id: req.params.id, aksi: "TOLAK", alasan: req.body?.alasan })); } catch (e) { galat(e, res); }

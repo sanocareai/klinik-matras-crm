@@ -5,7 +5,7 @@ import {
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, Send,
   Wrench, Camera, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet, PiggyBank,
-  ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
+  ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp, ListChecks,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
   ShoppingCart,
@@ -75,7 +75,7 @@ import { ApSkinContext } from "@/components/apple/Apple.jsx";
 // disatukan, ubah DUA-DUANYA sekaligus, jangan cuma satu lalu terasa lebih
 // tidak konsisten.
 // P12B.2 — nama ikon di lib/productionNav.js → komponen lucide (ikon konsisten: satu ikon per menu, tanpa duplikat dalam satu sidebar).
-const NAV_ICONS = { Gauge, Boxes, CalendarClock, ClipboardList, ClipboardCheck, ArrowUpFromLine, Wrench, Scissors, Camera, Tv, BarChart3, Receipt, AlertTriangle, Settings };
+const NAV_ICONS = { Gauge, Boxes, CalendarClock, ClipboardList, ClipboardCheck, ArrowUpFromLine, ListChecks, Wrench, Scissors, Camera, Tv, BarChart3, Receipt, AlertTriangle, Settings };
 
 const DIVISION_ACCENT = {
   text: "text-blue-700",

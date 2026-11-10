@@ -3,7 +3,8 @@
 // (lib/menuVisibility.js). Server tetap penegak izin sebenarnya — di sini hanya menyembunyikan menu yang pasti buntu.
 export const PRODUCTION_SETTINGS_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
 export const PRODUCTION_KPI_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
-export const PRODUCTION_QC_APP_ROLES = Object.freeze(["ADMIN", "OWNER", "QC_LEAD"]);
+export const PRODUCTION_HPP_ORDER_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "WAREHOUSE", "FINANCE", "ACCOUNTANT", "APPROVER"]);
+export const PRODUCTION_QC_APP_ROLES =Object.freeze(["ADMIN", "OWNER", "QC_LEAD"]);
 
 export const PRODUCTION_NAV = Object.freeze([
   {
@@ -35,6 +36,9 @@ export const PRODUCTION_NAV = Object.freeze([
   {
     section: "KONTROL & LAPORAN",
     items: [
+      // HPP per order (Nov 2026): antrean PIC melengkapi pemakaian unit terkirim. Di sini (bukan OPERASIONAL, yang sengaja tidak ditambah). Peran = pemegang izin baca
+      // /api/finance/hpp-order (unit:material:write, finance:read, production_report:read); server tetap menegakkan izin tulis dan menyembunyikan nominal tanpa finance:read.
+      { to: "/bengkel/hpp-order", label: "Lengkapi HPP Order", icon: "ListChecks", bolehPeran: PRODUCTION_HPP_ORDER_ROLES },
       { to: "/bengkel/kpi", label: "KPI & Laporan", icon: "BarChart3", bolehPeran: PRODUCTION_KPI_ROLES },
       // C1 — biaya operasional NON-STOK; hanya PRODUCTION_LEAD/Finance/Admin (+ anggota divisi PRODUCTION); server menegakkan ulang.
       { to: "/bengkel/biaya-produksi", label: "Biaya Produksi", icon: "Receipt", bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },

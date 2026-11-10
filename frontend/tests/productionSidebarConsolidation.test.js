@@ -27,7 +27,7 @@ test("struktur final: urutan section & menu persis sesuai keputusan", () => {
   assert.deepEqual(PRODUCTION_NAV.map((s) => [s.section, s.items.map((i) => i.label)]), [
     ["OPERASIONAL", ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]], // Slice 1: menu QC disembunyikan sementara (rute & halaman tetap ada)
     ["MODE KERJA", ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Aplikasi PIC QC", "Andon TV"]],
-    ["KONTROL & LAPORAN", ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]],
+    ["KONTROL & LAPORAN", ["Lengkapi HPP Order", "KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]], // +Lengkapi HPP Order (Nov 2026, perubahan menu disetujui untuk kandidat HPP per order)
     ["ADMINISTRASI", ["Pengaturan"]],
   ]);
   assert.equal(PRODUCTION_NAV.at(-1).section, "ADMINISTRASI", "Pengaturan paling bawah");
@@ -53,7 +53,7 @@ test("ikon: satu ikon per menu, tidak ada duplikat, dan semuanya terpetakan di L
 
 test("matriks menu per peran (ADMIN/OWNER, Lead, Operator, QC, Gudang, Dokumenter, Finance, Sales)", () => {
   const ALL = flat(menuFor(["ADMIN"]));
-  assert.equal(ALL.length, 14, "ADMIN: seluruh 14 menu (menu QC desktop tetap disembunyikan; +Antrean PIC QC, Fase 2 LAYANAN)");
+  assert.equal(ALL.length, 15, "ADMIN: seluruh 15 menu (menu QC desktop tetap disembunyikan; +Antrean PIC QC, Fase 2 LAYANAN; +Lengkapi HPP Order)");
   assert.deepEqual(flat(menuFor(["OWNER"])), ALL, "OWNER = ADMIN");
   // Production Lead: semuanya (KPI, Biaya, Pengaturan sesuai gerbang peran)
   // (kecuali "Antrean PIC QC": izin tulis uji = QC_WRITE/PRODUCTION_EXECUTE_ANY, yang Lead TIDAK punya — tidak ditawari tombol yang pasti 403)
@@ -73,6 +73,9 @@ test("matriks menu per peran (ADMIN/OWNER, Lead, Operator, QC, Gudang, Dokumente
   // anggota divisi PRODUCTION melihat Biaya Produksi walau perannya lain (bolehDivisi), tetap tanpa Pengaturan
   assert.ok(flat(menuFor(["PRODUCTION_WORKER"], ["PRODUCTION"])).includes("Biaya Produksi"));
   assert.ok(!flat(menuFor(["PRODUCTION_WORKER"], ["PRODUCTION"])).includes("Pengaturan"));
+  // Lengkapi HPP Order mengikuti izin baca server: pencatat pemakaian (Produksi/Gudang) dan Finance; tidak untuk Sales/QC/Dokumenter.
+  for (const role of ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "WAREHOUSE", "FINANCE", "ACCOUNTANT", "APPROVER"]) assert.ok(flat(menuFor([role])).includes("Lengkapi HPP Order"), role);
+  for (const role of ["SALES", "QC_LEAD", "PRODUCTION_DOCUMENTER"]) assert.ok(!flat(menuFor([role])).includes("Lengkapi HPP Order"), role);
   assert.deepEqual([...PRODUCTION_SETTINGS_ROLES], ["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
 });
 

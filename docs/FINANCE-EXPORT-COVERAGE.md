@@ -46,6 +46,7 @@ Mode filter: **Server** = layar mengirim filter/periode ke endpoint daftar, expo
 | **Kas & Bank** — Rekening; Mutasi Antar Rekening; Pemasukan Lain | Tidak (di luar 11 modul) | Pemasukan Lain sudah tercakup export Pemasukan; mutasi & saldo rekening tercakup Buku Besar akun kas/bank + Jurnal Umum (sumber transfer kas) + Rekonsiliasi. Bisa dibuat bila Owner minta. |
 | **Faktur** | Tidak (di luar 11 modul) | Dokumen tagihan pelanggan; nilai/saldonya tercakup Piutang & Refund dan Pembayaran & Verifikasi. |
 | **Persediaan Awal (cutover)** | Tidak (di luar 11 modul) | Alur input/pemeriksaan snapshot (Tempel CSV); bukan laporan transaksi. Usul lanjutan: template hitung fisik. |
+| **HPP per Order & Laba Sementara** (Nov 2026) | Tidak (modul baru) | Antrean kerja PIC + laporan manajemen sementara (bukan final). Export dibuat bila Finance minta. |
 | **Laporan Keuangan** — tab Laba Rugi | **Ya** (`laporan-keuangan`, lihat bagian A) | Neraca, Arus Kas, dan Neraca Saldo tetap tidak diekspor (laporan terhitung; ditelusuri dari Buku Besar & Jurnal Umum). |
 | **Bagan Akun**, **Pengaturan Finance** | Tidak | Data master/konfigurasi, bukan transaksi. |
 | **Purchase Order Bahan Baku** (Okt 2026) | Tidak (di luar 11 modul) | Dokumen komitmen tanpa jurnal. Tagihan dan stok yang lahir darinya tercakup export Supplier & Utang dan Jurnal Umum. Export PO dibuat bila Finance minta. |
