@@ -1,0 +1,45 @@
+# ── GERBANG DATA: pisahkan "data yang WAJIB identik" dari "tabel operasional yang bergerak" ──────────────────────────────────────────────────────────────
+# Kejadian 30 Okt 2026: gerbang lama membandingkan jumlah baris SEMUA tabel (termasuk "Message") sebelum vs sesudah switch → trafik WhatsApp normal (+10 pesan dalam ±2 menit) memicu STOP palsu.
+# Rilis ini tidak menulis data (backend: satu field baca-saja tambahan; tanpa migrasi); gerbang harus menolak perubahan yang bukan trafik, tanpa toleransi jumlah baris sembarang.
+#
+# A. STATIS — harus IDENTIK persis (nilai + sidik jari isi), sebelum vs sesudah switch:
+#    migrasi (jumlah selesai + md5 nama/checksum/status), skema (md5 kolom: tipe, null, default), indeks (md5 definisi), constraint (md5 definisi), konfigurasi attribution_kpi_targets (md5 isi baris).
+# B. BERGERAK — tabel operasional yang ditulis pengguna/webhook: Message, stock_movements, material_issues, stock_transfers, warehouse_corrections, attribution_touches, ad_source_spend_entries, meta_ad_references.
+#    Baseline DIBATASI CUTOFF: cutoff = jam DB saat baseline − 120 detik (UTC). Untuk tiap tabel dicatat (jumlah baris berstempel waktu <= cutoff, stempel waktu terbesar <= cutoff). Setelah switch nilai itu
+#    dibaca ulang dengan cutoff YANG SAMA dan harus IDENTIK. Baris baru (stempel > cutoff) = trafik sah dan tidak menggagalkan gerbang.
+#    BATAS BUKTI (dicatat di log): terdeteksi = baris berstempel <= cutoff yang hilang/dihapus atau baris bertanggal-mundur yang disisipkan setelah baseline. TIDAK terdeteksi = UPDATE di tempat pada baris lama,
+#    dan penambahan baris berstempel > cutoff (tak dapat dibedakan dari trafik). Pesan terlambat >120 detik yang masuk bertanggal sebelum cutoff dapat memicu STOP (aman; periksa manual).
+#    Asumsi: kolom waktu = timestamp tanpa zona dalam UTC (default Prisma); satu nama tabel/kolom per baris spesifikasi.
+GD_BERGERAK=( 'Message|"Message"|"createdAt"' 'stock_movements|stock_movements|created_at' 'material_issues|material_issues|created_at' 'stock_transfers|stock_transfers|created_at'
+  'warehouse_corrections|warehouse_corrections|requested_at' 'attribution_touches|attribution_touches|created_at' 'ad_source_spend_entries|ad_source_spend_entries|created_at' 'meta_ad_references|meta_ad_references|created_at' )
+GD_SQL_STATIS="select 'migrasi|' || count(*) filter (where finished_at is not null) || '|' || md5(coalesce(string_agg(migration_name || ':' || checksum || ':' || (finished_at is not null)::text, ',' order by migration_name), '')) from _prisma_migrations
+union all select 'skema|' || md5(coalesce(string_agg(table_name || '.' || column_name || ':' || data_type || ':' || udt_name || ':' || is_nullable || ':' || coalesce(column_default, ''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema = 'public'
+union all select 'indeks|' || md5(coalesce(string_agg(tablename || ':' || indexdef, ',' order by tablename, indexname), '')) from pg_indexes where schemaname = 'public'
+union all select 'constraint|' || md5(coalesce(string_agg(conrelid::regclass::text || ':' || conname || ':' || pg_get_constraintdef(oid), ',' order by conrelid::regclass::text, conname), '')) from pg_constraint where connamespace = 'public'::regnamespace
+union all select 'konfig attribution_kpi_targets|' || count(*) || '|' || md5(coalesce(string_agg(t::text, ',' order by t::text), '')) from attribution_kpi_targets t"
+gd_sql_bergerak() {
+  local spec lab tbl col first=1
+  for spec in "${GD_BERGERAK[@]}"; do
+    IFS='|' read -r lab tbl col <<< "$spec"
+    [ "$first" = 1 ] && first=0 || printf ' union all '
+    printf "select '%s|' || count(*) || '|' || coalesce(max(%s)::text, '-') from %s where %s <= '%s'::timestamp" "$lab" "$col" "$tbl" "$col" "$FP_CUTOFF"
+  done
+}
+gd_baseline() {   # fase 3 (sebelum switch): ambil cutoff dari jam DB, lalu baseline statis + bergerak
+  FP_CUTOFF="$(psql_live -At -c "select to_char((now() at time zone 'utc') - interval '120 seconds', 'YYYY-MM-DD HH24:MI:SS.US')")"
+  [[ "$FP_CUTOFF" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9:.]+$ ]] || die "cutoff baseline tidak terbaca: ${FP_CUTOFF}"
+  FP_STATIS_0="$(psql_live -At -c "$GD_SQL_STATIS")" || die "baseline data statis gagal dibaca"
+  FP_BERGERAK_0="$(psql_live -At -c "$(gd_sql_bergerak)")" || die "baseline tabel bergerak gagal dibaca"
+  [ "$(printf '%s\n' "$FP_STATIS_0" | grep -c .)" = 5 ] && [ "$(printf '%s\n' "$FP_BERGERAK_0" | grep -c .)" = "${#GD_BERGERAK[@]}" ] || die "sidik jari baseline tidak lengkap"
+  mkdir -p "$BK_DIR"; { echo "cutoff(UTC)=${FP_CUTOFF}"; echo "--statis"; echo "$FP_STATIS_0"; echo "--bergerak (<= cutoff)"; echo "$FP_BERGERAK_0"; } > "$BK_DIR/gerbang-data-baseline.txt"
+  ok "baseline data: statis (migrasi|skema|indeks|constraint|konfigurasi) dicatat; ${#GD_BERGERAK[@]} tabel bergerak dibatasi cutoff ${FP_CUTOFF} UTC; migrasi selesai = $(printf '%s\n' "$FP_STATIS_0" | sed -n 's/^migrasi|\([0-9]*\)|.*/\1/p')"
+}
+gd_verifikasi() {  # fase 6 (sesudah switch): statis identik persis; bergerak identik pada batas cutoff yang sama
+  local s1 b1 d
+  s1="$(psql_live -At -c "$GD_SQL_STATIS")" || die "data statis sesudah switch gagal dibaca"
+  b1="$(psql_live -At -c "$(gd_sql_bergerak)")" || die "tabel bergerak sesudah switch gagal dibaca"
+  { echo "--statis sesudah"; echo "$s1"; echo "--bergerak sesudah (<= cutoff ${FP_CUTOFF})"; echo "$b1"; } > "$BK_DIR/gerbang-data-sesudah.txt"
+  if [ "$s1" != "$FP_STATIS_0" ]; then d="$(diff <(printf '%s\n' "$FP_STATIS_0") <(printf '%s\n' "$s1") | grep '^[<>]' | cut -c1-160 | head -6 | sed 's/^/        /' || true)"; printf '%s\n' "$d"; die "DATA STATIS BERUBAH selama rilis (migrasi/skema/indeks/constraint/konfigurasi harus identik persis)"; fi
+  if [ "$b1" != "$FP_BERGERAK_0" ]; then d="$(diff <(printf '%s\n' "$FP_BERGERAK_0") <(printf '%s\n' "$b1") | grep '^[<>]' | cut -c1-160 | head -8 | sed 's/^/        /' || true)"; printf '%s\n' "$d"; die "baris berstempel <= cutoff ${FP_CUTOFF} pada tabel operasional BERUBAH (hilang/dihapus/disisipkan bertanggal-mundur) — bukan trafik baru"; fi
+  ok "data statis identik persis; ${#GD_BERGERAK[@]} tabel operasional identik pada batas cutoff ${FP_CUTOFF} UTC (baris baru setelah cutoff = trafik sah, tidak diperiksa). BATAS BUKTI: tidak mendeteksi UPDATE di tempat pada baris lama maupun penambahan baris bertanggal > cutoff (lihat ${BK_DIR}/gerbang-data-*.txt)"
+}
