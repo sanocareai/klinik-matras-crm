@@ -1,6 +1,6 @@
 // HPP PER ORDER — tes terarah: jalur SO, biaya tanpa stok (sumber, persetujuan, audit, ganda, koreksi atomik), dasar harga, konfirmasi lengkap, antrean, jembatan laba.
 // Dunia: bahan MX bertaut SO (tanggal SO = H-4) ber-Harga Berlaku Rp15.000 sejak H-30; bahan MY tanpa tautan SO; bahan MZ bertaut SO tanpa harga.
-// Unit U1 (order O1) dan U2 (order O2) terkirim pada H-1. Pengaju = PIC (PRODUCTION_LEAD, tanpa finance), penyetuju = FINANCE.
+// Unit U1 (order O1) dan U2 (order O2) terkirim pada H-1. Pencatat = operator (PRODUCTION_WORKER, bukan admin) → butuh verifikasi; verifikator = PRODUCTION_LEAD (V); ADMIN/PRODUCTION_LEAD yang mencatat → langsung berlaku.
 import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -37,7 +37,7 @@ async function dunia() {
   resetKeadaanEfektif();
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   await setSetting(testPrisma, SETTING_KEYS.SALDO_AWAL_CUTOFF, "2026-01-01");
-  const pic = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const fin = await createTestUser({ roles: ["FINANCE"] }); const admin = await createTestUser({ roles: ["ADMIN"] });
+  const pic = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const fin = await createTestUser({ roles: ["FINANCE"] }); const admin = await createTestUser({ roles: ["ADMIN"] });
   const A = (u, r) => ({ id: u.user.id, name: u.user.name, roles: [r] });
   const mx = await createTestMaterial({ name: "KAIN UJI SO", unit: "METER" }); const my = await createTestMaterial({ name: "BUSA TANPA SO", unit: "SHEET" }); const mz = await createTestMaterial({ name: "BENANG TANPA HARGA", unit: "PCS" });
   for (const m of [mx, my, mz]) await seedBalance(m.id, 20, { createdAt: WIB(H(40)) });
@@ -53,7 +53,7 @@ async function dunia() {
     return { order, unit };
   };
   const o1 = await mk("RES-UJI-001", 2_000_000); const o2 = await mk("RES-UJI-002", 3_000_000);
-  return { pic, fin, admin, P: A(pic, "PRODUCTION_LEAD"), F: A(fin, "FINANCE"), AD: A(admin, "ADMIN"), mx, my, mz, hx, o1, o2 };
+  return { pic, fin, admin, lead, P: A(pic, "PRODUCTION_WORKER"), V: A(lead, "PRODUCTION_LEAD"), F: A(fin, "FINANCE"), AD: A(admin, "ADMIN"), mx, my, mz, hx, o1, o2 };
 }
 const dasar = (w, over = {}) => ({ unitId: w.o1.unit.id, materialId: w.mx.id, qty: 2.5, tanggalPemakaian: H(6), sumberJenis: "LAPORAN_PIC", sumberRef: `Laporan PIC meja 2 baris ${++seq}`, bukti: "Laporan PIC uji, buku kerja meja 2", alasan: "Pemakaian sebelum SO belum tercatat", ...over });
 const hitungTulisan = async () => ({ mv: await testPrisma.stockMovement.count(), jurnal: await testPrisma.finJournalEntry.count() });
@@ -91,14 +91,20 @@ test("H2. ajukan → setujui tanpa stok/jurnal; pemakaian sah berulang di hari y
   await tolakKode(ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 1, sumberRef: "Lap PIC 03/11 baris 2" }), { kunci: kunci() }), "KEMUNGKINAN_GANDA");
   await tolakKode(ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 1, sumberRef: "Lap PIC 03/11 baris 2", konfirmasiBukanGanda: true }), { kunci: kunci() }), "KEMUNGKINAN_GANDA", "konfirmasi tanpa alasan tidak cukup");
   const a2 = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 1, sumberRef: "Lap PIC 03/11 baris 2", konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian kedua: tambal sudut setelah jahit ulang" }), { kunci: kunci() });
+  assert.equal(a.entri.status, "DIAJUKAN", "pencatat bukan admin → menunggu verifikasi");
   await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.P, { id: a.entri.id }), "TIDAK_BERWENANG");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: a.entri.id }), "TIDAK_BERWENANG", "Finance bukan verifikator jalur ini (keputusan Owner)");
+  // ADMIN mencatat → langsung berlaku tanpa verifikasi kedua; jejak audit mencatat pencatat + perannya.
   const b = await ajukanBiayaTanpaStok(testPrisma, w.AD, dasar(w, { unitId: w.o2.unit.id, qty: 1 }), { kunci: kunci() });
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.AD, { id: b.entri.id }), "PENYETUJU_SAMA_DENGAN_PENGAJU");
-  await tolakKode(akhiriBiayaTanpaStok(testPrisma, w.AD, { id: b.entri.id, aksi: "TOLAK", alasan: "uji tolak sendiri" }), "PENYETUJU_SAMA_DENGAN_PENGAJU");
-  assert.equal((await akhiriBiayaTanpaStok(testPrisma, w.AD, { id: b.entri.id, aksi: "BATALKAN", alasan: "salah unit, dibatalkan pengaju" })).entri.status, "DIBATALKAN");
+  assert.equal(b.otomatis, true); assert.equal(b.entri.status, "DISETUJUI"); assert.equal(b.entri.diputuskanOleh, null); assert.match(b.entri.catatanKeputusan, /akun admin/);
+  assert.deepEqual((await riwayatBiayaTanpaStok(testPrisma, b.entri.id)).map((e) => e.kind), ["DIAJUKAN", "OTOMATIS_ADMIN"]);
+  assert.equal(await nilaiUnit(w, w.o2.unit.id), 15000, "langsung dihitung");
+  assert.equal((await akhiriBiayaTanpaStok(testPrisma, w.AD, { id: b.entri.id, aksi: "BATALKAN", alasan: "salah unit, dibatalkan pencatat" })).entri.status, "DIBATALKAN");
+  const bl = await ajukanBiayaTanpaStok(testPrisma, w.V, dasar(w, { unitId: w.o2.unit.id, qty: 1, sumberRef: "catatan lead uji" }), { kunci: kunci() });
+  assert.equal(bl.entri.status, "DISETUJUI", "PRODUCTION_LEAD juga langsung berlaku");
   // Dua pemakaian sah pada unit+bahan+tanggal yang sama: keduanya bisa disetujui (yang diajukan belakangan tidak membatalkan persetujuan yang lebih dulu).
-  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.F, { id: a.entri.id, catatan: "cocok laporan PIC" })).entri.status, "DISETUJUI");
-  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.F, { id: a2.entri.id })).entri.status, "DISETUJUI");
+  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.V, { id: a.entri.id, catatan: "cocok laporan PIC" })).entri.status, "DISETUJUI");
+  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.V, { id: a2.entri.id })).entri.status, "DISETUJUI");
   assert.equal(await nilaiUnit(w, w.o1.unit.id), 52500, "37.500 + 15.000, masing-masing sekali");
   const akhir = await hitungTulisan();
   assert.equal(akhir.mv, awal.mv, "tidak ada pergerakan stok baru"); assert.equal(akhir.jurnal, awal.jurnal, "tidak ada jurnal baru"); assert.equal(await saldo(w.mx), saldoAwal, "saldo bahan tidak berubah");
@@ -117,13 +123,13 @@ test("H2. ajukan → setujui tanpa stok/jurnal; pemakaian sah berulang di hari y
 
 test("H3. koreksi atomik dan dihitung sekali: selama pengganti diajukan hanya yang lama dihitung; sesudah disetujui hanya pengganti; database menolak dua yang berlaku", async () => {
   const w = await dunia();
-  const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { sumberRef: "lap pic koreksi" }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.F, { id: a.entri.id });
+  const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { sumberRef: "lap pic koreksi" }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.V, { id: a.entri.id });
   const kor = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 3, sumberRef: "lap pic koreksi", menggantikanId: a.entri.id, alasan: "Jumlah dikoreksi sesuai buku kerja" }), { kunci: kunci() });
   assert.equal(await nilaiUnit(w, w.o1.unit.id), 37500, "pengganti yang diajukan belum dihitung; yang lama masih berlaku");
   assert.equal((await rincianUnit(testPrisma, w.o1.unit.id)).status.key, "MENUNGGU_PERSETUJUAN");
   await tolakKode(ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 4, sumberRef: "lap pic koreksi 2", menggantikanId: a.entri.id }), { kunci: kunci() }), "KOREKSI_SUDAH_DIAJUKAN");
   await assert.rejects(testPrisma.orderBiayaTanpaStok.update({ where: { id: kor.entri.id }, data: { status: "DISETUJUI", diputuskanOleh: w.F.id } }), /Unique|obts_sumber_satu_disetujui/, "tanpa mengganti yang lama lebih dulu, database menolak dua yang berlaku");
-  const ks = await setujuiBiayaTanpaStok(testPrisma, w.F, { id: kor.entri.id });
+  const ks = await setujuiBiayaTanpaStok(testPrisma, w.V, { id: kor.entri.id });
   assert.equal(ks.entri.status, "DISETUJUI"); assert.equal(Number(ks.entri.nilai), 45000);
   assert.equal((await testPrisma.orderBiayaTanpaStok.findUnique({ where: { id: a.entri.id } })).status, "DIGANTI");
   assert.equal(await nilaiUnit(w, w.o1.unit.id), 45000, "hanya pengganti yang dihitung");
@@ -137,19 +143,24 @@ test("H4. dasar harga: berubah sesudah diajukan → ditolak; berubah DI HARI pem
   const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w), { kunci: kunci() });
   // perubahan harga di tengah hari H-6 (13:00 WIB)
   const hb = await testPrisma.materialHargaBerlaku.create({ data: { materialId: w.mx.id, unitPrice: "16000", satuan: "METER", effectiveFrom: WIB(H(6), "13:00"), createdAt: WIB(H(6), "13:00"), reason: "harga naik siang", idempotencyKey: kunci() } });
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: a.entri.id }), "DASAR_HARGA_BERGESER");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: a.entri.id }), "DASAR_HARGA_BERGESER");
   const pra = await pratinjauBiayaTanpaStok(testPrisma, w.F, dasar(w));
   assert.equal(pra.harga.status, "PERLU_KEPUTUSAN"); assert.equal(pra.harga.nilai, null, "sistem tidak memilih diam-diam");
   assert.deepEqual(pra.harga.kandidat.map((k) => [k.priceId, k.harga]), [[w.hx.id, 15000], [hb.id, 16000]]);
   const p = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 2, konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian kedua hari itu" }), { kunci: kunci() });
   assert.equal(p.entri.statusHarga, "PERLU_KEPUTUSAN"); assert.equal(p.entri.nilai, null);
   assert.equal((await rincianUnit(testPrisma, w.o1.unit.id)).status.key, "MENUNGGU_PERSETUJUAN");
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: p.entri.id }), "KEPUTUSAN_HARGA_WAJIB");
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: p.entri.id, keputusanHarga: { priceId: randomUUID(), alasan: "harga lain" } }), "KEPUTUSAN_HARGA_WAJIB");
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: p.entri.id, keputusanHarga: { priceId: hb.id, alasan: "" } }), "ALASAN_HARGA_WAJIB");
-  const s = await setujuiBiayaTanpaStok(testPrisma, w.F, { id: p.entri.id, keputusanHarga: { priceId: hb.id, alasan: "PIC: dipakai sore, sesudah harga naik" } });
-  assert.equal(s.entri.statusHarga, "DINILAI"); assert.equal(s.entri.basisHarga, "KEPUTUSAN_PENYETUJU"); assert.equal(Number(s.entri.nilai), 32000); assert.equal(s.entri.keputusanHargaOleh, w.F.id);
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: p.entri.id }), "KEPUTUSAN_HARGA_WAJIB");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: p.entri.id, keputusanHarga: { priceId: randomUUID(), alasan: "harga lain" } }), "KEPUTUSAN_HARGA_WAJIB");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: p.entri.id, keputusanHarga: { priceId: hb.id, alasan: "" } }), "ALASAN_HARGA_WAJIB");
+  const s = await setujuiBiayaTanpaStok(testPrisma, w.V, { id: p.entri.id, keputusanHarga: { priceId: hb.id, alasan: "PIC: dipakai sore, sesudah harga naik" } });
+  assert.equal(s.entri.statusHarga, "DINILAI"); assert.equal(s.entri.basisHarga, "KEPUTUSAN_PENYETUJU"); assert.equal(Number(s.entri.nilai), 32000); assert.equal(s.entri.keputusanHargaOleh, w.V.id);
   await assert.rejects(testPrisma.orderBiayaTanpaStok.update({ where: { id: p.entri.id }, data: { hargaSatuan: "15000", nilai: "30000" } }), /terkunci|immutable/, "harga yang sudah diputuskan terkunci");
+  // Admin mencatat pada hari harga berubah: TIDAK langsung berlaku (harga belum diputuskan) dan tidak bisa diputuskan sendiri; admin lain yang memutuskan.
+  const pl = await ajukanBiayaTanpaStok(testPrisma, w.V, dasar(w, { qty: 0.5, sumberRef: "lap lead hari harga naik", konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian terpisah oleh meja lain" }), { kunci: kunci() });
+  assert.equal(pl.otomatis, false); assert.equal(pl.entri.status, "DIAJUKAN"); assert.equal(pl.entri.statusHarga, "PERLU_KEPUTUSAN");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: pl.entri.id, keputusanHarga: { priceId: hb.id, alasan: "pilih sendiri" } }), "PENYETUJU_SAMA_DENGAN_PENGAJU");
+  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.AD, { id: pl.entri.id, keputusanHarga: { priceId: w.hx.id, alasan: "Dipakai pagi menurut lembar kerja" } })).entri.status, "DISETUJUI");
   // jam diketahui dari sumber
   await tolakKode(pratinjauBiayaTanpaStok(testPrisma, w.P, dasar(w, { waktuPemakaian: `${H(5)}T09:00+07:00` })), "WAKTU_TIDAK_COCOK");
   await tolakKode(pratinjauBiayaTanpaStok(testPrisma, w.P, dasar(w, { waktuPemakaian: `${H(6)} 09:00` })), "WAKTU_TIDAK_VALID");
@@ -160,7 +171,7 @@ test("H4. dasar harga: berubah sesudah diajukan → ditolak; berubah DI HARI pem
   // tanpa Harga Berlaku → TANPA_HARGA (null, bukan Rp0); disetujui pun unit tetap belum lengkap
   const t = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { unitId: w.o2.unit.id, materialId: w.mz.id, qty: 2 }), { kunci: kunci() });
   assert.equal(t.entri.statusHarga, "TANPA_HARGA"); assert.equal(t.entri.nilai, null);
-  await setujuiBiayaTanpaStok(testPrisma, w.F, { id: t.entri.id });
+  await setujuiBiayaTanpaStok(testPrisma, w.V, { id: t.entri.id });
   const r = await rincianUnit(testPrisma, w.o2.unit.id, { izinHarga: true }); assert.equal(r.status.key, "BELUM_LENGKAP"); assert.equal(r.status.barisTanpaNilai, 1); assert.equal(r.status.nilaiDiketahui, null);
 });
 
@@ -173,11 +184,11 @@ test("H5. ganda vs ISSUE/catatan: tanggal+jumlah sama = indikator (alasan + pers
   await tolakKode(ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { konfirmasiBukanGanda: true }), { kunci: kunci() }), "KEMUNGKINAN_GANDA", "tanpa alasan tidak cukup");
   const sah = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { konfirmasiBukanGanda: true, alasanBukanGanda: "ISSUE lama = panel atas (Gudang), ini panel bawah dari laporan PIC" }), { kunci: kunci() });
   assert.equal(sah.entri.kandidatGanda.identik.length, 1, "indikator identik tersimpan untuk penyetuju");
-  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.F, { id: sah.entri.id })).entri.status, "DISETUJUI", "indikator yang sudah diakui pengaju tidak menolak persetujuan");
+  assert.equal((await setujuiBiayaTanpaStok(testPrisma, w.V, { id: sah.entri.id })).entri.status, "DISETUJUI", "indikator yang sudah diakui pengaju tidak menolak persetujuan");
   const ok = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 1, konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian ketiga, lembar kerja berbeda" }), { kunci: kunci() });
   // ISSUE lain (bahkan identik) muncul sesudah diajukan → persetujuan ditahan sampai pengaju memeriksa ulang
   await testPrisma.stockMovement.create({ data: { materialId: w.mx.id, unitId: w.o1.unit.id, type: "ISSUE", qty: -1, note: "pemakaian identik baru", createdAt: WIB(H(6), "16:00") } });
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: ok.entri.id }), "KANDIDAT_GANDA_BERUBAH");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: ok.entri.id }), "KANDIDAT_GANDA_BERUBAH");
   // catatan historis tertahan di U2 sebagai sumber
   const batch = await testPrisma.usageImportBatch.create({ data: { sourceKind: "EXCEL_ADMIN_SALES_CSV", fileName: "uji.csv", fileSha256: createHash("sha256").update(randomUUID()).digest("hex"), rowCount: 1 } });
   const nb = (over) => testPrisma.unitUsageNote.create({ data: { batchId: batch.id, origin: "EXCEL", sourceKey: `uji:${randomUUID()}`, sourceRow: ++seq, rawRow: {}, rawName: "KAIN UJI SO", rawQty: "1,5", rawUom: "METER", orderNumber: "RES-UJI-002", orderId: w.o2.order.id, unitId: w.o2.unit.id, qty: "1.5", uom: "METER", usedAt: WIB(H(7)), materialId: w.mx.id, state: "PERLU_DICEK", ...over } });
@@ -189,9 +200,9 @@ test("H5. ganda vs ISSUE/catatan: tanggal+jumlah sama = indikator (alasan + pers
   await tolakKode(ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { unitId: w.o2.unit.id, qty: 1.5, tanggalPemakaian: H(7), sumberJenis: "CATATAN_HISTORIS", sumberRef: note.id }), { kunci: kunci() }), "SUMBER_SUDAH_DIPAKAI");
   // catatan LAIN yang identik muncul sesudah diajukan (impor ganda) → persetujuan ditahan (kandidat baru), bukan diloloskan
   const kembar = await nb();
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: n.entri.id }), "KANDIDAT_GANDA_BERUBAH");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: n.entri.id }), "KANDIDAT_GANDA_BERUBAH");
   await testPrisma.unitUsageNote.update({ where: { id: kembar.id }, data: { state: "TIDAK_DIHITUNG" } }); resetKeadaanEfektif();
-  await setujuiBiayaTanpaStok(testPrisma, w.F, { id: n.entri.id });
+  await setujuiBiayaTanpaStok(testPrisma, w.V, { id: n.entri.id });
   assert.equal((await rincianUnit(testPrisma, w.o2.unit.id)).status.key, "SIAP_DIKONFIRMASI", "catatan sumber + biaya dihitung sekali");
   // TAUTAN TRANSAKSI SAMA = MUTLAK: catatan yang sudah tertaut ke pengeluaran stok tidak bisa jadi biaya tanpa stok, walau beralasan
   const mvLama = await testPrisma.stockMovement.create({ data: { materialId: w.mx.id, unitId: w.o2.unit.id, type: "ISSUE", qty: -0.7, note: "issue lama tertaut catatan", createdAt: WIB(H(8)) } });
@@ -202,13 +213,13 @@ test("H5. ganda vs ISSUE/catatan: tanggal+jumlah sama = indikator (alasan + pers
   const e3 = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { unitId: w.o2.unit.id, qty: 0.3, tanggalPemakaian: H(9), sumberJenis: "CATATAN_HISTORIS", sumberRef: lepas.id, konfirmasiBukanGanda: true, alasanBukanGanda: "catatan terpisah, belum tercatat" }), { kunci: kunci() });
   const mvPost = await testPrisma.stockMovement.create({ data: { materialId: w.mx.id, unitId: w.o2.unit.id, type: "ISSUE", qty: -0.3, note: "posting historis", createdAt: WIB(H(1)) } });
   await testPrisma.unitUsageNote.update({ where: { id: lepas.id }, data: { state: "DIPOSTING", stockMovementId: mvPost.id, linkKind: "POSTING_HISTORIS" } }); resetKeadaanEfektif();
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.F, { id: e3.entri.id }), "SUMBER_CATATAN_SUDAH_DIPROSES");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.V, { id: e3.entri.id }), "SUMBER_CATATAN_SUDAH_DIPROSES");
 });
 
-test("H8. dua pemakaian SAH: sumber berbeda, tanggal sama, jumlah sama → keduanya tercatat dengan alasan + persetujuan penyetuju utama/cadangan (bukan pengaju), dihitung dua kali", async () => {
+test("H8. dua pemakaian SAH: sumber berbeda, tanggal sama, jumlah sama → keduanya tercatat dengan alasan + verifikasi ADMIN/PRODUCTION_LEAD (bukan pencatat), dihitung dua kali", async () => {
   const w = await dunia();
-  const utama = await createTestUser({ roles: ["FINANCE"] }); const cadangan = await createTestUser({ roles: ["OWNER"] });
-  const U = { id: utama.user.id, name: utama.user.name, roles: ["FINANCE"] }; const C = { id: cadangan.user.id, name: cadangan.user.name, roles: ["OWNER"] };
+  const utama = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const cadangan = await createTestUser({ roles: ["ADMIN"] });
+  const U = { id: utama.user.id, name: utama.user.name, roles: ["PRODUCTION_LEAD"] }; const C = { id: cadangan.user.id, name: cadangan.user.name, roles: ["ADMIN"] };
   const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 2, sumberJenis: "LAPORAN_PIC", sumberRef: "laporan PIC 03/11 meja 2 baris 4" }), { kunci: kunci() });
   const pr = await pratinjauBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 2, sumberJenis: "DOKUMEN", sumberRef: "foto lembar kerja meja 5 IMG_0412" }));
   assert.equal(pr.boleh, true); assert.equal(pr.ganda.identik.length, 1, "entri pertama terdeteksi sebagai indikator kuat"); assert.equal(pr.ganda.identik[0].kind, "BIAYA_TANPA_STOK");
@@ -216,15 +227,12 @@ test("H8. dua pemakaian SAH: sumber berbeda, tanggal sama, jumlah sama → kedua
   const b = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 2, sumberJenis: "DOKUMEN", sumberRef: "foto lembar kerja meja 5 IMG_0412", konfirmasiBukanGanda: true,
     alasanBukanGanda: "Dua kasur berbeda di meja 2 dan meja 5 pada hari yang sama; tiap lembar kerja ditandatangani PIC masing-masing" }), { kunci: kunci() });
   assert.equal(b.entri.status, "DIAJUKAN"); assert.equal(b.entri.kandidatGanda.identik.length, 1);
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.P, { id: b.entri.id }), "TIDAK_BERWENANG", "pengaju tanpa finance:approve");
-  assert.equal((await setujuiBiayaTanpaStok(testPrisma, U, { id: a.entri.id })).entri.status, "DISETUJUI", "penyetuju utama");
-  assert.equal((await setujuiBiayaTanpaStok(testPrisma, C, { id: b.entri.id })).entri.status, "DISETUJUI", "penyetuju cadangan");
+  await tolakKode(setujuiBiayaTanpaStok(testPrisma, w.P, { id: b.entri.id }), "TIDAK_BERWENANG", "pencatat bukan admin tidak bisa memverifikasi");
+  assert.equal((await setujuiBiayaTanpaStok(testPrisma, U, { id: a.entri.id })).entri.status, "DISETUJUI", "verifikator PRODUCTION_LEAD");
+  assert.equal((await setujuiBiayaTanpaStok(testPrisma, C, { id: b.entri.id })).entri.status, "DISETUJUI", "verifikator ADMIN");
   assert.equal(await nilaiUnit(w, w.o1.unit.id), 60000, "2 × (2 × 15.000): keduanya dihitung, masing-masing sekali");
   const ev = await riwayatBiayaTanpaStok(testPrisma, b.entri.id);
   assert.equal(ev[0].after.kandidatGandaIdentik, 1); assert.match(ev[0].after.alasanBukanGanda, /meja 2 dan meja 5/); assert.equal(ev[1].actorId, C.id);
-  // penyetuju tidak boleh pengajunya sendiri, termasuk penyetuju utama yang mengajukan
-  const c = await ajukanBiayaTanpaStok(testPrisma, { ...U, roles: ["ADMIN"] }, dasar(w, { unitId: w.o2.unit.id, qty: 1, sumberRef: "catatan finance uji" }), { kunci: kunci() });
-  await tolakKode(setujuiBiayaTanpaStok(testPrisma, { ...U, roles: ["ADMIN"] }, { id: c.entri.id }), "PENYETUJU_SAMA_DENGAN_PENGAJU");
 });
 
 test("H6. konfirmasi lengkap ditolak bila biaya kosong / sumber tertunda / menunggu persetujuan; sidik basi; pernyataan tanpa bahan diaudit", async () => {
@@ -235,10 +243,10 @@ test("H6. konfirmasi lengkap ditolak bila biaya kosong / sumber tertunda / menun
   await tolakKonf(w.o1.unit.id); // belum ada pemakaian
   const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w), { kunci: kunci() });
   await tolakKonf(w.o1.unit.id); // menunggu persetujuan
-  await setujuiBiayaTanpaStok(testPrisma, w.F, { id: a.entri.id });
-  const t = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { materialId: w.mz.id, qty: 1 }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.F, { id: t.entri.id });
+  await setujuiBiayaTanpaStok(testPrisma, w.V, { id: a.entri.id });
+  const t = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { materialId: w.mz.id, qty: 1 }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.V, { id: t.entri.id });
   await assert.rejects(konfirmasiLengkap(testPrisma, w.P, { unitId: w.o1.unit.id, sidik: "x", alasan: "Diperiksa PIC dengan buku kerja" }, { kunci: kunci() }), (e) => { assert.equal(e.code, "BELUM_SIAP_DIKONFIRMASI"); assert.equal(e.detail.biayaKosong, 1); return true; }, "biaya kosong (tanpa harga) menolak konfirmasi");
-  await akhiriBiayaTanpaStok(testPrisma, w.F, { id: t.entri.id, aksi: "BATALKAN", alasan: "Bahan salah pilih, dibatalkan" });
+  await akhiriBiayaTanpaStok(testPrisma, w.V, { id: t.entri.id, aksi: "BATALKAN", alasan: "Bahan salah pilih, dibatalkan" });
   // catatan historis tertunda menolak konfirmasi
   const batch = await testPrisma.usageImportBatch.create({ data: { sourceKind: "EXCEL_ADMIN_SALES_CSV", fileName: "uji2.csv", fileSha256: createHash("sha256").update(randomUUID()).digest("hex"), rowCount: 1 } });
   const note = await testPrisma.unitUsageNote.create({ data: { batchId: batch.id, origin: "EXCEL", sourceKey: `uji:${randomUUID()}`, sourceRow: 1, rawRow: {}, rawName: "KAIN", rawQty: "1", rawUom: "METER", orderNumber: "RES-UJI-001", orderId: w.o1.order.id, unitId: w.o1.unit.id, qty: "1", uom: "METER", usedAt: WIB(H(8)), materialId: w.mx.id, state: "PERLU_DICEK" } });
@@ -251,7 +259,7 @@ test("H6. konfirmasi lengkap ditolak bila biaya kosong / sumber tertunda / menun
   await tolakKode(konfirmasiLengkap(testPrisma, w.P, { unitId: w.o1.unit.id, sidik: "basi", alasan: "Diperiksa PIC dengan buku kerja" }, { kunci: kunci() }), "SIDIK_BERGESER");
   await konfirmasiLengkap(testPrisma, w.P, { unitId: w.o1.unit.id, sidik: u1.sidik, alasan: "Diperiksa PIC dengan buku kerja" }, { kunci: kunci() });
   assert.equal((await rincianUnit(testPrisma, w.o1.unit.id)).status.key, "LENGKAP");
-  const b = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { tanggalPemakaian: H(5), qty: 1, konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian hari berbeda" }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.F, { id: b.entri.id });
+  const b = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { tanggalPemakaian: H(5), qty: 1, konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian hari berbeda" }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.V, { id: b.entri.id });
   const r = await rincianUnit(testPrisma, w.o1.unit.id); assert.equal(r.status.key, "KONFIRMASI_BASI");
   await konfirmasiLengkap(testPrisma, w.P, { unitId: w.o1.unit.id, sidik: r.status.sidik, alasan: "Diperiksa ulang sesudah tambahan" }, { kunci: kunci() });
   assert.equal(await testPrisma.unitHppKonfirmasi.count({ where: { unitId: w.o1.unit.id } }), 2); assert.equal(await testPrisma.unitHppKonfirmasi.count({ where: { unitId: w.o1.unit.id, status: "ACTIVE" } }), 1);
@@ -297,7 +305,7 @@ test("H7. jembatan laba jurnal → hasil manajemen: per baris (bukan per akun), 
   await jur("5-1960", 999999, { tanggal: H(1), source: "PEMAKAIAN_BAHAN", sourceId: adj.id, lawan: pers }); // jurnal H-1, mengoreksi pemakaian H-15 → saldo lama
   await jur("5-1960", 40000, { tanggal: H(5) }); // tanpa dokumen koreksi: tanggal sebelum/sesudah SO TIDAK menentukan → tetap dihitung, perlu klasifikasi
   await jur("5-1960", 3000, { tanggal: H(1) });
-  const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 1, konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian pra-SO terpisah dari ISSUE uji" }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.F, { id: a.entri.id }); // O1 biaya tanpa stok 15.000
+  const a = await ajukanBiayaTanpaStok(testPrisma, w.P, dasar(w, { qty: 1, konfirmasiBukanGanda: true, alasanBukanGanda: "Pemakaian pra-SO terpisah dari ISSUE uji" }), { kunci: kunci() }); await setujuiBiayaTanpaStok(testPrisma, w.V, { id: a.entri.id }); // O1 biaya tanpa stok 15.000
   const L = await laporanHppOrder(testPrisma, { fromStr: H(9), toStr: H(0), izinHarga: true });
   const M = L.manajemen; const kel = Object.fromEntries(M.kelompok.map((k) => [k.key, k.nilai]));
   assert.equal(M.kontrol.cocok, true, JSON.stringify(M.kontrol));

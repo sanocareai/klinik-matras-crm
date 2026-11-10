@@ -1,5 +1,6 @@
 // QA HPP per Order — server backend ASLI (buildTestApp) di atas database TERISOLASI (nama wajib mengandung "test") + data uji deterministik. Tidak menyentuh production.
 //   TEST_DATABASE_URL=postgresql://klinik:...@localhost:5432/km_hppqa_test JWT_SECRET=... PORT=4031 OUT=C:/tmp/km-hpp-qa node frontend/qa-harness/hpp-order-server.mjs
+// Peran (keputusan Owner 10 Nov): operator (bukan admin) mencatat → menunggu verifikasi PIC/Production Lead; Lead/ADMIN mencatat → langsung berlaku. Finance tidak memverifikasi.
 // Dunia: bahan bertaut SO (H-4) KAIN-QA (harga 15.000; berubah 16.000 pukul 13:00 WIB pada H-6), BENANG-QA tanpa harga. Empat unit terkirim H-1:
 //   QA-001 belum ada pemakaian · QA-002 biaya disetujui (siap dikonfirmasi) · QA-003 biaya PERLU_KEPUTUSAN harga (menunggu) · QA-004 tanpa harga (biaya kosong).
 // Menulis OUT/tokens.json dan OUT/ids.json.
@@ -52,11 +53,11 @@ const mk = async (no) => {
 const u = {};
 for (const no of ["RES-QA-001", "RES-QA-002", "RES-QA-003", "RES-QA-004", "RES-QA-005"]) { u[no] = await mk(no); id[no] = u[no].unit.id; }
 const dasar = (unitId, o) => ({ unitId, materialId: kain.id, qty: 2, tanggalPemakaian: H(8), sumberJenis: "LAPORAN_PIC", bukti: "Buku kerja meja 2 (QA)", alasan: "Pemakaian sebelum SO belum tercatat", ...o });
-const e2 = await ajukanBiayaTanpaStok(testPrisma, A.pic, dasar(id["RES-QA-002"], { sumberRef: "lap pic qa 002" }), { kunci: k() });
-await setujuiBiayaTanpaStok(testPrisma, A.finance, { id: e2.entri.id });
-const e3 = await ajukanBiayaTanpaStok(testPrisma, A.pic, dasar(id["RES-QA-003"], { tanggalPemakaian: H(6), sumberRef: "lap pic qa 003" }), { kunci: k() }); id.entriKeputusan = e3.entri.id;
-const e4 = await ajukanBiayaTanpaStok(testPrisma, A.pic, dasar(id["RES-QA-004"], { materialId: benang.id, qty: 3, sumberRef: "lap pic qa 004" }), { kunci: k() });
-await setujuiBiayaTanpaStok(testPrisma, A.finance, { id: e4.entri.id });
+const e2 = await ajukanBiayaTanpaStok(testPrisma, A.operator, dasar(id["RES-QA-002"], { sumberRef: "lap pic qa 002" }), { kunci: k() });
+await setujuiBiayaTanpaStok(testPrisma, A.pic, { id: e2.entri.id });
+const e3 = await ajukanBiayaTanpaStok(testPrisma, A.operator, dasar(id["RES-QA-003"], { tanggalPemakaian: H(6), sumberRef: "lap pic qa 003" }), { kunci: k() }); id.entriKeputusan = e3.entri.id;
+const e4 = await ajukanBiayaTanpaStok(testPrisma, A.operator, dasar(id["RES-QA-004"], { materialId: benang.id, qty: 3, sumberRef: "lap pic qa 004" }), { kunci: k() });
+await setujuiBiayaTanpaStok(testPrisma, A.pic, { id: e4.entri.id });
 
 // Jurnal untuk laporan: pengakuan pendapatan 2 order, upah, selisih opname sebelum & sesudah SO, pembelian langsung.
 const akun = async (c) => (await testPrisma.finAccount.findFirst({ where: { code: c } })).id; const kas = await akun("1-1100");

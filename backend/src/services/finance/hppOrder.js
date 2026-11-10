@@ -9,9 +9,9 @@
 //     harga berubah hari itu → PERLU_KEPUTUSAN (penyetuju memilih dari kandidat, beralasan); tidak ada harga → TANPA_HARGA (null, bukan Rp0).
 //   • Ganda ditolak MUTLAK hanya per identitas sumber, kunci idempotensi, atau tautan transaksi yang sama (indeks unik database). Tanggal + jumlah sama = indikator kuat:
 //     wajib alasan "bukan duplikat" dari pengaju dan persetujuan orang lain.
-//   • Biaya tanpa stok berlaku (masuk HPP operasional) hanya sesudah DISETUJUI orang lain dari pengaju; koreksi = entri pengganti yang disetujui atomik; tidak ada hapus (trigger database).
+//   • Biaya tanpa stok berlaku (masuk HPP operasional) langsung bila dicatat ADMIN/PRODUCTION_LEAD, selain itu sesudah DIVERIFIKASI ADMIN/PRODUCTION_LEAD lain; koreksi = entri pengganti yang disetujui atomik; tidak ada hapus (trigger database).
 import { lockRowForUpdate } from "../inventoryLedger.js";
-import { hasPermission } from "../../middleware/authorize.js";
+import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { TIPE_OP, penyelesaiHargaBerlaku, hargaBerubahPadaHari, batasHargaTanggal } from "./hargaBerlaku.js";
 import { periksaPraSO, sudahTercatatUntuk, tanggalDilaporkan } from "../pembetulanBahanUnit.js";
@@ -45,8 +45,12 @@ const AKTIF = ["DIAJUKAN", "DISETUJUI"];
 export const SUMBER_JENIS = Object.freeze({ CATATAN_HISTORIS: "Catatan pemakaian historis (Excel Admin)", LAPORAN_PIC: "Laporan PIC produksi", DOKUMEN: "Dokumen/foto kerja" });
 const STATE_CATATAN_TERTAHAN = ["PERLU_DICEK", "SIAP_POSTING"];
 
+// Keputusan Owner 10 Nov 2026: biaya tanpa stok yang DICATAT akun ADMIN/PRODUCTION_LEAD langsung berlaku (tanpa verifikasi kedua); pencatatan akun lain menunggu VERIFIKASI
+// oleh ADMIN/PRODUCTION_LEAD yang BUKAN pencatatnya. Hanya jalur biaya tanpa stok; pencatatan stok biasa tidak berubah. Berdasarkan PERAN sistem (bukan nama orang).
+export const PERAN_ADMIN_BAHAN = Object.freeze(["ADMIN", "PRODUCTION_LEAD"]);
 export const bolehMencatat = (u) => hasPermission(u, P.UNIT_MATERIAL_WRITE);
-export const bolehMenyetujui = (u) => hasPermission(u, P.FINANCE_APPROVE);
+export const adminBahan = (u) => rolesOf(u).some((r) => PERAN_ADMIN_BAHAN.includes(r));
+export const bolehMenyetujui = adminBahan;
 export const bolehNominal = (u) => hasPermission(u, P.FINANCE_READ);
 
 // ───────────────────────────── pemuatan baris biaya per unit (BACA-SAJA) ─────────────────────────────
@@ -281,14 +285,14 @@ export async function pratinjauBiayaTanpaStok(db, user, masukan) {
   const h = v.jalur.key === "BIAYA_TANPA_STOK" ? await hargaBiaya(db, { materialId: v.bahan.id, tanggal: v.tanggal, waktu: v.waktu, qty: v.qty }) : null;
   const izinHarga = bolehNominal(user);
   return {
-    boleh: penghalang.length === 0, penghalang, jalur: v.jalur,
+    boleh: penghalang.length === 0, penghalang, jalur: v.jalur, otomatis: adminBahan(user) && h?.status !== "PERLU_KEPUTUSAN",
     unit: { id: v.unit.id, kode: v.unit.unitCode, status: v.unit.status }, bahan: { id: v.bahan.id, kode: v.bahan.code, nama: v.bahan.name, satuan: v.bahan.unit },
     qty: v.qty, konversi: v.konversi, tanggalPemakaian: v.tanggal, waktuPemakaian: v.waktu ? v.waktu.toISOString() : null, terlambatHari: v.terlambatHari, soTanggal: v.pra?.soTanggal ?? null,
     harga: h ? { status: h.status, basis: h.basis, teks: h.teks, harga: izinHarga && h.harga ? Number(h.harga) : null, nilai: izinHarga && h.nilai ? Number(h.nilai) : null, sidik: h.sidik,
       kandidat: h.kandidat ? h.kandidat.map((k) => ({ ...k, harga: izinHarga ? Number(k.harga) : null })) : null } : null,
     ganda: { identik: g.identik, mirip: g.mirip, perluKonfirmasi: g.kandidat.length > 0, sidik: g.sidik,
       teks: g.identik.length ? `${g.identik.length} catatan/pengeluaran lain bertanggal dan berjumlah SAMA — indikator kuat duplikat. Boleh dicatat hanya bila sumbernya memang berbeda: tulis alasan; penyetuju memeriksa.` : null },
-    dampak: ["Stok Gudang TIDAK berubah (hitung fisik SO sudah mencakup pemakaian ini).", "Tidak ada jurnal Finance; saldo kas/bank tidak berubah.", "HPP operasional order bertambah hanya sesudah DISETUJUI orang lain dari pengaju.", "Koreksi kelak = entri pengganti; entri ini tidak bisa diubah atau dihapus."],
+    dampak: ["Stok Gudang TIDAK berubah (hitung fisik SO sudah mencakup pemakaian ini).", "Tidak ada jurnal Finance; saldo kas/bank tidak berubah.", (adminBahan(user) && h?.status !== "PERLU_KEPUTUSAN" ? "Dicatat akun admin (ADMIN/PRODUCTION_LEAD): HPP operasional order langsung bertambah, tanpa verifikasi kedua." : "HPP operasional order bertambah sesudah DIVERIFIKASI ADMIN/PRODUCTION_LEAD lain dari pencatat."), "Koreksi kelak = entri pengganti; entri ini tidak bisa diubah atau dihapus."],
     sumber: { jenis: v.sumberJenis, label: SUMBER_JENIS[v.sumberJenis], ref: v.sumberRef },
   };
 }
@@ -322,15 +326,25 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
       wajib(!masukan.sidikGanda || masukan.sidikGanda === g.sidik, "Daftar kemungkinan ganda berubah sejak pratinjau. Lihat pratinjau lagi; tidak ada yang tersimpan.", "KANDIDAT_GANDA_BERUBAH", 409);
       const h = await hargaBiaya(tx, { materialId: v.bahan.id, tanggal: v.tanggal, waktu: v.waktu, qty: v.qty });
       wajib(!masukan.sidikHarga || masukan.sidikHarga === h.sidik, "Dasar harga berubah sejak pratinjau. Lihat pratinjau lagi; tidak ada yang tersimpan.", "DASAR_HARGA_BERGESER", 409);
+      // Pencatat ADMIN/PRODUCTION_LEAD → langsung berlaku (kecuali harga PERLU_KEPUTUSAN: tetap menunggu verifikator lain yang memilih harga). Pencatat lain → menunggu verifikasi.
+      const otomatis = adminBahan(user) && h.status !== "PERLU_KEPUTUSAN";
+      const sekarang = new Date();
+      if (otomatis && ganti) { // pengganti langsung berlaku: yang lama DIGANTI lebih dulu (indeks sumber tidak pernah melihat dua yang berlaku)
+        await tx.orderBiayaTanpaStok.update({ where: { id: ganti.id }, data: { status: "DIGANTI" } });
+        await catatEvent(tx, ganti.id, "DIGANTI", user.id, "Diganti koreksi yang dicatat akun admin", { status: "DISETUJUI" }, { status: "DIGANTI" });
+      }
       const e = await tx.orderBiayaTanpaStok.create({ data: {
         unitId: v.unit.id, orderId: v.unit.orderId, materialId: v.bahan.id, qty: new Decimal(String(v.qty)), satuan: v.bahan.unit, tanggalPemakaian: tglDate(v.tanggal), waktuPemakaian: v.waktu, soTanggal: tglDate(v.pra.soTanggal), soTautanId: v.tautan?.id ?? null,
         statusHarga: h.status, hargaSatuan: h.harga, nilai: h.nilai, priceId: h.priceId, basisHarga: h.basis, sidikHarga: h.sidik, kandidatHarga: h.kandidat ?? undefined,
         sumberJenis: v.sumberJenis, sumberRef: v.sumberRef, sidikGanda: g.sidik, kandidatGanda: { kunci: g.kunci, identik: g.identik, mirip: g.mirip, alasanBukanGanda: alasanBukan || null },
         bukti: v.bukti, alasan: v.alasan, menggantikanId: ganti?.id ?? null, diajukanOleh: user.id, idempotencyKey: kunci,
+        ...(otomatis ? { status: "DISETUJUI", diputuskanPada: sekarang, catatanKeputusan: "Dicatat akun admin (ADMIN/PRODUCTION_LEAD): langsung berlaku tanpa verifikasi kedua (keputusan Owner 10 Nov 2026)" } : {}),
       } });
       await catatEvent(tx, e.id, "DIAJUKAN", user.id, v.alasan, null, { qty: v.qty, tanggal: v.tanggal, waktu: v.waktu ? v.waktu.toISOString() : null, soTanggal: v.pra.soTanggal, statusHarga: e.statusHarga, basisHarga: h.basis,
-        nilai: e.nilai == null ? null : Number(e.nilai), menggantikanId: ganti?.id ?? null, sumber: `${v.sumberJenis}:${v.sumberRef}`, kandidatGandaIdentik: g.identik.length, kandidatGandaMirip: g.mirip.length, alasanBukanGanda: alasanBukan || null });
-      return { ulang: false, entri: e };
+        nilai: e.nilai == null ? null : Number(e.nilai), menggantikanId: ganti?.id ?? null, sumber: `${v.sumberJenis}:${v.sumberRef}`, kandidatGandaIdentik: g.identik.length, kandidatGandaMirip: g.mirip.length, alasanBukanGanda: alasanBukan || null,
+        peranPencatat: rolesOf(user), otomatis });
+      if (otomatis) await catatEvent(tx, e.id, "OTOMATIS_ADMIN", user.id, "Pencatat berperan admin: berlaku tanpa verifikasi kedua", { status: "DIAJUKAN" }, { status: "DISETUJUI", peran: rolesOf(user) });
+      return { ulang: false, entri: e, otomatis };
     }, { isolationLevel: "Serializable", timeout: 30_000 });
   } catch (err) {
     if (err?.code === "P2002") { const s = await prisma.orderBiayaTanpaStok.findUnique({ where: { idempotencyKey: kunci } }); if (s) return { ulang: true, entri: s }; throw new HppOrderError("Sumber ini sudah menjadi biaya tanpa stok yang aktif.", 409, "SUMBER_SUDAH_DIPAKAI"); }
@@ -339,11 +353,11 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
 }
 
 /**
- * Setujui (FINANCE_APPROVE, orang lain dari pengaju). Memeriksa ulang: jalur SO, dasar harga (sidik), sumber/tautan transaksi yang sama (mutlak), dan kandidat ganda BARU sejak diajukan.
+ * Verifikasi/setujui (peran ADMIN/PRODUCTION_LEAD, orang lain dari pencatat). Memeriksa ulang: jalur SO, dasar harga (sidik), sumber/tautan transaksi yang sama (mutlak), dan kandidat ganda BARU sejak diajukan.
  * PERLU_KEPUTUSAN: keputusanHarga { priceId, alasan } wajib dan harus salah satu kandidat yang disimpan. Koreksi: entri lama → DIGANTI lalu pengganti → DISETUJUI, satu transaksi.
  */
 export async function setujuiBiayaTanpaStok(prisma, user, { id, catatan = null, keputusanHarga = null }) {
-  wajib(bolehMenyetujui(user), "Persetujuan biaya tanpa stok hanya untuk Finance/Owner (finance:approve).", "TIDAK_BERWENANG", 403);
+  wajib(bolehMenyetujui(user), "Verifikasi biaya tanpa stok hanya untuk peran ADMIN atau PRODUCTION_LEAD (admin produksi).", "TIDAK_BERWENANG", 403);
   wajib(UUID.test(String(id ?? "")), "id tidak valid", "ID_TIDAK_VALID");
   try {
     return await prisma.$transaction(async (tx) => {
@@ -408,14 +422,14 @@ export async function akhiriBiayaTanpaStok(prisma, user, { id, aksi, alasan }) {
     const e = await tx.orderBiayaTanpaStok.findUnique({ where: { id } }); wajib(e, "Entri tidak ditemukan", "TIDAK_ADA", 404);
     let status;
     if (aksi === "TOLAK") {
-      wajib(bolehMenyetujui(user), "Penolakan hanya untuk Finance/Owner.", "TIDAK_BERWENANG", 403);
+      wajib(bolehMenyetujui(user), "Penolakan hanya untuk peran ADMIN atau PRODUCTION_LEAD.", "TIDAK_BERWENANG", 403);
       wajib(e.status === "DIAJUKAN", `Entri berstatus ${e.status}, tidak bisa ditolak.`, "STATUS_TIDAK_SAH", 409);
       wajib(e.diajukanOleh !== user.id, "Penolak harus orang lain dari pengaju (pengaju memakai Batalkan).", "PENYETUJU_SAMA_DENGAN_PENGAJU", 403);
       status = "DITOLAK";
     } else {
       wajib(e.status === "DIAJUKAN" || e.status === "DISETUJUI", `Entri berstatus ${e.status}, tidak bisa dibatalkan.`, "STATUS_TIDAK_SAH", 409);
-      if (e.status === "DIAJUKAN") wajib(e.diajukanOleh === user.id || bolehMenyetujui(user), "Hanya pengaju atau Finance/Owner yang bisa membatalkan pengajuan.", "TIDAK_BERWENANG", 403);
-      else wajib(bolehMenyetujui(user), "Membatalkan biaya yang sudah disetujui hanya untuk Finance/Owner.", "TIDAK_BERWENANG", 403);
+      if (e.status === "DIAJUKAN") wajib(e.diajukanOleh === user.id || bolehMenyetujui(user), "Hanya pencatat atau peran ADMIN/PRODUCTION_LEAD yang bisa membatalkan pengajuan.", "TIDAK_BERWENANG", 403);
+      else wajib(bolehMenyetujui(user), "Membatalkan biaya yang sudah berlaku hanya untuk peran ADMIN/PRODUCTION_LEAD.", "TIDAK_BERWENANG", 403);
       status = "DIBATALKAN";
     }
     const s = await tx.orderBiayaTanpaStok.update({ where: { id }, data: { status, diputuskanOleh: user.id, diputuskanPada: new Date(), catatanKeputusan: t } });

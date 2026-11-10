@@ -5,9 +5,9 @@
 //   POST /hpp-order/biaya-tanpa-stok                  ajukan (Idempotency-Key wajib) — tanpa stok, tanpa jurnal
 //   GET  /hpp-order/biaya-tanpa-stok?status           daftar (persetujuan)
 //   GET  /hpp-order/biaya-tanpa-stok/:id/riwayat      jejak audit
-//   POST /hpp-order/biaya-tanpa-stok/:id/setujui      finance:approve, orang lain dari pengaju
-//   POST /hpp-order/biaya-tanpa-stok/:id/tolak        finance:approve, orang lain dari pengaju
-//   POST /hpp-order/biaya-tanpa-stok/:id/batalkan     pengaju (DIAJUKAN) atau finance:approve
+//   POST /hpp-order/biaya-tanpa-stok/:id/setujui      ADMIN/PRODUCTION_LEAD, orang lain dari pencatat
+//   POST /hpp-order/biaya-tanpa-stok/:id/tolak        ADMIN/PRODUCTION_LEAD, orang lain dari pencatat
+//   POST /hpp-order/biaya-tanpa-stok/:id/batalkan     pencatat (DIAJUKAN) atau ADMIN/PRODUCTION_LEAD
 //   POST /hpp-order/unit/:unitId/konfirmasi           konfirmasi pemakaian lengkap (Idempotency-Key wajib)
 //   POST /hpp-order/unit/:unitId/cabut-konfirmasi     cabut konfirmasi (alasan)
 //   GET  /hpp-order/laporan?from&to                   laporan berdampingan (baca; nominal hanya finance:read)
@@ -18,7 +18,7 @@ import { requireAnyPermission, PERMISSIONS as P, hasPermission } from "../middle
 import { prisma } from "../db.js";
 import {
   HppOrderError, antreanHpp, rincianUnit, pratinjauBiayaTanpaStok, ajukanBiayaTanpaStok, daftarBiayaTanpaStok, riwayatBiayaTanpaStok,
-  setujuiBiayaTanpaStok, akhiriBiayaTanpaStok, konfirmasiLengkap, cabutKonfirmasi, laporanHppOrder, bolehNominal, SUMBER_JENIS,
+  setujuiBiayaTanpaStok, akhiriBiayaTanpaStok, konfirmasiLengkap, cabutKonfirmasi, laporanHppOrder, bolehNominal, bolehMenyetujui, adminBahan, SUMBER_JENIS,
 } from "../services/finance/hppOrder.js";
 import { DASAR_HARGA } from "../lib/domain/hppOrder.js";
 import { LaporanTerinciError } from "../services/finance/laporanTerinci/index.js";
@@ -38,7 +38,7 @@ const kunciDari = (req) => String(req.get("Idempotency-Key") || req.body?.kunci 
 const periode = (q) => ({ fromStr: String(q.from || ""), toStr: String(q.to || "") });
 
 financeHppOrderRouter.get("/hpp-order/meta", ...baca, (req, res) => {
-  res.json({ izin: { nominal: bolehNominal(req.user), mencatat: hasPermission(req.user, P.UNIT_MATERIAL_WRITE), menyetujui: hasPermission(req.user, P.FINANCE_APPROVE),
+  res.json({ izin: { nominal: bolehNominal(req.user), mencatat: hasPermission(req.user, P.UNIT_MATERIAL_WRITE), menyetujui: bolehMenyetujui(req.user), otomatis: adminBahan(req.user),
     menyatakanTanpaBahan: hasPermission(req.user, P.UNIT_ROUTING_WRITE) }, sumberJenis: SUMBER_JENIS, dasarHarga: DASAR_HARGA, userId: req.user.id });
 });
 financeHppOrderRouter.get("/hpp-order/antrean", ...baca, async (req, res) => {

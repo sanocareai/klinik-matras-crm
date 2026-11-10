@@ -44,7 +44,7 @@ export default function FinanceHppOrder({ awal = "antrean" }) {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="antrean"><ClipboardList size={14} className="mr-1" /> Antrean unit</TabsTrigger>
-            {meta.izin.menyetujui && <TabsTrigger value="persetujuan"><ShieldCheck size={14} className="mr-1" /> Persetujuan biaya</TabsTrigger>}
+            {meta.izin.menyetujui && <TabsTrigger value="persetujuan"><ShieldCheck size={14} className="mr-1" /> Verifikasi biaya</TabsTrigger>}
             <TabsTrigger value="laporan"><Scale size={14} className="mr-1" /> Laporan berdampingan</TabsTrigger>
           </TabsList>
           <TabsContent value="antrean"><TabAntrean periode={periode} meta={meta} /></TabsContent>
@@ -177,7 +177,7 @@ function PanelUnit({ baris, meta, onTutup, onBerubah }) {
                 <Button variant="secondary" onClick={() => setForm({ sumberJenis: "LAPORAN_PIC" })}>Catat biaya tanpa stok (pada/sebelum SO)</Button>
                 <Button variant="tertiary" asChild><a href={`/bengkel/order-produksi?q=${encodeURIComponent(baris.orderNomor ?? baris.unitKode)}`}>Pengeluaran stok resmi (sesudah SO) di Order Produksi</a></Button>
               </div>
-              {form && <FormBiaya key={JSON.stringify(form)} unit={d.unit} awal={form} meta={meta} onBatal={() => setForm(null)} onSelesai={() => selesai("Biaya tanpa stok diajukan; berlaku sesudah disetujui orang lain.")} />}
+              {form && <FormBiaya key={JSON.stringify(form)} unit={d.unit} awal={form} meta={meta} onBatal={() => setForm(null)} onSelesai={(r) => selesai(r?.otomatis ? "Biaya tanpa stok tercatat dan langsung berlaku (dicatat akun admin)." : "Biaya tanpa stok tercatat; berlaku sesudah diverifikasi ADMIN/Production Lead lain.")} />}
               {(d.status.key === "SIAP_DIKONFIRMASI" || d.status.key === "KONFIRMASI_BASI" || d.status.key === "BELUM_ADA_PEMAKAIAN") && (
                 <div className="flex flex-wrap items-end gap-2 rounded-lg bg-inset p-3">
                   <Field label={d.status.key === "BELUM_ADA_PEMAKAIAN" ? "Keterangan (hanya bila memang tanpa bahan baru)" : "Keterangan pemeriksaan"}><Input value={ket} onChange={(e) => setKet(e.target.value)} placeholder="Diperiksa oleh … dari …" /></Field>
@@ -206,7 +206,7 @@ function FormBiaya({ unit, awal, meta, onBatal, onSelesai }) {
   const masukan = () => ({ unitId: unit.id, materialId: m.materialId, qty: Number(m.qty), tanggalPemakaian: m.tanggalPemakaian, waktuPemakaian: m.jam && m.tanggalPemakaian ? `${m.tanggalPemakaian}T${m.jam}+07:00` : null,
     sumberJenis: m.sumberJenis, sumberRef: m.sumberRef || null, bukti: m.bukti, alasan: m.alasan, konfirmasiBukanGanda: bukanGanda, alasanBukanGanda: m.alasanBukanGanda });
   async function lihat() { setGalat(null); try { setPr(await api.pratinjauBiayaTanpaStok(masukan())); } catch (e) { setGalat(e.message); } }
-  async function ajukan() { setKirim(true); setGalat(null); try { await api.ajukanBiayaTanpaStok({ ...masukan(), sidikHarga: pr?.harga?.sidik, sidikGanda: pr?.ganda?.sidik }, kunci); onSelesai(); } catch (e) { setGalat(e.message); } finally { setKirim(false); } }
+  async function ajukan() { setKirim(true); setGalat(null); try { const r = await api.ajukanBiayaTanpaStok({ ...masukan(), sidikHarga: pr?.harga?.sidik, sidikGanda: pr?.ganda?.sidik }, kunci); onSelesai(r); } catch (e) { setGalat(e.message); } finally { setKirim(false); } }
   const gandaOk = !pr?.ganda?.perluKonfirmasi || (bukanGanda && m.alasanBukanGanda.trim().length >= 5);
   return (
     <div className="space-y-2 rounded-lg border border-line p-3">
@@ -250,7 +250,7 @@ function FormBiaya({ unit, awal, meta, onBatal, onSelesai }) {
       )}
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={lihat}>Lihat dampak</Button>
-        <Button disabled={!pr?.boleh || kirim || !gandaOk} onClick={ajukan}>Ajukan</Button>
+        <Button disabled={!pr?.boleh || kirim || !gandaOk} onClick={ajukan}>{pr?.otomatis ? "Catat (langsung berlaku)" : "Ajukan untuk verifikasi"}</Button>
         <Button variant="neutral" onClick={onBatal}>Batal</Button>
       </div>
     </div>
@@ -284,7 +284,7 @@ function TabPersetujuan({ meta }) {
   return (
     <div className="space-y-3">
       <Pesan pesan={pesan} onTutup={() => setPesan(null)} />
-      <Penjelasan>Biaya bahan per order TANPA pengurangan stok (pemakaian pada/sebelum SO). Persetujuan memeriksa ulang tautan SO, sumber, kemungkinan duplikat, dan dasar harga per baris. Bila harga berubah pada hari pemakaian, Anda memilih harga dengan alasan (atau tolak dan minta jam pemakaian). Pengajuan Anda sendiri tidak bisa Anda setujui.</Penjelasan>
+      <Penjelasan>Biaya bahan per order TANPA pengurangan stok (pemakaian pada/sebelum SO). Pencatatan akun ADMIN/Production Lead langsung berlaku; yang di sini dicatat akun lain dan menunggu verifikasi Anda. Verifikasi memeriksa ulang tautan SO, sumber, kemungkinan duplikat, dan dasar harga per baris. Bila harga berubah pada hari pemakaian, Anda memilih harga dengan alasan (atau tolak dan minta jam pemakaian). Pengajuan Anda sendiri tidak bisa Anda setujui.</Penjelasan>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Catatan / alasan (wajib untuk tolak)"><Input value={alasan} onChange={(e) => setAlasan(e.target.value)} /></Field>
         <Button disabled={!pilih.size || proses} onClick={() => massal("setujui")}>Setujui terpilih ({pilih.size})</Button>
