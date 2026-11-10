@@ -1,6 +1,6 @@
 // QA HPP per Order — server backend ASLI (buildTestApp) di atas database TERISOLASI (nama wajib mengandung "test") + data uji deterministik. Tidak menyentuh production.
 //   TEST_DATABASE_URL=postgresql://klinik:...@localhost:5432/km_hppqa_test JWT_SECRET=... PORT=4031 OUT=C:/tmp/km-hpp-qa node frontend/qa-harness/hpp-order-server.mjs
-// Peran (keputusan Owner 10 Nov): operator (bukan admin) mencatat → menunggu verifikasi PIC/Production Lead; Lead/ADMIN mencatat → langsung berlaku. Finance tidak memverifikasi.
+// Peran (keputusan Owner 10 Nov): non-ADMIN (operator, Production Lead) mencatat → menunggu verifikasi ADMIN; hanya ADMIN yang langsung berlaku. Finance tidak memverifikasi.
 // Dunia: bahan bertaut SO (H-4) KAIN-QA (harga 15.000; berubah 16.000 pukul 13:00 WIB pada H-6), BENANG-QA tanpa harga. Empat unit terkirim H-1:
 //   QA-001 belum ada pemakaian · QA-002 biaya disetujui (siap dikonfirmasi) · QA-003 biaya PERLU_KEPUTUSAN harga (menunggu) · QA-004 tanpa harga (biaya kosong).
 // Menulis OUT/tokens.json dan OUT/ids.json.
@@ -27,7 +27,7 @@ await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
 await setSetting(testPrisma, SETTING_KEYS.SALDO_AWAL_CUTOFF, "2026-01-01");
 
 const T = {}; const A = {};
-for (const [kunci, roles, nama] of [["pic", ["PRODUCTION_LEAD"], "PIC Produksi QA"], ["operator", ["PRODUCTION_WORKER"], "Operator QA"], ["finance", ["FINANCE"], "Finance QA"], ["owner", ["OWNER"], "Owner QA"], ["sales", ["SALES"], "Sales QA"]]) {
+for (const [kunci, roles, nama] of [["pic", ["PRODUCTION_LEAD"], "PIC Produksi QA"], ["operator", ["PRODUCTION_WORKER"], "Operator QA"], ["finance", ["FINANCE"], "Finance QA"], ["owner", ["OWNER"], "Owner QA"], ["sales", ["SALES"], "Sales QA"], ["admin", ["ADMIN"], "Admin Produksi QA"]]) {
   const { user, token } = await createTestUser({ roles });
   await testPrisma.user.update({ where: { id: user.id }, data: { name: nama } });
   T[kunci] = { token, user: { id: user.id, name: nama, email: user.email, role: roles[0], roles } }; A[kunci] = { id: user.id, name: nama, roles };
@@ -54,10 +54,10 @@ const u = {};
 for (const no of ["RES-QA-001", "RES-QA-002", "RES-QA-003", "RES-QA-004", "RES-QA-005"]) { u[no] = await mk(no); id[no] = u[no].unit.id; }
 const dasar = (unitId, o) => ({ unitId, materialId: kain.id, qty: 2, tanggalPemakaian: H(8), sumberJenis: "LAPORAN_PIC", bukti: "Buku kerja meja 2 (QA)", alasan: "Pemakaian sebelum SO belum tercatat", ...o });
 const e2 = await ajukanBiayaTanpaStok(testPrisma, A.operator, dasar(id["RES-QA-002"], { sumberRef: "lap pic qa 002" }), { kunci: k() });
-await setujuiBiayaTanpaStok(testPrisma, A.pic, { id: e2.entri.id });
+await setujuiBiayaTanpaStok(testPrisma, A.admin, { id: e2.entri.id });
 const e3 = await ajukanBiayaTanpaStok(testPrisma, A.operator, dasar(id["RES-QA-003"], { tanggalPemakaian: H(6), sumberRef: "lap pic qa 003" }), { kunci: k() }); id.entriKeputusan = e3.entri.id;
 const e4 = await ajukanBiayaTanpaStok(testPrisma, A.operator, dasar(id["RES-QA-004"], { materialId: benang.id, qty: 3, sumberRef: "lap pic qa 004" }), { kunci: k() });
-await setujuiBiayaTanpaStok(testPrisma, A.pic, { id: e4.entri.id });
+await setujuiBiayaTanpaStok(testPrisma, A.admin, { id: e4.entri.id });
 
 // Jurnal untuk laporan: pengakuan pendapatan 2 order, upah, selisih opname sebelum & sesudah SO, pembelian langsung.
 const akun = async (c) => (await testPrisma.finAccount.findFirst({ where: { code: c } })).id; const kas = await akun("1-1100");

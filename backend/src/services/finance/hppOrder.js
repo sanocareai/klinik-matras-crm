@@ -9,7 +9,7 @@
 //     harga berubah hari itu → PERLU_KEPUTUSAN (penyetuju memilih dari kandidat, beralasan); tidak ada harga → TANPA_HARGA (null, bukan Rp0).
 //   • Ganda ditolak MUTLAK hanya per identitas sumber, kunci idempotensi, atau tautan transaksi yang sama (indeks unik database). Tanggal + jumlah sama = indikator kuat:
 //     wajib alasan "bukan duplikat" dari pengaju dan persetujuan orang lain.
-//   • Biaya tanpa stok berlaku (masuk HPP operasional) langsung bila dicatat ADMIN/PRODUCTION_LEAD, selain itu sesudah DIVERIFIKASI ADMIN/PRODUCTION_LEAD lain; koreksi = entri pengganti yang disetujui atomik; tidak ada hapus (trigger database).
+//   • Biaya tanpa stok berlaku (masuk HPP operasional) langsung bila dicatat ADMIN, selain itu sesudah DIVERIFIKASI ADMIN lain; koreksi = entri pengganti yang disetujui atomik; tidak ada hapus (trigger database).
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
@@ -45,9 +45,9 @@ const AKTIF = ["DIAJUKAN", "DISETUJUI"];
 export const SUMBER_JENIS = Object.freeze({ CATATAN_HISTORIS: "Catatan pemakaian historis (Excel Admin)", LAPORAN_PIC: "Laporan PIC produksi", DOKUMEN: "Dokumen/foto kerja" });
 const STATE_CATATAN_TERTAHAN = ["PERLU_DICEK", "SIAP_POSTING"];
 
-// Keputusan Owner 10 Nov 2026: biaya tanpa stok yang DICATAT akun ADMIN/PRODUCTION_LEAD langsung berlaku (tanpa verifikasi kedua); pencatatan akun lain menunggu VERIFIKASI
-// oleh ADMIN/PRODUCTION_LEAD yang BUKAN pencatatnya. Hanya jalur biaya tanpa stok; pencatatan stok biasa tidak berubah. Berdasarkan PERAN sistem (bukan nama orang).
-export const PERAN_ADMIN_BAHAN = Object.freeze(["ADMIN", "PRODUCTION_LEAD"]);
+// Keputusan Owner (instruksi final 95831): biaya tanpa stok yang DICATAT akun ADMIN langsung berlaku (tanpa verifikasi kedua); pencatatan akun lain — termasuk PRODUCTION_LEAD
+// tanpa ADMIN — menunggu VERIFIKASI oleh ADMIN yang BUKAN pencatatnya; harga ambigu diputuskan ADMIN lain. Berdasarkan PERAN sistem (bukan nama orang).
+export const PERAN_ADMIN_BAHAN = Object.freeze(["ADMIN"]);
 export const bolehMencatat = (u) => hasPermission(u, P.UNIT_MATERIAL_WRITE);
 export const adminBahan = (u) => rolesOf(u).some((r) => PERAN_ADMIN_BAHAN.includes(r));
 export const bolehMenyetujui = adminBahan;
@@ -292,13 +292,32 @@ export async function pratinjauBiayaTanpaStok(db, user, masukan) {
       kandidat: h.kandidat ? h.kandidat.map((k) => ({ ...k, harga: izinHarga ? Number(k.harga) : null })) : null } : null,
     ganda: { identik: g.identik, mirip: g.mirip, perluKonfirmasi: g.kandidat.length > 0, sidik: g.sidik,
       teks: g.identik.length ? `${g.identik.length} catatan/pengeluaran lain bertanggal dan berjumlah SAMA — indikator kuat duplikat. Boleh dicatat hanya bila sumbernya memang berbeda: tulis alasan; penyetuju memeriksa.` : null },
-    dampak: ["Stok Gudang TIDAK berubah (hitung fisik SO sudah mencakup pemakaian ini).", "Tidak ada jurnal Finance; saldo kas/bank tidak berubah.", (adminBahan(user) && h?.status !== "PERLU_KEPUTUSAN" ? "Dicatat akun admin (ADMIN/PRODUCTION_LEAD): HPP operasional order langsung bertambah, tanpa verifikasi kedua." : "HPP operasional order bertambah sesudah DIVERIFIKASI ADMIN/PRODUCTION_LEAD lain dari pencatat."), "Koreksi kelak = entri pengganti; entri ini tidak bisa diubah atau dihapus."],
+    dampak: ["Stok Gudang TIDAK berubah (hitung fisik SO sudah mencakup pemakaian ini).", "Tidak ada jurnal Finance; saldo kas/bank tidak berubah.", (adminBahan(user) && h?.status !== "PERLU_KEPUTUSAN" ? "Dicatat akun admin (ADMIN): HPP operasional order langsung bertambah, tanpa verifikasi kedua." : "HPP operasional order bertambah sesudah DIVERIFIKASI ADMIN lain dari pencatat."), "Koreksi kelak = entri pengganti; entri ini tidak bisa diubah atau dihapus."],
     sumber: { jenis: v.sumberJenis, label: SUMBER_JENIS[v.sumberJenis], ref: v.sumberRef },
   };
 }
 
 async function catatEvent(tx, entryId, kind, actorId, reason, before = null, after = null) {
   await tx.orderBiayaTanpaStokEvent.create({ data: { entryId, kind, actorId: actorId ?? null, reason: reason ?? null, before, after } });
+}
+
+/**
+ * Kunci baris catatan sumber (FOR UPDATE) lalu periksa ulang LANGSUNG (tanpa evaluasi keadaan): belum tertaut ke pengeluaran stok. Dipanggil SESUDAH pembacaan keadaan efektif
+ * (yang bisa menyegarkan catatan di transaksi terpisah) agar tidak saling menunggu. Posting historis yang memegang kunci baris ini lebih dulu → kita menunggu, lalu gagal serialisasi
+ * atau melihat tautannya; posting yang datang sesudah kita → menunggu, lalu ditolak karena sumber sudah menjadi biaya aktif. Hanya satu jalur yang berhasil.
+ */
+async function kunciCatatanSumber(tx, noteId) {
+  await lockRowForUpdate(tx, "unit_usage_notes", noteId);
+  const [n] = await tx.$queryRawUnsafe(`SELECT stock_movement_id::text AS mv, state FROM unit_usage_notes WHERE id = $1::uuid`, noteId);
+  wajib(n && !n.mv, "Catatan historis sumber sudah tertaut ke pengeluaran stok (diposting) — biaya tanpa stok ditolak agar tidak terhitung dua kali.", "SUMBER_CATATAN_SUDAH_DIPROSES", 409);
+}
+
+/** Penolakan dari pengaman database / transaksi serentak → 409 yang jelas (tidak ada yang tersimpan). */
+function bentrokSumber(err) {
+  const m = String(err?.message ?? "");
+  if (/satu sumber satu jalur/.test(m)) return new HppOrderError("Catatan sumber ini sudah tertaut ke pengeluaran stok (diposting) — biaya tanpa stok ditolak agar tidak terhitung dua kali.", 409, "SUMBER_CATATAN_SUDAH_DIPROSES");
+  if (err?.code === "P2034" || /could not serialize|40001|deadlock/i.test(m)) return new HppOrderError("Data sumber berubah bersamaan (mis. posting historis). Tidak ada yang tersimpan; muat ulang lalu periksa lagi.", 409, "BENTROK_SERENTAK");
+  return null;
 }
 
 /** Ajukan biaya tanpa stok. kunci = idempotensi (wajib). Tidak menulis stok/jurnal. */
@@ -311,6 +330,7 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
     return await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "units", masukan.unitId);
       const v = await periksaMasukan(tx, user, masukan);
+      if (v.catatan) await kunciCatatanSumber(tx, v.catatan.id);
       wajib(v.jalur.key === "BIAYA_TANPA_STOK", `Tanggal pemakaian ${v.tanggal} tidak tercakup SO bahan ${v.bahan.code}: gunakan pengeluaran bahan resmi (pembetulan unit), bukan biaya tanpa stok.`, "JALUR_STOK_RESMI", 409, { jalur: v.jalur.key });
       let ganti = null;
       if (masukan.menggantikanId) {
@@ -326,7 +346,7 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
       wajib(!masukan.sidikGanda || masukan.sidikGanda === g.sidik, "Daftar kemungkinan ganda berubah sejak pratinjau. Lihat pratinjau lagi; tidak ada yang tersimpan.", "KANDIDAT_GANDA_BERUBAH", 409);
       const h = await hargaBiaya(tx, { materialId: v.bahan.id, tanggal: v.tanggal, waktu: v.waktu, qty: v.qty });
       wajib(!masukan.sidikHarga || masukan.sidikHarga === h.sidik, "Dasar harga berubah sejak pratinjau. Lihat pratinjau lagi; tidak ada yang tersimpan.", "DASAR_HARGA_BERGESER", 409);
-      // Pencatat ADMIN/PRODUCTION_LEAD → langsung berlaku (kecuali harga PERLU_KEPUTUSAN: tetap menunggu verifikator lain yang memilih harga). Pencatat lain → menunggu verifikasi.
+      // Pencatat ADMIN → langsung berlaku (kecuali harga PERLU_KEPUTUSAN: tetap menunggu verifikator lain yang memilih harga). Pencatat lain → menunggu verifikasi.
       const otomatis = adminBahan(user) && h.status !== "PERLU_KEPUTUSAN";
       const sekarang = new Date();
       if (otomatis && ganti) { // pengganti langsung berlaku: yang lama DIGANTI lebih dulu (indeks sumber tidak pernah melihat dua yang berlaku)
@@ -338,7 +358,7 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
         statusHarga: h.status, hargaSatuan: h.harga, nilai: h.nilai, priceId: h.priceId, basisHarga: h.basis, sidikHarga: h.sidik, kandidatHarga: h.kandidat ?? undefined,
         sumberJenis: v.sumberJenis, sumberRef: v.sumberRef, sidikGanda: g.sidik, kandidatGanda: { kunci: g.kunci, identik: g.identik, mirip: g.mirip, alasanBukanGanda: alasanBukan || null },
         bukti: v.bukti, alasan: v.alasan, menggantikanId: ganti?.id ?? null, diajukanOleh: user.id, idempotencyKey: kunci,
-        ...(otomatis ? { status: "DISETUJUI", diputuskanPada: sekarang, catatanKeputusan: "Dicatat akun admin (ADMIN/PRODUCTION_LEAD): langsung berlaku tanpa verifikasi kedua (keputusan Owner 10 Nov 2026)" } : {}),
+        ...(otomatis ? { status: "DISETUJUI", diputuskanPada: sekarang, catatanKeputusan: "Dicatat akun admin (ADMIN): langsung berlaku tanpa verifikasi kedua (keputusan Owner 10 Nov 2026)" } : {}),
       } });
       await catatEvent(tx, e.id, "DIAJUKAN", user.id, v.alasan, null, { qty: v.qty, tanggal: v.tanggal, waktu: v.waktu ? v.waktu.toISOString() : null, soTanggal: v.pra.soTanggal, statusHarga: e.statusHarga, basisHarga: h.basis,
         nilai: e.nilai == null ? null : Number(e.nilai), menggantikanId: ganti?.id ?? null, sumber: `${v.sumberJenis}:${v.sumberRef}`, kandidatGandaIdentik: g.identik.length, kandidatGandaMirip: g.mirip.length, alasanBukanGanda: alasanBukan || null,
@@ -348,16 +368,16 @@ export async function ajukanBiayaTanpaStok(prisma, user, masukan, { kunci }) {
     }, { isolationLevel: "Serializable", timeout: 30_000 });
   } catch (err) {
     if (err?.code === "P2002") { const s = await prisma.orderBiayaTanpaStok.findUnique({ where: { idempotencyKey: kunci } }); if (s) return { ulang: true, entri: s }; throw new HppOrderError("Sumber ini sudah menjadi biaya tanpa stok yang aktif.", 409, "SUMBER_SUDAH_DIPAKAI"); }
-    throw err;
+    throw bentrokSumber(err) ?? err;
   }
 }
 
 /**
- * Verifikasi/setujui (peran ADMIN/PRODUCTION_LEAD, orang lain dari pencatat). Memeriksa ulang: jalur SO, dasar harga (sidik), sumber/tautan transaksi yang sama (mutlak), dan kandidat ganda BARU sejak diajukan.
+ * Verifikasi/setujui (peran ADMIN, orang lain dari pencatat). Memeriksa ulang: jalur SO, dasar harga (sidik), sumber/tautan transaksi yang sama (mutlak), dan kandidat ganda BARU sejak diajukan.
  * PERLU_KEPUTUSAN: keputusanHarga { priceId, alasan } wajib dan harus salah satu kandidat yang disimpan. Koreksi: entri lama → DIGANTI lalu pengganti → DISETUJUI, satu transaksi.
  */
 export async function setujuiBiayaTanpaStok(prisma, user, { id, catatan = null, keputusanHarga = null }) {
-  wajib(bolehMenyetujui(user), "Verifikasi biaya tanpa stok hanya untuk peran ADMIN atau PRODUCTION_LEAD (admin produksi).", "TIDAK_BERWENANG", 403);
+  wajib(bolehMenyetujui(user), "Verifikasi biaya tanpa stok hanya untuk peran ADMIN.", "TIDAK_BERWENANG", 403);
   wajib(UUID.test(String(id ?? "")), "id tidak valid", "ID_TIDAK_VALID");
   try {
     return await prisma.$transaction(async (tx) => {
@@ -387,6 +407,7 @@ export async function setujuiBiayaTanpaStok(prisma, user, { id, catatan = null, 
         const n = await tx.unitUsageNote.findUnique({ where: { id: e.sumberRef }, select: { stockMovementId: true, state: true, origin: true, flags: true, id: true } });
         const [ef] = await terapkanKeadaanEfektif(tx, [n]);
         wajib(!n.stockMovementId && STATE_CATATAN_TERTAHAN.includes(ef.state), "Catatan historis sumber sudah diproses lewat jalur lain (diposting/tercatat di stok) sejak diajukan.", "SUMBER_CATATAN_SUDAH_DIPROSES", 409);
+        await kunciCatatanSumber(tx, e.sumberRef);
       }
       const v = { unit: e.unit, bahan: e.material, qty: Number(e.qty), tanggal, sumberJenis: e.sumberJenis, sumberRef: e.sumberRef, catatan: e.sumberJenis === "CATATAN_HISTORIS" ? { id: e.sumberRef } : null };
       // Biaya tanpa stok yang diajukan SESUDAH entri ini sudah memperhitungkan entri ini saat diajukan → tidak dihitung sebagai kandidat baru di sini.
@@ -408,7 +429,7 @@ export async function setujuiBiayaTanpaStok(prisma, user, { id, catatan = null, 
     }, { isolationLevel: "Serializable", timeout: 30_000 });
   } catch (err) {
     if (err?.code === "P2002") throw new HppOrderError("Sumber ini sudah disetujui pada entri lain.", 409, "SUMBER_SUDAH_DIPAKAI");
-    throw err;
+    throw bentrokSumber(err) ?? err;
   }
 }
 
@@ -422,14 +443,14 @@ export async function akhiriBiayaTanpaStok(prisma, user, { id, aksi, alasan }) {
     const e = await tx.orderBiayaTanpaStok.findUnique({ where: { id } }); wajib(e, "Entri tidak ditemukan", "TIDAK_ADA", 404);
     let status;
     if (aksi === "TOLAK") {
-      wajib(bolehMenyetujui(user), "Penolakan hanya untuk peran ADMIN atau PRODUCTION_LEAD.", "TIDAK_BERWENANG", 403);
+      wajib(bolehMenyetujui(user), "Penolakan hanya untuk peran ADMIN.", "TIDAK_BERWENANG", 403);
       wajib(e.status === "DIAJUKAN", `Entri berstatus ${e.status}, tidak bisa ditolak.`, "STATUS_TIDAK_SAH", 409);
       wajib(e.diajukanOleh !== user.id, "Penolak harus orang lain dari pengaju (pengaju memakai Batalkan).", "PENYETUJU_SAMA_DENGAN_PENGAJU", 403);
       status = "DITOLAK";
     } else {
       wajib(e.status === "DIAJUKAN" || e.status === "DISETUJUI", `Entri berstatus ${e.status}, tidak bisa dibatalkan.`, "STATUS_TIDAK_SAH", 409);
-      if (e.status === "DIAJUKAN") wajib(e.diajukanOleh === user.id || bolehMenyetujui(user), "Hanya pencatat atau peran ADMIN/PRODUCTION_LEAD yang bisa membatalkan pengajuan.", "TIDAK_BERWENANG", 403);
-      else wajib(bolehMenyetujui(user), "Membatalkan biaya yang sudah berlaku hanya untuk peran ADMIN/PRODUCTION_LEAD.", "TIDAK_BERWENANG", 403);
+      if (e.status === "DIAJUKAN") wajib(e.diajukanOleh === user.id || bolehMenyetujui(user), "Hanya pencatat atau peran ADMIN yang bisa membatalkan pengajuan.", "TIDAK_BERWENANG", 403);
+      else wajib(bolehMenyetujui(user), "Membatalkan biaya yang sudah berlaku hanya untuk peran ADMIN.", "TIDAK_BERWENANG", 403);
       status = "DIBATALKAN";
     }
     const s = await tx.orderBiayaTanpaStok.update({ where: { id }, data: { status, diputuskanOleh: user.id, diputuskanPada: new Date(), catatanKeputusan: t } });

@@ -5,9 +5,9 @@
 //   POST /hpp-order/biaya-tanpa-stok                  ajukan (Idempotency-Key wajib) — tanpa stok, tanpa jurnal
 //   GET  /hpp-order/biaya-tanpa-stok?status           daftar (persetujuan)
 //   GET  /hpp-order/biaya-tanpa-stok/:id/riwayat      jejak audit
-//   POST /hpp-order/biaya-tanpa-stok/:id/setujui      ADMIN/PRODUCTION_LEAD, orang lain dari pencatat
-//   POST /hpp-order/biaya-tanpa-stok/:id/tolak        ADMIN/PRODUCTION_LEAD, orang lain dari pencatat
-//   POST /hpp-order/biaya-tanpa-stok/:id/batalkan     pencatat (DIAJUKAN) atau ADMIN/PRODUCTION_LEAD
+//   POST /hpp-order/biaya-tanpa-stok/:id/setujui      ADMIN, orang lain dari pencatat
+//   POST /hpp-order/biaya-tanpa-stok/:id/tolak        ADMIN, orang lain dari pencatat
+//   POST /hpp-order/biaya-tanpa-stok/:id/batalkan     pencatat (DIAJUKAN) atau ADMIN
 //   POST /hpp-order/unit/:unitId/konfirmasi           konfirmasi pemakaian lengkap (Idempotency-Key wajib)
 //   POST /hpp-order/unit/:unitId/cabut-konfirmasi     cabut konfirmasi (alasan)
 //   GET  /hpp-order/laporan?from&to                   laporan berdampingan (baca; nominal hanya finance:read)

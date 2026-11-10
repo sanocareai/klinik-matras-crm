@@ -87,7 +87,7 @@ async function bukaUnit(page, kode) {
     await isi(O, "Rujukan sumber", "Lap PIC QA 001  Baris 1"); await isi(O, "Bukti", "Buku kerja meja 3 (QA)"); await isi(O, "Alasan", "Pemakaian pra-SO belum tercatat");
     await klikTeks(O, "button", "Lihat dampak");
     ok("Operator: pratinjau menampilkan jalur biaya tanpa stok + dasar harga", await adaTeks(O, "Biaya per order tanpa stok") && await adaTeks(O, "harga awal hari sama dengan harga sepanjang hari"));
-    ok("Operator: tombol menyatakan menunggu verifikasi (bukan admin)", await adaTeks(O, "Ajukan untuk verifikasi") && await adaTeks(O, "sesudah DIVERIFIKASI ADMIN/PRODUCTION_LEAD"));
+    ok("Operator: tombol menyatakan menunggu verifikasi (bukan admin)", await adaTeks(O, "Ajukan untuk verifikasi") && await adaTeks(O, "sesudah DIVERIFIKASI ADMIN lain"));
     await foto(O, "03-operator-form-pratinjau");
     await klikTeks(O, "button", "Ajukan untuk verifikasi");
     ok("Operator: pencatatan tersimpan, menunggu verifikasi", await adaTeks(O, "berlaku sesudah diverifikasi"));
@@ -113,25 +113,27 @@ async function bukaUnit(page, kode) {
     ok("DB: pernyataan + jejak aktivitas tercatat", sql(`select count(*) from unit_material_declarations where unit_id='${ID["RES-QA-005"]}' and status='ACTIVE'`) === "1" && sql(`select count(*) from activity_events where entity_id='${ID["RES-QA-005"]}' and event_type='PRODUCTION_PERNYATAAN_TANPA_BAHAN'`) === "1");
     await P.keyboard.press("Escape"); await tidur(600);
 
-    // ── 6. PIC (Production Lead) memverifikasi pencatatan operator, termasuk keputusan harga; Finance tidak punya tab verifikasi ──
+    // ── 6. ADMIN memverifikasi pencatatan non-ADMIN, termasuk keputusan harga; Finance dan Production Lead tanpa ADMIN tidak punya tab verifikasi ──
     const FF = await buka(browser, "finance", "/finance/hpp-order"); await adaTeks(FF, "Laporan berdampingan");
     ok("Finance: tidak ada tab Verifikasi biaya (keputusan Owner)", !(await FF.evaluate(() => document.body.textContent.includes("Verifikasi biaya"))));
-    const F = await buka(browser, "pic", "/bengkel/hpp-order"); await adaTeks(F, "RES-QA-001");
+    await P.goto(BASE + "/bengkel/hpp-order", { waitUntil: "domcontentloaded" }); await adaTeks(P, "RES-QA-001");
+    ok("Production Lead tanpa ADMIN: tidak ada tab Verifikasi biaya", !(await P.evaluate(() => document.body.textContent.includes("Verifikasi biaya"))));
+    const F = await buka(browser, "admin", "/bengkel/hpp-order"); await adaTeks(F, "RES-QA-001");
     await klikTeks(F, "button,[role=tab]", "Verifikasi biaya");
-    ok("PIC: antrean verifikasi memuat 2 entri operator", await adaTeks(F, "RES-QA-003") && await adaTeks(F, "RES-QA-001"));
-    ok("PIC: entri harga berubah di hari itu menampilkan pilihan harga", await adaTeks(F, "Harga berubah di hari itu"));
+    ok("ADMIN: antrean verifikasi memuat 2 entri operator", await adaTeks(F, "RES-QA-003") && await adaTeks(F, "RES-QA-001"));
+    ok("ADMIN: entri harga berubah di hari itu menampilkan pilihan harga", await adaTeks(F, "Harga berubah di hari itu"));
     const opsi = await F.$$eval('select[aria-label="Harga RES-QA-003-U1"] option', (os) => os.map((o) => ({ v: o.value, t: o.textContent })));
-    ok("PIC: dua kandidat harga (awal hari & mulai 13:00 WIB)", opsi.length === 3 && opsi.some((o) => /Awal hari/.test(o.t)) && opsi.some((o) => /13[.:]00 WIB/.test(o.t)), JSON.stringify(opsi));
+    ok("ADMIN: dua kandidat harga (awal hari & mulai 13:00 WIB)", opsi.length === 3 && opsi.some((o) => /Awal hari/.test(o.t)) && opsi.some((o) => /13[.:]00 WIB/.test(o.t)), JSON.stringify(opsi));
     await F.evaluate(() => { const r = [...document.querySelectorAll("tbody tr")].find((x) => x.innerText.includes("RES-QA-003")); r.querySelector('input[type="checkbox"]').click(); });
     await klikTeks(F, "button", "Setujui terpilih");
-    ok("PIC: tanpa pilihan harga verifikasi ditolak di layar", await adaTeks(F, "pilih harga + alasan dulu"));
+    ok("ADMIN: tanpa pilihan harga verifikasi ditolak di layar", await adaTeks(F, "pilih harga + alasan dulu"));
     const siang = opsi.find((o) => /13[.:]00/.test(o.t)).v;
     await F.select('select[aria-label="Harga RES-QA-003-U1"]', siang);
     await F.evaluate(() => { const r = [...document.querySelectorAll("tbody tr")].find((x) => x.innerText.includes("RES-QA-003")); const i = r.querySelector('input[placeholder="Alasan pilihan harga"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(i, "PIC: dipakai sore sesudah harga naik"); i.dispatchEvent(new Event("input", { bubbles: true })); });
     await F.evaluate(() => { for (const r of document.querySelectorAll("tbody tr")) if (r.innerText.includes("RES-QA-001") || r.innerText.includes("RES-QA-003")) { const c = r.querySelector('input[type="checkbox"]'); if (c && !c.checked) c.click(); } });
-    await foto(F, "04-pic-verifikasi");
+    await foto(F, "04-admin-verifikasi");
     await klikTeks(F, "button", "Setujui terpilih");
-    ok("PIC: dua biaya terverifikasi", await adaTeks(F, "2 biaya disetujui"));
+    ok("ADMIN: dua biaya terverifikasi", await adaTeks(F, "2 biaya disetujui"));
     const e3 = sql(`select status || '|' || status_harga || '|' || basis_harga || '|' || nilai::text from order_biaya_tanpa_stok where id='${ID.entriKeputusan}'`);
     ok("DB: keputusan harga tercatat (DISETUJUI, KEPUTUSAN_PENYETUJU, 2 × 16.000)", e3 === "DISETUJUI|DINILAI|KEPUTUSAN_PENYETUJU|32000.00", e3);
 

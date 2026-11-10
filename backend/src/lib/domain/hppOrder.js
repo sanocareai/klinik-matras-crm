@@ -17,7 +17,7 @@ import crypto from "node:crypto";
 
 export const JALUR = Object.freeze({
   STOK: Object.freeze({ key: "STOK", label: "Pengeluaran bahan resmi", teks: "Tanggal pemakaian SESUDAH tanggal SO bahan (atau bahan tanpa tautan SO): catat sebagai pengeluaran stok resmi lewat pembetulan unit — hanya bila belum tercatat." }),
-  BIAYA_TANPA_STOK: Object.freeze({ key: "BIAYA_TANPA_STOK", label: "Biaya per order tanpa stok", teks: "Tanggal pemakaian PADA/SEBELUM tanggal SO yang ditautkan: hitung fisik SO sudah mencakup pemakaian ini. Catat biaya per order TANPA mengurangi stok lagi; berlaku langsung bila dicatat ADMIN/PRODUCTION_LEAD, selain itu sesudah diverifikasi ADMIN/PRODUCTION_LEAD lain." }),
+  BIAYA_TANPA_STOK: Object.freeze({ key: "BIAYA_TANPA_STOK", label: "Biaya per order tanpa stok", teks: "Tanggal pemakaian PADA/SEBELUM tanggal SO yang ditautkan: hitung fisik SO sudah mencakup pemakaian ini. Catat biaya per order TANPA mengurangi stok lagi; berlaku langsung bila dicatat ADMIN, selain itu sesudah diverifikasi ADMIN lain." }),
 });
 
 /** Jalur untuk satu pemakaian. tanggal & soTanggal = YYYY-MM-DD (WIB). soTanggal null = bahan tanpa tautan SO. */
@@ -29,7 +29,7 @@ export function tentukanJalur({ tanggal, soTanggal = null }) {
 export const STATUS_UNIT = Object.freeze({
   BELUM_ADA_PEMAKAIAN: Object.freeze({ key: "BELUM_ADA_PEMAKAIAN", label: "Belum ada pemakaian", tone: "red", lengkap: false, langkah: "Catat pemakaian bahan (atau nyatakan tanpa bahan baru bila memang tidak ada)." }),
   BELUM_LENGKAP: Object.freeze({ key: "BELUM_LENGKAP", label: "Ada pemakaian, belum lengkap", tone: "orange", lengkap: false, langkah: "Lengkapi harga/catatan yang tertahan, lalu konfirmasi pemakaian lengkap." }),
-  MENUNGGU_PERSETUJUAN: Object.freeze({ key: "MENUNGGU_PERSETUJUAN", label: "Menunggu verifikasi biaya", tone: "amber", lengkap: false, langkah: "Biaya tanpa stok menunggu verifikasi ADMIN/PRODUCTION_LEAD (orang lain dari pencatat)." }),
+  MENUNGGU_PERSETUJUAN: Object.freeze({ key: "MENUNGGU_PERSETUJUAN", label: "Menunggu verifikasi biaya", tone: "amber", lengkap: false, langkah: "Biaya tanpa stok menunggu verifikasi ADMIN (orang lain dari pencatat)." }),
   SIAP_DIKONFIRMASI: Object.freeze({ key: "SIAP_DIKONFIRMASI", label: "Siap dikonfirmasi PIC", tone: "blue", lengkap: false, langkah: "Semua baris bernilai. PIC memeriksa apakah SEMUA bahan sudah tercatat, lalu konfirmasi pemakaian lengkap." }),
   KONFIRMASI_BASI: Object.freeze({ key: "KONFIRMASI_BASI", label: "Berubah sesudah konfirmasi", tone: "orange", lengkap: false, langkah: "Baris biaya berubah sesudah dikonfirmasi. Periksa ulang lalu konfirmasi lagi." }),
   LENGKAP: Object.freeze({ key: "LENGKAP", label: "HPP lengkap", tone: "green", lengkap: true, langkah: "" }),

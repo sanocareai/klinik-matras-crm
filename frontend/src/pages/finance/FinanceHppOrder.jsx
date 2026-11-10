@@ -177,7 +177,7 @@ function PanelUnit({ baris, meta, onTutup, onBerubah }) {
                 <Button variant="secondary" onClick={() => setForm({ sumberJenis: "LAPORAN_PIC" })}>Catat biaya tanpa stok (pada/sebelum SO)</Button>
                 <Button variant="tertiary" asChild><a href={`/bengkel/order-produksi?q=${encodeURIComponent(baris.orderNomor ?? baris.unitKode)}`}>Pengeluaran stok resmi (sesudah SO) di Order Produksi</a></Button>
               </div>
-              {form && <FormBiaya key={JSON.stringify(form)} unit={d.unit} awal={form} meta={meta} onBatal={() => setForm(null)} onSelesai={(r) => selesai(r?.otomatis ? "Biaya tanpa stok tercatat dan langsung berlaku (dicatat akun admin)." : "Biaya tanpa stok tercatat; berlaku sesudah diverifikasi ADMIN/Production Lead lain.")} />}
+              {form && <FormBiaya key={JSON.stringify(form)} unit={d.unit} awal={form} meta={meta} onBatal={() => setForm(null)} onSelesai={(r) => selesai(r?.otomatis ? "Biaya tanpa stok tercatat dan langsung berlaku (dicatat akun admin)." : "Biaya tanpa stok tercatat; berlaku sesudah diverifikasi ADMIN lain.")} />}
               {(d.status.key === "SIAP_DIKONFIRMASI" || d.status.key === "KONFIRMASI_BASI" || d.status.key === "BELUM_ADA_PEMAKAIAN") && (
                 <div className="flex flex-wrap items-end gap-2 rounded-lg bg-inset p-3">
                   <Field label={d.status.key === "BELUM_ADA_PEMAKAIAN" ? "Keterangan (hanya bila memang tanpa bahan baru)" : "Keterangan pemeriksaan"}><Input value={ket} onChange={(e) => setKet(e.target.value)} placeholder="Diperiksa oleh … dari …" /></Field>
@@ -284,7 +284,7 @@ function TabPersetujuan({ meta }) {
   return (
     <div className="space-y-3">
       <Pesan pesan={pesan} onTutup={() => setPesan(null)} />
-      <Penjelasan>Biaya bahan per order TANPA pengurangan stok (pemakaian pada/sebelum SO). Pencatatan akun ADMIN/Production Lead langsung berlaku; yang di sini dicatat akun lain dan menunggu verifikasi Anda. Verifikasi memeriksa ulang tautan SO, sumber, kemungkinan duplikat, dan dasar harga per baris. Bila harga berubah pada hari pemakaian, Anda memilih harga dengan alasan (atau tolak dan minta jam pemakaian). Pengajuan Anda sendiri tidak bisa Anda setujui.</Penjelasan>
+      <Penjelasan>Biaya bahan per order TANPA pengurangan stok (pemakaian pada/sebelum SO). Pencatatan akun ADMIN langsung berlaku; yang di sini dicatat akun lain dan menunggu verifikasi Anda. Verifikasi memeriksa ulang tautan SO, sumber, kemungkinan duplikat, dan dasar harga per baris. Bila harga berubah pada hari pemakaian, Anda memilih harga dengan alasan (atau tolak dan minta jam pemakaian). Pengajuan Anda sendiri tidak bisa Anda setujui.</Penjelasan>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Catatan / alasan (wajib untuk tolak)"><Input value={alasan} onChange={(e) => setAlasan(e.target.value)} /></Field>
         <Button disabled={!pilih.size || proses} onClick={() => massal("setujui")}>Setujui terpilih ({pilih.size})</Button>
