@@ -99,7 +99,10 @@ const TANPA_ANGKA = new Set(["FinanceAccounts.jsx", "FinanceInvoices.jsx", "Fina
   "FinanceBiayaBahan.jsx",
   // Retur Supplier & Debit Note: pembungkus tipis ke features/returSupplier (daftar dokumen retur / debit note / saldo kredit). Nilai di layar adalah nilai DOKUMEN; belum ada metrik kontrak untuk
   // retur/debit note. Klasifikasi SEMENTARA saat rilis 11 Okt 2026 agar halaman baru tidak lolos tanpa klasifikasi — pemilik kontrak Finance menentukan bila ingin metrik retur_supplier_*.
-  "FinanceReturSupplier.jsx"]);
+  "FinanceReturSupplier.jsx",
+  // HPP per Order & Laba Sementara (Nov 2026): angka di kartu adalah HPP OPERASIONAL (Harga Berlaku) dan hasil manajemen SEMENTARA (final:false), bukan metrik buku besar; angka jurnal
+  // di halaman ini diambil apa adanya dari labaRugi(). Klasifikasi SEMENTARA — pemilik kontrak Finance menentukan bila ingin metrik hpp_order_* / hasil_manajemen_*.
+  "FinanceHppOrder.jsx"]);
 // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
 const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
 // Halaman yang sebagian kartunya pindah ke komponen fitur anak (redesain Pemasukan, Nov 2026): halaman + komponen itu dibaca BERSAMA.
