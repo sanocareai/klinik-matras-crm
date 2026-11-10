@@ -71,6 +71,7 @@ const FinanceUangMuka       = lazy(() => import("../pages/finance/FinanceUangMuk
 const FinanceSuppliers      = lazy(() => import("../pages/finance/FinanceSuppliers.jsx"));
 const FinanceJournal        = lazy(() => import("../pages/finance/FinanceJournal.jsx"));
 const FinancePersediaanAwal = lazy(() => import("../pages/finance/FinancePersediaanAwal.jsx"));
+const FinanceHppOrder       = lazy(() => import("../pages/finance/FinanceHppOrder.jsx"));
 const PengajuanBiayaWorkspace = lazy(() => import("../pages/pengajuanBiaya/PengajuanBiayaWorkspace.jsx"));
 const PengajuanBiayaHub = lazy(() => import("../pages/pengajuanBiaya/PengajuanBiayaHub.jsx"));
 const FinanceLedger         = lazy(() => import("../pages/finance/FinanceLedger.jsx"));
@@ -240,6 +241,9 @@ const PAGES_DASAR = [
   { path: "/finance/reconciliation", render: () => <FinanceReconciliation /> },
   { path: "/finance/journal",        render: () => <FinanceJournal /> },
   { path: "/finance/persediaan-awal", render: () => <FinancePersediaanAwal /> },
+  // HPP per order: Finance membuka laporan berdampingan lebih dulu; PIC Produksi (rute /bengkel) membuka antrean. Satu halaman, server menegakkan izin & nominal.
+  { path: "/finance/hpp-order",      render: () => <FinanceHppOrder awal="laporan" /> },
+  { path: "/bengkel/hpp-order",      render: () => <FinanceHppOrder awal="antrean" /> },
   // C1 — Pengajuan Biaya Produksi & Gudang (halaman generik; jenis biaya & tautan dari konfigurasi server)
   { path: "/warehouse/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="WAREHOUSE" /> },
   // C2 — Marketing, Management, HR-GA: komponen yang SAMA (konfigurasi dari server); hub Finance untuk melihat semua divisi

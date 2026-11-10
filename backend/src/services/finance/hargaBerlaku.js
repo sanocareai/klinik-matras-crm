@@ -125,7 +125,7 @@ const detailTanggal = (tgl, p) => ({ dasarTanggal: tgl, aturan: "HARGA_PADA_AWAL
 /** Harga berlaku yang MULAI berlaku di tengah hari (WIB) itu: tidak dipakai (batas = awal hari) tetapi ditampilkan sebagai peringatan di pratinjau. Baca-saja. */
 export async function hargaBerubahPadaHari(db, materialId, tgl) {
   const { aktif } = await barisAktif(db, materialId); const a = batasHargaTanggal(tgl).getTime(); const b = a + 86_400_000;
-  return aktif.filter((x) => { const t = new Date(x.effectiveFrom).getTime(); return t > a && t < b; }).map((x) => ({ harga: Number(x.unitPrice), mulai: x.effectiveFrom }));
+  return aktif.filter((x) => { const t = new Date(x.effectiveFrom).getTime(); return t > a && t < b; }).map((x) => ({ harga: Number(x.unitPrice), mulai: x.effectiveFrom, priceId: x.id, unitPrice: x.unitPrice }));
 }
 /** Teks dasar harga untuk tampilan/Excel: sama di Ringkasan, Riwayat, pratinjau, dan ekspor. */
 export function teksDasarHarga(basis, tgl) {

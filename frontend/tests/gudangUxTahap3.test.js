@@ -89,9 +89,10 @@ test("sidebar: enam kelompok utama; fitur biaya Finance diberi konteks; Layout m
   const l = baca("components/Layout.jsx"); const w = l.slice(l.indexOf('  warehouse: {\n    label: "Warehouse"'), l.indexOf("// ── DELIVERY & FULFILLMENT"));
   assert.deepEqual([...w.matchAll(/section: "([^"]+)"/g)].map((m) => m[1]), ["Beranda", "Penerimaan", "Stok", "Produksi", "Kontrol", "Laporan"]);
   const anak = (nama) => { const i = w.indexOf(`section: "${nama}"`); const j = w.indexOf("section:", i + 10); return [...w.slice(i, j < 0 ? undefined : j).matchAll(/label: "([^"]+)"/g)].map((m) => m[1]); };
-  assert.deepEqual(anak("Penerimaan"), ["Barang Akan Datang", "Penerimaan Barang", "Retur Supplier"]); assert.deepEqual(anak("Stok"), ["Stok & Lokasi", "Usulan Bahan", "Pengeluaran Material", "Transfer Stok", "Restok"]);
-  assert.deepEqual(anak("Produksi"), ["Antrean Produksi", "Penerimaan Unit", "Permintaan Bahan", "Terima Barang Jadi"]); assert.deepEqual(anak("Laporan"), ["Riwayat Pergerakan", "KPI Gudang"]);
-  assert.deepEqual(anak("Kontrol").slice(0, 4), ["Perlu Perhatian", "Stock Opname", "Barang Rusak & Retur", "Kasus Komplain"]);
+  assert.deepEqual(anak("Penerimaan"), ["Barang Akan Datang", "Penerimaan Barang", "Retur Supplier"]); assert.deepEqual(anak("Stok"), ["Stok bahan", "Usulan Bahan", "Pengeluaran Material", "Transfer Stok", "Restok"]);
+  assert.deepEqual(anak("Produksi"), ["Antrean Produksi", "Penerimaan Unit", "Permintaan Bahan", "Terima Barang Jadi"]); assert.deepEqual(anak("Laporan"), ["Riwayat Pergerakan", "Nilai Persediaan", "KPI Gudang"]);   // Nilai Persediaan: rilis ae2765cc (5 Nov 2026)
+  // Posting Pemakaian Historis (rilis 1cf94f8b) disisipkan sesudah Stock Opname; Kasus Komplain tetap ada.
+  assert.deepEqual(anak("Kontrol").slice(0, 5), ["Perlu Perhatian", "Stock Opname", "Posting Pemakaian Historis", "Barang Rusak & Retur", "Kasus Komplain"]);
   assert.match(w, /subjudul: "Diproses Finance"/); assert.match(w, /bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"\]/, "pembatasan peran Pengajuan Biaya tetap");
   assert.match(l, /divisionKey === "warehouse" && !onHub && !collapsed && !customizingNav/); assert.match(l, /<GudangNavGrup/);
   const g = baca("components/GudangNavGrup.jsx"); assert.match(g, /aria-expanded/); assert.match(g, /ArrowDown/); assert.match(g, /ArrowRight/); assert.match(g, /data-testid="badge-kelompok"/);

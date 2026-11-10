@@ -68,6 +68,7 @@ export const FINANCE_HUBS = Object.freeze([
     key: "persediaan", label: "Persediaan & HPP", ikon: "persediaan",
     items: [
       { key: "biaya-bahan", label: "Biaya Bahan per Unit", to: "/finance/biaya-bahan" },
+      { key: "hpp-order", label: "HPP per Order & Laba Sementara", to: "/finance/hpp-order" },
       // Satu halaman nyata ("Tutup Stok & Persediaan Awal"); tidak dipecah jadi dua tab yang membuka halaman sama.
       { key: "persediaan-awal", label: "Persediaan Awal & Tutup Stok", to: "/finance/persediaan-awal" },
     ],

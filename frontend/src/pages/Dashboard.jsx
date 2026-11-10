@@ -103,12 +103,14 @@ export default function Dashboard({ user }) {
           />
           <KpiTile
             tone="leads" label="New Leads"
-            value={(ov?.newCustomers ?? 0).toLocaleString("id-ID")}
-            numericValue={ov?.newCustomers ?? 0}
+            // Termasuk spam (keputusan 10 Nov 2026) = "Total lead (+spam)" di Laporan › Marketing. Fallback ke field lama bila backend belum diperbarui.
+            value={(ov?.newLeadsTermasukSpam ?? ov?.newCustomers ?? 0).toLocaleString("id-ID")}
+            numericValue={ov?.newLeadsTermasukSpam ?? ov?.newCustomers ?? 0}
             format={(n) => Math.round(n).toLocaleString("id-ID")}
-            delta={ov?.growthCustomers} deltaSuffix={cmp}
+            delta={ov?.newLeadsTermasukSpam != null ? ov?.growthNewLeadsTermasukSpam : ov?.growthCustomers} deltaSuffix={cmp}
+            note={ov?.newLeadsTermasukSpam != null ? `termasuk ${(ov.newLeadsSpam ?? 0).toLocaleString("id-ID")} spam · ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} tanpa spam` : undefined}
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
-            tooltip="Pelanggan baru (Customer dibuat) di periode yang dipilih, chat SPAM dikecualikan — sama dengan &quot;Lead tanpa spam&quot; di Laporan › Marketing. Total lead di Marketing lebih besar karena ikut menghitung spam. Klik kartu untuk lihat daftarnya."
+            tooltip="Semua pelanggan baru (Customer dibuat) di periode yang dipilih, TERMASUK chat yang ditandai SPAM — sama dengan &quot;Total lead (+spam)&quot; di Laporan › Marketing. B2B dan penjualan karyawan tidak dihitung. Conversion di sebelah tetap memakai lead tanpa spam. Klik kartu untuk lihat daftarnya."
           />
           <KpiTile
             tone="orders" label="Total Orders"
@@ -128,7 +130,7 @@ export default function Dashboard({ user }) {
             format={(n) => `${Math.round(n)}%`}
             delta={ov?.growthConversion} deltaSuffix={konversiPrevText ? `${konversiPrevText} (${cmp})` : cmp}
             note={
-              ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
+              ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} lead tanpa spam order`
                  : "pelanggan yang order"
             }
             tooltip={`Conversion = (lead di periode ini yang sudah order) ÷ (SELURUH lead baru DI PERIODE YANG DIPILIH) × 100%. Ikut date picker di atas — pilih Juli untuk lihat conversion Juli, Agustus untuk Agustus, dst. Kalau di-set "Hari ini", wajar kelihatan rendah/0% karena lead yang baru masuk hari itu belum tentu sempat closing hari yang sama juga. Contoh: ${ov?.customersWithOrders ?? 0} ÷ ${ov?.totalCustomers ?? 0} = ${konversi ?? "—"}%. Angka persen di sebelah kiri (mis. "-32%") adalah PERUBAHAN RELATIF dari periode sebelumnya, bukan poin persen — lihat "dari X%" di sebelahnya untuk angka mentahnya. ⚠️ BEDA dengan "Konversi Tim" di Laporan > Sales (keduanya BENAR, bukan salah satu salah hitung): angka di sini basisnya LEAD BARU yang lahir di periode ini (siapa pun yang menangani); "Konversi Tim" basisnya PERCAKAPAN yang ditangani 8 sales di periode ini, termasuk lead LAMA yang baru closing sekarang — makanya penyebut & pembilangnya beda dan wajar angkanya tidak sama.`}

@@ -14,6 +14,7 @@ import { evaluasiUlang, kunciEvaluasiCatatan, keadaanEfektif } from "./catatanPe
 import { STATE, r4 } from "../lib/domain/pemakaianHistoris.js";
 import { wajibKonfirmasiManifest, wajibOwnerMemulai, wajibAdaKonfirmasi } from "./postingKonfirmasiManifest.js";
 import { klasifikasiPengaman, hashDenganPengaman, wajibBukanPenyatakan, wajibTidakTerkenaPengaman, KEADAAN_PENGAMAN } from "./pengamanHistorisPascaSO.js";
+import { catatanSumberBiayaAktif } from "./sumberBiayaTanpaStok.js";
 
 export const AWAL_NOTE_POSTING = "Impor pemakaian historis Sep–Okt 2026";
 const kunciPosting = (orderNumber, kodeBahan) => `PH2610:${orderNumber}:${kodeBahan}`;
@@ -32,8 +33,11 @@ export async function rencanakanPosting(db, { unitIds = null } = {}) {
   });
   // PENGAMAN PASCA-SO: catatan bahan ber-hasil-SO sah yang bertanggal ≤ posting SO ditahan/tercermin dan TIDAK ikut rencana (bahan tanpa hasil SO: tidak ada perubahan).
   const pengaman = await klasifikasiPengaman(db, notes); const tertahan = []; const tercermin = []; const dilepas = [];
+  // SATU SUMBER = SATU JALUR: catatan yang sudah menjadi sumber biaya tanpa stok aktif TIDAK ikut rencana, apa pun keadaan pengaman SO-nya (dilepas / tautan dibatalkan).
+  const sumberBiaya = await catatanSumberBiayaAktif(db, notes.map((n) => n.id)); const sudahBiaya = [];
   const grup = new Map();
   for (const n of notes) {
+    if (sumberBiaya.has(n.id)) { sudahBiaya.push({ catatanId: n.id, order: n.orderNumber, kodeBahan: n.material.code, qty: Number(n.qty), tanggal: wibTgl(n.usedAt) }); continue; }
     const pv = pengaman.get(n.id);
     if (pv) { const baris = { catatanId: n.id, order: n.orderNumber, kodeBahan: n.material.code, qty: Number(n.qty), tanggal: wibTgl(n.usedAt), tautanId: pv.tautan.id, soTanggal: pv.tautan.soTanggal };
       if (pv.keadaan === KEADAAN_PENGAMAN.TERTAHAN_PASCA_SO) { tertahan.push(baris); continue; }
@@ -46,7 +50,7 @@ export async function rencanakanPosting(db, { unitIds = null } = {}) {
     .map((g, i) => ({ no: i + 1, kunci: kunciPosting(g.orderNumber, g.kodeBahan), ...g, createdAtUTC: new Date(g.usedAt).toISOString() }));
   const hashDasar = crypto.createHash("sha256").update(JSON.stringify(transaksi.map((t) => [t.kunci, t.unitId, t.materialId, t.qty, t.createdAtUTC, [...t.catatanIds].sort()]))).digest("hex");
   const hash = hashDenganPengaman(hashDasar, { tertahan, tercermin, dilepas });
-  return { hash, jumlah: transaksi.length, orderUnik: new Set(transaksi.map((t) => t.orderNumber)).size, transaksi, tertahan, tercermin, dilepas };
+  return { hash, jumlah: transaksi.length, orderUnik: new Set(transaksi.map((t) => t.orderNumber)).size, transaksi, tertahan, tercermin, dilepas, sudahBiaya };
 }
 
 async function garisWaktuBahan(tx, materialId) {
@@ -70,6 +74,9 @@ export async function postingSatuUnit(prisma, { unitId, daftar, persetujuan, akt
     const ok = []; const lewat = [];
     for (const t of daftar) {
       for (const id of t.catatanIds) await lockRowForUpdate(tx, "unit_usage_notes", id);
+      // DI DALAM transaksi + sesudah kunci baris catatan: sumber biaya tanpa stok aktif tidak boleh menjadi ISSUE (pencatatan biaya yang menunggu kunci ini akan melihat catatan sudah diposting).
+      const jadiBiaya = await catatanSumberBiayaAktif(tx, t.catatanIds);
+      if (jadiBiaya.size) throw new KoreksiError(`Catatan ${t.kunci} sudah menjadi sumber biaya tanpa stok aktif — tidak diposting ke stok (satu sumber satu jalur)`, 409, "CATATAN_SUDAH_BIAYA_TANPA_STOK");
       const notes = await tx.unitUsageNote.findMany({ where: { id: { in: t.catatanIds } } });
       // idempotensi / pemulihan: pergerakan dengan kunci ini sudah ada → tautkan saja, jangan tulis lagi
       const ada = await tx.stockMovement.findFirst({ where: { unitId, materialId: t.materialId, note: { contains: `[${t.kunci}]` } }, select: { id: true } });

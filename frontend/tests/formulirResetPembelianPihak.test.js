@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { namaBerkaitan, pihakPembelian, peringatanSupplierBeda } from "../src/features/finance/pembelianPihak.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
+const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8").replace(/\r\n/g, "\n");   // checkout Windows = CRLF
 
 const PLAN = {
   "FinanceCash.jsx": ["ModalRekening", "ModalTransfer", "ModalPemasukan"],
@@ -21,7 +21,8 @@ const PLAN = {
   "FinanceReceivables.jsx": ["ModalRefund"],
   "FinanceReconciliation.jsx": ["ModalPeriodeBaru", "ModalBarisBaru"],
   "FinanceSettings.jsx": ["ModalKategori"],
-  "FinanceSuppliers.jsx": ["ModalSupplier", "ModalTagihan", "ModalBayarSupplier"],
+  // ModalTagihan diganti features/finance/tagihan/CatatTagihan.jsx (redesain spt2): di-mount bersyarat → isian selalu baru tiap dibuka (diuji terpisah di bawah).
+  "FinanceSuppliers.jsx": ["ModalSupplier", "ModalBayarSupplier"],
   "FinanceUangMuka.jsx": ["ModalBerikan"],
 };
 
@@ -37,7 +38,13 @@ test("SEMUA formulir 'baru' Finance dibungkus resetSaatBuka (tidak ada yang tert
       n++;
     }
   }
-  assert.equal(n, 17);
+  assert.equal(n, 16);
+});
+
+test("Catat tagihan supplier (pengganti ModalTagihan): hanya di-mount saat dialog terbuka, jadi isian tidak tertinggal dari pembukaan sebelumnya", () => {
+  const s = baca("../src/pages/finance/FinanceSuppliers.jsx");
+  assert.doesNotMatch(s, /function ModalTagihan/, "formulir lama tidak boleh hidup lagi tanpa pembungkus");
+  assert.match(s, /\{\(modal === "tagihan" \|\| modal === "tagihan-penerimaan"\) && \(\s*<CatatTagihan\s+key=\{modal\}/);
 });
 
 test("pencegahan regresi: tidak ada formulir Finance baru ber-prop open yang lolos tanpa pembungkus", () => {

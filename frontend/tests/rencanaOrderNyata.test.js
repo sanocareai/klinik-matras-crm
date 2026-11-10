@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { teksUkuranDariNotes } from "../src/utils/ukuranKasur.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const read = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const read = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "utf8").replace(/\r\n/g, "\n").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const RENCANA = read("pages", "bengkel", "ProductionRencanaWorkspace.jsx");
 const BACKLOG_CARD = read("features", "production", "BacklogCard.jsx");
 const SCHEDULE = read("features", "production", "ScheduleModals.jsx");

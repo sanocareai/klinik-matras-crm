@@ -76,8 +76,8 @@ test("Tidak ada salinan warna tahap per halaman: KanbanCard, Laporan, Dashboard,
   assert.ok(!/STAGE_DOT|STAGE_GLOW/.test(kartu.replace(/\/\/.*$/gm, "")), "KanbanCard tanpa peta warna sendiri");
   assert.ok(kartu.includes("stageClass(s)") && kartu.includes("stage-dot"), "titik menu pindah memakai palet bersama");
   const pt = baca("src/features/laporan/components/PipelineTab.jsx");
-  assert.ok(!/const STAGE_(BG|BAR|DOT)\s*=/.test(pt) && pt.includes("stageClass(item.stage)"));
-  const sb = baca("src/features/laporan/components/StageBySalesCard.jsx");
+  // Redesain Laporan: bar/titik memakai variabel palet bersama (stageDotVar dari utils/format.js) — tetap tanpa peta warna lokal.
+  assert.ok(!/const STAGE_(BG|BAR|DOT)\s*=/.test(pt) && /import \{[^}]*\bstageDotVar\b[^}]*\} from "@\/utils\/format\.js"/.test(pt) && pt.includes("stageDotVar(item.stage)"));  const sb = baca("src/features/laporan/components/StageBySalesCard.jsx");
   assert.ok(sb.includes("stageDotVar(s)") && !/var\(--orange\)|var\(--green\)/.test(sb.slice(0, sb.indexOf("const INFO"))));
   const dash = baca("src/styles/sanss-crm-dashboard.css");
   assert.ok(dash.includes(".crm-dash .crm-pipe-baris[data-stage] { --bar: var(--stage-dot); }") && !/--bar:\s*#/.test(dash.replace(/\/\*[\s\S]*?\*\//g, "").replace("--bar: #99B7FC;", "")));

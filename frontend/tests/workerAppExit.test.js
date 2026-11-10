@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
-const read = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8");
+const read = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8").replace(/\r\n/g, "\n");   // checkout Windows = CRLF
 
 test("shell: onBack (detail pekerjaan) lebih diutamakan, lalu exitTo (Link ke SANSS), lalu logo", () => {
   const s = read("features", "production", "workerApp", "WorkerAppShell.jsx");

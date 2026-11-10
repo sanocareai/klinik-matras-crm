@@ -10,7 +10,7 @@ import { stationCapacity, friendlyError } from "../src/features/production/exper
 import { rankOfView } from "../src/features/production/productionLabels.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const raw = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "utf8");
+const raw = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "utf8").replace(/\r\n/g, "\n");   // checkout Windows = CRLF
 const read = (...p) => raw(...p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const DND_SRC = read("features", "production", "planDnd.js");
 const HOOK = read("features", "production", "usePlanDrag.js");

@@ -192,8 +192,21 @@ test("GAGAL_ANTAR: job FAILED tanpa rescheduleReason/rescheduleCase → OPEN, ja
   assert.ok(exc.some((e) => e.type === "GAGAL_ANTAR"));
 });
 
-test("GAGAL_ANTAR: TIDAK muncul kalau job FAILED SUDAH dijadwalkan ulang (rescheduleReason terisi)", () => {
-  const r = route({ jobs: [job({ status: "FAILED", rescheduleReason: "Customer minta besok" })] });
+// BUG NYATA diperbaiki 10 Nov 2026 (laporan: job RSC-09112026-019/040
+// tampil "Sudah Dijadwalkan Ulang" padahal job itu GAGAL LAGI, form
+// Jadwalkan Ulang masih kosong). Job yang FAILED SEKARANG harus TETAP
+// memicu GAGAL_ANTAR walau pernah direschedule di siklus SEBELUMNYA —
+// rescheduleReason dari siklus lama tidak boleh menyamarkan kegagalan
+// yang sedang terjadi saat ini. Sebelum fix, assert ini terbalik (exception
+// DIHARAPKAN tidak muncul) — itulah bug-nya.
+test("GAGAL_ANTAR: TETAP muncul kalau job FAILED LAGI walau pernah direschedule sebelumnya (rescheduleReason siklus lama)", () => {
+  const r = route({ jobs: [job({ status: "FAILED", rescheduleReason: "Customer minta besok (siklus sebelumnya)" })] });
+  const exc = deriveRouteExceptions(r, { now: NOW });
+  assert.ok(exc.some((e) => e.type === "GAGAL_ANTAR"));
+});
+
+test("GAGAL_ANTAR: TIDAK muncul kalau job SUDAH LEWAT dari FAILED (berhasil direschedule, status ASSIGNED lagi)", () => {
+  const r = route({ jobs: [job({ status: "ASSIGNED", rescheduleReason: "Customer minta besok" })] });
   const exc = deriveRouteExceptions(r, { now: NOW });
   assert.ok(!exc.some((e) => e.type === "GAGAL_ANTAR"));
 });

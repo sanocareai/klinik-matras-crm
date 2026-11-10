@@ -35,7 +35,14 @@ test("Layar: angka dari server (tidak menjumlah baris di klien), tanggal cutoff 
   assert.doesNotMatch(s, /daftar\.reduce|\.filter\(.*\)\.reduce/, "ringkasan tidak dihitung dari baris di klien");
   assert.match(s, /data\?\.cutoff/, "cutoff saldo awal dari server");
   assert.doesNotMatch(s, /2026-09-18"/, "tanggal cutoff tidak ditanam di klien");
-  assert.match(s, /api\.createPenjualanKaryawan\(\{\s*date: f\.date, sellerId: f\.sellerId/);
+  // Formulir bertahap (PKR terpadu): body dirakit di bodyLengkap() lalu dikirim apa adanya.
+  assert.match(s, /api\.createPenjualanKaryawan\(bodyLengkap\(\)\)/);
+  const body = s.slice(s.indexOf("const bodyLengkap = () => {"), s.indexOf("};", s.indexOf("const bodyLengkap = () => {")));
+  assert.match(body, /date: f\.date, sellerId: f\.sellerId/);
+  assert.doesNotMatch(body, /\btotal\s*:/, "total tidak dikirim ke server");
   assert.doesNotMatch(s, /createPenjualanKaryawan\(\{[^}]*total:/s, "total tidak dikirim ke server");
+  const item = baca("src/features/finance/pkrItemLogic.js");
+  const fnItem = item.slice(item.indexOf("export function bodyPenjualanTerpadu"), item.indexOf("\n}\n", item.indexOf("export function bodyPenjualanTerpadu")));
+  assert.doesNotMatch(fnItem, /\btotal\s*:/, "item tidak membawa total (dihitung server)");
   assert.match(s, /order CRM operasional.*tidak membawa uang|tidak lewat Order/is, "menjelaskan bahwa order CRM hanya dokumen operasional tanpa uang (sejak sinkronisasi 31 Okt 2026)");
 });

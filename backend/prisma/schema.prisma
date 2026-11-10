@@ -1458,6 +1458,7 @@ model Order {
   statusTransitions OrderStatusTransition[]
   units             Unit[]
   usageNotes        UnitUsageNote[]
+  biayaTanpaStok    OrderBiayaTanpaStok[]
   jobs              Job[]
   payments          Payment[]
   scopeRevisions    ScopeRevision[]
@@ -1893,6 +1894,8 @@ model Unit {
   usageNotes        UnitUsageNote[]
   workshopReceiptCorrections UnitWorkshopReceiptCorrection[]
   materialDeclarations UnitMaterialDeclaration[]
+  biayaTanpaStok    OrderBiayaTanpaStok[]
+  hppKonfirmasi     UnitHppKonfirmasi[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -2652,6 +2655,19 @@ model Job {
   // SELESAI/DIBATALKAN — dibiarkan menunjuk kasus terakhirnya utk jejak
   // historis ("job ini PERNAH direschedule, lihat kasusnya"), badge di
   // UI yang membaca status kasus (AKTIF vs tidak), bukan ada/tidaknya FK.
+  //
+  // ⚠️ JEBAKAN NYATA (bug diperbaiki 10 Nov 2026, lihat deriveIssueStatus
+  // di routes/armada.js & issueStatusOf di frontend/.../issueStatus.js):
+  // field ini (dan rescheduleReason di atas) TIDAK PERNAH dikosongkan saat
+  // job gagal LAGI setelah sempat direschedule — keduanya SNAPSHOT SIKLUS
+  // TERAKHIR, bukan "apakah job ini SEDANG butuh tindakan". Siapa pun
+  // menulis fungsi turunan status BARU yang membaca kedua field ini WAJIB
+  // mengecek `job.status` (field otoritatif, LIVE) LEBIH DULU — job.status
+  // === "FAILED" SELALU berarti "butuh tindakan SEKARANG", titik, TIDAK
+  // PEDULI apa pun isi rescheduleReason/rescheduleCaseId/RescheduleCase.status.
+  // Cek field-field ini HANYA boleh jadi fallback untuk job yang SUDAH
+  // LEWAT dari FAILED (riwayat), tidak pernah untuk menyamarkan FAILED
+  // yang sedang terjadi.
   rescheduleCaseId String?         @map("reschedule_case_id") @db.Uuid
   rescheduleCase   RescheduleCase? @relation("JobCurrentRescheduleCase", fields: [rescheduleCaseId], references: [id], onDelete: SetNull)
 
@@ -5299,6 +5315,7 @@ model Material {
   materialProposals MaterialProposal[]
   provisionalUsages UnitProvisionalUsage[]
   usageNotes        UnitUsageNote[]
+  biayaTanpaStok    OrderBiayaTanpaStok[]
   supplierReturnLines SupplierReturnLine[]
   riwayatReferensi    StokRiwayatReferensi[]
   id          String       @id @default(uuid()) @db.Uuid
@@ -12051,4 +12068,89 @@ model MetaAdCreative {
   fetchedAt              DateTime @map("fetched_at")
 
   @@map("meta_ad_creatives")
+}
+
+/// BIAYA BAHAN PER ORDER TANPA PENGURANGAN STOK (Nov 2026) — HANYA untuk pemakaian bertanggal PADA/SEBELUM tanggal SO yang ditautkan ke bahan (hitung fisik SO sudah mencakupnya).
+/// Bukan pergerakan stok, bukan jurnal. Masuk HPP operasional order hanya bila DISETUJUI orang lain dari pengaju. Koreksi = entri baru (menggantikanId); baris lama DIGANTI, tidak dihapus.
+model OrderBiayaTanpaStok {
+  id               String    @id @default(uuid()) @db.Uuid
+  unitId           String    @map("unit_id") @db.Uuid
+  unit             Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  orderId          String    @map("order_id")
+  order            Order     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  materialId       String    @map("material_id") @db.Uuid
+  material         Material  @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  qty              Decimal   @db.Decimal(14, 4)
+  satuan           String    @db.VarChar(20)
+  tanggalPemakaian DateTime  @map("tanggal_pemakaian") @db.Date
+  soTanggal        DateTime  @map("so_tanggal") @db.Date
+  soTautanId       String?   @map("so_tautan_id")
+  statusHarga      String    @map("status_harga") @db.VarChar(16) // DINILAI | TANPA_HARGA | PERLU_KEPUTUSAN
+  waktuPemakaian   DateTime? @map("waktu_pemakaian") // diisi bila JAM pemakaian diketahui dari sumber; harga dipilih pada waktu itu
+  kandidatHarga    Json?     @map("kandidat_harga") // PERLU_KEPUTUSAN: harga awal hari + tiap perubahan harga pada hari itu
+  keputusanHargaOleh   String? @map("keputusan_harga_oleh")
+  keputusanHargaAlasan String? @map("keputusan_harga_alasan")
+  hargaSatuan      Decimal?  @map("harga_satuan") @db.Decimal(18, 4)
+  nilai            Decimal?  @db.Decimal(18, 2)
+  priceId          String?   @map("price_id") @db.Uuid
+  basisHarga       String    @map("basis_harga") @db.VarChar(40)
+  sidikHarga       String    @map("sidik_harga")
+  sumberJenis      String    @map("sumber_jenis") @db.VarChar(24) // CATATAN_HISTORIS | LAPORAN_PIC | DOKUMEN
+  sumberRef        String    @map("sumber_ref") // identitas sumber per baris (catatan historis = id catatan; lainnya = rujukan dokumen/baris yang dinormalkan)
+  sidikGanda       String    @map("sidik_ganda") // sidik daftar kandidat ganda saat diajukan; berubah → persetujuan ditolak
+  kandidatGanda    Json?     @map("kandidat_ganda")
+  bukti            String
+  alasan           String
+  status           String    @default("DIAJUKAN") @db.VarChar(12) // DIAJUKAN | DISETUJUI | DITOLAK | DIBATALKAN | DIGANTI
+  menggantikanId   String?   @map("menggantikan_id") @db.Uuid
+  menggantikan     OrderBiayaTanpaStok?  @relation("BiayaTanpaStokPengganti", fields: [menggantikanId], references: [id], onDelete: Restrict)
+  digantikan       OrderBiayaTanpaStok[] @relation("BiayaTanpaStokPengganti")
+  diajukanOleh     String    @map("diajukan_oleh")
+  diajukanPada     DateTime  @default(now()) @map("diajukan_pada")
+  diputuskanOleh   String?   @map("diputuskan_oleh")
+  diputuskanPada   DateTime? @map("diputuskan_pada")
+  catatanKeputusan String?   @map("catatan_keputusan")
+  idempotencyKey   String    @unique @map("idempotency_key")
+  events           OrderBiayaTanpaStokEvent[]
+
+  @@index([unitId, status])
+  @@index([orderId, status])
+  @@index([materialId, status])
+  @@map("order_biaya_tanpa_stok")
+}
+
+model OrderBiayaTanpaStokEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  entryId   String   @map("entry_id") @db.Uuid
+  entry     OrderBiayaTanpaStok @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  kind      String   @db.VarChar(16) // DIAJUKAN | DISETUJUI | DITOLAK | DIBATALKAN | DIGANTI
+  actorId   String?  @map("actor_id")
+  reason    String?
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entryId, createdAt])
+  @@map("order_biaya_tanpa_stok_events")
+}
+
+/// KONFIRMASI "PEMAKAIAN UNIT LENGKAP" (Nov 2026). Ada catatan pemakaian ≠ HPP lengkap: unit baru LENGKAP bila PIC menyatakan seluruh pemakaian sudah tercatat DAN sidik baris biaya saat dibaca sama dengan saat konfirmasi.
+/// Baris biaya berubah sesudah konfirmasi → konfirmasi BASI (dihitung saat dibaca, tanpa menulis). Cabut = status REVOKED + alasan; tidak dihapus.
+model UnitHppKonfirmasi {
+  id               String    @id @default(uuid()) @db.Uuid
+  unitId           String    @map("unit_id") @db.Uuid
+  unit             Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  sidik            String
+  ringkasan        Json
+  alasan           String
+  dikonfirmasiOleh String    @map("dikonfirmasi_oleh")
+  dikonfirmasiPada DateTime  @default(now()) @map("dikonfirmasi_pada")
+  status           String    @default("ACTIVE") @db.VarChar(10) // ACTIVE | REVOKED
+  dicabutOleh      String?   @map("dicabut_oleh")
+  dicabutPada      DateTime? @map("dicabut_pada")
+  alasanCabut      String?   @map("alasan_cabut")
+  idempotencyKey   String    @unique @map("idempotency_key")
+
+  @@index([unitId, status])
+  @@map("unit_hpp_konfirmasi")
 }

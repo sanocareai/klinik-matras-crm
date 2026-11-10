@@ -20,12 +20,18 @@ test("Tanpa biaya admin: nominal apa adanya; dengan biaya admin: total dari serv
 });
 
 test("Terpasang di tujuh daftar (tabel dan kartu) dan rincian di panel detail; transfer tidak lagi punya kolom Biaya Admin sendiri", () => {
-  for (const f of ["FinanceExpenses", "FinancePurchases", "FinanceKasbon", "FinanceUangMuka", "FinanceSuppliers", "FinanceReceivables", "FinanceCash"]) {
+  for (const f of ["FinancePurchases", "FinanceKasbon", "FinanceUangMuka", "FinanceSuppliers", "FinanceReceivables", "FinanceCash"]) {
     const s = baca(`src/pages/finance/${f}.jsx`);
     assert.match(s, /import \{ NominalDenganBiaya, nominalTeks \} from "@\/features\/finance\/biayaAdminTampil\.jsx"/, f);
     assert.match(s, /<NominalDenganBiaya d=\{/, `${f}: sel nominal tabel`);
   }
-  for (const f of ["FinanceExpenses", "FinancePurchases", "FinanceKasbon", "FinanceUangMuka", "FinanceReceivables"]) assert.match(baca(`src/pages/finance/${f}.jsx`), /nominalTeks\(/, `${f}: bidang kartu`);
+  // Pengeluaran (redesain): daftar pindah ke PengeluaranPanels.jsx (DaftarBiaya) — satu baris responsif untuk tabel & HP.
+  const panel = baca("src/features/finance/PengeluaranPanels.jsx");
+  assert.match(panel, /import \{ NominalDenganBiaya \} from "@\/features\/finance\/biayaAdminTampil\.jsx"/, "PengeluaranPanels");
+  assert.match(panel, /<NominalDenganBiaya d=\{e\} \/>/, "PengeluaranPanels: sel nominal");
+  // Kartu HP terpisah masih ada di tiga halaman ini; Pengeluaran & Pembelian memakai satu daftar responsif (NominalDenganBiaya di atas) sehingga tidak butuh nominalTeks.
+  for (const f of ["FinanceKasbon", "FinanceUangMuka", "FinanceReceivables"]) assert.match(baca(`src/pages/finance/${f}.jsx`), /nominalTeks\(/, `${f}: bidang kartu`);
+  assert.match(baca("src/pages/finance/FinancePurchases.jsx"), /role="cell"><span className="fin-dl-label">Nominal<\/span><NominalDenganBiaya d=\{p\} \/>/, "Pembelian: satu daftar responsif");
   assert.doesNotMatch(baca("src/pages/finance/FinanceCash.jsx"), /<TH numeric width=\{112\} hideBelow="wide">Biaya Admin<\/TH>/);
   const spec = baca("src/features/finance/detailSpecs.js");
   assert.match(spec, /export function barisBiayaAdminPanel/);
