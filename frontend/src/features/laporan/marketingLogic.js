@@ -102,22 +102,26 @@ export function jejakMeta(jalur, grup) {
 export const KOLOM_SUMBER = Object.freeze([
   { id: "lead", label: "Total lead (+spam)", utama: true }, { id: "leadTanpaSpam", label: "Lead tanpa spam", utama: true }, { id: "prospek", label: "Prospek eksplisit", utama: true }, { id: "berOrder", label: "Customer ber-order", utama: true }, { id: "lunas", label: "Customer lunas", utama: true },
   { id: "konversi", label: "Konversi ber-order", utama: true }, { id: "nilai", label: "Nilai order", utama: true }, { id: "uang", label: "Uang diterima bersih", utama: true },
-  { id: "spend", label: "Biaya iklan", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
+  { id: "spend", label: "Biaya iklan", utama: true }, { id: "booked", label: "ROAS", utama: true }, { id: "cpa", label: "CPA lunas", utama: true },
   { id: "prospekLanjut", label: "Prospek atau lanjut (rincian)", utama: false }, { id: "biayaProspek", label: "Biaya / prospek eksplisit", utama: false }, { id: "spam", label: "Spam", utama: false }, { id: "membayar", label: "Membayar", utama: false }, { id: "konversiNonSpam", label: "Konversi non-spam", utama: false },
-  { id: "booked", label: "Booked ROAS", utama: false }, { id: "cash", label: "Cash ROAS", utama: false },
+  { id: "cash", label: "Cash ROAS", utama: false },
 ]);
 export const MODE_KOLOM = Object.freeze(["ringkas", "lengkap"]);
 export const kolomTampil = (mode) => KOLOM_SUMBER.filter((k) => k.utama || mode === "lengkap");
 /** Kolom awal tabel Performa sumber (redesain Apple). Kolom lain dibuka lewat pilihan kolom; urutan selalu mengikuti KOLOM_SUMBER. */
-export const KOLOM_AWAL_SUMBER = Object.freeze(["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
+// ROAS (Booked = nilai order ÷ biaya, rentang tanggal terpilih) tepat setelah Biaya iklan sejak 12 Nov 2026; organik tampil "—" (tidak ada biaya iklan).
+export const KOLOM_AWAL_SUMBER = Object.freeze(["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend", "booked"]);
 /** Lead tanpa spam = total lead − lead bertanda SPAM (rumus sama dengan rekonLead). Sama dengan penyebut Conversion Dashboard Sales CRM
  *  (customer baru di periode, SPAM dan label B2B/penjualan karyawan tidak dihitung; staf internal tetap dihitung). "New Leads" Dashboard = total lead TERMASUK spam
  *  (sejak 10 Nov 2026). null bila total lead tidak ada. */
 export const leadTanpaSpam = (x) => (x?.lead == null ? null : x.lead - (x.spam ?? 0));
 /** Pilihan kolom tersimpan dari versi sebelum kolom "Lead tanpa spam" ada: sisipkan kolom itu sekali bila "Total lead" dipilih. */
-export function migrasiPilihanKolom(pilihan) {
+export function migrasiPilihanKolom(pilihan, { tambahRoas = false } = {}) {
   if (!Array.isArray(pilihan)) return pilihan;
-  return pilihan.includes("lead") && !pilihan.includes("leadTanpaSpam") ? [...pilihan, "leadTanpaSpam"] : pilihan;
+  let v = pilihan.includes("lead") && !pilihan.includes("leadTanpaSpam") ? [...pilihan, "leadTanpaSpam"] : pilihan;
+  // Sekali saja (penanda di penyimpanan): pilihan lama yang memuat Biaya iklan mendapat kolom ROAS. Setelah itu pengguna bebas menyembunyikannya.
+  if (tambahRoas && v.includes("spend") && !v.includes("booked")) v = [...v, "booked"];
+  return v;
 }
 export function kolomPilihan(mode, pilihan) {
   if (mode === "lengkap") return KOLOM_SUMBER;
@@ -262,4 +266,19 @@ export function konversiTotal(t) {
   if (!t) return { nilai: null, pembilang: null, penyebut: null };
   const p = (a, b) => (b > 0 ? Math.round((a / b) * 10000) / 100 : null);
   return { nilai: p(t.berOrder, t.lead), pembilang: t.berOrder, penyebut: t.lead, nilaiNonSpam: p(t.berOrder, t.leadSah), penyebutNonSpam: t.leadSah };
+}
+
+// ── FILTER "AKTIF DI PERIODE" (Meta, 12 Nov 2026) ───────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Baris MAPPED dianggap aktif bila spend-nya di rentang terpilih > 0 (ada delivery berbayar). UNMAPPED/UNKNOWN selalu tampil (bukan campaign; ikut rekonsiliasi).
+ * Baris tanpa spend disembunyikan HANYA bila data spend laporan tersambung — tanpa data spend semua baris tampil (tidak menebak).
+ * Ringkasan baris tersembunyi dikembalikan agar total tetap bisa dicocokkan (lead dari klik bulan lalu tidak hilang diam-diam).
+ */
+export function saringAktif(grup, { aktif = true, spendTersedia = true } = {}) {
+  const semua = grup || [];
+  if (!aktif || !spendTersedia) return { tampil: semua, tersembunyi: { jumlah: 0, lead: 0, berOrder: 0, lunas: 0 }, berlaku: false };
+  const adaSpend = (g) => g.status !== "MAPPED" || Number(g.biaya?.spend) > 0;
+  const tampil = semua.filter(adaSpend); const sembunyi = semua.filter((g) => !adaSpend(g));
+  const jml = (f) => sembunyi.reduce((a, g) => a + (Number(f(g)) || 0), 0);
+  return { tampil, berlaku: true, tersembunyi: { jumlah: sembunyi.length, lead: jml((g) => g.lead?.unik), berOrder: jml((g) => g.customerDenganOrder), lunas: jml((g) => g.closingUtama?.customerLunasTerbuktiLedger) } };
 }

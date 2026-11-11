@@ -286,6 +286,25 @@
 .mk-ap .mk-detail-kepala { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .mk-ap .mk-detail-judul { margin: 0; font-size: 26px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; color: var(--text-primary); }
 .mk-ap .mk-detail-sub { margin: 2px 0 0; font-size: 13.5px; color: var(--text-secondary); }
+/* Kartu ringkas detail sumber (12 Nov 2026): 6 kartu berwarna (lead · ber-order · nilai · uang · biaya · ROAS). HP 2 kolom ringkas tanpa ikon; 3 kolom; ≥1500px satu baris. */
+.mk-ap .mk-kpi-grid--sumber { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mk-ap .mk-kpi-grid--sumber .mk-kpi { min-height: 0; padding: 14px 14px; border-radius: 18px; }
+.mk-ap .mk-kpi-grid--sumber .mk-kpi-ikon { display: none; }
+.mk-ap .mk-kpi-grid--sumber .mk-kpi-label { font-size: 13px; }
+.mk-ap .mk-kpi-grid--sumber .mk-kpi-nilai { font-size: 22px; }
+.mk-ap .mk-kpi-grid--sumber .mk-kpi-sub { font-size: 12px; }
+@container laptab (min-width: 600px) {
+  .mk-ap .mk-kpi-grid--sumber { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .mk-ap .mk-kpi-grid--sumber .mk-kpi { gap: 12px; padding: 16px; border-radius: 20px; }
+  .mk-ap .mk-kpi-grid--sumber .mk-kpi-ikon { display: inline-flex; width: 38px; height: 38px; border-radius: 11px; }
+  .mk-ap .mk-kpi-grid--sumber .mk-kpi-nilai { font-size: 24px; }
+}
+@container laptab (min-width: 1180px) { .mk-ap .mk-kpi-grid--sumber { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container laptab (min-width: 1500px) { .mk-ap .mk-kpi-grid--sumber { grid-template-columns: repeat(6, minmax(0, 1fr)); } .mk-ap .mk-kpi-grid--sumber .mk-kpi-nilai { font-size: 22px; } }
+.mk-ap .mk-kpi-grid--sumber > .mk-kpi:last-child:nth-child(odd) { grid-column: auto; }
+.mk-ap .mk-kpi[data-nada="jingga"] { --k-bg: #FFE3C7; --k-ink: #3D1F00; --k-sub: rgba(61, 31, 0, 0.7); --k-ubin: rgba(255, 255, 255, 0.8); --k-ubin-ink: #D96A00; box-shadow: 0 14px 28px -22px rgba(217, 106, 0, 0.45); }
+:root[data-theme="dark"] .mk-ap .mk-kpi[data-nada="jingga"] { --k-bg: #4A2A0C; --k-ink: #FFEEDC; --k-sub: rgba(255, 238, 220, 0.72); --k-ubin: rgba(255, 255, 255, 0.1); --k-ubin-ink: #FFB46B; box-shadow: none; }
+.mk-ap .mk-kpi-nilai--kosong { opacity: 0.55; }
 .mk-ap .mk-ringkas-sumber { display: grid; gap: 12px; margin: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @container laptab (min-width: 960px) { .mk-ap .mk-ringkas-sumber { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .mk-ap .mk-ringkas-sumber > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 14px 16px; border: 1px solid var(--mk-garis); border-radius: 16px; background: var(--mk-panel); box-shadow: var(--mk-bayang); }

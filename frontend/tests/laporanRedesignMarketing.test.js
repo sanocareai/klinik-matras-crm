@@ -58,8 +58,8 @@ test("Tren lead: seri, definisi, dan sumber data lama dipertahankan", () => {
 });
 
 test("Performa sumber: kolom awal hasil→biaya, kolom lain lewat pilihan; kelompok tetap terpisah; fitur lama dipertahankan", () => {
-  assert.deepEqual([...KOLOM_AWAL_SUMBER], ["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
-  assert.deepEqual(kolomPilihan("ringkas", null).map((k) => k.id), ["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend"]);
+  assert.deepEqual([...KOLOM_AWAL_SUMBER], ["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend", "booked"]);
+  assert.deepEqual(kolomPilihan("ringkas", null).map((k) => k.id), ["lead", "leadTanpaSpam", "berOrder", "nilai", "uang", "spend", "booked"]);
   assert.equal(kolomPilihan("lengkap", ["lead"]).length, KOLOM_SUMBER.length);
   assert.deepEqual(kolomPilihan("ringkas", ["cpa", "lead"]).map((k) => k.id), ["lead", "cpa"], "urutan mengikuti KOLOM_SUMBER");
   assert.deepEqual(kolomPilihan("ringkas", ["tidak-ada"]).map((k) => k.id), [...KOLOM_AWAL_SUMBER]);
@@ -103,4 +103,15 @@ test("gaya dibatasi ke Marketing: berkas terpisah dimuat dari MarketingTab; styl
   for (const sel of aturan) for (const bagian of pecah(sel)) assert.match(bagian, /mk-ap|data-mk-ap|^(from|to|\d+%)$/, `selektor tidak dibatasi: ${bagian}`);
   assert.doesNotMatch(cssLama, /font-family/);
   assert.doesNotMatch(cssLama, /!important/);
+});
+
+test("kolom ROAS (12 Nov 2026): tepat setelah Biaya iklan, kolom awal; pilihan lama mendapat ROAS sekali saja", async () => {
+  const { migrasiPilihanKolom } = await import("../src/features/laporan/marketingLogic.js");
+  const ids = KOLOM_SUMBER.map((k) => k.id);
+  assert.equal(ids.indexOf("booked"), ids.indexOf("spend") + 1, "ROAS setelah Biaya iklan");
+  assert.equal(KOLOM_SUMBER.find((k) => k.id === "booked").label, "ROAS");
+  assert.deepEqual(migrasiPilihanKolom(["lead", "leadTanpaSpam", "spend"], { tambahRoas: true }), ["lead", "leadTanpaSpam", "spend", "booked"]);
+  assert.deepEqual(migrasiPilihanKolom(["lead", "leadTanpaSpam", "spend"]), ["lead", "leadTanpaSpam", "spend"], "tanpa penanda: pilihan pengguna dihormati");
+  assert.deepEqual(migrasiPilihanKolom(["lead", "leadTanpaSpam"], { tambahRoas: true }), ["lead", "leadTanpaSpam"], "tanpa Biaya iklan tidak ditambah");
+  assert.deepEqual(kolomPilihan("ringkas", null).map((k) => k.id).slice(-2), ["spend", "booked"]);
 });

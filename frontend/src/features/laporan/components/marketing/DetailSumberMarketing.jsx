@@ -38,7 +38,7 @@ export default function DetailSumberMarketing({ s, lap, periode, range, url, onU
         <button type="button" className="mk-kapsul self-start" onClick={() => onLihatChat({ judul: s.label, sub: `${Number(s.lead).toLocaleString("id-ID")} chat`, query: { sumber: s.id } })} data-testid="lihat-chat-sumber"><MessageSquare size={14} /> Lihat {Number(s.lead).toLocaleString("id-ID")} chat</button>
       )}
       <DetailSumberAkuisisi s={s} lap={lap} periode={periode} tanpaJejak onBukaIklan={null}
-        sisipanAtas={meta ? <MetaDetail range={range} periode={periode} jalur={jalur} rank={url.rank} umur={url.umur} kolom={url.kolom} onUbah={onUbah} cache={cacheMeta} versi={versi} onMuat={onMuat} onLihatChat={onLihatChat} /> : null} />
+        sisipanAtas={meta ? <MetaDetail range={range} periode={periode} jalur={jalur} rank={url.rank} kolom={url.kolom} onUbah={onUbah} cache={cacheMeta} versi={versi} onMuat={onMuat} onLihatChat={onLihatChat} /> : null} />
 
       {s.id !== "UNKNOWN" && traffic && (
         <Disclosure id="kreatif" judul="Kreatif & tautan (basis label CRM)" ringkas="Lead per kreatif/link dan nilai per lead — analisis legacy; bukan atribusi campaign">
