@@ -11,6 +11,7 @@
 // pemanggil TIDAK menyangka itu unik per unit. Field yang genuinely per-unit (foto, plan, evidence, BOM, QC,
 // custody) SELALU difilter lewat runId/unitId spesifik unit ini — tidak pernah "milik order", mencegah
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
+import { bahanBuktiBerlaku, pemakaianBuktiSah } from "./pemakaianBuktiSah.js";
 import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, milestoneOfRun, minutesBetween, nameOf, stepStatuses, warningsOf, cornerAndLifecycleOf } from "./productionExperienceReadService.js";
 import { milestoneOf, receivedBasisOf } from "../lib/domain/workshopMilestone.js";
 import { loadWorkshopTimelines } from "./workshopTimelineService.js";
@@ -95,11 +96,11 @@ async function loadPickup(prisma, unitId) {
 // Terpakai = jumlah yang DICATAT PIC di bukti tahap (6/7/10, payload.materials); Sisa = diserahkan − terpakai − waste − retur;
 // Waste/Retur = pergerakan stok WASTE/RETURN yang ditautkan ke unit ini oleh Gudang. consumedQty (lama) = reservasi sudah
 // dikonsumsi saat Gudang menyerahkan (BUKAN pemakaian aktual) — dipertahankan untuk kompatibilitas.
-export function usedQtyByMaterial(evidence) {
+export function usedQtyByMaterial(evidence, sah = null) {
   const m = new Map();
   for (const e of evidence || []) {
     if (![6, 7, 10].includes(e.stepNo)) continue;
-    for (const l of e.payload?.materials || []) m.set(l.materialId, (m.get(l.materialId) || 0) + Number(l.qty || 0));
+    for (const l of bahanBuktiBerlaku(e, sah)) m.set(l.materialId, (m.get(l.materialId) || 0) + Number(l.qty || 0)); // bukti non-ADMIN: hanya yang sudah diverifikasi
   }
   return m;
 }
@@ -107,7 +108,9 @@ export function usedQtyByMaterial(evidence) {
 async function loadMaterials(prisma, plan, { evidence = [], unitId = null } = {}) {
   if (!plan) return { lines: [], shortageOpen: false, shortageItems: [] };
   const materialIds = [...new Set(plan.bomLines.map((l) => l.materialId))];
-  const usedBy = usedQtyByMaterial(evidence);
+  const runIds = [...new Set((evidence || []).filter((e) => e.payload?.materialsMenungguVerifikasi).map((e) => e.runId).filter(Boolean))];
+  const sah = new Map(); for (const rid of runIds) for (const [k, v] of await pemakaianBuktiSah(prisma, rid)) sah.set(k, v);
+  const usedBy = usedQtyByMaterial(evidence, sah);
   const adjustments = unitId && materialIds.length
     ? await prisma.stockMovement.findMany({ where: { unitId, materialId: { in: materialIds }, type: { in: ["WASTE", "RETURN"] } }, select: { materialId: true, type: true, qty: true } })
     : [];

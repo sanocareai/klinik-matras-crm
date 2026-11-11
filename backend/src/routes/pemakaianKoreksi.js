@@ -21,7 +21,7 @@ import { pratinjauPosting } from "../services/postingPratinjau.js";
 import { daftarPengaman, tautkanSO, buatMasterBertautan, batalkanTautan, nyatakanCatatan, batalkanPernyataan } from "../services/pengamanHistorisPascaSO.js";
 import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
 import { pratinjauPerubahan, terapkanPerubahanPemakaian } from "../services/perubahanPemakaianUnit.js";
-import { gerbangPerubahanPemakaian, daftarPengajuan, riwayatPengajuan, verifikasiPemakaian, tolakPemakaian, batalkanPemakaian } from "../services/pengajuanPemakaian.js";
+import { gerbangPerubahanPemakaian, daftarPengajuan, riwayatPengajuan, verifikasiPemakaian, tolakPemakaian, batalkanPemakaian, ubahPengajuan, buktiTerverifikasi } from "../services/pengajuanPemakaian.js";
 import { adminBahan } from "../services/peranAdminBahan.js";
 
 export const pemakaianKoreksiRouter = express.Router();
@@ -183,6 +183,13 @@ pemakaianKoreksiRouter.post("/pengajuan-pemakaian/verifikasi", tulisBahan, async
 });
 pemakaianKoreksiRouter.post("/pengajuan-pemakaian/tolak", tulisBahan, async (req, res) => {
   try { res.json(await tolakPemakaian(prisma, req.user, { ids: req.body?.ids ?? [], alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
+});
+// Ubah pemakaian (Owner, Nov 2026): tim produksi/QC — belum diverifikasi = langsung diubah; sudah diverifikasi = perubahan diajukan untuk verifikasi ulang ADMIN.
+pemakaianKoreksiRouter.post("/pengajuan-pemakaian/:id/ubah", requireAnyPermission(P.UNIT_MATERIAL_WRITE, P.UNIT_STAGE_WRITE), wajibUuid(), async (req, res) => {
+  try { res.json(await ubahPengajuan(prisma, req.user, { id: req.params.id, baris: req.body?.baris ?? null, qty: req.body?.qty ?? null, satuan: req.body?.satuan, note: req.body?.note, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.get("/pengajuan-pemakaian/terverifikasi", bacaPengajuan, async (req, res) => {
+  try { if (!req.query.runId) return res.status(400).json({ error: "runId wajib", code: "RUN_WAJIB" }); res.set("Cache-Control", "no-store"); res.json({ pengajuan: await buktiTerverifikasi(prisma, String(req.query.runId)) }); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/pengajuan-pemakaian/:id/batalkan", requireAnyPermission(P.UNIT_MATERIAL_WRITE, P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try { res.json(await batalkanPemakaian(prisma, req.user, { id: req.params.id, alasan: req.body?.alasan })); } catch (e) { handleErr(e, res); }

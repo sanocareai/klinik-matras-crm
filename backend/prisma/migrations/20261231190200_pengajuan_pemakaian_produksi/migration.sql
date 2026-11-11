@@ -22,7 +22,7 @@ CREATE TABLE "pengajuan_pemakaian_produksi" (
   "hasil" JSONB,
   "idempotency_key" TEXT NOT NULL,
   CONSTRAINT "pengajuan_pemakaian_produksi_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "ppp_jalur" CHECK ("jalur" IN ('UNIT_BAHAN','PERUBAHAN','RUN_V2')),
+  CONSTRAINT "ppp_jalur" CHECK ("jalur" IN ('UNIT_BAHAN','PERUBAHAN','RUN_V2','BUKTI_V2')),
   CONSTRAINT "ppp_status" CHECK ("status" IN ('DIAJUKAN','DITAHAN','DISETUJUI','DITOLAK','DIBATALKAN')),
   CONSTRAINT "ppp_pemutus_beda" CHECK ("diputuskan_oleh" IS NULL OR "status" IN ('DIBATALKAN','DITAHAN') OR "diputuskan_oleh" <> "diajukan_oleh")
 );

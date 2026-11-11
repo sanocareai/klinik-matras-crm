@@ -15,6 +15,13 @@ async function tokenVerifikator() {
 const json = (x) => JSON.parse(JSON.stringify(x));
 
 async function jadikanLangsung(baseUrl, r) {
+  // Jawaban TAHAP V2 (bukti tahap 6/7/10 non-ADMIN): tahap sudah selesai; pengajuan bahannya langsung diverifikasi, jawaban tahap dikembalikan apa adanya.
+  if (r.status === 200 && r.body?.menungguVerifikasi && r.body?.pengajuanId && !r.body?.pengajuan) {
+    const admin = makeClient(baseUrl, await tokenVerifikator());
+    const v = await admin.post("/api/production/pengajuan-pemakaian/verifikasi", { item: [{ id: r.body.pengajuanId }] });
+    if (v.body?.hasil?.[0]?.status !== "DISETUJUI") throw new Error("verifikasi otomatis bukti tahap gagal: " + JSON.stringify(v.body));
+    return r;
+  }
   if (!(r.status === 202 || r.status === 200) || !r.body?.menungguVerifikasi || !r.body?.pengajuan?.id) return r;
   const p = r.body.pengajuan;
   const admin = makeClient(baseUrl, await tokenVerifikator());

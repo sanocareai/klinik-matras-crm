@@ -14,6 +14,7 @@ import {
 import { resumeWork } from "../services/productionResumeService.js";
 import { confirmBuildCorner, recordBuildMaterials, requestBuildReworkMaterial, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
 import { gerbangBahanRunV2 } from "../services/pengajuanPemakaian.js";
+import { adminBahan } from "../services/peranAdminBahan.js";
 import {
   getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setQcGateDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
@@ -353,6 +354,7 @@ productionExperienceRouter.post("/runs/:runId/steps/:stepNo", requirePermission(
     res.json(await recordProductionStep(prisma, {
       runId: req.params.runId, stepNo: Number(req.params.stepNo), actorId: req.user.id, idempotencyKey: idem(req),
       expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, payload: req.body?.payload ?? {}, media: req.body?.media ?? [],
+      pemakaianMenunggu: !adminBahan(req.user), pengaju: req.user, // aturan ADMIN: bahan di bukti non-ADMIN = pengajuan (tahap tetap selesai)
     }));
   } catch (err) { handleErr(err, res); }
 });

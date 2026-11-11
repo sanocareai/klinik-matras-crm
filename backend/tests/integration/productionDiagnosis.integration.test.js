@@ -10,6 +10,7 @@ import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
 let server;
@@ -46,7 +47,7 @@ async function world() {
     materials.push(m);
   }
   const service = await testPrisma.serviceCatalog.findFirstOrThrow({ where: { active: true } });
-  const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
+  const c = (u) => ({ ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) });
   return { lead: c(lead), nadya: c(nadya), corner: c(corner), otherWorker: c(otherWorker), wh: c(wh), driver: c(driver), wc: workCenter.id, nadyaOp, cornerOp, rcv, materials, service };
 }
 

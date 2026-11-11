@@ -5,6 +5,7 @@
 //   Order BARU NEW-QA-201 di Aplikasi Meja: PIC Meja = Nadya QA, PIC Bahan = Operator QA, Gudang sudah menyerahkan BUSA 3 + LATEX 2.
 // Menulis OUT/tokens.json dan OUT/ids.json.
 import "../../backend/tests/integration/setup/env.js";
+import "../../backend/tests/integration/setup/productionEvidenceTmpEnv.js"; // foto bukti ke folder sementara (bukan penyimpanan nyata)
 import fs from "node:fs"; import path from "node:path"; import { randomUUID } from "node:crypto";
 import { testPrisma, truncateAll } from "../../backend/tests/integration/setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "../../backend/tests/integration/setup/fixtures.js";
@@ -88,5 +89,28 @@ await api("admin", "POST", `/units/${id.u102}/materials`, { materialId: latex.id
 const v = await api("admin2", "POST", "/production/pengajuan-pemakaian/verifikasi", { item: [{ id: p2.pengajuan.id }] });
 if (v.hasil[0].status !== "DITAHAN") throw new Error("seed: pengajuan kedua seharusnya DITAHAN: " + JSON.stringify(v));
 id.p1 = p1.pengajuan.id; id.p2 = p2.pengajuan.id;
+// Order BARU divan NEW-QA-202: PIC Meja Nadya mencatat tahap 6 DENGAN bahan (tanpa PIC Bahan) → bukti tersimpan, tahap selesai, jumlah = pengajuan BUKTI_V2.
+const ord2 = await testPrisma.order.create({ data: { customerId: cust.id, orderNumber: "NEW-QA-202", value: 3_000_000, category: "BARU", status: "PROCESSING", productLine: "DIVAN", productType: "DIVAN_UTAMA", items: { create: [{ layananName: "Divan Custom", harga: 3_000_000 }] } } });
+const u202 = await testPrisma.unit.create({ data: { unitCode: "NEW-QA-202-U1", orderId: ord2.id, seq: 1, status: "RECEIVED", merk: "Custom", ukuran: "160x200" } });
+id.u202 = u202.id;
+for (const key of [V2_FLAGS.PRODUCTION_WRITER, V2_FLAGS.PRODUCTION_READER]) {
+  const data = { enabled: true, scope: "GLOBAL", config: { unitIds: [u201.id, u202.id] }, reason: "QA pengajuan pemakaian" };
+  await testPrisma.v2FeatureFlag.upsert({ where: { key }, create: { key, ...data }, update: data });
+}
+const plan2 = await api("lead", "POST", `${V2}/plans`, { unitId: u202.id, productionDate: tgl, stationCode: "TABLE_2", priority: 0, workCenterId: wc.id, operatorId: op.nadya.id, cornerOperatorId: op.corner.id });
+id.run202 = (await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: u202.id } })).id;
+const kartu2 = () => api("lead", "GET", `${V2}/runs/${id.run202}/card`);
+await api("lead", "POST", `${V2}/runs/${id.run202}/build/corner`, { expectedRevision: (await kartu2()).revision, required: true });
+const pl2 = await api("lead", "GET", `${PL}/plans/${plan2.planId}`);
+const bom2 = await api("lead", "POST", `${PL}/plans/${plan2.planId}/bom`, { lines: [{ materialId: busa.id, qty: 3 }], expectedRevision: pl2.revision });
+await api("nadya", "POST", `${PL}/plans/${plan2.planId}/reserve`, { expectedRevision: bom2.revision });
+const mr2 = await api("nadya", "POST", `${PL}/plans/${plan2.planId}/material-request`, {});
+await api("nadya", "POST", `${PL}/material-requests/${mr2.issueId}/pick`, { expectedRevision: 1 });
+await api("nadya", "POST", `${V2}/runs/${id.run202}/steps/6`, { expectedRevision: (await kartu2()).revision, workCenterId: wc.id, payload: {}, media: [] });
+const fd = new FormData(); fd.append("runId", id.run202); fd.append("files", new Blob([Buffer.from("foto-qa-" + Date.now())], { type: "image/jpeg" }), "a.jpg");
+const up = await (await fetch(API + `${V2}/evidence/upload`, { method: "POST", headers: { Authorization: `Bearer ${T.nadya.token}` }, body: fd })).json();
+const s6 = await api("nadya", "POST", `${V2}/runs/${id.run202}/steps/6`, { expectedRevision: (await kartu2()).revision, workCenterId: wc.id, payload: { note: "Rangka divan", materials: [{ materialId: busa.id, qty: 1 }] }, media: up.items.map((i) => i.url) });
+if (!s6.menungguVerifikasi) throw new Error("seed: tahap 6 seharusnya mengajukan pemakaian: " + JSON.stringify(s6));
+id.p202 = s6.pengajuanId;
 fs.writeFileSync(path.join(OUT, "ids.json"), JSON.stringify(id, null, 2));
 console.log(`[qa-pp] server siap di http://127.0.0.1:${PORT} — DB ${process.env.TEST_DATABASE_URL.split("/").pop()}`);

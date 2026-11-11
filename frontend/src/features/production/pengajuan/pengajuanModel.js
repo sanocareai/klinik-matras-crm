@@ -12,7 +12,7 @@ export const adminBahanSaatIni = (roles = peranSaatIni()) => roles.includes("ADM
 export const menunggu = (hasil) => !!hasil?.menungguVerifikasi;
 
 export const STATUS_TEKS = { DIAJUKAN: "Menunggu verifikasi ADMIN", DITAHAN: "Ditahan — perlu diperiksa ADMIN", DISETUJUI: "Disahkan", DITOLAK: "Ditolak", DIBATALKAN: "Dibatalkan" };
-export const JALUR_TEKS = { UNIT_BAHAN: "Catat pemakaian", PERUBAHAN: "Perubahan pemakaian", RUN_V2: "Bahan pekerjaan (Aplikasi Meja)" };
+export const JALUR_TEKS = { UNIT_BAHAN: "Catat pemakaian", PERUBAHAN: "Perubahan pemakaian", RUN_V2: "Bahan pekerjaan (Aplikasi Meja)", BUKTI_V2: "Bahan di bukti tahap (Aplikasi Meja)" };
 export const HASIL_TEKS = { DISETUJUI: "Disahkan — stok & HPP diperbarui", DITAHAN: "Ditahan — dasar berubah atau pemeriksaan gagal", GAGAL: "Tidak diproses" };
 
 const angka = (v) => { const n = Number(v); return Number.isFinite(n) ? (Math.round(n * 10000) / 10000).toLocaleString("id-ID", { maximumFractionDigits: 4 }) : "—"; };
@@ -30,5 +30,7 @@ export function teksRingkas(p) {
 export const waktuSingkat = (t) => { try { return new Date(t).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }); } catch { return "—"; } };
 /** Alasan tahan yang bisa dibaca ADMIN. */
 export const alasanTahan = (p) => (p.alasanTahan?.beda || []).map((b) => b.pesan).filter(Boolean);
-export const butuhKonfirmasi = (p) => p.status === "DITAHAN";
+// Alasan tertulis hanya untuk perubahan HARGA yang sudah ditampilkan (DITAHAN). Perbedaan keras (satuan, ganda, sumber) → tolak lalu ajukan ulang.
+export const bedaKeras = (p) => (p.alasanTahan?.beda || []).some((b) => b.keras);
+export const butuhKonfirmasi = (p) => p.status === "DITAHAN" && (p.alasanTahan?.beda || []).some((b) => b.jenis === "HARGA") && !bedaKeras(p);
 export const butuhKonfirmasiHarga = (p) => !!p.hargaAmbigu;

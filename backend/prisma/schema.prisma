@@ -12118,7 +12118,7 @@ model UnitHppKonfirmasi {
 /// (eksekusi memakai jalur tulis lama dengan pelaku = pengaju). Isi immutable (trigger ppp_jaga). Lihat services/pengajuanPemakaian.js.
 model PengajuanPemakaianProduksi {
   id              String    @id @default(uuid()) @db.Uuid
-  jalur           String    @db.VarChar(16) // UNIT_BAHAN | PERUBAHAN | RUN_V2
+  jalur           String    @db.VarChar(16) // UNIT_BAHAN | PERUBAHAN | RUN_V2 | BUKTI_V2 (bahan di bukti tahap 6/7/10 Aplikasi Meja)
   unitId          String    @map("unit_id") @db.Uuid
   unit            Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
   runId           String?   @map("run_id")

@@ -91,17 +91,19 @@ test("P3. Tolak & batal tidak mengubah stok/HPP; pengajuan final tidak bisa dive
   assert.equal(await gerak(w), 0); assert.equal(await saldo(w.A.id), 100); assert.equal(await saldo(w.B.id), 50);
 });
 
-test("P4. Dasar berubah (bahan yang sama sudah dicatat lagi pada unit) → DITAHAN, tidak disahkan diam-diam; disahkan hanya dengan konfirmasi beralasan", async () => {
+test("P4. Dasar berubah (bahan yang sama sudah dicatat lagi pada unit) → DITAHAN; perbedaan GANDA KERAS: alasan tertulis tidak bisa mengesahkannya — tolak lalu ajukan ulang", async () => {
   const w = await dunia();
   const p = await ajukan(w.o, w, w.A, 4);
   assert.equal((await catat(w.a, w, w.A, 4)).status, 201, "ADMIN mencatat bahan yang sama langsung (indikasi ganda)");
-  const v = await verif(w.a2, [{ id: p.id }]); assert.equal(v.body.hasil[0].status, "DITAHAN"); assert.equal(v.body.hasil[0].beda[0].jenis, "GANDA");
+  const v = await verif(w.a2, [{ id: p.id }]); assert.equal(v.body.hasil[0].status, "DITAHAN"); assert.equal(v.body.hasil[0].beda[0].jenis, "GANDA"); assert.equal(v.body.hasil[0].beda[0].keras, true);
   assert.equal(await gerak(w), 1, "ditahan = tidak ada pergerakan baru");
   const d = (await w.a2.get(`${AJU}?status=DITAHAN`)).body.pengajuan; assert.deepEqual(d.map((x) => x.id), [p.id]); assert.equal(d[0].alasanTahan.beda[0].jenis, "GANDA");
-  const lagi = await verif(w.a2, [{ id: p.id, konfirmasi: "ok" }]); assert.equal(lagi.body.hasil[0].status, "DITAHAN", "konfirmasi < 5 karakter ditolak");
-  const ok = await verif(w.a2, [{ id: p.id, konfirmasi: "Dicek: dua kali pemakaian nyata (lapis atas & bawah)" }]); assert.equal(ok.body.hasil[0].status, "DISETUJUI", JSON.stringify(ok.body));
+  const lagi = await verif(w.a2, [{ id: p.id, konfirmasi: "Dicek: dua kali pemakaian nyata (lapis atas & bawah)" }]);
+  assert.equal(lagi.body.hasil[0].status, "DITAHAN", "alasan tertulis bukan jalan melewati indikasi ganda"); assert.equal(await gerak(w), 1);
+  assert.equal((await w.a2.post(`${AJU}/tolak`, { ids: [p.id], alasan: "Indikasi ganda — ajukan ulang bila memang dua pemakaian" })).body.hasil[0].status, "DITOLAK");
+  const ulang = await ajukan(w.o, w, w.A, 4); // diajukan ulang dengan dasar terbaru (sudah melihat pemakaian 4 kg dari ADMIN)
+  const ok = await verif(w.a2, [{ id: ulang.id }]); assert.equal(ok.body.hasil[0].status, "DISETUJUI", JSON.stringify(ok.body));
   assert.equal(await gerak(w), 2); assert.equal(await saldo(w.A.id), 92);
-  const st = await testPrisma.pengajuanPemakaianProduksi.findUnique({ where: { id: p.id } }); assert.match(st.alasanKeputusan, /Dasar berubah, diperiksa: Dicek/);
 });
 
 test("P5. Harga Berlaku berubah sejak diajukan → DITAHAN (HARGA); saldo habis saat eksekusi → DITAHAN dengan alasan pemeriksaan; massal: hasil per pengajuan", async () => {
@@ -227,4 +229,18 @@ test("P11. Kunci idempotensi sama dengan isian berbeda → 409 IDEMPOTENCY_KEY_R
   await ajukan(w.o, w, w.A, 2, k);
   const beda = await catat(w.o, w, w.A, 3, k); assert.equal(beda.status, 409, JSON.stringify(beda.body)); assert.equal(beda.body.code, "IDEMPOTENCY_KEY_REUSED");
   assert.equal(await testPrisma.pengajuanPemakaianProduksi.count(), 1);
+});
+
+test("P12. UBAH pemakaian unit yang BELUM diverifikasi: tim QC/produksi ubah langsung (tanpa ADMIN dulu); isi baru tetap diperiksa; yang SUDAH sah diubah dari tabel pemakaian (verifikasi ulang)", async () => {
+  const w = await dunia(); const qc = await createTestUser({ roles: ["QC_LEAD"] }); const q = makeClient(server.baseUrl, qc.token);
+  const p = await ajukan(w.o, w, w.A, 5);
+  assert.equal((await q.post(`${AJU}/${p.id}/ubah`, { qty: 3, alasan: "x" })).status, 400, "alasan wajib");
+  const kebanyakan = await q.post(`${AJU}/${p.id}/ubah`, { qty: 500, alasan: "Salah ketik jumlah" }); assert.ok(kebanyakan.status >= 400 && kebanyakan.status < 500, JSON.stringify(kebanyakan.body)); assert.equal(await gerak(w), 0);
+  const u = await q.post(`${AJU}/${p.id}/ubah`, { qty: 3, alasan: "Dihitung ulang: 3 kg" }); assert.equal(u.status, 200, JSON.stringify(u.body));
+  assert.equal(u.body.menungguVerifikasi, true); assert.equal((await testPrisma.pengajuanPemakaianProduksi.findUnique({ where: { id: p.id } })).status, "DIBATALKAN");
+  assert.equal(await gerak(w), 0, "ubah tidak mengubah stok");
+  const ev = await testPrisma.pengajuanPemakaianProduksiEvent.findMany({ where: { pengajuanId: p.id }, orderBy: { createdAt: "asc" } }); assert.deepEqual(ev.map((e) => e.kind), ["DIAJUKAN", "DIUBAH"]);
+  const v = await verif(w.a, [{ id: u.body.pengajuan.id }]); assert.equal(v.body.hasil[0].status, "DISETUJUI", JSON.stringify(v.body));
+  assert.equal(await saldo(w.A.id), 97, "yang berlaku = isi terbaru (3 kg)");
+  const sudah = await q.post(`${AJU}/${u.body.pengajuan.id}/ubah`, { qty: 2, alasan: "Ubah sesudah sah" }); assert.equal(sudah.status, 409); assert.equal(sudah.body.code, "UBAH_LEWAT_TABEL");
 });

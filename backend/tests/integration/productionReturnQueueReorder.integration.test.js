@@ -9,6 +9,7 @@ import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixture
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
 let server;
@@ -50,7 +51,7 @@ async function world() {
   const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-PRQ-${++seq}` } });
   const [rcv, fg] = [await loc("RCV", "RECEIVING_AREA"), await loc("FG", "FINISHED_GOODS_AREA")];
   const service = await testPrisma.serviceCatalog.findUniqueOrThrow({ where: { code: "UPG_FONDASI_LAPISAN" } });
-  const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
+  const c = (u) => ({ ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) });
   const fondasi = await createTestMaterial({ name: `Pocket Spring ${++seq}` });
   const lapisan = await createTestMaterial({ name: `Latex D80 ${++seq}` });
   await seedBalance(fondasi.id, 10);

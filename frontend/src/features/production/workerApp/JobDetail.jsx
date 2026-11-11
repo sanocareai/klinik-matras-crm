@@ -13,6 +13,7 @@ import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
 import MaterialRecordSheet from "./materialSheet.jsx";
 import PemakaianTertunda from "@/features/production/pengajuan/PemakaianTertunda.jsx";
+import { kabarkanPengajuan } from "@/features/production/pengajuan/pengajuanModel.js";
 import BomPlanSheet from "./BomPlanSheet.jsx";
 import ReworkMaterialSheet from "./ReworkMaterialSheet.jsx";
 import MaterialChain from "./MaterialChain.jsx";
@@ -212,7 +213,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
               {card.materialPic && <PicBahanInfo card={card} />}
               <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} onChanged={loadCard} showAnalysis={card.track !== "BUILD"} /></Section>
               <Section title="Bahan" testid="section-bahan" aside={card.shortage ? <Badge variant="red">Bahan kurang</Badge> : mat ? <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[mat.tone] || TONE.neutral}`}>{mat.label}</span> : null}>
-                <div className="mb-3 empty:hidden"><PemakaianTertunda runId={card.runId} besar /></div>
+                <div className="mb-3 empty:hidden"><PemakaianTertunda runId={card.runId} besar denganTerverifikasi /></div>
                 {card.shortage && <div className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><p className="m-0 font-bold" data-testid="delay-status">{delayStatusText("MATERIAL_SHORTAGE")}</p><p className="m-0 mt-0.5 text-[12.5px]" data-testid="resume-who">{resumeInfo({ source: "SHORTAGE", reason: "MATERIAL_SHORTAGE", canResume: false }).text}</p><ul className="m-0 mt-1 list-disc pl-5">{card.shortage.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
                 {card.bom?.length ? <ul className="m-0 list-none space-y-1.5 p-0" data-testid="bom-list">{card.bom.map((b) => <li key={b.id} className="flex items-center justify-between gap-2 rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{b.name}{b.supplemental ? " (tambahan)" : ""}</span><span className="shrink-0 tabular-nums text-ink2">{b.qty} {b.uom}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">{card.materialStatus?.label || "Rencana bahan belum dibuat"} — rencana bahan muncul setelah diagnosis.</p>}
                 {canDelay && <button type="button" data-testid="open-delay" onClick={() => setSheet("delay")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
@@ -258,7 +259,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
         </div></div>
       )}
 
-      {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
+      {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); if (result.menungguVerifikasi) kabarkanPengajuan(); setNotice(result.menungguVerifikasi ? result.pesanPemakaian : result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
       {sheet === "rework" && card && <ReworkMaterialSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); setNotice(result ? `Permintaan bahan rework terkirim ke Gudang (${result.supplementalIssue?.issueNumber || "tanpa nomor"}).` : "Data berubah — dimuat ulang. Periksa lalu ajukan lagi."); await afterChange(); }} />}
       {sheet === "bom" && card && <BomPlanSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); setNotice(result ? `Rencana bahan tersimpan (rencana rev ${result.revision}).` : "Rencana bahan sudah diubah pihak lain — data dimuat ulang. Periksa lalu simpan ulang."); await afterChange(); }} />}
       {sheet === "material" && card && <MaterialRecordSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); if (result) setNotice(result.menungguVerifikasi ? (card.track === "BUILD" ? "Racikan tersimpan. Pemakaian bahan dilaporkan — menunggu verifikasi ADMIN (stok & HPP belum berubah). Pekerjaan tetap bisa dilanjutkan." : "Pemakaian bahan dilaporkan — menunggu verifikasi ADMIN (stok & HPP belum berubah). Pekerjaan tetap bisa dilanjutkan.") : result.changed === false ? "Tidak ada perubahan." : card.track === "BUILD" ? `Racikan & bahan tersimpan (versi ${result.version}).` : `Bahan dipakai tersimpan (versi ${result.version}).`); await afterChange(); }} />}

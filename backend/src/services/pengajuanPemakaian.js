@@ -16,6 +16,7 @@ import { unitSelesai } from "./pembetulanBahanUnit.js";
 import { aturanUntukBahan } from "../lib/domain/satuanPakaiBahan.js";
 import { muatAturanSatuanPakai } from "./satuanPakaiService.js";
 import { prisma as prismaUtama } from "../db.js";
+import { pemakaianBuktiSah, bahanBuktiBerlaku } from "./pemakaianBuktiSah.js";
 
 export class PengajuanError extends Error {
   constructor(message, statusCode = 400, code = null, detail = null) { super(message); this.statusCode = statusCode; this.code = code; this.detail = detail; }
@@ -30,7 +31,7 @@ const sha = (x) => crypto.createHash("sha256").update(stabil(x)).digest("hex");
 const kunciDipakaiLain = () => new PengajuanError("Idempotency-Key ini sudah dipakai untuk isian yang berbeda", 409, "IDEMPOTENCY_KEY_REUSED");
 const kunciEksekusi = (id) => `pengajuan-${id}`;
 export const AKTIF = ["DIAJUKAN", "DITAHAN"];
-export const JALUR = Object.freeze({ UNIT_BAHAN: "Catat pemakaian unit", PERUBAHAN: "Perubahan pemakaian unit", RUN_V2: "Bahan pekerjaan (Aplikasi Meja)" });
+export const JALUR = Object.freeze({ UNIT_BAHAN: "Catat pemakaian unit", PERUBAHAN: "Perubahan pemakaian unit", RUN_V2: "Bahan pekerjaan (Aplikasi Meja)", BUKTI_V2: "Bahan di bukti tahap (Aplikasi Meja)" });
 
 /** Pengguna (id, nama, peran) untuk menjalankan jalur lama atas nama pengaju. */
 async function muatPengguna(db, id) {
@@ -57,7 +58,7 @@ async function hitungDasar(db, { jalur, unitId, runId, materialIds, tanggal = nu
       pakaiUnit: r4(-Number(unitNet._sum.qty ?? 0)), gerakUnit: unitNet._count._all });
   }
   let run = null;
-  if (jalur === "RUN_V2" && runId) {
+  if ((jalur === "RUN_V2" || jalur === "BUKTI_V2") && runId) {
     const [rec, plan] = await Promise.all([
       db.productionBuildMaterialRecord.findFirst({ where: { runId }, orderBy: { version: "desc" }, select: { version: true } }),
       db.productionRunPlan.findUnique({ where: { runId }, select: { id: true } }),
@@ -84,7 +85,9 @@ function bandingDasar(a, b) {
     if (!sama(a.run?.diserahkan ?? {}, b.run?.diserahkan ?? {})) beda.push({ jenis: "SUMBER", pesan: "Jumlah bahan yang diserahkan Gudang untuk pekerjaan ini berubah sejak diajukan" });
     if ((b.run?.returDiterima ?? []).length) beda.push({ jenis: "SUMBER", pesan: "Retur sisa bahan pekerjaan ini sudah diterima Gudang — periksa manual sebelum mengubah pemakaian" });
   }
-  return beda;
+  // Hanya perubahan HARGA yang boleh disahkan dengan alasan tertulis (sesudah ditampilkan). Satuan, bahan, catatan ganda, dan sumber (penyerahan/retur Gudang) KERAS:
+  // alasan bukan jalan melewatinya — tolak lalu ajukan ulang dengan dasar terbaru.
+  return beda.map((b) => (b.jenis === "HARGA" ? b : { ...b, keras: true, pesan: `${b.pesan} — tidak bisa disahkan dengan alasan; tolak lalu ajukan ulang dengan dasar terbaru` }));
 }
 
 async function catatEvent(tx, pengajuanId, kind, actorId, reason = null, detail = null) {
@@ -120,6 +123,61 @@ export async function ajukanPemakaian(prisma, user, { jalur, unitId, runId = nul
   }
 }
 
+/** Bukti tahap 6/7/10 dari non-ADMIN: pengajuan dibuat di TRANSAKSI YANG SAMA dengan bukti (bukti & tahap tersimpan; jumlah bahan menunggu verifikasi). */
+export async function ajukanBuktiDalamTx(tx, user, { run, evidence, stepNo, materials }) {
+  wajib(user?.id, "Pengaju wajib ada", "PENGAJU_TIDAK_ADA", 401);
+  const mats = materials.map((m) => ({ materialId: m.materialId, qty: r4(m.qty) }));
+  const ids = [...new Set(mats.map((m) => m.materialId))];
+  const waktu = new Date();
+  const dasar = await hitungDasar(tx, { jalur: "BUKTI_V2", unitId: run.unitId, runId: run.id, materialIds: ids, waktu });
+  const info = new Map((await tx.material.findMany({ where: { id: { in: ids } }, select: { id: true, code: true, name: true, unit: true } })).map((m) => [m.id, m]));
+  const unit = await tx.unit.findUnique({ where: { id: run.unitId }, select: { unitCode: true, order: { select: { orderNumber: true } } } });
+  const p = await tx.pengajuanPemakaianProduksi.create({ data: { jalur: "BUKTI_V2", unitId: run.unitId, runId: run.id, materialIds: ids, masukan: { evidenceId: evidence.id, stepNo, materials: mats },
+    ringkasan: { unitKode: unit?.unitCode ?? null, orderNomor: unit?.order?.orderNumber ?? null, tahap: stepNo, baris: mats.map((m) => ({ materialId: m.materialId, kode: info.get(m.materialId)?.code ?? null, bahan: info.get(m.materialId)?.name ?? null, qty: m.qty, satuanStok: info.get(m.materialId)?.unit ?? null })) },
+    dasar, sidikDasar: sha(dasar), hargaAmbigu: false, diajukanOleh: user.id, peranPengaju: rolesOf(user), diajukanPada: waktu, idempotencyKey: `bukti-${evidence.id}` } });
+  await catatEvent(tx, p.id, "DIAJUKAN", user.id, null, { evidenceId: evidence.id, stepNo });
+  return p;
+}
+
+/**
+ * Eksekusi BUKTI_V2 dalam SATU transaksi: kunci pengajuan (harus aktif) → tolak bila retur sisa run SUDAH diterima Gudang (tidak pernah mengubah retur diterima diam-diam)
+ * → tandai DISETUJUI (pemakaian kini sah) → periksa total pemakaian ≤ yang diserahkan → retur sisa PENDING disesuaikan. Stok berubah saat Gudang menerima retur (tepat sekali).
+ */
+async function eksekusiBukti(prisma, p, pengaju, keputusan) {
+  const k = kunciEksekusi(p.id);
+  const replay = async () => { const c = await prisma.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: pengaju.id, idempotencyKey: k } } }); return c?.status === "APPLIED" ? { ok: true, hasil: c.response ?? {}, ditandai: true, ulang: true } : null; };
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const ada = await tx.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: pengaju.id, idempotencyKey: k } } });
+      if (ada?.status === "APPLIED") return { ok: true, hasil: ada.response ?? {}, ditandai: true, ulang: true };
+      const cmd = await tx.v2Command.create({ data: { domain: "PRODUCTION", actorId: pengaju.id, idempotencyKey: k, commandType: "VERIFY_EVIDENCE_USAGE", aggregateType: "ProductionRun", aggregateId: p.runId, requestHash: sha({ pengajuan: p.id }) } });
+      await penjagaAktif(p.id)(tx);
+      const run = await tx.productionRun.findUnique({ where: { id: p.runId }, include: { unit: { select: { unitCode: true } } } });
+      wajib(run, "Pekerjaan tidak ditemukan", "RUN_TIDAK_ADA", 404);
+      const rets = await tx.productionMaterialReturn.findMany({ where: { runId: p.runId }, include: { material: { select: { code: true } } } });
+      for (const x of rets) await lockRowForUpdate(tx, "production_material_returns_v2", x.id);
+      const diterima = (await tx.productionMaterialReturn.findMany({ where: { runId: p.runId, status: { not: "PENDING" } }, include: { material: { select: { code: true } } } }));
+      wajib(!diterima.length, `Retur sisa ${diterima.map((x) => `${x.material.code} ${Number(x.receivedQty ?? x.qty)}`).join(", ")} sudah DITERIMA Gudang sebelum pemakaian ini diverifikasi. Pemakaian tidak mengubah retur yang sudah diterima — tolak pengajuan ini; selisih fisik dibereskan Gudang (penerimaan kurang/waste) atau lewat koreksi.`, "BUILD_RETUR_SUDAH_DITERIMA", 409);
+      await tx.pengajuanPemakaianProduksi.update({ where: { id: p.id }, data: { status: "DISETUJUI", diputuskanOleh: keputusan.adminId, diputuskanPada: new Date(), alasanKeputusan: keputusan.alasan, hasil: { evidenceId: p.masukan.evidenceId, returDisesuaikan: !!(rets.length || run.currentPhase === "HANDOFF") } } }); // satu kali: status final tidak bisa diperbarui lagi (trigger)
+      // isi pengajuan per bahan tidak melebihi yang diserahkan Gudang (aturan yang sama dengan penyimpanan bukti: per bukti vs total diserahkan)
+      const { issuedQtyByMaterial } = await import("./productionStepCommandService.js");
+      const plan = await tx.productionRunPlan.findUnique({ where: { runId: p.runId }, select: { id: true } });
+      const issued = await issuedQtyByMaterial(tx, plan?.id);
+      for (const l of p.masukan.materials ?? []) { wajib(issued.has(l.materialId), "Bahan tidak lagi termasuk yang diserahkan Gudang untuk pekerjaan ini", "STEP_MATERIAL_NOT_ISSUED", 422); wajib(r4(l.qty) <= r4(issued.get(l.materialId)) + 0.00005, `Jumlah ${r4(l.qty)} melebihi yang diserahkan Gudang (${r4(issued.get(l.materialId))})`, "STEP_MATERIAL_OVER_ISSUED", 422); }
+      let returDisesuaikan = false;
+      if (rets.length || run.currentPhase === "HANDOFF") { const { createLeftoverReturnsInTx } = await import("./productionMaterialReturnService.js"); await createLeftoverReturnsInTx(tx, { run, actorId: pengaju.id, commandId: cmd.id }); returDisesuaikan = true; }
+      const hasil = { evidenceId: p.masukan.evidenceId, returDisesuaikan, retur: returDisesuaikan ? (await tx.productionMaterialReturn.findMany({ where: { runId: p.runId }, select: { materialId: true, qty: true, status: true } })).map((x) => ({ materialId: x.materialId, qty: Number(x.qty), status: x.status })) : [] };
+      await catatEvent(tx, p.id, "DISETUJUI", keputusan.adminId, keputusan.catatan, { hasil, ...keputusan.detail });
+      await tx.v2Command.update({ where: { id: cmd.id }, data: { status: "APPLIED", response: hasil, completedAt: new Date() } });
+      return { ok: true, hasil, ditandai: true };
+    });
+  } catch (e) {
+    if (e?.code === "P2002") { const rp = await replay(); if (rp) return rp; }
+    if (typeof e?.statusCode === "number") return { ok: false, galat: e.message, kode: e.code ?? null };
+    throw e;
+  }
+}
+
 // ───────────────────────────── EKSEKUTOR (jalur tulis lama) ─────────────────────────────
 // Penjaga di DALAM transaksi tulis lama: pengajuan dikunci dan harus masih aktif. Bersama pemeriksaan "sudah dieksekusi" pada Tolak/Batal, verifikasi dan penolakan paralel
 // tidak pernah berakhir dengan status DITOLAK/DIBATALKAN padahal pergerakan sudah tertulis.
@@ -131,8 +189,9 @@ const penjagaAktif = (id) => async (tx) => {
 async function sudahDieksekusi(tx, p) {
   return !!(await tx.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: p.diajukanOleh, idempotencyKey: kunciEksekusi(p.id) } }, select: { id: true } }));
 }
-async function eksekusi(prisma, p, pengaju) {
+async function eksekusi(prisma, p, pengaju, keputusan) {
   const k = kunciEksekusi(p.id); const m = p.masukan; const penjaga = penjagaAktif(p.id);
+  if (p.jalur === "BUKTI_V2") return eksekusiBukti(prisma, p, pengaju, keputusan);
   if (p.jalur === "UNIT_BAHAN") {
     const r = await jalankanCatatPemakaian({ user: pengaju, unitId: p.unitId, body: m.body, kunci: k, waktu: m.waktuBerjalan ? new Date(p.diajukanPada) : null, penjaga });
     if (r.status >= 400) return { ok: false, galat: r.body?.error ?? "Gagal", kode: r.body?.code ?? null };
@@ -184,7 +243,10 @@ async function verifikasiSatu(prisma, admin, { id, konfirmasi = null, konfirmasi
     if (p.hargaAmbigu && alasanH.length < 5) return { tahan: [{ jenis: "HARGA_AMBIGU", pesan: "Harga bahan berubah pada hari pemakaian: tulis alasan dasar harga (min. 5 karakter) untuk mengesahkan." }], p };
     const sekarangDasar = await hitungDasar(tx, { jalur: p.jalur, unitId: p.unitId, runId: p.runId, materialIds: p.materialIds, tanggal: p.masukan?.tanggal ?? null, waktu: p.diajukanPada });
     const beda = bandingDasar(p.dasar, sekarangDasar);
-    if ((beda.length || p.status === "DITAHAN") && alasanK.length < 5) return { tahan: beda.length ? beda : (p.alasanTahan?.beda ?? [{ jenis: "DITAHAN", pesan: "Pengajuan ini ditahan sebelumnya; konfirmasi pemeriksaan dengan alasan." }]), p };
+    // Perbedaan KERAS tidak pernah disahkan dengan alasan. Perbedaan HARGA disahkan hanya bila SUDAH DITAMPILKAN (pengajuan DITAHAN dengan perbedaan yang sama) + alasan tertulis.
+    // Pengajuan yang dulu ditahan karena pemeriksaan eksekusi (saldo, SO, …) dan kini tanpa perbedaan dasar: dijalankan ulang — semua pemeriksaan tetap berjalan.
+    if (beda.some((b) => b.keras)) return { tahan: beda, p };
+    if (beda.length && !(p.status === "DITAHAN" && sama(p.alasanTahan?.beda ?? [], beda) && alasanK.length >= 5)) return { tahan: beda, p };
     return { lanjut: true, p, beda, alasanK, alasanH };
   });
   const tahan = async (pp, beda) => {
@@ -199,7 +261,9 @@ async function verifikasiSatu(prisma, admin, { id, konfirmasi = null, konfirmasi
   if (cek.tahan) return tahan(cek.p, cek.tahan);
   // 2) jalankan jalur lama atas nama pengaju (idempoten)
   const pengaju = await muatPengguna(prisma, cek.p.diajukanOleh);
-  const r = await eksekusi(prisma, cek.p, pengaju);
+  const alasanKeputusan = [catatan, cek.alasanK && cek.beda.length && `Dasar harga berubah, diperiksa: ${cek.alasanK}`, cek.alasanH && `Dasar harga: ${cek.alasanH}`].filter(Boolean).join(" | ").slice(0, 500) || null;
+  const r = await eksekusi(prisma, cek.p, pengaju, { adminId: admin.id, alasan: alasanKeputusan, catatan, detail: { bedaDiperiksa: cek.beda, konfirmasi: cek.alasanK || null, konfirmasiHarga: cek.alasanH || null } });
+  if (r.ok && r.ditandai) return { id, status: "DISETUJUI", ...(r.ulang ? { ulang: true } : {}), hasil: r.hasil };
   if (!r.ok && r.kode === "PENGAJUAN_SUDAH_DIPUTUSKAN") return { id, status: "GAGAL", kode: r.kode, pesan: r.galat };
   if (!r.ok) return tahan(cek.p, [{ jenis: "VALIDASI", kode: r.kode, pesan: `Ditolak pemeriksaan saat eksekusi: ${r.galat}` }]);
   // 3) tandai DISETUJUI (terkunci; verifikasi paralel oleh ADMIN lain sudah menandai → hasil sama, tanpa menulis ulang)
@@ -208,7 +272,7 @@ async function verifikasiSatu(prisma, admin, { id, konfirmasi = null, konfirmasi
     const kini = await tx.pengajuanPemakaianProduksi.findUnique({ where: { id }, select: { status: true, hasil: true } });
     if (kini.status === "DISETUJUI") return kini;
     wajib(AKTIF.includes(kini.status), `Pengajuan berstatus ${kini.status}`, "STATUS_FINAL", 409); // tidak terjadi: penjaga + Tolak/Batal menolak sesudah eksekusi
-    await tx.pengajuanPemakaianProduksi.update({ where: { id }, data: { status: "DISETUJUI", diputuskanOleh: admin.id, diputuskanPada: new Date(), alasanKeputusan: [catatan, cek.alasanK && `Dasar berubah, diperiksa: ${cek.alasanK}`, cek.alasanH && `Dasar harga: ${cek.alasanH}`].filter(Boolean).join(" | ").slice(0, 500) || null, hasil: r.hasil } });
+    await tx.pengajuanPemakaianProduksi.update({ where: { id }, data: { status: "DISETUJUI", diputuskanOleh: admin.id, diputuskanPada: new Date(), alasanKeputusan, hasil: r.hasil } });
     await catatEvent(tx, id, "DISETUJUI", admin.id, catatan, { hasil: r.hasil, bedaDiperiksa: cek.beda, konfirmasi: cek.alasanK || null, konfirmasiHarga: cek.alasanH || null });
   });
   return sudah ? { id, status: "DISETUJUI", ulang: true, hasil: sudah.hasil } : { id, status: "DISETUJUI", hasil: r.hasil };
@@ -337,4 +401,83 @@ export async function gerbangBahanRunV2(prisma, user, input, { kunci, jalankan, 
     masukan: { input: { racikan: input.racikan ?? null, materials: input.materials ?? [], note: input.note ?? null, canExecuteAny: !!input.canExecuteAny } },
     ringkasan: { unitKode: run.unit?.unitCode ?? null, orderNomor: run.unit?.order?.orderNumber ?? null, baris: mats.map((m) => ({ materialId: m.materialId, kode: info.get(m.materialId)?.code ?? null, bahan: info.get(m.materialId)?.name ?? null, qty: Number(m.qty), satuanStok: info.get(m.materialId)?.unit ?? null })), racikan: !!input.racikan, catatan: input.note ?? null } }, { kunci });
   return { langsung: false, menungguVerifikasi: true, ulang: r.ulang, pengajuan: r.pengajuan, runId: run.id };
+}
+
+// ───────────────────────────── UBAH PEMAKAIAN (permintaan Owner, Nov 2026) ─────────────────────────────
+//   1) Pengajuan BELUM diverifikasi (DIAJUKAN/DITAHAN): tim produksi/QC mengubah LANGSUNG — pengajuan lama digantikan pengajuan baru dalam SATU transaksi (riwayat utuh).
+//   2) SUDAH diverifikasi (DISETUJUI): boleh diubah juga — perubahan tersimpan sebagai pengajuan BARU yang menunggu verifikasi ulang ADMIN; angka yang sudah sah tetap
+//      berlaku (stok/HPP tidak berubah) sampai perubahan itu disahkan. Pemakaian unit V1 yang sudah sah diubah dari tabel pemakaian (Ubah jumlah / Ganti bahan).
+//   Semua pemeriksaan (saldo, satuan, penyerahan Gudang, catatan ganda, pengaman SO) tetap dijalankan untuk isi baru.
+const barisBersih = (xs) => (Array.isArray(xs) ? xs : []).map((m) => ({ materialId: String(m?.materialId ?? ""), qty: r4(m?.qty) })).filter((m) => UUID.test(m.materialId) && m.qty > 0);
+
+async function batalkanUntukDiubah(tx, lama, user, alasan, baruId) {
+  await lockRowForUpdate(tx, "pengajuan_pemakaian_produksi", lama.id);
+  const kini = await tx.pengajuanPemakaianProduksi.findUnique({ where: { id: lama.id }, select: { status: true } });
+  wajib(AKTIF.includes(kini.status), `Pengajuan sudah ${kini.status} — muat ulang lalu ubah lagi`, "STATUS_FINAL", 409);
+  wajib(!(await sudahDieksekusi(tx, lama)), "Pengajuan ini sedang diverifikasi ADMIN — tunggu sebentar lalu muat ulang.", "SUDAH_DIEKSEKUSI", 409);
+  await tx.pengajuanPemakaianProduksi.update({ where: { id: lama.id }, data: { status: "DIBATALKAN", diputuskanOleh: user.id, diputuskanPada: new Date(), alasanKeputusan: `Diubah: ${alasan}`.slice(0, 500) } });
+  await catatEvent(tx, lama.id, "DIUBAH", user.id, alasan, { diganti: baruId });
+}
+
+export async function ubahPengajuan(prisma, user, { id, baris = null, qty = null, satuan = undefined, note = undefined, alasan }) {
+  wajib(UUID.test(String(id ?? "")), "id tidak valid", "ID_TIDAK_VALID");
+  const why = String(alasan ?? "").trim(); wajib(why.length >= 5 && why.length <= 500, "Alasan perubahan wajib (5–500 karakter)", "ALASAN_WAJIB");
+  const p = await prisma.pengajuanPemakaianProduksi.findUnique({ where: { id } });
+  wajib(p, "Pengajuan tidak ditemukan", "TIDAK_ADA", 404);
+  const aktif = AKTIF.includes(p.status);
+  wajib(aktif || p.status === "DISETUJUI", `Pengajuan berstatus ${p.status} tidak bisa diubah — ajukan pemakaian baru`, "STATUS_FINAL", 409);
+  const waktu = new Date(); const kunci = `ubah-${p.id}-${crypto.randomUUID()}`;
+
+  if (p.jalur === "UNIT_BAHAN") {
+    wajib(aktif, "Pemakaian ini sudah sah (tercatat di stok). Ubah dari tabel pemakaian unit (Ubah jumlah / Ganti bahan) — perubahan non-ADMIN menunggu verifikasi ADMIN.", "UBAH_LEWAT_TABEL", 409);
+    const body = { ...p.masukan.body, ...(qty != null ? { qty: Number(qty) } : {}), ...(satuan !== undefined ? { satuan } : {}), ...(note !== undefined ? { note } : {}) };
+    const coba = await jalankanCatatPemakaian({ user, unitId: p.unitId, body, kunci: null, cobaSaja: true });
+    if (coba.status >= 400) throw new PengajuanError(coba.body?.error ?? "Isi baru ditolak pemeriksaan", coba.status, coba.body?.code ?? "VALIDASI_GAGAL");
+    const unit = await prisma.unit.findUnique({ where: { id: p.unitId }, select: { status: true } });
+    const tanggal = p.masukan?.tanggal ?? null;
+    const hargaAmbigu = await hargaAmbiguPembetulan(prisma, { unitStatus: unit?.status, materialIds: [body.materialId], tanggal });
+    const dasar = await hitungDasar(prisma, { jalur: p.jalur, unitId: p.unitId, runId: null, materialIds: [body.materialId], tanggal, waktu });
+    const ringkasan = { ...p.ringkasan, baris: (p.ringkasan?.baris ?? []).map((b) => ({ ...b, qty: Number(body.qty), satuanInput: body.satuan ?? b.satuanInput })), catatan: body.note ?? null, diubahDari: p.id };
+    return prisma.$transaction(async (tx) => {
+      const baru = await tx.pengajuanPemakaianProduksi.create({ data: { jalur: p.jalur, unitId: p.unitId, runId: null, materialIds: p.materialIds, masukan: { ...p.masukan, body, diubahDari: p.id }, ringkasan, dasar, sidikDasar: sha(dasar), hargaAmbigu,
+        diajukanOleh: user.id, peranPengaju: rolesOf(user), diajukanPada: waktu, idempotencyKey: kunci } });
+      await batalkanUntukDiubah(tx, p, user, why, baru.id);
+      await catatEvent(tx, baru.id, "DIAJUKAN", user.id, why, { diubahDari: p.id });
+      return { diubah: true, menungguVerifikasi: true, pengajuan: tampil(baru), pesan: "Pemakaian diubah. Masih menunggu verifikasi ADMIN; stok dan HPP belum berubah." };
+    });
+  }
+
+  if (p.jalur === "BUKTI_V2") {
+    const mats = barisBersih(baris);
+    wajib(mats.length >= 1 || Array.isArray(baris), "Isi bahan baru wajib", "BAHAN_WAJIB");
+    // bahan HARUS dari yang diserahkan Gudang dan tidak melebihi (aturan yang sama dengan penyimpanan bukti); bukti yang diubah menggantikan isinya, tidak ditambahkan
+    const { issuedQtyByMaterial } = await import("./productionStepCommandService.js");
+    const plan = await prisma.productionRunPlan.findUnique({ where: { runId: p.runId }, select: { id: true } });
+    const issued = await issuedQtyByMaterial(prisma, plan?.id);
+    for (const l of mats) { wajib(issued.has(l.materialId), "Bahan harus dari yang sudah diserahkan Gudang untuk pekerjaan ini", "STEP_MATERIAL_NOT_ISSUED", 422); wajib(l.qty <= r4(issued.get(l.materialId)) + 0.00005, `Jumlah melebihi bahan yang diserahkan Gudang (${l.qty} > ${r4(issued.get(l.materialId))})`, "STEP_MATERIAL_OVER_ISSUED", 422); }
+    const ids = [...new Set(mats.map((m) => m.materialId))];
+    const dasar = await hitungDasar(prisma, { jalur: "BUKTI_V2", unitId: p.unitId, runId: p.runId, materialIds: ids, waktu });
+    const info = new Map((ids.length ? await prisma.material.findMany({ where: { id: { in: ids } }, select: { id: true, code: true, name: true, unit: true } }) : []).map((m) => [m.id, m]));
+    const ringkasan = { ...p.ringkasan, baris: mats.map((m) => ({ materialId: m.materialId, kode: info.get(m.materialId)?.code ?? null, bahan: info.get(m.materialId)?.name ?? null, qty: m.qty, satuanStok: info.get(m.materialId)?.unit ?? null })), diubahDari: p.id, ubahSesudahSah: !aktif };
+    return prisma.$transaction(async (tx) => {
+      const baru = await tx.pengajuanPemakaianProduksi.create({ data: { jalur: "BUKTI_V2", unitId: p.unitId, runId: p.runId, materialIds: ids, masukan: { evidenceId: p.masukan.evidenceId, stepNo: p.masukan.stepNo, materials: mats, diubahDari: p.id }, ringkasan, dasar, sidikDasar: sha(dasar), hargaAmbigu: false,
+        diajukanOleh: user.id, peranPengaju: rolesOf(user), diajukanPada: waktu, idempotencyKey: kunci } });
+      if (aktif) await batalkanUntukDiubah(tx, p, user, why, baru.id);
+      else { // sudah sah: pengajuan perubahan lain yang masih menunggu untuk bukti yang sama digantikan (satu perubahan aktif per bukti)
+        const lain = await tx.pengajuanPemakaianProduksi.findMany({ where: { runId: p.runId, jalur: "BUKTI_V2", status: { in: AKTIF }, id: { not: baru.id } } });
+        for (const x of lain.filter((x) => x.masukan?.evidenceId === p.masukan.evidenceId)) await batalkanUntukDiubah(tx, x, user, why, baru.id);
+        await catatEvent(tx, p.id, "DIUBAH", user.id, why, { perubahanMenunggu: baru.id });
+      }
+      await catatEvent(tx, baru.id, "DIAJUKAN", user.id, why, { diubahDari: p.id, sesudahSah: !aktif });
+      return { diubah: true, menungguVerifikasi: true, pengajuan: tampil(baru), pesan: aktif ? "Pemakaian diubah. Masih menunggu verifikasi ADMIN; stok dan HPP belum berubah." : "Perubahan tersimpan dan diajukan untuk verifikasi ulang ADMIN. Angka yang sudah sah tetap berlaku sampai perubahan disahkan." };
+    });
+  }
+  wajib(false, p.jalur === "RUN_V2" ? "Ubah bahan pekerjaan dari lembar \"Catat Racikan & Bahan\" (isian terakhir terbuka otomatis)." : "Perubahan pemakaian diubah dengan membatalkan lalu mengajukan ulang dari tabel pemakaian.", "UBAH_LEWAT_LEMBAR", 409);
+}
+
+/** Pemakaian bukti tahap yang SUDAH sah per run (untuk tombol Ubah sesudah verifikasi): pengajuan BUKTI_V2 DISETUJUI terakhir per bukti. */
+export async function buktiTerverifikasi(db, runId) {
+  const rows = await db.pengajuanPemakaianProduksi.findMany({ where: { runId, jalur: "BUKTI_V2", status: "DISETUJUI" }, orderBy: { diputuskanPada: "asc" } });
+  const terakhir = new Map(); for (const r of rows) terakhir.set(r.masukan?.evidenceId, r);
+  return [...terakhir.values()].map(tampil);
 }

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { api } from "@/api.js";
 import { HalamanFinance } from "@/features/finance/shared.jsx";
-import { HASIL_TEKS, STATUS_TEKS, alasanTahan, butuhKonfirmasi, butuhKonfirmasiHarga, kabarkanPengajuan, teksBaris, waktuSingkat } from "@/features/production/pengajuan/pengajuanModel.js";
+import { HASIL_TEKS, STATUS_TEKS, alasanTahan, bedaKeras, butuhKonfirmasi, butuhKonfirmasiHarga, kabarkanPengajuan, teksBaris, waktuSingkat } from "@/features/production/pengajuan/pengajuanModel.js";
 
 // VERIFIKASI PEMAKAIAN BAHAN (ADMIN) — pengajuan pemakaian dari non-ADMIN (catat pemakaian, perubahan, Aplikasi Meja) dan koreksi pemakaian berpersetujuan.
 // Server menjalankan ulang SEMUA pemeriksaan per pengajuan (saldo, satuan, dasar harga, sumber, duplikat, pengaman SO, idempotensi); yang bermasalah DITAHAN dan hasil tiap pengajuan
@@ -122,9 +122,10 @@ function KartuPengajuan({ p, boleh, milikSaya, terpilih, onPilih, isian, onIsi }
           <p className="m-0 mt-1 flex flex-wrap items-center gap-x-1.5 text-[12px] text-ink3"><Clock3 size={12} aria-hidden />{p.pengaju || "—"} · {waktuSingkat(p.diajukanPada)} · <span className={p.status === "DITAHAN" ? "font-medium text-red" : "text-orange"}>{STATUS_TEKS[p.status]}</span>{p.hargaAmbigu && <span className="font-medium text-orange">· harga berubah pada hari pemakaian</span>}</p>
           {milikSaya && <p className="m-0 mt-1 text-[12px] text-ink2" data-testid="vp-milik-saya">Pengajuan Anda — perlu diverifikasi ADMIN lain.</p>}
           {tahan.length > 0 && <div className="mt-2 rounded-btn bg-redbg px-2.5 py-2 text-[12.5px] text-red" data-testid="vp-alasan-tahan"><p className="m-0 flex items-center gap-1 font-semibold"><ShieldAlert size={13} aria-hidden />Ditahan untuk diperiksa</p><ul className="m-0 mt-0.5 list-disc pl-5">{tahan.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
+          {bedaKeras(p) && <p className="m-0 mt-1.5 text-[12px] text-ink2" data-testid="vp-keras">Perbedaan ini tidak bisa disahkan dengan alasan. Tolak, lalu pengaju mengubah atau mengajukan ulang dengan dasar terbaru.</p>}
           {boleh && !milikSaya && (butuhKonfirmasi(p) || butuhKonfirmasiHarga(p)) && (
             <div className="mt-2 space-y-1.5">
-              {butuhKonfirmasi(p) && <input value={isian.konfirmasi || ""} onChange={(e) => onIsi("konfirmasi", e.target.value)} maxLength={300} placeholder="Hasil pemeriksaan Anda (wajib untuk mengesahkan yang ditahan)" aria-label={`Konfirmasi pemeriksaan ${p.unitKode}`} className={INPUT} data-testid="vp-konfirmasi" />}
+              {butuhKonfirmasi(p) && <input value={isian.konfirmasi || ""} onChange={(e) => onIsi("konfirmasi", e.target.value)} maxLength={300} placeholder="Harga Berlaku berubah — alasan Anda menerima harga baru (wajib)" aria-label={`Konfirmasi pemeriksaan ${p.unitKode}`} className={INPUT} data-testid="vp-konfirmasi" />}
               {butuhKonfirmasiHarga(p) && <input value={isian.konfirmasiHarga || ""} onChange={(e) => onIsi("konfirmasiHarga", e.target.value)} maxLength={300} placeholder="Dasar harga (wajib) — mis. dipakai sore, harga baru berlaku" aria-label={`Dasar harga ${p.unitKode}`} className={INPUT} data-testid="vp-konfirmasi-harga" />}
             </div>
           )}

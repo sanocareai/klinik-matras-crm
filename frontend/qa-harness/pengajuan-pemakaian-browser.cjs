@@ -96,10 +96,26 @@ async function pilih(page, sel, v) { await page.waitForSelector(sel, { visible: 
       ok("C3 server menolak verifikasi Finance (403)", r.status === 403, r.status);
       await page.browserContext().close();
     }
-    // ── D. ADMIN di HP: verifikasi massal; DITAHAN butuh konfirmasi; hasil per pengajuan
+    // ── H. PIC Meja (Nadya) di Aplikasi Meja: bukti tahap 6 dengan bahan → tertunda; UBAH langsung sebelum diverifikasi (tanpa ADMIN)
+    {
+      const page = await buka(browser, "nadya", "/produksi/meja");
+      await klikTeks(page, "button, a, [role=button], li, article", "NEW-QA-202");
+      ok("H1 daftar 'Sudah dilaporkan' tampil di detail pekerjaan", await ada(page, "[data-testid=pemakaian-tertunda]"));
+      await klik(page, "[data-testid=tertunda-ubah]");
+      await page.$eval("[data-testid=tertunda-ubah-qty]", (e) => { e.focus(); e.select(); }); await page.type("[data-testid=tertunda-ubah-qty]", "1.5");
+      await ketik(page, "[data-testid=tertunda-ubah-alasan]", "Dihitung ulang di meja");
+      await foto(page, "H1-ubah-sebelum-verifikasi-hp");
+      await klik(page, "[data-testid=tertunda-ubah-kirim]");
+      ok("H2 perubahan langsung tersimpan (tanpa verifikasi dulu)", await ada(page, "[data-testid=tertunda-info]"));
+      const d = await api("admin", "GET", `/production/pengajuan-pemakaian?runId=${ID.run202}`);
+      ok("H3 server: satu pengajuan bukti tertunda dengan jumlah baru 1,5", d.body?.pengajuan?.length === 1 && d.body.pengajuan[0].ringkasan.baris[0].qty === 1.5 && d.body.pengajuan[0].jalur === "BUKTI_V2", JSON.stringify(d.body?.pengajuan?.map((x) => [x.jalur, x.ringkasan?.baris?.[0]?.qty])));
+      ok("H3b tanpa gulir mendatar", await tanpaGulirMendatar(page));
+      await page.browserContext().close();
+    }
+    // ── D. ADMIN di HP: verifikasi massal; perbedaan keras tidak bisa disahkan dengan alasan; hasil per pengajuan
     {
       const page = await buka(browser, "admin", "/bengkel/verifikasi-pemakaian");
-      ok("D1 ADMIN melihat antrean (4 pengajuan: 3 menunggu + 1 ditahan)", await page.waitForFunction(() => document.querySelectorAll("[data-testid=vp-kartu]").length === 4, { timeout: 20000 }).then(() => true).catch(() => false));
+      ok("D1 ADMIN melihat antrean (5 pengajuan: 4 menunggu + 1 ditahan)", await page.waitForFunction(() => document.querySelectorAll("[data-testid=vp-kartu]").length === 5, { timeout: 20000 }).then(() => true).catch(() => false));
       ok("D2 kartu DITAHAN menampilkan alasan (catatan ganda)", await page.evaluate(() => [...document.querySelectorAll("[data-testid=vp-kartu][data-status=DITAHAN] [data-testid=vp-alasan-tahan]")].some((e) => /dua kali|berubah/.test(e.textContent))));
       await foto(page, "D2-antrean-admin-hp");
       ok("D2b tanpa gulir mendatar", await tanpaGulirMendatar(page));
@@ -110,16 +126,38 @@ async function pilih(page, sel, v) { await page.waitForSelector(sel, { visible: 
       await klik(page, "[data-testid=vp-verifikasi]");
       ok("D4 hasil per pengajuan tampil", await ada(page, "[data-testid=vp-hasil]"));
       const st = await page.$$eval("[data-testid=vp-hasil-baris]", (xs) => xs.map((x) => x.dataset.status).sort());
-      ok("D5 3 disahkan, 1 tetap DITAHAN (tanpa konfirmasi tidak disahkan diam-diam)", JSON.stringify(st) === JSON.stringify(["DISETUJUI", "DISETUJUI", "DISETUJUI", "DITAHAN"]), JSON.stringify(st));
+      ok("D5 4 disahkan, 1 tetap DITAHAN (tidak disahkan diam-diam)", JSON.stringify(st) === JSON.stringify(["DISETUJUI", "DISETUJUI", "DISETUJUI", "DISETUJUI", "DITAHAN"]), JSON.stringify(st));
       await foto(page, "D5-hasil-verifikasi-hp");
-      // DITAHAN: isi konfirmasi lalu verifikasi
+      // DITAHAN karena indikasi ganda (perbedaan keras): tidak ada kolom alasan untuk mengesahkan; ADMIN menolak
       await page.waitForFunction(() => document.querySelectorAll("[data-testid=vp-kartu]").length === 1, { timeout: 20000 });
-      await ketik(page, "[data-testid=vp-konfirmasi]", "Dicek: dua lapis latex memang dipakai");
-      await klik(page, "[data-testid=vp-pilih]"); await klik(page, "[data-testid=vp-verifikasi]");
+      ok("D6 perbedaan keras: penjelasan tampil, tanpa kolom alasan pengesahan", (await ada(page, "[data-testid=vp-keras]")) && !(await page.$("[data-testid=vp-konfirmasi]")));
+      await foto(page, "D6-keras-hp");
+      await klik(page, "[data-testid=vp-pilih]"); await klik(page, "[data-testid=vp-tolak]");
+      await ketik(page, "[data-testid=vp-alasan-tolak]", "Indikasi ganda, ajukan ulang bila memang dua lapis");
+      await klik(page, "[data-testid=vp-kirim-tolak]");
       await ada(page, "[data-testid=vp-hasil]");
       const st2 = await page.$$eval("[data-testid=vp-hasil-baris]", (xs) => xs.map((x) => x.dataset.status));
-      ok("D6 yang ditahan disahkan dengan konfirmasi beralasan", JSON.stringify(st2) === JSON.stringify(["DISETUJUI"]), JSON.stringify(st2));
+      ok("D6b yang ditahan ditolak (stok tidak berubah)", JSON.stringify(st2) === JSON.stringify(["DITOLAK"]), JSON.stringify(st2));
       ok("D7 antrean kosong", await ada(page, "[data-testid=vp-kosong]"));
+      await page.browserContext().close();
+    }
+    // ── I. Sesudah diverifikasi: Nadya mengubah pemakaian bukti; perubahan menunggu verifikasi ulang ADMIN; angka sah (1,5) tetap berlaku
+    {
+      const page = await buka(browser, "nadya", "/produksi/meja");
+      await klikTeks(page, "button, a, [role=button], li, article", "NEW-QA-202");
+      ok("I1 bagian 'sudah diverifikasi' tampil dengan tombol Ubah", await ada(page, "[data-testid=terverifikasi-ubah]"));
+      await klik(page, "[data-testid=terverifikasi-ubah]");
+      await page.$eval("[data-testid=tertunda-ubah-qty]", (e) => { e.focus(); e.select(); }); await page.type("[data-testid=tertunda-ubah-qty]", "2");
+      await ketik(page, "[data-testid=tertunda-ubah-alasan]", "Tambahan rangka samping");
+      await klik(page, "[data-testid=tertunda-ubah-kirim]");
+      ok("I2 pesan: diajukan untuk verifikasi ulang, angka sah tetap berlaku", await adaTeks(page, "tetap berlaku"));
+      await foto(page, "I2-ubah-sesudah-verifikasi-hp");
+      const ov = await api("lead", "GET", `/production-v2/units/${ID.u202}/overview`);
+      ok("I3 'terpakai' masih 1,5 sampai perubahan disahkan", (ov.body?.materials?.lines || []).find((m) => m.materialId === ID.busa)?.usedQty === 1.5, JSON.stringify(ov.body?.materials?.lines?.map((m) => [m.code, m.usedQty])));
+      const q = await api("admin", "GET", `/production/pengajuan-pemakaian?runId=${ID.run202}`);
+      const v = await api("admin2", "POST", "/production/pengajuan-pemakaian/verifikasi", { item: [{ id: q.body.pengajuan[0].id }] });
+      const ov2 = await api("lead", "GET", `/production-v2/units/${ID.u202}/overview`);
+      ok("I4 diverifikasi ulang → berlaku 2", v.body?.hasil?.[0]?.status === "DISETUJUI" && (ov2.body?.materials?.lines || []).find((m) => m.materialId === ID.busa)?.usedQty === 2, JSON.stringify(v.body?.hasil));
       await page.browserContext().close();
     }
     // ── E. Dampak server: pergerakan stok tepat sekali; V2 pemakaian tercatat atas nama PIC Bahan
