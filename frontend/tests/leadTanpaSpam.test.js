@@ -31,7 +31,7 @@ test("tabel sumber: baris total Total lead = New Leads Dashboard, Lead tanpa spa
   assert.ok(src.includes('case "leadTanpaSpam": return { t: angka(leadTanpaSpam(s))'));
   assert.ok(src.includes('case "lead": return { t: angka(t.lead), sub: "= New Leads Dashboard"'));
   assert.ok(src.includes('case "leadTanpaSpam": return { t: angka(leadTanpaSpam(t)), sub: "= dasar Conversion"'));
-  assert.ok(src.includes("migrasiPilihanKolom(v)"));
+  assert.ok(src.includes("migrasiPilihanKolom(v, { tambahRoas })"));
   const r = baca("../src/features/laporan/components/marketing/RingkasanMarketing.jsx");
   assert.match(r, /id: "leadTanpaSpam", label: "Lead tanpa spam"/);
   assert.match(r, /id: "lead", label: "Total lead", nilai: k\.lead\.nilai, sub: `termasuk \$\{angka\(t\.spam\)\} spam · sama dengan New Leads Dashboard`/);

@@ -6,8 +6,8 @@ import { Card } from "@/components/ui/card.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatRupiah } from "@/utils/format.js";
-import { kueriIklan, drilldown, barisTabel, barisBiaya, statusBiayaLaporan, peringatanUrut, UMUR, NADA_KELAS } from "../../iklanCampaignLogic.js";
-import { KRITERIA_META, kriteriaTersedia, urutkanMeta, terapkanUmur, alasanKosong, buatCsvMeta, namaBerkasCsvMeta } from "../../marketingLogic.js";
+import { kueriIklan, drilldown, barisTabel, barisBiaya, statusBiayaLaporan, peringatanUrut, NADA_KELAS } from "../../iklanCampaignLogic.js";
+import { KRITERIA_META, kriteriaTersedia, urutkanMeta, terapkanUmur, saringAktif, alasanKosong, buatCsvMeta, namaBerkasCsvMeta } from "../../marketingLogic.js";
 import { berurutan, pesanGalat, salinTeks } from "../../marketingData.js";
 import { ImporSpend, PanelTarget, PanelMonitor } from "../IklanBiayaPanel.jsx";
 import { cakupanTelusur, pemilihChatMeta } from "../../kanalPakem.js";
@@ -22,10 +22,10 @@ const LABEL_LEVEL = { campaign: "Campaign", adset: "Ad Set", ad: "Ad" };
 const TIP = {
   lead: "Customer baru (nomor unik) dibuat di rentang ini dan punya touch iklan CTWA pertama yang terbukti (bukan label CRM). Termasuk spam.",
   berOrder: "Customer unik dengan ≥ 1 order eligible (bukan batal/pending, bukan penjualan karyawan). Ber-order BUKAN berarti sudah membayar.",
-  membayar: "Customer unik dengan ≥ 1 pembayaran sah di ledger (DP atau lunas). Batas bawah bila ledger parsial. Tidak tersedia pada tampilan kohort umur.",
+  membayar: "Customer unik dengan ≥ 1 pembayaran sah di ledger (DP atau lunas). Batas bawah bila ledger parsial.",
   lunas: "Customer unik yang ledger-nya (setelah refund disetujui) menutup seluruh tagihan — closing utama. Bukan status LUNAS di CRM.",
   nilai: "Nilai order eligible saat ini (tanpa ongkir) — nilai yang dibukukan, BUKAN uang diterima dan bukan laba.",
-  uang: "Pembayaran sah di ledger dikurangi refund disetujui. Tidak tersedia pada tampilan kohort umur.",
+  uang: "Pembayaran sah di ledger dikurangi refund disetujui.",
   spend: "Spend Meta per tanggal delivery WIB dari tabel spend harian. Kosong ≠ Rp0: lihat alasan.",
   cpa: "Spend ÷ customer unik lunas ledger. Penyebut 0 atau spend tidak lengkap → kosong.",
   roasb: "Booked ROAS = nilai order ÷ spend. Belum tentu uang diterima.",
@@ -54,13 +54,14 @@ function totalBiaya(lap, kunci, roas = false) {
   return roas ? { teks: Number(v).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "×", kosong: false } : { teks: "Rp" + Math.round(Number(v)).toLocaleString("id-ID"), kosong: false };
 }
 
-export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, onUbah, cache, versi, onMuat, onLihatChat }) {
+export default function MetaDetail({ range, periode, jalur, rank, kolom, onUbah, cache, versi, onMuat, onLihatChat }) {
   const [tampilan, setTampilan] = useState("campaign");   // "campaign" (bertingkat) | "kreatif"; kreatif hanya dari tingkat teratas
   const [lap, setLap] = useState(null);
   const [memuat, setMemuat] = useState(false);
   const [galat, setGalat] = useState(null);
   const [panel, setPanel] = useState(null);   // null | "spend" | "target" | "monitor" | "kesehatan"
   const [lihatCatatan, setLihatCatatan] = useState(false);
+  const [hanyaAktif, setHanyaAktif] = useState(true);   // bawaan: hanya entitas yang punya spend di rentang terpilih
   const q = useMemo(() => kueriIklan({ range, level: jalur.level, campaignId: jalur.campaign, adSetId: jalur.adset }), [range, jalur.level, jalur.campaign, jalur.adset]);
   const kunci = JSON.stringify(q);
 
@@ -82,7 +83,11 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
   useEffect(() => () => { token.current += 1; }, []);
   useEffect(() => { onMuat?.(lap); }, [lap, onMuat]);
 
-  const grupUmur = useMemo(() => (lap?.grup || []).map((g) => terapkanUmur(g, umur)), [lap, umur]);
+  // Tabel selalu mengikuti rentang tanggal terpilih (lead dibuat di rentang itu; hasil dihitung sampai sekarang). Pilihan umur kohort ≥ N hari dihapus 12 Nov 2026.
+  const umur = "semua";
+  const biayaAda = !!lap?.biaya?.sumber?.terhubung && lap?.biaya?.spend != null;
+  const saring = useMemo(() => saringAktif(lap?.grup, { aktif: hanyaAktif, spendTersedia: biayaAda }), [lap, hanyaAktif, biayaAda]);
+  const grupUmur = useMemo(() => saring.tampil.map((g) => terapkanUmur(g, umur)), [saring, umur]);
   const tersedia = useMemo(() => kriteriaTersedia(grupUmur), [grupUmur]);
   const { baris, kriteria, semuaNol } = useMemo(() => urutkanMeta(grupUmur, rank), [grupUmur, rank]);
   const biaya = statusBiayaLaporan(lap);
@@ -116,9 +121,9 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
             </select>
             <ChevronDown size={14} aria-hidden="true" />
           </label>
-          <div className="mk-seg" role="tablist" aria-label="Umur kohort">
-            {UMUR.map((u) => <button key={u.id} type="button" role="tab" aria-selected={umur === u.id} onClick={() => onUbah({ umur: u.id })}>{u.label}</button>)}
-            <InfoTooltip text="Umur kohort: hanya lead berumur ≥ N hari, hasil dihitung DALAM N hari sejak tanggal lead — adil antar campaign. Peringkat mengikuti angka yang tampil; membayar dan uang bersih tidak tersedia di tampilan ini." />
+          <div className="mk-seg" role="group" aria-label={`Tampilkan ${LABEL_LEVEL[jalur.level].toLowerCase()}`} data-testid="saring-aktif">
+            {[[true, "Aktif di periode"], [false, "Semua"]].map(([v, label]) => <button key={label} type="button" aria-pressed={hanyaAktif === v} disabled={!biayaAda} onClick={() => setHanyaAktif(v)}>{label}</button>)}
+            <InfoTooltip text={biayaAda ? "Aktif di periode = punya spend Meta (> Rp0) pada rentang tanggal terpilih. Yang tidak ber-spend disembunyikan tetapi tetap dihitung di baris total; lead dari klik sebelum periode tetap terlihat di ringkasan baris tersembunyi." : "Data spend belum tersedia untuk rentang ini, jadi semua baris ditampilkan."} />
           </div>
           <button type="button" className={cn("mk-kapsul hidden md:inline-flex", lengkap && "mk-kapsul--aktif")} aria-pressed={lengkap} onClick={() => onUbah({ kolom: lengkap ? "ringkas" : "lengkap" })} data-testid="toggle-kolom-meta"><Columns3 size={15} /> {lengkap ? "Kolom ringkas" : "Kolom lengkap"}</button>
           <button type="button" className="mk-kapsul" onClick={ekspor} disabled={!lap} data-testid="ekspor-meta"><Download size={15} /> CSV</button>
@@ -165,7 +170,7 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
               </tr>
             </thead>
             <tbody>
-              {lap && baris.length === 0 && <tr><td colSpan={30} className="px-3 py-10 text-center text-sm text-ink3">Belum ada lead dengan touch iklan di rentang ini. {lap?.atribusi?.attributionStartWib ? "" : "Capture touch belum menyala atau belum ada sinyal iklan tersimpan."}</td></tr>}
+              {lap && baris.length === 0 && saring.tersembunyi.jumlah === 0 && <tr><td colSpan={30} className="px-3 py-10 text-center text-sm text-ink3">Belum ada lead dengan touch iklan di rentang ini. {lap?.atribusi?.attributionStartWib ? "" : "Capture touch belum menyala atau belum ada sinyal iklan tersimpan."}</td></tr>}
               {baris.map(({ g, peringkat, alasan, tanpaPeringkat }) => {
                 const b = barisTabel(g, umur); const c = barisBiaya(g);
                 const ent = g.level === "campaign" ? g.campaign : g.level === "adset" ? g.adSet : g.ad;
@@ -204,8 +209,17 @@ export default function MetaDetail({ range, periode, jalur, rank, umur, kolom, o
                   </tr>
                 );
               })}
+              {saring.berlaku && saring.tersembunyi.jumlah > 0 && (
+                <tr className="border-b border-line/60 bg-inset/40" data-testid="baris-tersembunyi">
+                  <td className="px-3 py-2 text-[12px] text-ink3">—</td>
+                  <td colSpan={30} className="px-3 py-2 text-left text-[12.5px] text-ink2">
+                    {angka(saring.tersembunyi.jumlah)} {LABEL_LEVEL[jalur.level].toLowerCase()} tanpa spend di periode ini disembunyikan · {angka(saring.tersembunyi.lead)} lead · {angka(saring.tersembunyi.berOrder)} ber-order · {angka(saring.tersembunyi.lunas)} lunas (tetap masuk total).{" "}
+                    <button type="button" className="text-accent hover:underline" onClick={() => setHanyaAktif(false)} data-testid="tampilkan-semua">Tampilkan</button>
+                  </td>
+                </tr>
+              )}
             </tbody>
-            {total && baris.length > 0 && (
+            {total && (baris.length > 0 || saring.tersembunyi.jumlah > 0) && (
               <tfoot>
                 <tr className="border-t border-line font-semibold" data-testid="total-meta">
                   <td /><td className="min-w-[170px] bg-surface px-3 py-2 text-left text-[12px] md:sticky md:left-0 md:z-10">Akuisisi terbukti (tanpa UNKNOWN)</td>

@@ -39,11 +39,14 @@ test("URL lama dikanonikalkan: tulis ulang menghasilkan ?tab=Marketing dengan pe
 });
 
 // ── state di URL: periode, filter, urutan, sumber, drilldown ────────────────────────────────────────────────────────────────────────────────────
-test("state Marketing di URL: roundtrip menyimpan sumber, urutan, kolom, banding, drilldown Meta, peringkat, umur — dan nilai bawaan tidak ditulis", () => {
+test("state Marketing di URL: roundtrip menyimpan sumber, urutan, kolom, banding, drilldown Meta, peringkat (umur selalu semua) — dan nilai bawaan tidak ditulis", () => {
   const m = { sumber: "META", urut: "lunas", kolom: "lengkap", banding: true, level: "ad", campaign: "52694481763084", adset: "52694481763284", rank: "cpa_lunas", umur: "hari30" };
   const u = tulisUrlLaporan("", { tab: "Marketing", range: { from: "2026-10-01", to: "2026-10-26" }, marketing: m });
   const b = bacaUrlLaporan(u, TABS);
-  assert.deepEqual({ sumber: b.sumber, urut: b.urut, kolom: b.kolom, banding: b.banding, level: b.level, campaign: b.campaign, adset: b.adset, rank: b.rank, umur: b.umur }, m);
+  // Umur kohort tidak lagi disimpan (12 Nov 2026): tabel Meta selalu mengikuti rentang tanggal terpilih.
+  assert.deepEqual({ sumber: b.sumber, urut: b.urut, kolom: b.kolom, banding: b.banding, level: b.level, campaign: b.campaign, adset: b.adset, rank: b.rank, umur: b.umur }, { ...m, umur: "semua" });
+  assert.equal(u.get("umur"), null, "umur tidak ditulis ke URL");
+  assert.equal(bacaUrlLaporan("?tab=Marketing&sumber=META&umur=hari7", TABS).umur, "semua", "tautan lama ?umur=hari7 diabaikan");
   const bawaan = tulisUrlLaporan("", { tab: "Marketing", range: { from: "2026-10-01", to: "2026-10-26" }, marketing: { sumber: null, urut: "berOrder", kolom: "ringkas", banding: false, level: "campaign", rank: KRITERIA_META_BAWAAN, umur: "semua" } });
   assert.equal(bawaan.toString(), "tab=Marketing&dari=2026-10-01&sampai=2026-10-26", "tidak ada kunci bawaan yang ditulis");
   // pindah tab membersihkan kunci Marketing tetapi mempertahankan periode dan parameter lain
@@ -178,8 +181,8 @@ test("kualitas data: coverage, ledger parsial, spend hilang, UNKNOWN, UNMAPPED, 
 
 // ── kolom & ekspor ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test("kolom sumber: ringkas = 9 kolom utama (hasil → biaya: lead, PROSPEK EKSPLISIT, ber-order, lunas, konversi, nilai, uang, biaya, CPA); lengkap menambah spam, membayar, konversi non-spam, ROAS", () => {
-  assert.deepEqual(kolomTampil("ringkas").map((k) => k.id), ["lead", "leadTanpaSpam", "prospek", "berOrder", "lunas", "konversi", "nilai", "uang", "spend", "cpa"]);
-  assert.equal(kolomTampil("lengkap").length, KOLOM_SUMBER.length); assert.deepEqual(kolomTampil("lengkap").slice(10).map((k) => k.id), ["prospekLanjut", "biayaProspek", "spam", "membayar", "konversiNonSpam", "booked", "cash"]);
+  assert.deepEqual(kolomTampil("ringkas").map((k) => k.id), ["lead", "leadTanpaSpam", "prospek", "berOrder", "lunas", "konversi", "nilai", "uang", "spend", "booked", "cpa"]);
+  assert.equal(kolomTampil("lengkap").length, KOLOM_SUMBER.length); assert.deepEqual(kolomTampil("lengkap").slice(11).map((k) => k.id), ["prospekLanjut", "biayaProspek", "spam", "membayar", "konversiNonSpam", "cash"]);
   assert.equal(new Set(KOLOM_SUMBER.map((k) => k.id)).size, 17, "tidak ada kolom yang hilang atau ganda");
 });
 
@@ -200,4 +203,17 @@ test("arsitektur: komponen Marketing memakai service/logika existing — tidak a
     assert.ok(!/>\s*Closing\s*</.test(t) && !/"Closing\b/.test(t), `${f} tidak memakai label ambigu 'Closing'`);
   }
   assert.ok(!/DateRangePicker/.test(baca("src/features/laporan/components/MarketingTab.jsx").replace(/\/\/.*$/gm, "")));
+});
+
+test("saringAktif (12 Nov 2026): hanya MAPPED dengan spend > 0 tampil; UNMAPPED/UNKNOWN tetap; ringkasan tersembunyi; tanpa data spend tidak menyaring", async () => {
+  const { saringAktif } = await import("../src/features/laporan/marketingLogic.js");
+  const g = (kunci, status, spend, lead, ord, lun) => ({ kunci, status, biaya: { spend }, lead: { unik: lead }, customerDenganOrder: ord, closingUtama: { customerLunasTerbuktiLedger: lun } });
+  const grup = [g("a", "MAPPED", 1000, 10, 2, 1), g("b", "MAPPED", 0, 3, 1, 0), g("c", "MAPPED", null, 0, 0, 0), g("u", "UNMAPPED", null, 4, 0, 0), g("k", "UNKNOWN", null, 2, 0, 0)];
+  const r = saringAktif(grup);
+  assert.deepEqual(r.tampil.map((x) => x.kunci), ["a", "u", "k"]);
+  assert.deepEqual(r.tersembunyi, { jumlah: 2, lead: 3, berOrder: 1, lunas: 0 });
+  assert.equal(saringAktif(grup, { aktif: false }).tampil.length, 5);
+  assert.equal(saringAktif(grup, { spendTersedia: false }).tampil.length, 5, "tanpa data spend tidak menebak");
+  const lead = (arr) => arr.reduce((a, x) => a + x.lead.unik, 0);
+  assert.equal(lead(r.tampil) + r.tersembunyi.lead, lead(grup), "tampil + tersembunyi = total");
 });

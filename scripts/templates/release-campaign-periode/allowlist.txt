@@ -1,0 +1,10 @@
+frontend/src/features/laporan/components/DetailSumberAkuisisi.jsx
+frontend/src/features/laporan/components/marketing/DetailSumberMarketing.jsx
+frontend/src/features/laporan/components/marketing/MetaDetail.jsx
+frontend/src/features/laporan/components/marketing/TabelSumber.jsx
+frontend/src/features/laporan/marketingLogic.js
+frontend/src/features/laporan/periodeLaporan.js
+frontend/src/styles/sanss-mk-apple.css
+frontend/tests/laporanRedesignMarketing.test.js
+frontend/tests/leadTanpaSpam.test.js
+frontend/tests/marketingLogic.test.js

@@ -25,7 +25,7 @@ export const TIP = {
   konversi: "UTAMA: customer ber-order ÷ TOTAL lead (termasuk spam); pembilang/penyebut ditampilkan. 'Sampel kecil' = < 30 lead — aturan tampilan sementara, bukan uji signifikansi.",
   konversiNonSpam: "Terpisah dari konversi utama: customer ber-order ÷ lead sah (tanpa spam/staf/karyawan).",
   cpa: "Biaya sumber ÷ customer UNIK lunas (kohort lead periode ini). Dasar: Atribusi label CRM — bukan CPA campaign. 'Sementara' bila ledger parsial atau kohort < 30 hari.",
-  booked: "Booked ROAS = nilai order ÷ biaya. Belum tentu uang diterima.",
+  booked: "ROAS (Booked) = nilai order ÷ biaya iklan pada rentang tanggal terpilih. Belum tentu uang diterima. Hanya sumber berbayar; organik tidak punya biaya iklan.",
   cash: "Cash ROAS = uang diterima bersih ÷ biaya. Batas bawah bila ledger tidak lengkap.",
 };
 
@@ -99,7 +99,16 @@ export function selTotal(lap, id) {
 const KOLOM_UANG = new Set(["nilai", "uang", "spend", "cpa", "biayaProspek"]);
 const KOLOM_BIAYA = new Set(["spend", "cpa", "booked", "cash", "biayaProspek"]);
 const KUNCI_KOLOM = "mk-kolom-sumber";
-const bacaKolom = () => { try { const v = JSON.parse(localStorage.getItem(KUNCI_KOLOM) || "null"); return Array.isArray(v) ? migrasiPilihanKolom(v) : null; } catch { return null; } };
+const KUNCI_ROAS = "mk-kolom-sumber-roas";
+const bacaKolom = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(KUNCI_KOLOM) || "null"); if (!Array.isArray(v)) return null;
+    const tambahRoas = localStorage.getItem(KUNCI_ROAS) !== "1";
+    const m = migrasiPilihanKolom(v, { tambahRoas });
+    if (tambahRoas) { localStorage.setItem(KUNCI_ROAS, "1"); localStorage.setItem(KUNCI_KOLOM, JSON.stringify(m)); }
+    return m;
+  } catch { return null; }
+};
 const simpanKolom = (v) => { try { if (v) localStorage.setItem(KUNCI_KOLOM, JSON.stringify(v)); else localStorage.removeItem(KUNCI_KOLOM); } catch { /* penyimpanan tidak tersedia: pilihan berlaku sampai halaman ditutup */ } };
 /** "Rp98.020.000" → "Rp98,02 jt" (nilai penuh tetap di title). Teks lain apa adanya. */
 const ringkasUang = (t) => (/^Rp[\d.]+$/.test(t || "") ? rupiahRingkas(Number(t.slice(2).replace(/\./g, ""))) : t);

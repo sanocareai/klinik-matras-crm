@@ -4,7 +4,7 @@
 // (7 hari) → tiga periode berbeda di satu halaman. Sekarang SATU state (range di Laporan.jsx) dibaca semua tab; URL (?tab&dari&sampai&sumber) mencerminkannya sehingga refresh, tombol Back, dan
 // berpindah tab tidak mengubah periode.
 
-import { petaTab, TAB_MARKETING, urutSumberValid, URUT_SUMBER_BAWAAN, kriteriaMetaValid, KRITERIA_META_BAWAAN, normalisasiJalurMeta, MODE_KOLOM, umurValid } from "./marketingLogic.js";
+import { petaTab, TAB_MARKETING, urutSumberValid, URUT_SUMBER_BAWAAN, kriteriaMetaValid, KRITERIA_META_BAWAAN, normalisasiJalurMeta, MODE_KOLOM } from "./marketingLogic.js";
 
 export const MAKS_HARI_PERIODE = 93;   // sama dengan batas server (/sumber, /iklan)
 const TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -71,7 +71,8 @@ export function bacaUrlLaporan(search, tabsValid = []) {
     campaign: marketing && peta.sumber === "META" ? jalur.campaign : null,
     adset: marketing && peta.sumber === "META" ? jalur.adset : null,
     rank: marketing && kriteriaMetaValid(p.get("rank")) ? p.get("rank") : KRITERIA_META_BAWAAN,
-    umur: marketing && umurValid(p.get("umur")) ? p.get("umur") : "semua",
+    // Umur kohort (≥ 7/30/60 hari) dihapus 12 Nov 2026: tabel Meta selalu mengikuti rentang tanggal terpilih. Parameter lama di URL diabaikan dan dibersihkan saat URL ditulis ulang.
+    umur: "semua",
     tampil: marketing && !peta.sumber && p.get("tampil") === TAMPIL_SUMBER_LINK ? TAMPIL_SUMBER_LINK : null,
   };
 }
@@ -99,7 +100,6 @@ export function tulisUrlLaporan(search, { tab, range, sumber, marketing = {} }) 
       if (j.campaign) p.set("campaign", j.campaign);
       if (j.adset) p.set("adset", j.adset);
       if (m.rank && m.rank !== KRITERIA_META_BAWAAN && kriteriaMetaValid(m.rank)) p.set("rank", m.rank);
-      if (m.umur && m.umur !== "semua" && umurValid(m.umur)) p.set("umur", m.umur);
     }
   }
   return p;

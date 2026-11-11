@@ -1,0 +1,90 @@
+# Campaign ikut periode + ROAS (cip1): penanda baru hanya di dist baru; pilihan umur kohort HILANG dari dist baru; Lead tanpa spam (lts1), Spotlight + notifikasi (acn1), tab Marketing gaya Apple (mka1-3), Gelombang 1-2, dan semua fitur live HARUS tetap ada di KEDUANYA; service worker TIDAK berubah.
+# Pencarian memakai cari_dist (find|xargs) — BUKAN glob: dist aktif >21.000 chunk sehingga glob melampaui ARG_MAX dan gagal diam-diam.
+for c1 in "mk-kpi-grid--sumber" "mk-kpi[data-nada=jingga]"; do
+  [ -z "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru TIDAK memuat aturan ${c1}"
+done
+for j1 in "Aktif di periode" "mk-kolom-sumber-roas" "tanpa spend di periode ini disembunyikan" "ROAS (Booked) = nilai order"; do
+  [ -z "$(cari_dist "$PREV_DIR" js "$j1")" ] || die "[skrip] '${j1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j1")" ] || die "dist baru TIDAK memuat fitur cip1: ${j1}"
+done
+# Pilihan umur kohort sengaja DIHAPUS: ada di dist aktif, TIDAK boleh ada di dist baru
+[ -n "$(cari_dist "$PREV_DIR" js "Umur kohort")" ] || die "[skrip] 'Umur kohort' tidak ada di dist release aktif — perbaiki daftar pembanding"
+[ -z "$(cari_dist "$NEW_DIR" js "Umur kohort")" ] || die "dist baru MASIH memuat pilihan umur kohort"
+# Lead tanpa spam (lts1, live sebelum rilis ini) HARUS tetap ada
+for j9 in "Lead tanpa spam" "= New Leads Dashboard" "spam dikeluarkan dari"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$j9")" ] || die "[skrip] '${j9}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j9")" ] || die "dist baru KEHILANGAN Lead tanpa spam: ${j9}"
+done
+[ -n "$(cari_dist "$NEW_DIR" css "mk-kpi[data-nada=langit]")" ] || die "CSS baru KEHILANGAN mk-kpi[data-nada=langit]"
+# Spotlight + notifikasi gaya Apple (acn1, live sebelum rilis ini) HARUS tetap ada
+for c8 in ".sp-panel" ".sp-ubin-pelanggan" ".nt-segmen" ".nt-kapsul"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c8")" ] || die "[skrip] ${c8} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c8")" ] || die "CSS baru KEHILANGAN ${c8}"
+done
+for j8 in "Cari halaman, pelanggan, order" "sanss.cari.riwayat.v1" "Tidak ada hasil untuk" "Pelanggan, order & chat dicari"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$j8")" ] || die "[skrip] '${j8}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j8")" ] || die "dist baru KEHILANGAN Spotlight/notifikasi: ${j8}"
+done
+# tab Marketing gaya Apple (mka1, live sebelum rilis ini) HARUS tetap ada
+for c6 in ".mk-kpi-grid" ".mk-strip-butir" ".mk-sumber-kategori" ".mk-pop-isi"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c6")" ] || die "[skrip] ${c6} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c6")" ] || die "CSS baru KEHILANGAN ${c6}"
+done
+for j6 in "Hasil masih sementara" "Sembunyikan sumber tanpa lead" "belum tentu organik" "Rincian kualitas data" "Cara membaca angka ini" "Excel daftar chat" "CSV performa sumber"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$j6")" ] || die "[skrip] '${j6}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j6")" ] || die "dist baru KEHILANGAN tampilan Marketing: ${j6}"
+done
+# mka2 (ikon sumber, kartu penjelasan channel) dan psm1 (panel sinkron Meta) — live sebelum rilis ini — HARUS tetap ada
+for c7 in ".mk-pakem-blok" ".mk-alat-titik" ".mk-sumber-kontrol"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c7")" ] || die "[skrip] ${c7} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c7")" ] || die "CSS baru KEHILANGAN ${c7}"
+done
+for j7 in "Peringkat hanya di dalam kelompok" "data-ubin" "Sinkron otomatis (Composio)" "Ad belum terpetakan (unik)" "Uji coba (tanpa simpan)"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$j7")" ] || die "[skrip] '${j7}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$j7")" ] || die "dist baru KEHILANGAN fitur: ${j7}"
+done
+# fitur Marketing yang sudah live HARUS tetap ada (telusur chat, Per kreatif, iklan tidak terbaca, ekspor Excel server, kelola biaya, impor spend, target, monitoring)
+for m1 in "Iklan tidak terbaca" "Per kreatif" "ekspor.xlsx" "Kelola biaya iklan" "Impor spend" "Target KPI" "Monitoring" "Lihat chat" "Sumber & Link" "Pola lead & respons" "Kualitas data"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$m1")" ] || die "[skrip] teks Marketing lama '${m1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$m1")" ] || die "dist baru KEHILANGAN fitur Marketing: ${m1}"
+done
+# Sengaja DIGANTI rilis mka1 sebelumnya (dikeluarkan dari daftar fitur lama): judul "Performa Sumber" -> "Performa sumber", kelas panel "crm-mk-kel" -> "mk-kel".
+# Gelombang 1-2 yang sudah live HARUS tetap ada
+for c5 in ".ap-hero" ".ap-kepala-judul" ".ap-w-aktif" ".ap-titik-hijau"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c5")" ] || die "[skrip] ${c5} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c5")" ] || die "CSS baru KEHILANGAN ${c5}"
+done
+for s5 in "ap-hero" "ap-kepala-judul" "ap-w-kepala-teks" "ap-w-ringkas"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s5")" ] || die "[skrip] penanda '${s5}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s5")" ] || die "dist baru KEHILANGAN penanda Gelombang 2: ${s5}"
+done
+for c4 in ".ap-widget" ".ap-ubin" ".ap-panel"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c4")" ] || die "[skrip] ${c4} tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c4")" ] || die "CSS baru KEHILANGAN ${c4}"
+done
+for s4 in "armada-ringkasan" "kendali-ringkasan" "portal-kartu" "ap-w-angka"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s4")" ] || die "[skrip] teks lama '${s4}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s4")" ] || die "dist baru KEHILANGAN penanda Gelombang 1: ${s4}"
+done
+# Service worker harus SAMA: tanpa precache index.html, batas 10 dtk, push utuh
+[ -f "$NEW_DIR/frontend/dist/sw.js" ] || die "sw.js tidak ada di dist baru"
+! grep -qF '"url":"index.html"' "$NEW_DIR/frontend/dist/sw.js" || die "sw.js baru MEMPRECACHE index.html (regresi)"
+grep -qE 'const [A-Za-z_$]{1,3}=10;' "$NEW_DIR/frontend/dist/sw.js" || die "sw.js baru kehilangan batas tunggu 10 dtk"
+grep -qF 'addEventListener("push"' "$NEW_DIR/frontend/dist/sw.js" || die "sw.js baru KEHILANGAN penerima notifikasi push"
+# Fitur live terbaru yang dipertahankan
+for s3 in "Catat hasil SO" "Definisi dan sumber angka" "gud-br-kartu-besar" "np-k3-lihat" "Satu dokumen, satu baris"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s3")" ] || die "[skrip] teks lama '${s3}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s3")" ] || die "dist baru KEHILANGAN teks fitur: ${s3}"
+done
+for c0 in ".gud-pi-grid" ".gud-dlg-form" ".gud-bertahap" ".gud-luar-daftar" ".gud-dok-baris" ".gud-katalog-grid" ".gud-mi-grid" ".gud-strip" ".gud-filter-isi" ".gud-salin" ".gud-form-dua" ".gud-stok-baris" ".gud-bahan-bagian" ".gud-halaman" ".gud-br-kartu-biru" ".gud-br-baris" ".gud-stepper" ".gud-f-pilih" ".gud-menu-item" ".gud-lipat" ".gud-segmen" ".gud-panel-aksi" ".fin-tg-baris" ".fin-tg-kpi" ".fin-tg-lembar" ".fin-tg-asal-kartu" ".fin-tg-catat" ".fin-tg-panel" ".fin-tgl-pop" ".fin-termin-panel" ".fin-select-pemicu" ".fin-pod-uraian-isi" ".fin-poed-faktur-pilih" ".fin-pod-petunjuk-faktur" ".fin-pof-tabel" ".fin-pof-aksi" ".fin-pof-dobel" ".fin-ks-kartu" ".fin-ks-persamaan" ".fin-ks-trf" ".fin-ks-rincian" ".fin-ks-total" ".fin-ks-seg-item" ".fin-ks-baris" ".fin-po-baris" ".fin-po-bar" ".fin-po-strip" ".fin-poed-baris" ".fin-poed-popup" ".fin-pod-kartu" ".fin-vf-ringkasan" ".fin-vf-tabel" ".fin-vf-kartu" ".fin-vp-kepala" ".fin-vp-bukti-gulir" ".fin-vp-aksi-utama" ".fin-inv-baris" ".fin-inv-seg-item" ".fin-inv-kepala" ".fin-inv-peringatan-btn" ".fin-inv-r-bagian-judul" ".fin-inv-pintas" ".crm-dash" ".crm-skin" ".crm-pipe-isi" ".crm-utama" ".crm-so-c" ".topbar-searchfield" ".sidebar-help-btn" ".crm-ws-menu" ".tab-chip-konteks" ".crm-pel-tabel" ".crm-pel-bulk" ".stage-field" ".crm-pipe-toolbar" ".crm-pipe-kolom" ".ord-chip" ".crm-ord-toolbar" ".crm-ord-kolom" ".crm-lap" ".crm-ss-sebaran" ".crm-mk-tabel" ".crm-lap-alert" ".crm-rk-alur" ".crm-rk-tahap" ".crm-pl-posisi" ".crm-pt-legenda" ".fin-kpi-grid" ".fin-logo-merek" ".fin-lr-akhir" ".fin-tl-baris" ".fin-rek-item" ".fin-bk-item" ".fin-tg-stat" ".fin-umur-bar" ".fin-dua" ".fin-pill" ".fin-nav" ".fin-by-baris" ".fin-pbd-baris" ".fin-seg-item" ".fin-kpi-statis" ".fin-by-toolbar" ".fin-pbd-kosong" ".fin-po-baris" ".fin-po-bar" ".fin-po-strip" ".fin-poed-baris" ".fin-poed-popup" ".fin-poed-harga" ".fin-pod-kartu" ".fin-pod-item-tabel"; do
+  [ -n "$(cari_dist "$PREV_DIR" css "$c0")" ] || die "[skrip] '${c0}' tidak ada di CSS release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" css "$c0")" ] || die "CSS baru KEHILANGAN ${c0}"
+done
+for s2 in "Tampilkan di daftar" "Satu pengiriman = satu dokumen penerimaan" "Mulai pemeriksaan" "Lihat alur" "Permintaan material baru" "Keluarkan dari stok…" "Serahkan dan kurangi stok" "Katalog bahan Gudang" "Lokasi dari riwayat penerimaan" "Filter daftar bahan" "tidak langsung mengubah saldo" "Identitas bahan" "Informasi bahan" "Temukan bahan, pahami saldonya" "Saldo tercatat" "Tampilkan nonaktif" "Lewat jadwal" "Tidak ada penerimaan yang perlu ditindak" "Cari GR, PO, supplier, atau bahan..." "Ya, lanjutkan" "Barang akan datang" "Tentang angka dan pencatatan" "Nomor faktur belum diisi" "Semua rincian dokumen" "Pilih asal tagihan, lalu cocokkan dengan faktur dari supplier." "Penerimaan barang yang belum ditagih" "Tidak ada dokumen pembanding: nilai mengikuti dokumen supplier." "Menyimpan draf dapat memperbarui Harga Berlaku bahan." "Sudah menerima faktur supplier?" "Supplier sudah memberi faktur?" "Cari supplier…" "Tahun sebelumnya" "Pakai termin supplier" "Arti status ini" "Cara membaca kolom item" "Belum ada faktur tercatat" "Lengkapi nomor faktur supplier" "Ubah nomor faktur supplier" "Nomor supplier belum diisi" "Hanya nomor faktur supplier yang berubah" "Pencocokan bank belum aktif" "Rekening koran belum diimpor" "Kas fisik belum dihitung" "Saldo tidak tersedia — rekening nonaktif" "Pergerakan rekening menurut pembukuan" "hasil mungkin belum mencakup seluruh data" "Alur pembelian" "Estimasi belum masuk stok" "Rincian perhitungan" "Nilai PO belum tertutup pembayaran" "Bukan saldo utang supplier" "Pantau pesanan pembelian (PO) ke supplier" "Periksa bukti dan rekening tujuan sebelum pembayaran masuk pembukuan" "Klaim pembayaran dari Sales" "Dua antrean ini tidak dijumlahkan" "Berkas yang diunggah, bukan jaminan uangnya sudah masuk" "Pantau invoice, sisa tagihan, dan jatuh tempo" "Posisi terkini semua invoice, tanpa pilihan periode" "Nominal pembayaran mungkin belum tercatat" "Sisa tagihan belum lunas" "Dari 500 invoice terbaru, bukan seluruh data" "Sales Overview" "Deal Pipeline" "Top Performing Reps" "Needs Action" "Hot Leads" "Recent Activity" "Kasus Komplain Butuh Follow-up" "Lihat semua sales" "Buka Inbox" "Buka Pipeline" "crm-kpi-tile" "komplain perlu ditindaklanjuti" "sanss-crm-skin" "Tutup emoji" "inbox-page-head" "Nilai Penjualan Tim" "needs-action-daftar" "hot-leads-daftar" "aktivitas-toggle" "crm-pipe-baris" "crm-so-c" "crm-pipe-ikon" "topbar-searchfield" "sidebar-help-btn" "tab-chip-konteks" "Cari halaman atau menu" "workspace-switcher-ringkas" "crm-pel-tabel" "pelanggan-kolom:v1" "Kolom tambahan" "Total estimasi nilai" "Seret kartu ke sini" "crm-pipe-kolom" "Metrik lainnya" "Lihat cakupan angka" "crm-rk-alur" "rekon-tahap-tombol" "crm-pl-posisi" "bottleneck-info" "Rasio antar tahap" "crm-pt-tabel" "crm-ord-kolom" "crm-ord-kelengkapan" "Kelola biaya iklan" "Tren lead harian" "Rekonsiliasi Sales–Finance" "Leaderboard Sales" "Sebaran Tahap" "tren-satu-titik" "crm-lap-metrik" "crm-lap-alert" "Posisi terbaru dalam pembukuan" "Tentang pencocokan saldo" "Tidak ada selisih tercatat" "Cara menghitung laba" "Gerbang verifikasi pembayaran" "Kenapa angkanya berbeda" "bukti terdeteksi" "Umur tagihan pelanggan" "Pencatatan terbaru" "Pemeriksaan angka" "Tidak ada kekurangan pencatatan yang terdeteksi" "Kategori aktif" "Biaya dicatat saat disetujui" "Ajukan kebutuhan divisi dan pantau prosesnya" "Panduan pengajuan" "Persetujuan dan pembayaran dilakukan melalui" "Tentang angka" "Alur pembelian" "Estimasi belum masuk stok" "jadi ini bukan total seluruh PO" "Rincian perhitungan" "Nilai PO belum tertutup pembayaran" "Bukan saldo utang supplier" "Pantau pesanan pembelian (PO) ke supplier"; do
+  [ -n "$(cari_dist "$PREV_DIR" js "$s2")" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(cari_dist "$NEW_DIR" js "$s2")" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+[ -n "$(ls "$NEW_DIR"/frontend/dist/assets/ 2>/dev/null | grep -E '^bca-.*\.svg$' | sed -n 1p)" ] || die "dist baru TIDAK memuat logo BCA"
+[ -n "$(ls "$NEW_DIR"/frontend/dist/assets/ 2>/dev/null | grep -E '^mandiri-.*\.png$' | sed -n 1p)" ] || die "dist baru TIDAK memuat logo Mandiri"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): campaign ikut periode + filter aktif + kartu/kolom ROAS ada, umur kohort hilang; Lead tanpa spam, Spotlight/notifikasi, tab Marketing Apple, Gelombang 1-2, service worker, dan semua fitur live tetap ada"

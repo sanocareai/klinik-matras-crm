@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ChevronRight, ExternalLink, Info } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Info, Layers, Megaphone, ShoppingCart, TrendingUp, Users, Wallet } from "lucide-react";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
@@ -24,6 +24,17 @@ const Bagian = ({ judul, tip, children, className }) => (
     <h3 className="mb-1 inline-flex items-center gap-1 text-[14px] font-semibold text-ink">{judul}{tip && <InfoTooltip text={tip} />}</h3>
     <dl className="m-0">{children}</dl>
   </Card>
+);
+// Kartu ringkas berwarna (gaya Apple, sama dengan KPI Ringkasan Marketing). Kosong = "—" redup, bukan 0.
+const KartuSumber = ({ id, ikon: Ikon, nada, label, nilai, judulPenuh, sub, tip, kosong }) => (
+  <div className="mk-kpi" data-nada={nada} data-testid={`kartu-sumber-${id}`}>
+    <span className="mk-kpi-ikon" aria-hidden="true"><Ikon size={20} strokeWidth={1.9} /></span>
+    <div className="mk-kpi-isi">
+      <span className="mk-kpi-label">{label}{tip && <InfoTooltip text={tip} />}</span>
+      <span className={cn("mk-kpi-nilai", kosong && "mk-kpi-nilai--kosong")} title={judulPenuh}>{nilai}</span>
+      {sub && <span className="mk-kpi-sub">{sub}</span>}
+    </div>
+  </div>
 );
 const Sel = ({ c }) => <span className={c.kosong ? "text-ink3" : ""}>{c.teks}</span>;
 
@@ -52,14 +63,18 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
         {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil (&lt; {s.ambangSampel} lead)</Badge>}
       </div>
 
-      {/* Ringkasan sumber (label CRM): angka sama dengan baris tabel Performa sumber. */}
-      <dl className="mk-ringkas-sumber" data-testid="ringkas-sumber" aria-label={`Ringkasan ${s.label} (label CRM)`}>
-        <div><dt>Lead (termasuk spam)</dt><dd>{angka(s.lead)}</dd><span>{angka(s.leadSah)} sah · {angka(s.spam)} spam</span></div>
-        <div><dt>Customer ber-order</dt><dd>{angka(s.berOrder)}</dd><span>{formatPersen(s.konversiOrder?.nilai)} dari total lead</span></div>
-        <div><dt>Nilai order</dt><dd title={rupiah(s.uang?.nilaiOrderSaatIni)}>{rupiahRingkas(s.uang?.nilaiOrderSaatIni)}</dd><span>bukan uang diterima</span></div>
-        <div><dt>Uang diterima bersih</dt><dd title={rupiah(s.uang?.uangBersih)}>{rupiahRingkas(s.uang?.uangBersih)}</dd><span>ledger − refund</span></div>
-        <div><dt>Biaya iklan</dt><dd className={organik || spend.kosong ? "mk-redup" : undefined} title={organik ? "Tidak tersedia, bukan Rp0" : spend.teks}>{organik || spend.kosong ? "—" : rupiahRingkas(b.spend)}</dd><span>{organik ? "tanpa biaya iklan langsung" : spend.alasan || statusBiayaTeks(b.status)}</span></div>
-      </dl>
+      {/* Ringkasan sumber (label CRM) untuk rentang tanggal terpilih: angka sama dengan baris tabel Performa sumber. ROAS = nilai order ÷ biaya iklan pada basis yang sama. */}
+      <section className="mk-kpi-grid mk-kpi-grid--sumber" data-testid="ringkas-sumber" aria-label={`Ringkasan ${s.label} (label CRM)`}>
+        <KartuSumber id="lead" ikon={Users} nada="biru" label="Lead" nilai={angka(s.lead)} sub={`${angka(s.leadSah)} sah · ${angka(s.spam)} spam`} tip="Customer berlabel sumber ini yang dibuat di rentang tanggal terpilih (termasuk spam)." />
+        <KartuSumber id="berOrder" ikon={ShoppingCart} nada="periwinkle" label="Customer ber-order" nilai={angka(s.berOrder)} sub={`${formatPersen(s.konversiOrder?.nilai)} dari total lead`} tip="Customer unik dari lead rentang ini dengan ≥ 1 order eligible. Ber-order belum tentu membayar." />
+        <KartuSumber id="nilai" ikon={Layers} nada="lavender" label="Nilai order" nilai={rupiahRingkas(s.uang?.nilaiOrderSaatIni)} judulPenuh={rupiah(s.uang?.nilaiOrderSaatIni)} sub="bukan uang diterima" />
+        <KartuSumber id="uang" ikon={Wallet} nada="lime" label="Uang diterima bersih" nilai={rupiahRingkas(s.uang?.uangBersih)} judulPenuh={rupiah(s.uang?.uangBersih)} sub="ledger − refund" />
+        <KartuSumber id="biaya" ikon={Megaphone} nada="langit" label="Biaya iklan" nilai={organik || spend.kosong ? "—" : rupiahRingkas(b.spend)} judulPenuh={organik ? "Tidak tersedia, bukan Rp0" : spend.teks} kosong={organik || spend.kosong}
+          sub={organik ? "tanpa biaya iklan langsung" : spend.alasan || statusBiayaTeks(b.status)} />
+        <KartuSumber id="roas" ikon={TrendingUp} nada="jingga" label="ROAS" nilai={organik || booked.kosong ? "—" : booked.teks} kosong={organik || booked.kosong}
+          sub={organik ? "tanpa biaya iklan" : booked.kosong ? (booked.alasan || "belum bisa dihitung") : `${booked.sementara ? "sementara · " : ""}nilai order ÷ biaya · cash ${cash.teks}`}
+          tip="Booked ROAS = nilai order ÷ biaya iklan pada rentang tanggal terpilih (basis label CRM, sama dengan kartu Nilai order dan Biaya iklan). Cash ROAS = uang diterima bersih ÷ biaya. Angka per campaign di tabel memakai atribusi iklan terbukti, jadi bisa berbeda." />
+      </section>
 
       {sisipanAtas}
 
