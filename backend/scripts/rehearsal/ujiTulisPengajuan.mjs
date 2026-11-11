@@ -82,14 +82,23 @@ try {
   const tahap = async (k, n, payload = {}, media = []) => ok(call(k, "POST", `/production-v2/runs/${run.id}/steps/${n}`, { expectedRevision: (await kartu()).revision, workCenterId: wc.id, payload, media }), `tahap ${n}`);
   await tahap("nadya", 6);
   const s6 = await tahap("nadya", 6, { note: "Rangka divan rehearsal", materials: [{ materialId: mat.id, qty: 1 }] }, await foto());
-  cek("V2 tahap 6 selesai + pemakaian menunggu verifikasi", s6.menungguVerifikasi === true && !!s6.pengajuanId && s6.awaitingQc === true, JSON.stringify(s6).slice(0, 200));
-  const qcRun = await ok(call("qc", "GET", `/production-planning/qc/runs/${run.id}`), "qc baca");
-  await ok(call("qc", "POST", `/production-planning/qc/runs/${run.id}/inspect`, { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], note: "rehearsal" }), "qc");
-  await tahap("nadya", 9, { note: "siap" }, await foto());
-  await tahap("corner", 10, { mattressStyle: "PILLOWTOP", fabricSpec: "Knit", borderColor: "Abu" });
-  await tahap("corner", 11, { checklist: { jahitan: true, list: true, resleting: true, kebersihan: true } }, await foto());
-  const fin = await tahap("corner", 12, { confirm: true }, await foto());
-  cek("V2 pekerjaan selesai tanpa menunggu verifikasi", !!fin.handoffId);
+  cek("V2 tahap 6 selesai (bukti tersimpan) + pemakaian menunggu verifikasi", s6.menungguVerifikasi === true && !!s6.pengajuanId && s6.action === "COMPLETE", JSON.stringify(s6).slice(0, 200));
+  // Sisa tahap mengikuti langkah "next" dari server — pengaturan produksi (gerbang QC / adaptasi) pada salinan dipakai apa adanya.
+  const PAYLOAD = { 9: { note: "siap" }, 10: { mattressStyle: "PILLOWTOP", fabricSpec: "Knit", borderColor: "Abu" }, 11: { checklist: { jahitan: true, list: true, resleting: true, kebersihan: true } }, 12: { confirm: true } };
+  const langkah = [];
+  for (let i = 0; i < 20; i++) {
+    const fase = (await prisma.productionRun.findUnique({ where: { id: run.id }, select: { currentPhase: true } })).currentPhase;
+    if (fase === "HANDOFF" || fase === "DONE" || fase === "CLOSED" || (await prisma.productionMaterialReturn.count({ where: { runId: run.id } })) > 0) break;
+    const n = (await kartu()).next;
+    langkah.push(`${n.stepNo}:${n.action}${n.wait ? ":" + n.wait : ""}`);
+    if (n.wait === "AWAITING_QC") { const qcRun = await ok(call("qc", "GET", `/production-planning/qc/runs/${run.id}`), "qc baca"); await ok(call("qc", "POST", `/production-planning/qc/runs/${run.id}/inspect`, { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], note: "rehearsal" }), "qc"); continue; }
+    if (n.wait === "READY_TO_FINISH") { await ok(call("nadya", "POST", `/production-v2/runs/${run.id}/finish`, { confirm: true, expectedRevision: (await kartu()).revision, workCenterId: wc.id, media: await foto() }), "selesaikan produksi"); break; } // mode adaptasi
+    if (n.action === "WAIT" || !n.stepNo) throw new Error("pekerjaan tertahan: " + JSON.stringify(n));
+    const media = n.action === "START" ? [] : [9, 11, 12].includes(n.stepNo) || n.action === "HANDOFF" ? await foto() : [];
+    await tahap(n.actor === "CORNER" ? "corner" : "nadya", n.stepNo, PAYLOAD[n.stepNo] ?? {}, media);
+  }
+  ringkas.langkahV2 = langkah;
+  cek("V2 pekerjaan selesai tanpa menunggu verifikasi", (await prisma.productionMaterialReturn.count({ where: { runId: run.id } })) > 0, langkah.join(" "));
   const retur = async () => (await prisma.productionMaterialReturn.findMany({ where: { runId: run.id } })).map((x) => [Number(x.qty), x.status]);
   cek("V2 sebelum verifikasi: retur = seluruh yang diserahkan", JSON.stringify(await retur()) === JSON.stringify([[3, "PENDING"]]), JSON.stringify(await retur()));
   const sebelum2 = await jumlah();
