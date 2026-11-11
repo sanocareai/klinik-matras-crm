@@ -67,6 +67,48 @@ test("Login mobile ditolak: password salah 401, bukan tim finance 403, tanpa dev
   assert.equal(nonaktif.status, 403);
 });
 
+test("Login aplikasi Produksi (app=production): tim produksi masuk, token bertanda app & hanya jalur produksi", async () => {
+  const w = await createLoginUser({ roles: ["PRODUCTION_WORKER"] });
+  const login = (u, app) => raw("POST", "/api/mobile/auth/login", { body: { email: u.email, password: u.password, device: DEVICE(), ...(app !== undefined ? { app } : {}) } });
+
+  const ok = await login(w, "production");
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const claims = jwt.verify(ok.body.accessToken, process.env.JWT_SECRET);
+  assert.equal(claims.typ, "mobile");
+  assert.equal(claims.app, "production");
+  assert.equal(ok.body.capabilities.productionApp, true);
+  assert.equal(ok.body.capabilities.productionPreset, "MEJA");
+
+  // Tanpa `app` = Finance (perilaku lama): pekerja produksi ditolak sebagai bukan tim Finance.
+  const lama = await login(w);
+  assert.equal(lama.status, 403);
+  assert.equal(lama.body.code, "NOT_FINANCE_TEAM");
+
+  // Tim Finance ditolak di aplikasi Produksi; nilai app tak dikenal 400.
+  const fin = await createLoginUser({ roles: ["FINANCE"] });
+  const finProd = await login(fin, "production");
+  assert.equal(finProd.status, 403);
+  assert.equal(finProd.body.code, "NOT_PRODUCTION_TEAM");
+  const asing = await login(w, "lain");
+  assert.equal(asing.status, 400);
+  assert.equal(asing.body.code, "APP_UNKNOWN");
+
+  // Token Produksi: jalur Finance ditolak sebagai token mobile; jalur unit lolos gerbang jalur (bukan 403 "mobile").
+  const keFinance = await raw("GET", "/api/finance/dashboard", { token: ok.body.accessToken });
+  assert.equal(keFinance.status, 403);
+  assert.match(keFinance.body.error, /mobile/i);
+  const keUnit = await raw("GET", "/api/units/tidak-ada", { token: ok.body.accessToken });
+  assert.notEqual(keUnit.body?.error && /mobile/i.test(keUnit.body.error), true);
+  assert.equal((await raw("GET", "/api/auth/me", { token: ok.body.accessToken })).status, 200);
+
+  // Refresh dengan app=production mempertahankan klaim; nilai app salah tidak menghabiskan refresh token.
+  const salah = await raw("POST", "/api/mobile/auth/refresh", { body: { refreshToken: ok.body.refreshToken, app: "lain" } });
+  assert.equal(salah.status, 400);
+  const r1 = await raw("POST", "/api/mobile/auth/refresh", { body: { refreshToken: ok.body.refreshToken, app: "production" } });
+  assert.equal(r1.status, 200, JSON.stringify(r1.body));
+  assert.equal(jwt.verify(r1.body.accessToken, process.env.JWT_SECRET).app, "production");
+});
+
 test("Token mobile TIDAK diperpanjang otomatis (tanpa X-Refreshed-Token); token web tetap diperpanjang seperti dulu", async () => {
   const u = await createLoginUser({ roles: ["FINANCE"] });
   const b = await loginMobile(u);

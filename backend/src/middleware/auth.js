@@ -80,9 +80,21 @@ const JALUR_MOBILE_BOLEH = [
   /^\/api\/orders\/[^/]+\/invoice\/pdf$/,
 ];
 
-export function jalurMobileBoleh(originalUrl = "") {
+// SANSS Produksi (klaim `app:"production"`, 12 November 2026): HANYA jalur produksi + akun mobile —
+// TIDAK ikut jalur Finance. Token Finance (tanpa klaim `app`) tetap memakai daftar di atas, tidak berubah.
+const JALUR_MOBILE_PRODUKSI = [
+  /^\/api\/production(\/|$)/,
+  /^\/api\/production-v2(\/|$)/,
+  /^\/api\/production-planning(\/|$)/,
+  /^\/api\/units(\/|$)/,
+  /^\/api\/mobile(\/|$)/,
+  /^\/api\/auth\/me$/,
+];
+
+export function jalurMobileBoleh(originalUrl = "", app = null) {
   const path = String(originalUrl).split("?")[0];
-  return JALUR_MOBILE_BOLEH.some((re) => re.test(path));
+  const daftar = app === "production" ? JALUR_MOBILE_PRODUKSI : JALUR_MOBILE_BOLEH;
+  return daftar.some((re) => re.test(path));
 }
 
 const mobileApiLimiter = createLimiter({
@@ -135,7 +147,7 @@ export async function requireAuth(req, res, next) {
   req.user = payload;
 
   if (payload.typ === "mobile") {
-    if (!jalurMobileBoleh(req.originalUrl)) {
+    if (!jalurMobileBoleh(req.originalUrl, payload.app)) {
       return res.status(403).json({ error: "Token aplikasi mobile tidak berlaku untuk alamat ini" });
     }
     let sesi = { aktif: false };

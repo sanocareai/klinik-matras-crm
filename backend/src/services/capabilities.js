@@ -91,5 +91,31 @@ export function capabilitiesFor(user) {
     // sendiri) tetapi bukan tim Finance.
     financeApp: financeRead || financePost || financeApprove,
     preset,
+    ...productionCapabilities(user),
+  };
+}
+
+// SANSS Produksi (aplikasi Android lantai produksi, 12 November 2026). Cermin izin ROUTE yang sudah
+// menjaga endpoint masing-masing — klien hanya memakai ini untuk memilih tab/tombol, server tetap penentu.
+//   lane      = antrean Meja/Corner (GET /production-v2/worker/:lane, aksi tahap) — unit:stage:write
+//   qc        = putusan QC — qc:write
+//   plan      = Admin Produksi: target harian, urutan, PIC — production_assignment:write
+//   docs      = dokumentasi proses — production_documentation:write
+//   executeAny= boleh melihat/menjalankan pekerjaan semua PIC (ADMIN/OWNER)
+// SENGAJA tidak memakai unit:read: SALES juga memegangnya, tetapi bukan tim produksi.
+export function productionCapabilities(user) {
+  const production = {
+    lane: hasPermission(user, P.UNIT_STAGE_WRITE),
+    qc: hasPermission(user, P.QC_WRITE),
+    plan: hasPermission(user, P.PRODUCTION_ASSIGNMENT_WRITE),
+    docs: hasPermission(user, P.PRODUCTION_DOCUMENTATION_WRITE),
+    executeAny: hasPermission(user, P.PRODUCTION_EXECUTE_ANY),
+  };
+  // Petunjuk TATA LETAK awal aplikasi Produksi (bukan izin): Admin > QC > Dokumentasi > Meja.
+  const productionPreset = production.plan ? "ADMIN" : production.qc ? "QC" : production.docs && !production.lane ? "DOKUMENTASI" : production.lane ? "MEJA" : "NONE";
+  return {
+    production,
+    productionPreset,
+    productionApp: production.lane || production.qc || production.plan || production.docs,
   };
 }

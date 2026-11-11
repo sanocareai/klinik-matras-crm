@@ -26,9 +26,12 @@ export function newRefreshToken() {
   return `smr_${randomBytes(32).toString("base64url")}`;
 }
 
-export function signAccessToken(user, roles, sessionId) {
+// `app` (12 November 2026): "production" untuk SANSS Produksi; token Finance TIDAK membawa klaim ini
+// (bentuknya persis seperti sebelumnya). Klaim ini menentukan daftar jalur yang boleh dijangkau token
+// (middleware/auth.js → jalurMobileBoleh) — bukan izin: setiap route tetap dijaga requirePermission.
+export function signAccessToken(user, roles, sessionId, app = null) {
   return jwt.sign(
-    { id: user.id, name: user.name, role: user.role, roles, typ: "mobile", sid: sessionId },
+    { id: user.id, name: user.name, role: user.role, roles, typ: "mobile", sid: sessionId, ...(app === "production" ? { app } : {}) },
     process.env.JWT_SECRET,
     { expiresIn: ACCESS_TTL_SECONDS }
   );
