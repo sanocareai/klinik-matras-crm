@@ -66,6 +66,7 @@ export function barisLangkah(pra) {
 }
 /** Pesan status sesudah hasil: LANGSUNG = tersimpan; AJUKAN = menunggu persetujuan (bukan seolah tersimpan). */
 export function pesanHasil(jenis, { nomor = null, ulang = false } = {}) {
-  if (jenis === "AJUKAN") return `Perubahan DIAJUKAN${nomor ? ` (${nomor})` : ""} dan menunggu persetujuan Owner/Finance. Stok dan HPP BELUM berubah sampai disetujui.`;
+  if (jenis === "AJUKAN") return `Perubahan DIAJUKAN${nomor ? ` (${nomor})` : ""} dan menunggu persetujuan ADMIN (orang lain dari pemohon). Stok dan HPP BELUM berubah sampai disetujui.`;
+  if (jenis === "VERIFIKASI") return `${ulang ? "Pengajuan ini sudah terkirim sebelumnya (tidak dikirim dua kali). " : ""}Perubahan dilaporkan dan menunggu verifikasi ADMIN. Angka lama tetap berlaku; stok dan HPP berubah sesudah diverifikasi.`;
   return `${ulang ? "Perubahan ini sudah tersimpan sebelumnya (tidak dicatat dua kali)." : "Perubahan tersimpan."} Tampil sebagai baris baru di riwayat; baris lama tidak diubah.`;
 }

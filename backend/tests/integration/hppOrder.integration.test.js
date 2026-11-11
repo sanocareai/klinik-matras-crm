@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { tautkanSO, tautanSOAktif, batalkanTautan, nyatakanCatatan } from "../../src/services/pengamanHistorisPascaSO.js";
 import { rencanakanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
 import { resetKeadaanEfektif, tungguPenyegaran } from "../../src/services/catatanPemakaianHistoris.js";
@@ -335,7 +336,7 @@ test("H7. jembatan laba jurnal → hasil manajemen: per baris (bukan per akun), 
   assert.equal(L.operasional.belumDiakui.order[0].orderNomor, "RES-UJI-002");
   assert.equal(M.status, "SEMENTARA"); assert.equal(M.final, false);
   // HTTP: PIC melihat cakupan tanpa nominal; tanpa izin → 403; tulis tanpa kunci → 400.
-  const cpic = makeClient(server.baseUrl, w.pic.token);
+  const cpic = denganVerifikasiOtomatis(makeClient(server.baseUrl, w.pic.token), server.baseUrl);
   const h = await cpic.get(`/api/finance/hpp-order/laporan?from=${H(9)}&to=${H(0)}`); assert.equal(h.status, 200, JSON.stringify(h.body));
   assert.equal(h.body.jurnal, null); assert.equal(h.body.operasional.bahanDiakui, null); assert.equal(h.body.manajemen.baris, undefined); assert.equal(h.body.manajemen.kontrolCocok, true);
   const gud = makeClient(server.baseUrl, (await createTestUser({ roles: ["SALES"] })).token);

@@ -12,6 +12,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestUnit } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 import { ROLE_PERMISSIONS, PERMISSIONS as P } from "../../src/constants/permissions.js";
 
@@ -41,7 +42,7 @@ test("izin komponen selaras endpoint induk untuk SETIAP peran (baca, tulis, ungg
   const KEY = (t) => ({ "Idempotency-Key": `perm-${t}-0000000001` });
   const rows = [];
   for (const role of Object.keys(ROLE_PERMISSIONS)) {
-    const u = await createTestUser({ roles: [role] }); const c = makeClient(server.baseUrl, u.token);
+    const u = await createTestUser({ roles: [role] }); const c = denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl);
     const parentRead = (await c.get(`${V2}/runs/${run.id}/card`)).status !== 403;
     const overviewRead = (await c.get(`${V2}/units/${unit.id}/overview`)).status !== 403;
     const compRead = (await c.get(`${CN}/units/${unit.id}`)).status !== 403;

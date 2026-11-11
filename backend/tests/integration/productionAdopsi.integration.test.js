@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server; let seq = 0;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -16,7 +17,7 @@ test.afterEach(async () => { await truncateAll(); });
 
 const P = "/api/production";
 const ym = (n) => `ADP-${++seq}-${n}`;
-async function akun(role) { const u = await createTestUser({ roles: [role] }); return { ...u, api: makeClient(server.baseUrl, u.token) }; }
+async function akun(role) { const u = await createTestUser({ roles: [role] }); return { ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) }; }
 async function world() { const [admin, worker, viewer, lead] = await Promise.all([akun("ADMIN"), akun("PRODUCTION_WORKER"), akun("SALES"), akun("PRODUCTION_LEAD")]); return { admin, worker, viewer, lead }; }
 
 // Unit nyata minimal. `pickup: "selesai"` = job PICKUP selesai TANPA bukti terima workshop (kasus Owner: status order Diproses, posisi belum diterima).

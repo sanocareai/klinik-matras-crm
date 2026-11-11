@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { bawaSampaiSiap } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { pratinjauTransisi, terapkanTransisi } from "../../src/services/transisiSatuanBahan.js";
@@ -33,7 +34,7 @@ async function dunia() {
   const p = await pratinjauTransisi(testPrisma, { aktor: B, transisi: [minta] }); assert.equal(p.bolehDiterapkan, true, JSON.stringify(p.transisi[0].penghalang));
   await terapkanTransisi(testPrisma, { aktor: B, transisi: [{ ...minta, hashPratinjau: p.transisi[0].hash }], sumber: "SO uji", alasan: "Satuan operasional mengikuti Excel SO", rujukanHash: HASH_REF, kunci: `tr-po-${randomUUID()}`, tautan: { soTanggal: hariIni(), sumber: "SO uji", alasan: "Tautan SO dalam transisi satuan uji", rujukanHash: HASH_REF } });
   assert.equal((await testPrisma.material.findUnique({ where: { id: m.id } })).unit, "METER"); assert.equal(await saldo(m.id), 180);
-  return { a: makeClient(server.baseUrl, admin.token), g: makeClient(server.baseUrl, gudang.token), supplier, m };
+  return { a: denganVerifikasiOtomatis(makeClient(server.baseUrl, admin.token), server.baseUrl), g: denganVerifikasiOtomatis(makeClient(server.baseUrl, gudang.token), server.baseUrl), supplier, m };
 }
 const poBody = (w, line, extra = {}) => ({ supplierId: w.supplier.id, orderDate: hariIni(), lines: [line], ...extra });
 

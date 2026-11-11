@@ -7,6 +7,7 @@ import { formatJumlah, hapusBaris, kunciIdempoten, kelompokkan, ketersediaanText
 import { aturanBaris, bolehKonfirmasiAktual, hppBaris, isianAwalDariRencana, keadaanSaldo, qtyStokDariIsian, ringkasHpp, rupiahHpp, satuanIsianBaris, tambahAktual, teksKonversiBaris } from "@/features/production/bahan/bahanModel.js";
 import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
 import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
+import { adminBahanSaatIni, kabarkanPengajuan, menunggu } from "@/features/production/pengajuan/pengajuanModel.js";
 
 // Bahan BARU dari Gudang — jalur stok resmi (POST /units/:id/materials): satu baris = satu pergerakan ISSUE, Idempotency-Key per niat (klik ganda/retry tidak menggandakan).
 // Tidak mewajibkan Rencana Bahan. "Gunakan rencana sebagai isian awal" hanya mengisi formulir (pengguna memeriksa dan mengubah jumlah); TIDAK memposting dan TIDAK mengurangi stok dari rencana.
@@ -50,6 +51,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
   const hpp = ringkasHpp(baris, (b) => status[b.materialId]?.fase === "ok");
   const hppTercatat = useMemo(() => { if (!semuaSelesaiDari(baris, status)) return null; let total = 0; let ada = false; let kurang = 0; for (const b of baris) { const row = status[b.materialId]?.movementId ? data.pemakaianAktual?.baris?.find((r) => r.id === status[b.materialId].movementId) : null; const n = row?.hppBeku?.nilai; if (typeof n === "number") { total += n; ada = true; } else kurang += 1; } return ada ? { total: Math.round(total * 100) / 100, kurang } : null; }, [baris, status, data.pemakaianAktual]); // eslint-disable-line react-hooks/exhaustive-deps
   const boleh = bolehKonfirmasiAktual(baris, status);
+  const langsung = adminBahanSaatIni(); const adaAju = baris.some((b) => status[b.materialId]?.aju);
   const semuaSelesai = baris.length > 0 && baris.every((b) => status[b.materialId]?.fase === "ok");
   const adaGagal = baris.some((b) => status[b.materialId]?.fase === "galat");
 
@@ -71,6 +73,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
         setStatus((s) => ({ ...s, [b.materialId]: { fase: "sibuk" } }));
         try {
           const mv = await api.addUnitMaterial(unitId, { materialId: b.materialId, qty: v, note: catatan.trim() || undefined, ...(aturanBaris(b) ? { satuan: satuanIsianBaris(b) } : {}) }, kunciUntuk(b)); // bahan beraturan satuan pakai: satuan wajib; SERVER yang mengonversi
+          if (menunggu(mv)) { setStatus((s) => ({ ...s, [b.materialId]: { fase: "ok", aju: true, pengajuan: mv.pengajuan, qty: v, ...(aturanBaris(b) ? { satuan: satuanIsianBaris(b) } : {}) } })); kabarkanPengajuan(); continue; } // non-ADMIN: PENGAJUAN, stok belum berubah
           let sesudah = null; try { const k = await api.getKatalogBahanProduksi({ q: b.kode || b.nama, limit: "10" }); const r = (k.rows || []).find((x) => x.materialId === b.materialId); sesudah = r && r.saldoDiketahui ? r.saldo : null; } catch { /* dampak saldo tidak terbaca: tampil "—" */ }
           setStatus((s) => ({ ...s, [b.materialId]: { fase: "ok", movementId: mv.id, qty: v, ...(aturanBaris(b) ? { satuan: satuanIsianBaris(b), qtyStok: qtyStokDariIsian(b, String(v)) } : {}), sebelum: b.saldoDiketahui ? b.tersedia : null, sesudah } }));
         } catch (e) { setStatus((s) => ({ ...s, [b.materialId]: { fase: "galat", galat: e } })); }
@@ -152,7 +155,13 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
                     )}
                     {st?.fase === "sibuk" && <p className="m-0 mt-1 text-[12px] text-ink3">Mencatat…</p>}
                     {st?.fase === "galat" && <p role="alert" data-testid="aktual-galat" className="m-0 mt-1 text-[12px] text-red">{pesanGalatAdopsi(st.galat).teks} Isian tetap di layar; coba lagi (tidak akan tercatat dua kali).</p>}
-                    {st?.fase === "ok" && (
+                    {st?.fase === "ok" && st.aju && (
+                      <div role="status" data-testid="aktual-hasil-aju" className="mt-1 rounded-btn bg-orangebg px-2.5 py-2 text-[12.5px] text-ink">
+                        <p className="m-0 flex items-start gap-1.5 font-medium"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-orange" aria-hidden />Dilaporkan: {formatJumlah(st.qty)} {st.satuan ?? b.satuan} {b.nama}. Menunggu verifikasi ADMIN.</p>
+                        <p className="m-0 mt-0.5 pl-5 text-ink2">Stok dan HPP belum berubah sampai ADMIN (orang lain) memverifikasi. Pekerjaan tetap bisa dilanjutkan.</p>
+                      </div>
+                    )}
+                    {st?.fase === "ok" && !st.aju && (
                       <div role="status" data-testid="aktual-hasil" className="mt-1 rounded-btn bg-greenbg px-2.5 py-2 text-[12.5px] text-green">
                         <p className="m-0 flex items-start gap-1.5 font-medium"><CheckCircle2 size={14} className="mt-0.5 shrink-0" aria-hidden />Tercatat: {formatJumlah(st.qty)} {st.satuan ?? b.satuan}{st.qtyStok != null && st.satuan !== b.satuan ? ` (= ${formatJumlah(st.qtyStok)} ${b.satuan})` : ""} {b.nama}. Stok berkurang.</p>
                         <p className="m-0 mt-0.5 pl-5 text-ink2">{row ? `${row.pelaku || "—"} · ${waktuWib(row.tanggal)} · ${row.dokumen.jenis} ${row.dokumen.nomor}` : "Memuat rincian pencatat…"}</p>
@@ -170,7 +179,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
       </div>
 
       <div className="prod-bhn-konfirmasi">
-      {!belumAda && <p className="prod-dampak m-0"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas"><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</span></p>}
+      {!belumAda && <p className="prod-dampak m-0"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas">{langsung ? <><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</> : <><b>Dilaporkan sebagai pengajuan</b> — stok & HPP berubah sesudah diverifikasi ADMIN (tepat sekali).</>}</span></p>}
       {!semuaSelesai && baris.length > 0 && (
         <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} disabled={sibuk} placeholder="Catatan untuk pemakaian ini (opsional)" aria-label="Catatan pemakaian" data-testid="aktual-catatan"
           className="prod-catatan-input" />
@@ -182,7 +191,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
           <span className="prod-hpp-ket" data-testid="hpp-total-ket">{hpp.nMemuat > 0 ? "Memuat harga…" : hpp.nTanpaHarga > 0 ? `${hpp.nTanpaHarga} bahan belum punya Harga Berlaku — belum masuk total (bukan Rp0). Minta Gudang mengisi harga.` : "Harga Berlaku Gudang saat ini × jumlah. Angka resmi dibekukan saat dikonfirmasi."}</span>
         </div>
       )}
-      {semuaSelesai && hppTercatat && (
+      {semuaSelesai && hppTercatat && !adaAju && (
         <div className="prod-hpp-total" data-testid="hpp-total-tercatat" role="status">
           <span className="prod-hpp-judul">HPP operasional tercatat</span>
           <span className="prod-hpp-angka">{rupiahHpp(hppTercatat.total)}</span>
@@ -190,12 +199,12 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
         </div>
       )}
       {!semuaSelesai && baris.length > 0 && boleh.ok && (
-        <p className="prod-dampak konfirmasi m-0" data-testid="aktual-ringkasan-konfirmasi">Stok Gudang akan berkurang: {baris.filter((b) => status[b.materialId]?.fase !== "ok").map((b) => `${formatJumlah(parseJumlah(b.qty))} ${aturanBaris(b) ? satuanIsianBaris(b) : b.satuan}${aturanBaris(b) && satuanIsianBaris(b) !== b.satuan ? ` (= ${formatJumlah(qtyStokDariIsian(b, b.qty))} ${b.satuan})` : ""} ${b.nama}`).join("; ")}.</p>
+        <p className="prod-dampak konfirmasi m-0" data-testid="aktual-ringkasan-konfirmasi">{langsung ? "Stok Gudang akan berkurang" : "Dilaporkan (stok berkurang sesudah verifikasi ADMIN)"}: {baris.filter((b) => status[b.materialId]?.fase !== "ok").map((b) => `${formatJumlah(parseJumlah(b.qty))} ${aturanBaris(b) ? satuanIsianBaris(b) : b.satuan}${aturanBaris(b) && satuanIsianBaris(b) !== b.satuan ? ` (= ${formatJumlah(qtyStokDariIsian(b, b.qty))} ${b.satuan})` : ""} ${b.nama}`).join("; ")}.</p>
       )}
       {boleh.alasan && !semuaSelesai && <p className="m-0 text-[12px] text-red">{boleh.alasan}</p>}
       <div className="prod-aksi-form">
         <Button variant="neutral" className="min-h-[44px]" onClick={onTutup} disabled={sibuk}>{semuaSelesai ? "Selesai" : "Batal"}</Button>
-        {!semuaSelesai && <Button className="bh-cta min-h-[44px]" data-testid="aktual-konfirmasi" disabled={sibuk || !boleh.ok} onClick={konfirmasi}>{sibuk ? "Mencatat…" : adaGagal ? "Coba lagi yang gagal" : "Konfirmasi & kurangi stok"}</Button>}
+        {!semuaSelesai && <Button className="bh-cta min-h-[44px]" data-testid="aktual-konfirmasi" disabled={sibuk || !boleh.ok} onClick={konfirmasi}>{sibuk ? "Mencatat…" : adaGagal ? "Coba lagi yang gagal" : langsung ? "Konfirmasi & kurangi stok" : "Laporkan pemakaian"}</Button>}
       </div>
       </div>
       </div>

@@ -375,7 +375,9 @@ function waitMessage(next) {
 // ---------------------------------------------------------------------------
 // Command: catat/jalankan tahap. body: { expectedRevision, workCenterId, payload, media }
 // ---------------------------------------------------------------------------
-export async function recordProductionStep(prisma, { runId, stepNo, actorId, idempotencyKey, expectedRevision, workCenterId, payload = {}, media = [] }) {
+// pemakaianMenunggu (aturan ADMIN, Nov 2026): pengaju non-ADMIN — bukti & tahap tetap tersimpan/selesai, jumlah bahan di bukti menjadi PENGAJUAN (BUKTI_V2);
+// stok & HPP (retur sisa) baru memakainya sesudah diverifikasi ADMIN lain.
+export async function recordProductionStep(prisma, { runId, stepNo, actorId, idempotencyKey, expectedRevision, workCenterId, payload = {}, media = [], pemakaianMenunggu = false, pengaju = null }) {
   if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
   const requestedStep = Number(stepNo);
   if (!STEP_BY_NO[requestedStep]) throw stepError("Tahap tidak dikenal", 400, "STEP_UNKNOWN");
@@ -407,7 +409,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
     const cornerGate = hasAssemblyGate(run) && [10, 11].includes(requestedStep);
     const cornerBrief = cornerGate && requestedStep === 10 ? (await loadCornerView(tx, run, ctx)).request : null;
     const evidenceCtx = { cornerGate, cornerBrief, preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, assemblyHasFoundation: ctx.state.assemblyHasFoundation, remainingMode: !!ctx.state.assemblyGate, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? remainingIssuedFor(ctx, await issuedQtyByMaterial(tx, run.plan?.id)) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
-    let evidence = null;
+    let evidence = null; let pengajuanBukti = null;
     let transition = null;
     let autoStarted = null;
     let revision = run.revision;
@@ -415,7 +417,10 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
     const record = async (operationRunId, stageId, validated) => {
       const missing = validated.media.filter((m) => !evidenceFileExists(m.url));
       if (missing.length) throw stepError("Ada media bukti yang belum selesai terunggah — unggah ulang lalu kirim lagi", 422, "STEP_MEDIA_NOT_FOUND", { count: missing.length });
-      evidence = await writeEvidence(tx, { run, stepNo: requestedStep, operationRunId, stageId, payload: validated.payload, media: validated.media, actorId, commandId: command.id });
+      const bahan = [6, 7, 10].includes(requestedStep) ? (validated.payload?.materials || []) : [];
+      const tunda = pemakaianMenunggu && bahan.length > 0;
+      evidence = await writeEvidence(tx, { run, stepNo: requestedStep, operationRunId, stageId, payload: tunda ? { ...validated.payload, materialsMenungguVerifikasi: true } : validated.payload, media: validated.media, actorId, commandId: command.id });
+      if (tunda) { const { ajukanBuktiDalamTx } = await import("./pengajuanPemakaian.js"); pengajuanBukti = await ajukanBuktiDalamTx(tx, pengaju, { run, evidence, stepNo: requestedStep, materials: bahan }); }
     };
 
     switch (next.action) {
@@ -547,6 +552,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
       ...(transition?.handoffId ? { handoffId: transition.handoffId } : {}),
       ...(autoStarted ? { autoStarted: { stage: autoStarted.stage } } : {}),
       verdict: evidence?.payload?.verdict ?? null,
+      ...(pengajuanBukti ? { menungguVerifikasi: true, pengajuanId: pengajuanBukti.id, pesanPemakaian: "Bukti tersimpan dan tahap selesai. Jumlah bahan dilaporkan — menunggu verifikasi ADMIN (stok & HPP belum berubah)." } : {}),
       next: afterCtx.next,
     };
     await finishCommand(tx, command, after.revision, response);

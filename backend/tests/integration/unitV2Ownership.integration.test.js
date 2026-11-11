@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { assignCurrentStageTo, createTestUser, createTestMaterial, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
 let server; let W;
@@ -18,7 +19,7 @@ test.after(async () => { await truncateAll(); await server.close(); await testPr
 async function world() {
   const who = {};
   for (const [k, roles] of [["lead", ["PRODUCTION_LEAD"]], ["worker", ["PRODUCTION_WORKER"]], ["qc", ["QC_LEAD"]], ["sales", ["SALES"]], ["admin", ["ADMIN"]], ["owner", ["OWNER"]], ["gudang", ["WAREHOUSE"]]]) {
-    const u = await createTestUser({ roles }); who[k] = { ...u, http: makeClient(server.baseUrl, u.token) };
+    const u = await createTestUser({ roles }); who[k] = { ...u, http: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) };
   }
   const services = await testPrisma.serviceCatalog.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" }, take: 2 });
   const mk = async (code) => {
@@ -33,7 +34,7 @@ async function world() {
 const flag = async (key, unitIds) => { const data = { enabled: !!unitIds, scope: "GLOBAL", config: unitIds ? { unitIds } : {}, reason: "uji kepemilikan V2" }; await testPrisma.v2FeatureFlag.upsert({ where: { key }, create: { key, ...data }, update: data }); };
 const v2Footprint = async () => ({
   runs: await testPrisma.productionRun.count(), custody: await testPrisma.unitCustodyHandoff.count(), outbox: await testPrisma.domainOutbox.count(),
-  commands: Number((await testPrisma.$queryRawUnsafe("select count(*)::int c from v2_commands"))[0].c), plans: await testPrisma.productionRunPlan.count(),
+  commands: Number((await testPrisma.$queryRawUnsafe("select count(*)::int c from v2_commands where domain <> 'PRODUCTION_V1'" /* perintah idempotensi V1 (mis. eksekusi pengajuan pemakaian) bukan artefak V2 */))[0].c), plans: await testPrisma.productionRunPlan.count(),
   opRuns: Number((await testPrisma.$queryRawUnsafe("select count(*)::int c from production_operation_runs_v2"))[0].c),
 });
 let FOOT0;

@@ -18,6 +18,9 @@ import { assertExpectedRevision, assertIdempotencyKey, cornerDecisionLocked, iss
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { setPlannedBOM } from "./productionPlanningCommandService.js";
 import { requestReworkMaterial } from "./productionQcHandoffCommandService.js";
+import { createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
+
+class CobaSajaBahan extends Error { constructor() { super("coba-saja"); } }
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
 function buildError(message, statusCode, code, details) {
@@ -169,17 +172,19 @@ export function normalizeRacikan(input) {
   return fondasi || lapisan ? { fondasi, lapisan } : null;
 }
 
-export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteAny = false, idempotencyKey, expectedRevision, racikan = null, materials = [], note = null }) {
+// cobaSaja: semua pemeriksaan lalu ROLLBACK (pengajuan non-ADMIN). dariPengajuan: dijalankan saat verifikasi ADMIN — boleh sesudah produksi selesai/retur dibuat SELAMA retur belum
+// diterima Gudang; retur sisa yang masih PENDING dihitung ulang di transaksi yang sama (stok baru berubah saat Gudang menerima retur, seperti biasa).
+export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteAny = false, idempotencyKey, expectedRevision, racikan = null, materials = [], note = null, cobaSaja = false, dariPengajuan = false, penjaga = null }) {
   if (!runId) throw buildError("runId wajib diisi", 400, "BUILD_RUN_REQUIRED");
-  assertIdempotencyKey(idempotencyKey);
+  if (!cobaSaja) assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
   if (materials != null && !Array.isArray(materials)) throw buildError("Daftar bahan tidak valid", 400, "BUILD_INPUT_INVALID");
   const cleanRacikan = normalizeRacikan(racikan);
   const cleanNote = text(note, "Catatan", { max: 500 });
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "RECORD_BUILD_MATERIALS", runId, expectedRevision: revisionExpected, racikan: cleanRacikan, materials: (materials || []).map((m) => [m?.materialId, Number(m?.qty)]).sort(), note: cleanNote });
-  return prisma.$transaction(async (tx) => {
-    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+  try { return await prisma.$transaction(async (tx) => {
+    const replay = cobaSaja ? null : await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision: revisionExpected, forMaterials: true, allowRestoration: true });
     if (!ctx.state.buildTrack && cleanRacikan) throw buildError("Racikan pekerjaan LAYANAN dicatat PIC Meja/PIC QC di Catatan Komponen (Racikan rencana); PIC Bahan hanya mencatat pemakaian aktual", 422, "BUILD_RACIKAN_NOT_APPLICABLE_LAYANAN");
@@ -192,7 +197,13 @@ export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteA
     }
     if (hasStep6Materials(ctx)) throw buildError("Pemakaian bahan sudah tercatat pada bukti pengerjaan PIC Meja; tidak dapat dicatat ganda", 409, "BUILD_USAGE_ALREADY_IN_EVIDENCE");
     const returned = await tx.productionMaterialReturn.count({ where: { runId: run.id } });
-    if (run.currentPhase === "HANDOFF" || returned > 0) throw buildError("Pemakaian bahan sudah dikunci (produksi selesai / retur sisa sudah dibuat)", 409, "BUILD_MATERIALS_LOCKED");
+    let hitungUlangRetur = false;
+    if (run.currentPhase === "HANDOFF" || returned > 0) {
+      if (!dariPengajuan) throw buildError("Pemakaian bahan sudah dikunci (produksi selesai / retur sisa sudah dibuat)", 409, "BUILD_MATERIALS_LOCKED");
+      const diterima = await tx.productionMaterialReturn.count({ where: { runId: run.id, status: { not: "PENDING" } } });
+      if (diterima > 0) throw buildError("Retur sisa bahan pekerjaan ini sudah diterima Gudang — pemakaian tidak diubah otomatis; periksa manual", 409, "BUILD_RETUR_SUDAH_DITERIMA");
+      hitungUlangRetur = true; // sesudah serah-terima: retur sisa dihitung ulang (dibuat bila belum ada, disesuaikan bila PENDING)
+    }
     const flow = ctx.state.productFlow;
     if (cleanRacikan && ctx.state.buildTrack) {
       if (flow === PRODUCT_FLOW.UNCONFIRMED) throw buildError("Jenis produk belum jelas — racikan kasur ditahan sampai Sales mengonfirmasi jenis produk pada order", 409, "PRODUCT_TYPE_UNCONFIRMED");
@@ -207,6 +218,8 @@ export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteA
     if (latest && sameJson(latest.racikan, cleanRacikan) && sameJson(prevLines, lines) && (latest.note || null) === cleanNote) {
       return { replayed: false, runId, revision: run.revision, version: latest.version, changed: false };
     }
+    if (cobaSaja) throw new CobaSajaBahan();
+    if (penjaga) await penjaga(tx); // dari verifikasi pengajuan: pengajuan masih aktif (terkunci)
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_BUILD_MATERIALS", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
     const version = (latest?.version ?? 0) + 1;
@@ -217,10 +230,11 @@ export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteA
       payload: { runId: run.id, unitId: run.unitId, version, materialCount: lines.length, hasRacikan: !!cleanRacikan, revision, occurredAt: now.toISOString(), actorId },
     });
     await recordActivity(tx, { entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_BUILD_MATERIALS_RECORDED, actorId: actorId || null, metadata: { unitCode: run.unit.unitCode, runId: run.id, version, materialCount: lines.length } });
+    if (hitungUlangRetur) await createLeftoverReturnsInTx(tx, { run, actorId, commandId: command.id }); // retur PENDING disesuaikan dengan pemakaian yang baru disahkan
     const response = { runId, revision, version, recordId: record.id, changed: true };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
-  });
+  }); } catch (e) { if (e instanceof CobaSajaBahan) return { cobaSaja: true, lulus: true }; throw e; }
 }
 
 // ---------------------------------------------------------------------------

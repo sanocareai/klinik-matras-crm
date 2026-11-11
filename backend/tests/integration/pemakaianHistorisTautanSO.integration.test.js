@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { tautkanSO, batalkanTautan } from "../../src/services/pengamanHistorisPascaSO.js";
 import { pratinjauTransisi, terapkanTransisi } from "../../src/services/transisiSatuanBahan.js";
 
@@ -26,9 +27,9 @@ const PRA = (w) => `/api/production/units/${w.unit.id}/pembetulan-bahan/pratinja
 const saldo = async (id) => Number((await testPrisma.$queryRaw`SELECT COALESCE(SUM(qty),0)::float AS s FROM stock_movements WHERE material_id = ${id}::uuid`)[0].s);
 
 async function dunia() {
-  const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const owner = await createTestUser({ roles: ["OWNER"] });
+  const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const owner = await createTestUser({ roles: ["OWNER"] }); const admin = await createTestUser({ roles: ["ADMIN"] }); // ADMIN: jalur LANGSUNG & penyetuju koreksi pemakaian (Nov 2026)
   const { unit } = await createTestUnit({ status: "DELIVERED", createdAt: new Date(Date.now() - 20 * HARI) });
-  return { lead, owner, B: { id: owner.user.id, name: owner.user.name, roles: ["OWNER"] }, l: makeClient(server.baseUrl, lead.token), unit };
+  return { lead, owner, admin, A: { id: admin.user.id, name: admin.user.name, roles: ["ADMIN"] }, a: makeClient(server.baseUrl, admin.token), B: { id: owner.user.id, name: owner.user.name, roles: ["OWNER"] }, l: denganVerifikasiOtomatis(makeClient(server.baseUrl, lead.token), server.baseUrl), unit };
 }
 async function bahanBerSO(w, { unit = "METER", saldoSO = 5, kode = `KAIN-SO-${++seq}`, soHariLalu = 2 } = {}) {
   const m = await createTestMaterial({ code: kode, name: `BAHAN ${kode}`, unit });
@@ -93,12 +94,12 @@ test("H6. UPAYA MELEWATI: tanpa kunci idempotensi, tanggal salah/masa depan/koso
     assert.equal(r.status, 400, `${tg}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, kode);
   }
   const pakai = await catat(w, { materialId: m.id, qty: 2, konfirmasiBukanGanda: true }, { tanggal: tgl(2) }); assert.equal(pakai.res.status, 201, JSON.stringify(pakai.res.body)); assert.equal(await saldo(m.id), 3);
-  const prUbah = await w.l.post(`/api/production/units/${w.unit.id}/perubahan-pemakaian/pratinjau`, { materialId: m.id, qtyBaru: 4, tanggalPemakaian: tgl(5) }); assert.equal(prUbah.status, 200, JSON.stringify(prUbah.body));
+  const prUbah = await w.a.post(`/api/production/units/${w.unit.id}/perubahan-pemakaian/pratinjau`, { materialId: m.id, qtyBaru: 4, tanggalPemakaian: tgl(5) }); assert.equal(prUbah.status, 200, JSON.stringify(prUbah.body));
   assert.ok(prUbah.body.penghalang.some((x) => x.kode === "PEMAKAIAN_PRA_SO"), JSON.stringify(prUbah.body.penghalang)); assert.equal(prUbah.body.boleh, false);
-  const apUbah = await w.l.post(`/api/production/units/${w.unit.id}/perubahan-pemakaian`, { materialId: m.id, qtyBaru: 4, tanggalPemakaian: tgl(5), alasan: "Uji: menambah pemakaian pra-SO", dilihat: prUbah.body.sidik }, { "Idempotency-Key": kunci("ub") });
+  const apUbah = await w.a.post(`/api/production/units/${w.unit.id}/perubahan-pemakaian`, { materialId: m.id, qtyBaru: 4, tanggalPemakaian: tgl(5), alasan: "Uji: menambah pemakaian pra-SO", dilihat: prUbah.body.sidik }, { "Idempotency-Key": kunci("ub") });
   assert.equal(prUbah.body.jalur, "LANGSUNG", "uji harus menempuh jalur LANGSUNG agar penolakan benar-benar dari pengaman pra-SO"); assert.equal(apUbah.body.code, "PEMAKAIAN_PRA_SO", JSON.stringify(apUbah.body));
   assert.ok(apUbah.status >= 400 && apUbah.status < 500, `ubah jumlah pra-SO harus ditolak: ${apUbah.status} ${JSON.stringify(apUbah.body)}`); assert.equal(await saldo(m.id), 3);
-  const prKurang = await w.l.post(`/api/production/units/${w.unit.id}/perubahan-pemakaian/pratinjau`, { materialId: m.id, qtyBaru: 1, tanggalPemakaian: tgl(5) }); assert.equal(prKurang.status, 200);
+  const prKurang = await w.a.post(`/api/production/units/${w.unit.id}/perubahan-pemakaian/pratinjau`, { materialId: m.id, qtyBaru: 1, tanggalPemakaian: tgl(5) }); assert.equal(prKurang.status, 200);
   assert.ok(!prKurang.body.penghalang.some((x) => x.kode === "PEMAKAIAN_PRA_SO"), "pengurangan (RETURN) tidak ditahan oleh pengaman pra-SO");
   const { unit: berjalan } = await createTestUnit({ status: "IN_PRODUCTION", createdAt: new Date(Date.now() - 20 * HARI) });
   const mv = await w.l.post(`/api/units/${berjalan.id}/materials`, { materialId: m.id, qty: 1 }, { "Idempotency-Key": kunci("jalan") }); assert.equal(mv.status, 201, JSON.stringify(mv.body));
@@ -130,5 +131,5 @@ test("H7. jalur KOREKSI pemakaian (ajukan + setujui): penambahan bertanggal pra-
   const kurang = await w.l.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: m.id, qtyBaru: 1, alasan: "Uji: mengurangi pemakaian (retur sah)", tanggalPemakaian: tgl(5) }, { "Idempotency-Key": kunci("kk") });
   assert.ok(kurang.status === 201 || kurang.status === 200, JSON.stringify(kurang.body)); const id = kurang.body.id ?? kurang.body.koreksi?.id; assert.ok(id, JSON.stringify(kurang.body));
   const { setujuiKoreksiPemakaian } = await import("../../src/services/koreksiPemakaian.js");
-  await setujuiKoreksiPemakaian(testPrisma, { koreksiId: id, aktor: w.B }); assert.equal(await saldo(m.id), 4, "pengurangan pemakaian (RETURN) terposting: stok bertambah 1");
+  await setujuiKoreksiPemakaian(testPrisma, { koreksiId: id, aktor: w.A }); assert.equal(await saldo(m.id), 4, "pengurangan pemakaian (RETURN) terposting: stok bertambah 1");
 });

@@ -11,6 +11,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 import { addDays, todayWib } from "../../src/lib/domain/productionRencanaAdmin.js";
 import { buildRencanaExport } from "../../src/services/productionRencanaExportService.js";
@@ -29,7 +30,7 @@ test.beforeEach(async () => { await truncateAll(); w = await world(); });
 
 const idem = (tag) => ({ "Idempotency-Key": `skj-${tag}-${++seq}-0000` });
 async function world() {
-  const mk = async (role) => { const u = await createTestUser({ roles: [role] }); return { ...u, api: makeClient(server.baseUrl, u.token) }; };
+  const mk = async (role) => { const u = await createTestUser({ roles: [role] }); return { ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) }; };
   const admin = await mk("ADMIN");
   const wc = await testPrisma.workCenter.create({ data: { code: `WC-SKJ-${++seq}`, name: "Workshop Utama" } });
   return { admin, wc };
@@ -216,7 +217,7 @@ test("K5. pemakaian bahan aktual membuat status 'Sudah dikerjakan' OTOMATIS (sum
 });
 
 test("K6. akun HANYA-LIHAT (Sales): bisa membuka ruang kerja & melihat tindakan 'Buka pekerjaan', tetapi TIDAK bisa mencatat status kerja (403) dan tidak ada yang tertulis", async () => {
-  const sales = await createTestUser({ roles: ["SALES"] }); const lihat = makeClient(server.baseUrl, sales.token);
+  const sales = await createTestUser({ roles: ["SALES"] }); const lihat = denganVerifikasiOtomatis(makeClient(server.baseUrl, sales.token), server.baseUrl);
   const u = await mkUnit({ received: true }); assert.equal((await jadwalkan(u)).status, 201);
   const ad = (await lihat.get(`${P}/units/${u.id}/adopsi`)); assert.equal(ad.status, 200); assert.equal(ad.body.adopsi.tindakan.aksi, "OPEN_WORK"); assert.equal(ad.body.izin.statusKerja, false);
   assert.equal((await lihat.get(`${P}/units/${u.id}/ruang-kerja`)).status, 200);

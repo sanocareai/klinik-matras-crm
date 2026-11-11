@@ -1121,6 +1121,14 @@ export const api = {
   setujuiKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/setujui`, { method: "POST", body: JSON.stringify(data) }),
   tolakKoreksiPemakaian: (id, data) => request(`/production/koreksi-pemakaian/${id}/tolak`, { method: "POST", body: JSON.stringify(data) }),
   batalKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/batal`, { method: "POST", body: JSON.stringify(data) }),
+  // ── Pengajuan pemakaian bahan (non-ADMIN → diverifikasi ADMIN lain; respons catat 202 { menungguVerifikasi, pengajuan }).
+  daftarPengajuanPemakaian: (q = {}) => request(`/production/pengajuan-pemakaian${Object.keys(q).length ? `?${new URLSearchParams(q)}` : ""}`),
+  riwayatPengajuanPemakaian: (id) => request(`/production/pengajuan-pemakaian/${id}/riwayat`),
+  verifikasiPengajuanPemakaian: (data) => request("/production/pengajuan-pemakaian/verifikasi", { method: "POST", body: JSON.stringify(data) }), // { item:[{id, konfirmasi?, konfirmasiHarga?}], catatan }
+  tolakPengajuanPemakaian: (data) => request("/production/pengajuan-pemakaian/tolak", { method: "POST", body: JSON.stringify(data) }), // { ids, alasan }
+  ubahPengajuanPemakaian: (id, data) => request(`/production/pengajuan-pemakaian/${id}/ubah`, { method: "POST", body: JSON.stringify(data) }), // { qty | baris:[{materialId, qty}], alasan }
+  pengajuanTerverifikasi: (runId) => request(`/production/pengajuan-pemakaian/terverifikasi?runId=${encodeURIComponent(runId)}`),
+  batalkanPengajuanPemakaian: (id, data) => request(`/production/pengajuan-pemakaian/${id}/batalkan`, { method: "POST", body: JSON.stringify(data) }),
   // Posting pemakaian historis (Admin/Owner/Finance): pratinjau manifest + dampak, batch di latar (progres dari server), lanjut/hentikan. Server menegakkan izin + gerbang hash.
   pratinjauPostingHistoris: (unitIds) => request(`/production/posting-historis/pratinjau${unitIds?.length ? `?unitIds=${unitIds.join(",")}` : ""}`),
   daftarBatchPostingHistoris: () => request("/production/posting-historis/batch"),

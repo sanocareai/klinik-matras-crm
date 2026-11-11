@@ -14,6 +14,7 @@ import RiwayatBahanBaru from "@/features/production/bahan/RiwayatBahanBaru.jsx";
 import CatatanHistorisBagian from "@/features/production/bahan/CatatanHistorisBagian.jsx";
 import PembetulanUnitSelesai from "@/features/production/bahan/PembetulanUnitSelesai.jsx";
 import TabelPemakaian from "@/features/production/bahan/TabelPemakaian.jsx";
+import PemakaianTertunda from "@/features/production/pengajuan/PemakaianTertunda.jsx";
 import { DETAIL_TEKNIS, PILIHAN_SUMBER, pesanHasil } from "@/features/production/bahan/perubahanModel.js";
 import "@/features/production/bahan/bahan.css";
 import { JUDUL_AKTUAL, KARTU_SUMBER, SATUAN_KOMPONEN as SATUAN_LIST, SUMBER_SEMENTARA, asalKomponen, barisTabelPemakaian } from "@/features/production/bahan/bahanModel.js";
@@ -94,6 +95,9 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
         <p role="status" className="prod-umpan ok m-0 flex items-start gap-2" data-testid="edit-hasil" data-jenis={hasilEdit.jenis}><CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden /><span className="min-w-0 flex-1">{pesanHasil(hasilEdit.jenis, hasilEdit)}</span>
           <button type="button" onClick={() => setHasilEdit(null)} aria-label="Tutup pesan" className="prod-ikon-tombol"><X size={16} aria-hidden /></button></p>
       )}
+
+      {/* Pemakaian yang sudah DILAPORKAN, menunggu verifikasi ADMIN (terpisah dari pemakaian resmi; stok & HPP belum berubah) */}
+      <PemakaianTertunda unitId={unitId} />
 
       {/* Daftar pemakaian aktual (tiga sumber dalam satu daftar, dampak singkat per baris, Edit per baris; unit berjalan DAN terkirim) */}
       {adaTabel && <TabelPemakaian unitId={unitId} kodeUnit={kodeUnit} data={data} izin={izin} aktif={aktif} terkirim={terkirim} rencanaEdit={rencanaEdit} menunggu={menunggu} editId={editId} onEditGudang={bukaEdit} onTutupGudang={() => setEditId(null)} onHasilEdit={setHasilEdit} onDone={onDone} />}

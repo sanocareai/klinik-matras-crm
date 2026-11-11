@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -20,7 +21,7 @@ async function dunia() {
   const admin = await createTestUser({ roles: ["ADMIN"] }); const gudang = await createTestUser({ roles: ["WAREHOUSE"] }); const sales = await createTestUser({ roles: ["SALES"] }); const pekerja = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
   const { unit, order } = await createTestUnit({ status: "RECEIVED" });
   const mat = await createTestMaterial({ code: "BUSA-SKY-120", name: "BUSA REBONDED SKY 120X200X10 D70", unit: "SHEET", itemGroup: "HR FOAM" }); // TANPA pergerakan = stok belum diketahui
-  const c = (u) => makeClient(server.baseUrl, u.token);
+  const c = (u) => denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl);
   return { a: c(admin), g: c(gudang), s: c(sales), p: c(pekerja), admin: admin.user, gudang: gudang.user, pekerja: pekerja.user, adminToken: admin.token, unit, order, mat };
 }
 const hitung = async () => Object.fromEntries(await Promise.all([["sm", "stock_movements"], ["mi", "material_issues"], ["rsv", "material_reservations_v2"], ["jur", "fin_journal_entries"], ["jl", "fin_journal_lines"], ["gr", "goods_receipts"], ["mat", "materials"], ["usul", "material_proposals"]].map(async ([k, t]) => [k, Number((await testPrisma.$queryRawUnsafe(`select count(*)::int n from ${t}`))[0].n)])));

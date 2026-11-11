@@ -9,6 +9,7 @@ import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixture
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
 let server;
@@ -50,7 +51,7 @@ async function world() {
   const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-P8-${++seq}` } });
   const [rcv, fg] = [await loc("RCV", "RECEIVING_AREA"), await loc("FG", "FINISHED_GOODS_AREA")];
   const service = await testPrisma.serviceCatalog.findUniqueOrThrow({ where: { code: "UPG_FONDASI_LAPISAN" } });
-  const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
+  const c = (u) => ({ ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) });
   const fondasi = await createTestMaterial({ name: `Pocket Spring ${++seq}` });
   const lapisan = await createTestMaterial({ name: `Latex D80 ${++seq}` });
   await seedBalance(fondasi.id, 10);
@@ -341,7 +342,7 @@ test("Menunggu Bahan Baku: operasi dijeda sah (PROCESS_DELAY), muncul di antrean
   assert.equal(resumeEarly.status, 409); assert.equal(resumeEarly.body.code, "STEP_WAITING_MATERIAL_SHORTAGE");
 
   const worker = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
-  assert.equal((await makeClient(server.baseUrl, worker.token).post(`${V2}/material-shortages/${wq.shortages[0].id}/resolve`, { expectedRevision: 1 }, key("res-worker"))).status, 403, "hanya Gudang (INVENTORY_WRITE)");
+  assert.equal((await denganVerifikasiOtomatis(makeClient(server.baseUrl, worker.token), server.baseUrl).post(`${V2}/material-shortages/${wq.shortages[0].id}/resolve`, { expectedRevision: 1 }, key("res-worker"))).status, 403, "hanya Gudang (INVENTORY_WRITE)");
   ok(await w.nadya.api.post(`${V2}/material-shortages/${wq.shortages[0].id}/resolve`, { expectedRevision: 1, note: "diserahkan" }, key("res-wh")));
   c = await card(w, run.id);
   assert.deepEqual([c.next.stepNo, c.next.action], [6, "RESUME"]);
@@ -427,7 +428,7 @@ test("ROLLBACK writer OFF -> aksi V1 -> writer ON: V2 mendeteksi drift (409 PROD
   const projection = async () => ({
     run: (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).revision,
     ops: (await testPrisma.productionOperationRun.findMany({ where: { runId: run.id }, orderBy: { sequence: "asc" } })).map((o) => `${o.sequence}:${o.status}`).join(","),
-    evidence: await evidenceCount(run.id), commands: Number((await testPrisma.$queryRawUnsafe("select count(*)::int c from v2_commands"))[0].c),
+    evidence: await evidenceCount(run.id), commands: Number((await testPrisma.$queryRawUnsafe("select count(*)::int c from v2_commands where domain <> 'PRODUCTION_V1'" /* perintah idempotensi V1 (mis. eksekusi pengajuan pemakaian) bukan artefak V2 */))[0].c),
   });
   const markers = () => testPrisma.activityEvent.count({ where: { entityId: unit.id, eventType: "PRODUCTION_V1_WRITE_ON_V2_RUN" } });
   const P0 = await projection();
@@ -474,7 +475,7 @@ test("ROLLBACK writer OFF -> aksi V1 -> writer ON: V2 mendeteksi drift (409 PROD
 test("Fase 3 LAYANAN: PIC Bahan ditugaskan per pekerjaan; pemakaian aktual hanya dari bahan yang diserahkan; tidak ganda dengan bukti Meja; stok tidak bergerak; SEWA ditolak", async () => {
   const w = await world();
   const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
-  const febri = { ...febriU, api: makeClient(server.baseUrl, febriU.token) };
+  const febri = { ...febriU, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, febriU.token), server.baseUrl) };
   const febriOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: febri.user.id, primaryWorkCenterId: w.wc } });
   const { unit, run } = await acceptedUnit(w);
   const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
@@ -555,11 +556,11 @@ test("Fase 3 LAYANAN: PIC Bahan ditugaskan per pekerjaan; pemakaian aktual hanya
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 test("Fase 3 LAYANAN: PIC Bahan mengisi & merevisi BOM rencana lewat command planning yang sama; non-PIC/Lead/Gudang ditolak; revisi basi 409; replay idempoten; terkunci setelah serah; tanpa stok", async () => {
   const w = await world();
-  const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const febri = { ...febriU, api: makeClient(server.baseUrl, febriU.token) };
-  const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: makeClient(server.baseUrl, ferdyU.token) };
+  const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const febri = { ...febriU, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, febriU.token), server.baseUrl) };
+  const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, ferdyU.token), server.baseUrl) };
   const febriOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: febri.user.id, primaryWorkCenterId: w.wc } });
   await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
-  const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: makeClient(server.baseUrl, adminU.token) };
+  const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, adminU.token), server.baseUrl) };
   const { unit, run } = await acceptedUnit(w);
   const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
   await throughIntake(w, run.id);
@@ -787,7 +788,7 @@ const finishCall = async (who, w, runId, { key: k = key(`fin-${++seq}`), rev = n
 const QP = "/api/production-planning/qc/runs";
 const AFTER_FOUNDATION_ONLY = { foundation: { action: "REPLACE", system: "BONNELL", material: { kind: "MANUAL", text: "Pocket spring 25 cm" } }, layers: [] };
 async function picBahan(w, runId) {
-  const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = { ...u, api: makeClient(server.baseUrl, u.token) };
+  const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = { ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) };
   const op = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: pic.user.id, primaryWorkCenterId: w.wc } });
   ok(await w.lead.api.post(`${V2}/runs/${runId}/build/material-operator`, { operatorId: op.id, expectedRevision: (await card(w, runId)).revision }, key("pic-as")));
   return pic;
@@ -992,7 +993,7 @@ async function reworkScenario({ target, kindService = "UPG_FONDASI_LAPISAN" }) {
   assert.equal(c.assembly.current.foundationTest.ok, true, "uji fondasi putaran 1 berlaku sampai fondasi dirakit ulang");
 
   // permintaan bahan rework: hanya PIC Bahan yang DITUGASKAN
-  const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: makeClient(server.baseUrl, ferdyU.token) };
+  const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, ferdyU.token), server.baseUrl) };
   await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
   const lines = fondasiRework ? [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }] : [{ materialId: w.lapisan.id, qty: 2 }];
   c = await card(w, run.id);

@@ -41,7 +41,7 @@ test("Konkurensi nyata: dua POST /units/:id/materials PARALEL yang sama-sama 'sa
   await testPrisma.$transaction((tx) => postStockMovement(tx, { materialId: material.id, type: "RECEIPT", qty: 10 }));
 
   const { unit } = await createTestUnit();
-  const { token } = await createTestUser({ roles: ["WAREHOUSE"] });
+  const { token } = await createTestUser({ roles: ["ADMIN"] }); // ADMIN = jalur tulis langsung (non-ADMIN = pengajuan, diuji di pengajuanPemakaianProduksi)
   const authedClient = makeClient(server.baseUrl, token);
 
   // Saldo = 10. Dua request paralel masing-masing minta 7 (ISSUE qty=7).
@@ -69,7 +69,7 @@ test("Konkurensi nyata: lock FOR UPDATE menyerialkan request paralel ke material
   await testPrisma.$transaction((tx) => postStockMovement(tx, { materialId: material.id, type: "RECEIPT", qty: 100 }));
 
   const { unit } = await createTestUnit();
-  const { token } = await createTestUser({ roles: ["WAREHOUSE"] });
+  const { token } = await createTestUser({ roles: ["ADMIN"] }); // ADMIN = jalur tulis langsung
   const authedClient = makeClient(server.baseUrl, token);
 
   // 10 request paralel, masing-masing ISSUE qty=10 -> total persis 100,

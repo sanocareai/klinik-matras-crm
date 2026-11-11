@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Undo2 } from "lucide-react";
 import { api } from "@/api.js";
+import { kabarkanPengajuan, menunggu } from "@/features/production/pengajuan/pengajuanModel.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
@@ -20,7 +21,7 @@ function Koreksi({ unitId, baris, total, onSelesai, onTutup }) {
   const v = parseJumlah(qty); const sah = v !== null && v > 0 && v <= maks + 0.00005 && alasan.trim().length >= 3;
   async function kirim() {
     if (kirimRef.current || !sah) return; kirimRef.current = true; setSibuk(true); setGalat(null);
-    try { kunci.current ??= kunciIdempoten("koreksi-bahan"); await api.addUnitMaterial(unitId, { materialId: baris.materialId, qty: -Math.round(v * 10000) / 10000, satuan: baris.satuan, note: `Koreksi atas ${baris.dokumen.nomor}: ${alasan.trim()}` }, kunci.current); await onSelesai(); }
+    try { kunci.current ??= kunciIdempoten("koreksi-bahan"); const mv = await api.addUnitMaterial(unitId, { materialId: baris.materialId, qty: -Math.round(v * 10000) / 10000, satuan: baris.satuan, note: `Koreksi atas ${baris.dokumen.nomor}: ${alasan.trim()}` }, kunci.current); if (menunggu(mv)) kabarkanPengajuan(); await onSelesai(); }
     catch (e) { setGalat(e); } finally { kirimRef.current = false; setSibuk(false); }
   }
   const g = galat ? pesanGalatAdopsi(galat) : null;

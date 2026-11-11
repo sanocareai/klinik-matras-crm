@@ -10,6 +10,7 @@ import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixture
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
 let server;
@@ -51,7 +52,7 @@ async function world() {
   const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-P8-${++seq}` } });
   const [rcv, fg] = [await loc("RCV", "RECEIVING_AREA"), await loc("FG", "FINISHED_GOODS_AREA")];
   const service = await testPrisma.serviceCatalog.findUniqueOrThrow({ where: { code: "UPG_FONDASI_LAPISAN" } });
-  const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
+  const c = (u) => ({ ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) });
   const fondasi = await createTestMaterial({ name: `Pocket Spring ${++seq}` });
   const lapisan = await createTestMaterial({ name: `Latex D80 ${++seq}` });
   await seedBalance(fondasi.id, 10);
@@ -146,7 +147,7 @@ async function throughIntake(w, runId) {
 const DIAG = { diagnosis: "Per tengah lemah dan busa penopang kempes sehingga pinggang melengkung saat tidur.", inputMethod: "TEXT" };
 
 // ---------------------------------------------------------------- helper slice 2 ----------------------------------------------------------------------------------------------------
-const admin = async () => { const u = await createTestUser({ roles: ["ADMIN"] }); return { ...u, api: makeClient(server.baseUrl, u.token) }; };
+const admin = async () => { const u = await createTestUser({ roles: ["ADMIN"] }); return { ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) }; };
 const setSetting = (k, value) => testPrisma.productionSetting.upsert({ where: { key: k }, create: { key: k, value }, update: { value } });
 const enableAdaptationDefault = () => setSetting("adaptation_default_policy", { policy: "ADAPTATION_V1" });
 const balanceOf = async (materialId) => Number((await testPrisma.stockMovement.aggregate({ where: { materialId }, _sum: { qty: true } }))._sum.qty || 0);
@@ -536,9 +537,9 @@ test("K. Izin pengaturan: PRODUCTION_SETTINGS_WRITE hanya Admin/Owner; operator/
 });
 
 test("L. Lanjutkan Pekerjaan di LUAR papan (jalur lama): SATU aksi atomik+idempoten; penundaan 'Menunggu bahan' hanya dibuka pemegang izin Gudang/Admin; penugasan & kepemilikan tetap ditegakkan", async () => {
-  const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const leadApi = makeClient(server.baseUrl, lead.token);
-  const picU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = makeClient(server.baseUrl, picU.token);
-  const otherU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const other = makeClient(server.baseUrl, otherU.token);
+  const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); const leadApi = denganVerifikasiOtomatis(makeClient(server.baseUrl, lead.token), server.baseUrl);
+  const picU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = denganVerifikasiOtomatis(makeClient(server.baseUrl, picU.token), server.baseUrl);
+  const otherU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const other = denganVerifikasiOtomatis(makeClient(server.baseUrl, otherU.token), server.baseUrl);
   const adm = await admin();
   const picOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: picU.user.id } });
   await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: otherU.user.id } });

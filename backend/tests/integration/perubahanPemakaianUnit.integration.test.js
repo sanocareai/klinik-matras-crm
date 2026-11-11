@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -19,12 +20,12 @@ const HARI = 86400_000;
 const wib = (d) => new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 const tgl = (hariLalu = 0) => wib(Date.now() - hariLalu * HARI);
 async function dunia({ status = "IN_PRODUCTION", saldoA = 100, saldoB = 50 } = {}) {
-  const admin = await createTestUser({ roles: ["ADMIN"] }); const fin = await createTestUser({ roles: ["FINANCE"] }); const sales = await createTestUser({ roles: ["SALES"] });
+  const admin = await createTestUser({ roles: ["ADMIN"] }); const fin = await createTestUser({ roles: ["FINANCE"] }); const sales = await createTestUser({ roles: ["SALES"] }); const admin2 = await createTestUser({ roles: ["ADMIN"] }); // penyetuju koreksi pemakaian = ADMIN lain (keputusan Owner Nov 2026; Finance/Owner bukan penyetuju operasional bahan)
   const A = await createTestMaterial({ code: `BHN-A${++seq}`, name: "BUSA A", unit: "KG" }); const B = await createTestMaterial({ code: `BHN-B${++seq}`, name: "BUSA B", unit: "KG" });
   if (saldoA) await seedBalance(A.id, saldoA, { unitCost: 20000 }); if (saldoB) await seedBalance(B.id, saldoB, { unitCost: 10000 });
   const { unit, order } = await createTestUnit({ status: "IN_PRODUCTION", createdAt: new Date(Date.now() - 20 * HARI) });
-  const c = (u) => makeClient(server.baseUrl, u.token);
-  const w = { admin, fin, sales, a: c(admin), f: c(fin), s: c(sales), A, B, unit, order, status };
+  const c = (u) => denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl);
+  const w = { admin, fin, sales, a: c(admin), a2: c(admin2), f: c(fin), s: c(sales), A, B, unit, order, status };
   w.selesaikan = async () => { await testPrisma.unit.update({ where: { id: unit.id }, data: { status: "DELIVERED" } }); w.status = "DELIVERED"; };
   return w;
 }
@@ -156,7 +157,7 @@ test("U9. PERLU PERSETUJUAN: bahan dari dokumen Material Issue pada unit berjala
   const sA = await saldo(w.A.id); const aj = await w.a.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: w.A.id, qtyBaru: 7, alasan: "Pemakaian sebenarnya 7 kg", tanggalPemakaian: T }, { "Idempotency-Key": kunci("aj") });
   assert.equal(aj.status, 201, JSON.stringify(aj.body)); assert.equal(await saldo(w.A.id), sA, "diajukan = stok belum berubah"); assert.equal((await w.a.post(PRA(w), { materialId: w.A.id, qtyBaru: 9, tanggalPemakaian: T, ajukan: true })).body.penghalang.find((h) => h.kode === "KOREKSI_TERTUNDA") !== undefined, true);
   assert.equal((await w.a.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {})).status, 403, "pemohon tidak bisa menyetujui sendiri");
-  const setuju = await w.f.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {}); assert.equal(setuju.status, 200, JSON.stringify(setuju.body)); assert.equal(await saldo(w.A.id), sA - 2);
+  const setuju = await w.a2.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {}); assert.equal(setuju.status, 200, JSON.stringify(setuju.body)); assert.equal(await saldo(w.A.id), sA - 2);
   const mv = await testPrisma.stockMovement.findFirst({ where: { unitId: w.unit.id, correctionId: aj.body.id } }); assert.ok(mv.note.includes(`[dilaporkan ${T}]`), mv.note);
   const o = await op(mv.id); assert.equal(Number(o.unitCost), 20000, "harga pada tanggal pemakaian yang dilaporkan, bukan hari persetujuan (30000)"); assert.equal(o.basisDetail.dasarTanggal, T);
   const riw = (await w.a.get(`/api/production/units/${w.unit.id}/adopsi`)).body.pemakaianAktual.baris.find((b) => b.id === mv.id); assert.equal(riw.dilaporkan, T);
@@ -201,7 +202,7 @@ test("U12. BAHAN ASAL MATERIAL ISSUE tetap lewat persetujuan / Return Produksi d
   assert.equal(ret.status, 409); assert.equal(ret.body.code, "UNIT_ASAL_MATERIAL_ISSUE"); assert.equal(await jumlahMov(w), n0); assert.equal(await saldo(w.A.id), s0, "stok tidak berubah");
   // pengajuan resmi tetap tersedia dan stok baru berubah setelah disetujui orang lain
   const aj = await w.a.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: w.A.id, qtyBaru: 3, alasan: "Pemakaian sebenarnya 3", tanggalPemakaian: T }, { "Idempotency-Key": kunci("aj") }); assert.equal(aj.status, 201, JSON.stringify(aj.body)); assert.equal(await saldo(w.A.id), s0);
-  assert.equal((await w.f.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {})).status, 200); assert.equal(await saldo(w.A.id), s0 + 2);
+  assert.equal((await w.a2.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {})).status, 200); assert.equal(await saldo(w.A.id), s0 + 2);
   // unit berjalan, bahan CAMPURAN (Material Issue + pengeluaran langsung): Edit = AJUKAN, tetapi koreksi langsung pengeluaran langsung (jalur lama) tetap tersedia
   const w2 = await dunia(); await poolMI(w2, w2.A, 3); await pakai(w2, w2.A, 2);
   assert.equal((await lihat(w2, { materialId: w2.A.id, qtyBaru: 4 })).jalur, "AJUKAN");

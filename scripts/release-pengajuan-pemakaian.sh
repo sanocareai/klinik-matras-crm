@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# RILIS "Pengajuan pemakaian bahan Produksi (aturan ADMIN, Nov 2026)": backend + web + 1 migrasi ADITIF (2 tabel, 5 indeks, 2 fungsi, 2 trigger). Tidak menulis stok, jurnal, saldo, PSA, atau cutover;
+# tidak mengisi data. Sesudah switch: non-ADMIN yang mencatat pemakaian Produksi membuat PENGAJUAN (stok/HPP berubah sesudah verifikasi ADMIN lain); ADMIN tetap langsung.
+# Pola sama dengan release-meta-composio.sh (allowlist + pin migrasi + pin isi diff + audit kode live + backup + rehearsal di salinan + switch satu kali).
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ppp.sh <DEPLOY_SHA> <BASE_SHA> --preflight-only'   # baca-saja
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ppp.sh <DEPLOY_SHA> <BASE_SHA> --rehearsal-only'   # + backup segar, restore ke DB salinan, migrasi + uji baca kode baru pada salinan; TANPA build/migrasi produksi/switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ppp.sh <DEPLOY_SHA> <BASE_SHA>'                    # rilis penuh (HANYA setelah persetujuan deploy)
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ppp.sh <DEPLOY_SHA> <BASE_SHA> --rollback'         # kembali ke folder+image baseline; tabel aditif dibiarkan (kode lama tidak membacanya)
+# Rehearsal memakai IMAGE LIVE dengan backend/src + backend/prisma kandidat di-mount baca-saja (package.json tidak berubah — dijaga allowlist), jadi tidak butuh ruang build image/web.
+set -Eeuo pipefail
+umask 077
+DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
+[[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ && "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen harus DEPLOY_SHA BASE_SHA 40 karakter" >&2; exit 1; }
+MODE=release; for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --rehearsal-only) MODE=rehearsal;; --rollback) MODE=rollback;; esac; done
+BUNDLE="${BUNDLE:-}"; CAND_BRANCH="${CAND_BRANCH:-feat/pemakaian-verifikasi-on-e82899c0}"; CAND_REF="refs/remotes/origin/cand-ppp"
+ALLOWED_RE='^(backend/prisma/migrations/20261231190200_pengajuan_pemakaian_produksi/migration\.sql|backend/prisma/schema\.prisma|backend/scripts/rehearsal/ujiTulisPengajuan\.mjs|backend/src/routes/pemakaianKoreksi\.js|backend/src/routes/productionExperience\.js|backend/src/routes/units\.js|backend/src/services/catatPemakaianUnitV1\.js|backend/src/services/koreksiPemakaian\.js|backend/src/services/pemakaianBuktiSah\.js|backend/src/services/pembetulanBahanUnit\.js|backend/src/services/pengajuanPemakaian\.js|backend/src/services/peranAdminBahan\.js|backend/src/services/perubahanPemakaianUnit\.js|backend/src/services/productionBuildCommandService\.js|backend/src/services/productionMaterialReturnService\.js|backend/src/services/productionStepCommandService\.js|backend/src/services/productionUnitOverviewService\.js|backend/tests/integration/concurrency\.integration\.test\.js|backend/tests/integration/deskripsiBahan\.integration\.test\.js|backend/tests/integration/documentFlows\.integration\.test\.js|backend/tests/integration/hppOrder\.integration\.test\.js|backend/tests/integration/kelengkapanOrderProduksi\.integration\.test\.js|backend/tests/integration/komponenLamaDanPemakaianAktual\.integration\.test\.js|backend/tests/integration/laporanProduksi\.integration\.test\.js|backend/tests/integration/pemakaianBahanLepas\.integration\.test\.js|backend/tests/integration/pemakaianHistorisStokMinus\.integration\.test\.js|backend/tests/integration/pemakaianHistorisTautanSO\.integration\.test\.js|backend/tests/integration/pemakaianSementaraBahanKatalog\.integration\.test\.js|backend/tests/integration/pembetulanBahanUnit\.integration\.test\.js|backend/tests/integration/pengajuanPemakaianProduksi\.integration\.test\.js|backend/tests/integration/perubahanPemakaianUnit\.integration\.test\.js|backend/tests/integration/poRollKeMeterPascaTransisi\.integration\.test\.js|backend/tests/integration/productionAdaptationSlice2\.integration\.test\.js|backend/tests/integration/productionAdopsi\.integration\.test\.js|backend/tests/integration/productionAdopsiOpname\.integration\.test\.js|backend/tests/integration/productionBuildTrack\.integration\.test\.js|backend/tests/integration/productionComponentNotes\.integration\.test\.js|backend/tests/integration/productionComponentPermissions\.integration\.test\.js|backend/tests/integration/productionDiagnosis\.integration\.test\.js|backend/tests/integration/productionExperience\.integration\.test\.js|backend/tests/integration/productionPreTeardown\.integration\.test\.js|backend/tests/integration/productionReturnQueueReorder\.integration\.test\.js|backend/tests/integration/rekonsiliasiKoreksiPosting\.integration\.test\.js|backend/tests/integration/setup/testDb\.js|backend/tests/integration/setup/verifikasiOtomatis\.js|backend/tests/integration/statusKerjaDariJadwal\.integration\.test\.js|backend/tests/integration/statusKerjaDariPemakaian\.integration\.test\.js|backend/tests/integration/transisiSatuanBahan\.integration\.test\.js|backend/tests/integration/unitV2Ownership\.integration\.test\.js|backend/tests/integration/usulanBahanDanPemakaianSementara\.integration\.test\.js|frontend/qa-harness/pengajuan-pemakaian-browser\.cjs|frontend/qa-harness/pengajuan-pemakaian-server\.mjs|frontend/src/api\.js|frontend/src/components/Layout\.jsx|frontend/src/features/production/UnitV1Materials\.jsx|frontend/src/features/production/bahan/CatatBahanBaru\.jsx|frontend/src/features/production/bahan/EditPemakaianForm\.jsx|frontend/src/features/production/bahan/PemakaianAktualBagian\.jsx|frontend/src/features/production/bahan/PembetulanUnitSelesai\.jsx|frontend/src/features/production/bahan/RiwayatBahanBaru\.jsx|frontend/src/features/production/bahan/perubahanModel\.js|frontend/src/features/production/pengajuan/PemakaianTertunda\.jsx|frontend/src/features/production/pengajuan/pengajuanModel\.js|frontend/src/features/production/workerApp/JobDetail\.jsx|frontend/src/features/production/workerApp/V1Panels\.jsx|frontend/src/features/production/workerApp/materialSheet\.jsx|frontend/src/lib/productionNav\.js|frontend/src/pages/bengkel/VerifikasiPemakaian\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/productionSidebarConsolidation\.test\.js|frontend/tests/unitV1Actions\.test\.js|frontend/tests/uxRealignment\.test\.js|scripts/release-pengajuan-pemakaian\.sh)$'
+MIG_NAME='20261231190200_pengajuan_pemakaian_produksi'; MIG_SHA='21458eca0f13da789d139305112c6970225889eddef4b215d5911663c8567ef4'; DIFF_SHA='af7abdb7d8adc4778d5b3f5e0d750f6a7390bcbe05438b0231964fc0e15e4e31'
+TRIGGER_BARU="ppp_jaga pppe_jaga"
+PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"; PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
+DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; RELEASES="$HOME/releases/klinik-matras"; PERSIST="$HOME/klinik-matras"; SRC="$HOME/release-src/klinik-matras.git"; NEW_DIR="$RELEASES/$DEPLOY_SHORT"
+MIN_FREE_KB=$((5 * 1024 * 1024)); REH_FREE_KB=$((3 * 1024 * 1024)); TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/pengajuan-pemakaian-${DEPLOY_SHORT}-${TS}"
+PHASE=init; PREV_DIR=""; PREV_IMG_ID=""; IMG_NAME=""; ROLLBACK_TAG=""; REH_DB=""; REH_SRC=""
+say() { printf '\n== %s\n' "$*"; }; ok() { printf '  OK    %s\n' "$*"; }; warn() { printf '  PERHATIAN %s\n' "$*"; }; die() { printf '\nSTOP [%s]: %s\n' "$PHASE" "$*" >&2; exit 1; }
+sg() { git --git-dir="$SRC" "$@"; }
+dcp() { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
+psql_live() { docker exec -i "$PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
+bebas_kb() { df -Pk "$HOME" | awk 'NR==2{print $4}'; }
+SKEMA_MD5_KOSONG="d41d8cd98f00b204e9800998ecf8427e"; SKEMA_MIN_BARIS="${SKEMA_MIN_BARIS:-50}"
+# Baris CHECK dan baris INDEKS PARSIAL (CREATE ... INDEX ... WHERE): pg_dump merender ulang cast/kurung daftar IN sesudah restore (mis. ARRAY[..]::text[] vs ARRAY[(..)::text]) — makna sama.
+skema_norm() {
+  tr -d '\r' | sed -E '/^--/d; /^[[:space:]]*$/d; /^.?(un)?restrict [A-Za-z0-9]+$/d; s/,$//' | sed -E '/CHECK|^CREATE (UNIQUE )?INDEX .* WHERE /{
+    s/::character varying(\([0-9]+\))?(\[\])?//g
+    s/::text(\[\])?//g
+    :a
+    s/(^|[^A-Za-z0-9_])\(([^() ,]+)\)/\1\2/g
+    ta
+    :b
+    s/(^|[^A-Za-z0-9_])\((ARRAY\[[^]]*\])\)/\1\2/g
+    tb
+  }'
+}
+skema_valid() { [ -s "$1" ] && [ "$(md5sum <"$1" | cut -d' ' -f1)" != "$SKEMA_MD5_KOSONG" ] && [ "$(wc -l <"$1")" -ge "$SKEMA_MIN_BARIS" ] && grep -q 'CREATE TABLE' "$1"; }
+skema_banding() {
+  local T ha hb; T="$(mktemp -d)"; skema_norm <"$1" >"$T/a"; skema_norm <"$2" >"$T/b"
+  if ! skema_valid "$T/a" || ! skema_valid "$T/b"; then echo "SKEMA_GAGAL: dump kosong atau terlalu pendek"; rm -rf "$T"; return 1; fi
+  ha="$(md5sum <"$T/a" | cut -d' ' -f1)"; hb="$(md5sum <"$T/b" | cut -d' ' -f1)"
+  if [ "$ha" != "$hb" ]; then echo "SKEMA_GAGAL: hash berbeda ${ha:0:16} vs ${hb:0:16}"; diff "$T/a" "$T/b" | head -n 6 | cut -c1-140; rm -rf "$T"; return 1; fi
+  echo "SKEMA_COCOK ${ha:0:16} baris=$(wc -l <"$T/a")"; rm -rf "$T"
+}
+# sesudah = sebelum + PERSIS objek migrasi (tabel, indeks, kolom, constraint tabel baru, FUNGSI, TRIGGER). Isi tubuh fungsi dilewati (definisinya ikut sha migrasi yang dipin).
+skema_tambahan() {
+  local T f; T="$(mktemp -d)"; skema_norm <"$1" >"$T/a"; skema_norm <"$2" >"$T/b"
+  if ! skema_valid "$T/a" || ! skema_valid "$T/b"; then echo "SKEMA_GAGAL: dump kosong atau terlalu pendek"; rm -rf "$T"; return 1; fi
+  diff "$T/a" "$T/b" >"$T/d" || true
+  if grep -q '^<' "$T/d"; then echo "SKEMA_GAGAL: skema lama berubah"; grep '^<' "$T/d" | head -n 5 | cut -c1-140; rm -rf "$T"; return 1; fi
+  sed -n 's/^> //p' "$T/d" >"$T/add"
+  tr -d '\r' <"$3" | sed -nE 's/^CREATE TABLE "([^"]+)".*/\1/p' | sort >"$T/mt"
+  tr -d '\r' <"$3" | sed -nE 's/^CREATE (UNIQUE )?INDEX "([^"]+)".*/\2/p' | sort >"$T/mi"
+  tr -d '\r' <"$3" | sed -nE 's/^ALTER TABLE "[^"]+" ADD COLUMN "([^"]+)".*/\1/p' | sort >"$T/mc"
+  tr -d '\r' <"$3" | sed -nE 's/^CREATE (OR REPLACE )?FUNCTION ([a-z_]+)\(.*/\2/p' | sort >"$T/mf"
+  tr -d '\r' <"$3" | sed -nE 's/^CREATE TRIGGER ([a-z_]+) .*/\1/p' | sort >"$T/mtr"
+  : >"$T/at"; : >"$T/ai"; : >"$T/aa"; : >"$T/ac"; : >"$T/af"; : >"$T/atr"; : >"$T/lain"
+  awk -v DT="$T" '
+    b==1 { if ($0 ~ /^\)/) b=0; next }
+    fn==1 { if ($0 ~ /\$\$;?$/ && !($0 ~ /AS \$\$$/)) fn=0; next }
+    /^CREATE FUNCTION public\./ { n=$3; sub(/^public\./,"",n); sub(/\(.*/,"",n); print n >> (DT "/af"); fn=1; next }
+    /^CREATE TRIGGER / { print $3 >> (DT "/atr"); next }
+    /^CREATE TABLE public\./ { t=$3; sub(/^public\./,"",t); print t >> (DT "/at"); b=1; next }
+    /^CREATE (UNIQUE )?INDEX / { for(i=1;i<=NF;i++) if($i=="INDEX"){ print $(i+1) >> (DT "/ai"); break } next }
+    /^ALTER TABLE ONLY public\./ { t=$4; sub(/^public\./,"",t); print t >> (DT "/aa"); getline; next }
+    /^[[:space:]]+[a-z_"]/ { print $1 >> (DT "/ac"); next }
+    { print >> (DT "/lain") }' "$T/add"
+  for f in at ai aa ac af atr; do sort -o "$T/$f" "$T/$f"; done
+  if [ -s "$T/lain" ]; then echo "SKEMA_GAGAL: tambahan tak dikenal"; head -n 5 "$T/lain" | cut -c1-140; rm -rf "$T"; return 1; fi
+  cmp -s "$T/at" "$T/mt" || { echo "SKEMA_GAGAL: tabel tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; }
+  cmp -s "$T/ai" "$T/mi" || { echo "SKEMA_GAGAL: indeks tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; }
+  cmp -s "$T/ac" "$T/mc" || { echo "SKEMA_GAGAL: kolom tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; }
+  cmp -s "$T/af" "$T/mf" || { echo "SKEMA_GAGAL: fungsi tambahan tidak sama dengan migrasi"; cat "$T/af" "$T/mf" | head; rm -rf "$T"; return 1; }
+  cmp -s "$T/atr" "$T/mtr" || { echo "SKEMA_GAGAL: trigger tambahan tidak sama dengan migrasi"; rm -rf "$T"; return 1; }
+  [ -z "$(sort -u "$T/aa" | comm -23 - "$T/mt")" ] || { echo "SKEMA_GAGAL: constraint pada tabel lama di luar migrasi"; rm -rf "$T"; return 1; }
+  echo "SKEMA_TAMBAHAN_SESUAI tabel=$(wc -l <"$T/at") indeks=$(wc -l <"$T/ai") constraint=$(wc -l <"$T/aa") fungsi=$(wc -l <"$T/af") trigger=$(wc -l <"$T/atr")"; rm -rf "$T"
+}
+bersih() {
+  if [ -n "$REH_DB" ]; then docker exec "$PG" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS ${REH_DB}" >/dev/null 2>&1 || true; fi
+  if [ -n "$REH_SRC" ] && [[ "$REH_SRC" == "$BK_DIR"/* ]]; then rm -rf -- "$REH_SRC"; fi
+}
+trap 'rc=$?; bersih; [ $rc -ne 0 ] && printf "Berhenti di fase %s. Setelah switch saja: bash /tmp/ppp.sh %s %s --rollback\n" "$PHASE" "$DEPLOY_SHA" "$BASE_SHA"; exit $rc' EXIT
+
+# Gerbang data rilis (fase 5/6): statis identik persis sesudah migrasi; tabel operasional identik pada batas cutoff (lihat release-meta-composio.sh untuk batas bukti).
+GD_BERGERAK=( 'Message|"Message"|"createdAt"' 'stock_movements|stock_movements|created_at' 'material_issues|material_issues|created_at' 'stock_transfers|stock_transfers|created_at'
+  'warehouse_corrections|warehouse_corrections|requested_at' 'fin_journal_entries|fin_journal_entries|created_at' 'unit_usage_notes|unit_usage_notes|created_at' )
+GD_SQL_STATIS="select 'migrasi|' || count(*) filter (where finished_at is not null) || '|' || md5(coalesce(string_agg(migration_name || ':' || checksum || ':' || (finished_at is not null)::text, ',' order by migration_name), '')) from _prisma_migrations
+union all select 'skema|' || md5(coalesce(string_agg(table_name || '.' || column_name || ':' || data_type || ':' || udt_name || ':' || is_nullable || ':' || coalesce(column_default, ''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema = 'public'
+union all select 'indeks|' || md5(coalesce(string_agg(tablename || ':' || indexdef, ',' order by tablename, indexname), '')) from pg_indexes where schemaname = 'public'
+union all select 'constraint|' || md5(coalesce(string_agg(conrelid::regclass::text || ':' || conname || ':' || pg_get_constraintdef(oid), ',' order by conrelid::regclass::text, conname), '')) from pg_constraint where connamespace = 'public'::regnamespace
+union all select 'tabel hpp-order|' || (select count(*) from order_biaya_tanpa_stok) || '|' || (select count(*) from order_biaya_tanpa_stok_events) || '|' || (select count(*) from unit_hpp_konfirmasi)"
+gd_sql_bergerak() {
+  local spec lab tbl col first=1
+  for spec in "${GD_BERGERAK[@]}"; do
+    IFS='|' read -r lab tbl col <<< "$spec"
+    [ "$first" = 1 ] && first=0 || printf ' union all '
+    printf "select '%s|' || count(*) || '|' || coalesce(max(%s)::text, '-') from %s where %s <= '%s'::timestamp" "$lab" "$col" "$tbl" "$col" "$FP_CUTOFF"
+  done
+}
+gd_baseline() {
+  FP_CUTOFF="$(psql_live -At -c "select to_char((now() at time zone 'utc') - interval '120 seconds', 'YYYY-MM-DD HH24:MI:SS.US')")"
+  [[ "$FP_CUTOFF" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9:.]+$ ]] || die "cutoff baseline tidak terbaca: ${FP_CUTOFF}"
+  FP_STATIS_0="$(psql_live -At -c "$GD_SQL_STATIS")" || die "baseline data statis gagal dibaca"
+  FP_BERGERAK_0="$(psql_live -At -c "$(gd_sql_bergerak)")" || die "baseline tabel bergerak gagal dibaca"
+  { echo "cutoff(UTC)=${FP_CUTOFF}"; echo "--statis"; echo "$FP_STATIS_0"; echo "--bergerak (<= cutoff)"; echo "$FP_BERGERAK_0"; } > "$BK_DIR/gerbang-data-baseline.txt"
+  ok "baseline data dicatat (cutoff ${FP_CUTOFF} UTC)"
+}
+gd_verifikasi() {
+  local s1 b1
+  s1="$(psql_live -At -c "$GD_SQL_STATIS")" || die "data statis sesudah switch gagal dibaca"; b1="$(psql_live -At -c "$(gd_sql_bergerak)")" || die "tabel bergerak sesudah switch gagal dibaca"
+  { echo "--statis sesudah"; echo "$s1"; echo "--bergerak sesudah"; echo "$b1"; } > "$BK_DIR/gerbang-data-sesudah.txt"
+  [ "$s1" = "$FP_STATIS_0" ] || { diff <(printf '%s\n' "$FP_STATIS_0") <(printf '%s\n' "$s1") | head -6; die "DATA STATIS BERUBAH selama rilis"; }
+  [ "$b1" = "$FP_BERGERAK_0" ] || { diff <(printf '%s\n' "$FP_BERGERAK_0") <(printf '%s\n' "$b1") | head -8; die "baris <= cutoff pada tabel operasional BERUBAH"; }
+  ok "data statis identik; tabel operasional identik pada cutoff ${FP_CUTOFF} UTC; tabel hpp-order tetap kosong"
+}
+
+PHASE=0; say "0. Kunci dan konkurensi"
+for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain berjalan (${lf})"; done
+exec 9>/tmp/release-pengajuan-pemakaian.lock; flock -n 9 || die "rilis ini sudah berjalan"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate deploy' | grep -v 'ppp\.sh\|pgrep\|node src/index.js' | grep -v "$$" || true)"; [ -z "$OTHER" ] || die "ada proses deploy/build/migrasi lain"
+mkdir -p "$BK_DIR" "$HOME/release-src"; exec > >(tee -a "$BK_DIR/release.log") 2>&1
+ok "tidak ada deploy lain"
+
+PHASE=1; say "1. Release aktif"
+CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"; [ "$(printf '%s\n' "$CID_OLD" | grep -c .)" = 1 ] || die "harus tepat satu backend"
+PG="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=postgres")"
+PREV_DIR="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")"; PREV_COMMIT="$(tr -d '[:space:]' < "$PREV_DIR/.release-commit")"
+PREV_IMG_ID="$(docker inspect -f '{{.Image}}' "$CID_OLD")"; IMG_NAME="$(docker inspect -f '{{.Config.Image}}' "$CID_OLD")"; ENV_SHA="$(sha256sum "$PERSIST/backend/.env" | cut -c1-16)"
+ok "aktif ${PREV_DIR} marker ${PREV_COMMIT} image ${PREV_IMG_ID:7:12} env ${ENV_SHA}"
+if [ "$MODE" = rollback ]; then
+  PHASE=rollback; [ "$(basename "$PREV_DIR")" = "$DEPLOY_SHORT" ] || die "release aktif bukan ${DEPLOY_SHORT}; rollback ditolak agar tidak menimpa rilis lain"
+  T="$RELEASES/${BASE_SHA:0:8}"; [ -d "$T" ] || die "folder baseline tidak ada"; TAG="${IMG_NAME%%:*}:rollback-pre-ppp-${DEPLOY_SHORT}"; docker image inspect "$TAG" >/dev/null 2>&1 || die "tag rollback tidak ada"
+  docker tag "$TAG" "$IMG_NAME"; dcp "$T" up -d --no-deps --force-recreate backend </dev/null >/dev/null 2>&1 || die "recreate gagal"
+  for i in $(seq 1 45); do curl -fsS -m4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && break; sleep 2; done; curl -fsS -m8 "${INTERNAL_URL}/api/health" | grep -q '"ok":true' || die "tidak sehat setelah rollback"
+  ok "rollback selesai; tabel aditif + isinya tetap ada (kode lama tidak membacanya)"; trap - EXIT; exit 0
+fi
+
+PHASE=2; say "2. Sumber, batas perubahan, pin migrasi"
+[ -d "$SRC" ] || die "repo sumber tidak ada"
+if [ -n "$BUNDLE" ]; then sg fetch -q "$BUNDLE" "+refs/heads/${CAND_BRANCH}:${CAND_REF}" || die "fetch bundle gagal"; else sg fetch -q --depth=200 origin "+refs/heads/${CAND_BRANCH}:${CAND_REF}" || die "fetch gagal"; fi
+[ "$(sg rev-parse "$CAND_REF")" = "$DEPLOY_SHA" ] || die "kandidat bergeser"
+[ "$(sg rev-parse --short=8 "$BASE_SHA")" = "$PREV_COMMIT" ] || die "baseline ${BASE_SHA:0:8} BUKAN release aktif ${PREV_COMMIT}: rebase kandidat di atas live"
+sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA" || die "baseline bukan leluhur kandidat"
+CHANGED="$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | LC_ALL=C sort)"
+LUAR="$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED_RE" || true)"; [ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | sed 's/^/   /'; die "berkas di luar allowlist"; }
+! printf '%s\n' "$CHANGED" | grep -qE '(^|/)(docker-compose[^/]*|Dockerfile)$|package(-lock)?\.json$|\.env|^frontend/dist' || die "Docker/package/env berubah"
+[ "$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${MIG_NAME}/migration.sql" | sha256sum | cut -d' ' -f1)" = "$MIG_SHA" ] || die "sha migrasi berbeda dari yang diaudit"
+[ "$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/migrations | wc -l)" = 1 ] || die "harus tepat satu berkas migrasi"
+[ "$(sg -c core.quotepath=false diff --no-renames --no-color --no-ext-diff --binary --full-index "$BASE_SHA" "$DEPLOY_SHA" -- backend frontend | sha256sum | cut -d' ' -f1)" = "$DIFF_SHA" ] || die "isi diff backend+frontend berbeda dari yang diaudit"
+ok "$(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist; migrasi dan isi diff sesuai pin"
+
+PHASE=3; say "3. Audit produksi (isi kode, bukan marker)"
+curl -fsS -m8 "${INTERNAL_URL}/api/health" | grep -q '"ok":true' || die "health internal"; curl -fsS -m15 "${PUBLIC_URL}/api/health" | grep -q '"ok":true' || die "health publik"
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = 0 ] || die "migrasi menggantung"
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where migration_name='${MIG_NAME}'")" = 0 ] || die "migrasi sudah pernah diterapkan"
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where migration_name='20261231170000_hpp_order_biaya_tanpa_stok' and finished_at is not null")" = 1 ] || die "migrasi HPP dasar belum ada di produksi"
+for t in $TRIGGER_BARU; do [ "$(psql_live -At -c "select count(*) from pg_trigger where tgname='${t}'")" = 0 ] || die "trigger ${t} sudah ada di produksi"; done
+sg -c core.quotepath=false ls-tree -r "$BASE_SHA" | awk -F'\t' '$1 ~ /^100[0-9]+ blob/ && $2 !~ /^frontend\/dist\// { split($1,a," "); print a[3] "\t" $2 }' > "$BK_DIR/base.tsv"
+cut -f2 "$BK_DIR/base.tsv" | sed "s#^#${PREV_DIR}/#" | git hash-object --no-filters --stdin-paths > "$BK_DIR/live.txt" || die "berkas baseline hilang di release aktif"
+BEDA="$(paste "$BK_DIR/base.tsv" "$BK_DIR/live.txt" | awk -F'\t' '$1 != $3' | wc -l)"; [ "$BEDA" = 0 ] || die "kode live menyimpang dari baseline: ${BEDA} berkas"
+ok "kode live == baseline ($(wc -l < "$BK_DIR/base.tsv") berkas); trigger baru belum ada"
+FREE="$(bebas_kb)"
+if [ "$MODE" = preflight ]; then
+  [ "$FREE" -ge "$REH_FREE_KB" ] && ok "disk bebas $((FREE/1024)) MiB (rehearsal butuh >= 3 GiB)" || warn "disk bebas $((FREE/1024)) MiB < 3 GiB: rehearsal akan berhenti"
+  [ "$FREE" -ge $((MIN_FREE_KB + 3 * 1024 * 1024)) ] || warn "disk bebas $((FREE/1024)) MiB < 8 GiB: RILIS PENUH (build image+web+backup) akan berhenti di gerbang disk"
+  say "Preflight selesai: produksi TIDAK diubah"; trap - EXIT; exit 0
+fi
+if [ "$MODE" = rehearsal ]; then [ "$FREE" -ge "$REH_FREE_KB" ] || die "rehearsal butuh >= 3 GiB bebas"; else [ "$FREE" -ge $((MIN_FREE_KB + 3 * 1024 * 1024)) ] || die "butuh >= 8 GiB bebas untuk image+web+backup"; [ ! -e "$NEW_DIR" ] || die "release dir sudah ada"; fi
+
+PHASE=4; say "4. Backup segar"
+BACKUP_FILE="$HOME/backups/pre-pengajuan-pemakaian-${DEPLOY_SHORT}-${TS}.sql.gz"
+docker exec "$PG" pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "${BACKUP_FILE}.partial"; gzip -dc "${BACKUP_FILE}.partial" | tail -n 5 | grep -q 'PostgreSQL database dump complete' || die "dump tidak lengkap"; mv "${BACKUP_FILE}.partial" "$BACKUP_FILE"; sha256sum "$BACKUP_FILE" > "${BACKUP_FILE}.sha256"; ok "backup ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1))"
+if [ "$MODE" = release ]; then
+  mkdir "$NEW_DIR"; sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist'; printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
+  ln -s "$PERSIST/backend/.env" "$NEW_DIR/backend/.env"; FE_NM=""; for d in "$PREV_DIR" $(ls -dt "$(dirname "$PREV_DIR")"/*/); do d="${d%/}"; if [ -d "$d/frontend/node_modules" ] && cmp -s "$d/frontend/package-lock.json" "$NEW_DIR/frontend/package-lock.json"; then FE_NM="$d/frontend/node_modules"; break; fi; done
+  if [ -n "$FE_NM" ]; then cp -a "$FE_NM" "$NEW_DIR/frontend/node_modules" || die "salin node_modules frontend gagal"; ok "node_modules frontend dari $(basename "$(dirname "$(dirname "$FE_NM")")")"
+  else ( cd "$NEW_DIR/frontend" && npm install --no-audit --no-fund ) > "$BK_DIR/npm-frontend.log" 2>&1 </dev/null || die "npm install frontend gagal"
+    # npm install di Linux menulis ulang package-lock → kembalikan persis versi git agar folder rilis tetap identik git (audit rilis berikutnya)
+    sg show "${DEPLOY_SHA}:frontend/package-lock.json" > "$NEW_DIR/frontend/package-lock.json"; ok "node_modules frontend dipasang segar; package-lock dikembalikan ke versi git"; fi
+  install -m 600 "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env"; ( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/web.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 20 "$BK_DIR/web.log"; die "build web gagal"; }; rm -f "$NEW_DIR/frontend/.env"
+  NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)"; [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "dist tidak valid"
+  grep -rlF "Verifikasi Pemakaian" "$NEW_DIR/frontend/dist/assets" --include='*.js' | grep -q . || die "dist baru tanpa halaman Verifikasi Pemakaian"
+  n=0; for f in "$PREV_DIR"/frontend/dist/assets/*; do b="${f##*/}"; [ -e "$NEW_DIR/frontend/dist/assets/$b" ] || { cp -p "$f" "$NEW_DIR/frontend/dist/assets/$b"; n=$((n+1)); }; done; ok "web ${NEW_INDEX}; ${n} aset lama dibawa"
+  ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-ppp-${DEPLOY_SHORT}"; docker tag "$PREV_IMG_ID" "$ROLLBACK_TAG"
+  dcp "$NEW_DIR" build backend > "$BK_DIR/build.log" 2>&1 </dev/null || { docker tag "$PREV_IMG_ID" "$IMG_NAME"; tail -n 20 "$BK_DIR/build.log"; die "build image gagal"; }
+  ok "image baru dibangun; rollback ${ROLLBACK_TAG}"; REH_SRC="$NEW_DIR"
+else
+  REH_SRC="$BK_DIR/src"; mkdir -p "$REH_SRC"; sg archive "$DEPLOY_SHA" backend/src backend/prisma backend/scripts/rehearsal | tar -x -C "$REH_SRC"; ok "kode kandidat (backend/src + prisma + uji tulis rehearsal) diekstrak untuk rehearsal"
+fi
+
+PHASE=4r; say "4r. Rehearsal: restore backup ke salinan, migrasi, uji baca kode baru"
+REH_DB="rehearsal_ppp_${DEPLOY_SHORT}"; docker exec "$PG" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS ${REH_DB}" -c "CREATE DATABASE ${REH_DB}"
+gzip -dc "$BACKUP_FILE" | docker exec -i "$PG" psql -U "$DB_USER" -d "$REH_DB" -q > "$BK_DIR/restore.log" 2>&1 || true
+RE_LAIN="$(grep -E 'ERROR:|FATAL:' "$BK_DIR/restore.log" | grep -vc 'role "mcp_hub_readonly" does not exist' || true)"; [ "$RE_LAIN" = 0 ] || { grep -E 'ERROR:|FATAL:' "$BK_DIR/restore.log" | head -n 5 | cut -c1-160; die "restore rehearsal punya galat selain role hilang"; }
+dump_skema() { docker exec "$PG" pg_dump -U "$DB_USER" -d "$1" -s --no-owner --no-privileges > "$2" </dev/null || die "dump skema $1 gagal"; [ -s "$2" ] || die "dump skema $1 kosong"; }
+dump_skema "$DB_NAME" "$BK_DIR/skema-live.sql"; dump_skema "$REH_DB" "$BK_DIR/skema-reh-awal.sql"
+HSL="$(skema_banding "$BK_DIR/skema-live.sql" "$BK_DIR/skema-reh-awal.sql")" || { printf '%s\n' "$HSL"; die "skema salinan tidak identik dengan sumber"; }; ok "restore lengkap; skema salinan identik: $HSL"
+N_ORDER="$(docker exec "$PG" psql -U "$DB_USER" -d "$REH_DB" -At -c 'select count(*) from "Order"')"; N_LIVE="$(psql_live -At -c 'select count(*) from "Order"')"; ok "salinan memuat ${N_ORDER} order (live ${N_LIVE})"
+cat > "$BK_DIR/hpp-smoke.mjs" <<'JS'
+// Uji BACA kode kandidat terhadap salinan: antrean pengajuan (harus kosong), daftar koreksi pemakaian menunggu, modul gerbang termuat. Mencetak jumlah saja.
+const { prisma } = await import("/app/src/db.js");
+const { daftarPengajuan } = await import("/app/src/services/pengajuanPemakaian.js");
+await import("/app/src/routes/pemakaianKoreksi.js"); await import("/app/src/routes/units.js"); await import("/app/src/routes/productionExperience.js");
+const q = await daftarPengajuan(prisma, { status: "DIAJUKAN,DITAHAN,DISETUJUI,DITOLAK,DIBATALKAN" });
+const kor = await prisma.warehouseCorrection.count({ where: { docType: "UNIT_USAGE", status: "PENDING_APPROVAL" } });
+console.log(JSON.stringify({ periode: "pengajuan", pengajuan: q.length, event: await prisma.pengajuanPemakaianProduksiEvent.count(), koreksiMenunggu: kor }));
+await prisma.$disconnect();
+JS
+dcp "$PREV_DIR" run --rm --no-deps -T -v "$REH_SRC/backend/src:/app/src:ro" -v "$REH_SRC/backend/prisma:/app/prisma:ro" -v "$BK_DIR/hpp-smoke.mjs:/app/hpp-smoke.mjs:ro" --entrypoint sh -e "RDB=${REH_DB}" backend -c \
+  'export DATABASE_URL="$(printf %s "$DATABASE_URL" | sed "s#/[^/?]*\(?.*\)\?\$#/$RDB\1#")"; case "$DATABASE_URL" in */rehearsal_ppp_*) ;; *) echo "DATABASE_URL bukan salinan rehearsal"; exit 9;; esac; npx prisma generate >/dev/null && npx prisma migrate deploy && node /app/hpp-smoke.mjs' \
+  </dev/null > "$BK_DIR/migrate-reh.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-reh.log"; die "migrasi/uji baca rehearsal gagal"; }
+[ "$(grep -c 'Applying migration' "$BK_DIR/migrate-reh.log")" = 1 ] || die "rehearsal harus menerapkan tepat 1 migrasi"
+dump_skema "$REH_DB" "$BK_DIR/skema-reh-akhir.sql"
+HSL="$(skema_tambahan "$BK_DIR/skema-reh-awal.sql" "$BK_DIR/skema-reh-akhir.sql" "$REH_SRC/backend/prisma/migrations/${MIG_NAME}/migration.sql")" || { printf '%s\n' "$HSL"; die "tambahan skema tidak sesuai migrasi"; }; ok "tambahan skema: $HSL"
+RC="$(docker exec "$PG" psql -U "$DB_USER" -d "$REH_DB" -At -c "select (select count(*) from pg_trigger where tgname in ('ppp_jaga','pppe_jaga')) || '|' || (select count(*) from pg_trigger where tgname in ('uun_tolak_posting_sumber_biaya','obts_tolak_sumber_tertaut','obts_jaga','obts_event_jaga','uhk_jaga'))")"
+[ "$RC" = "2|5" ] || die "harus ada 2 trigger pengajuan + 5 penjaga HPP lama (dapat: ${RC})"; ok "2 trigger penjaga pengajuan + 5 penjaga HPP lama aktif"
+UJI="$(grep '^{"periode"' "$BK_DIR/migrate-reh.log" | tail -n 1)"; [ -n "$UJI" ] || die "uji baca tidak menghasilkan ringkasan"; ok "uji baca kode baru pada salinan: ${UJI}"
+printf '%s\n' "$UJI" | grep -q '"pengajuan":0,"event":0' || die "tabel pengajuan pada salinan harus kosong"
+# Uji TULIS pada salinan (bukan produksi): pengajuan → verifikasi ADMIN lain → tepat satu perubahan stok/HPP, termasuk bukti tahap 6 Aplikasi Meja → retur diterima Gudang.
+dcp "$PREV_DIR" run --rm --no-deps -T -v "$REH_SRC/backend/src:/app/src:ro" -v "$REH_SRC/backend/prisma:/app/prisma:ro" -v "$REH_SRC/backend/scripts/rehearsal/ujiTulisPengajuan.mjs:/app/uji-tulis.mjs:ro" --entrypoint sh -e "RDB=${REH_DB}" backend -c \
+  'export DATABASE_URL="$(printf %s "$DATABASE_URL" | sed "s#/[^/?]*\(?.*\)\?\$#/$RDB\1#")"; case "$DATABASE_URL" in */rehearsal_ppp_*) ;; *) echo "DATABASE_URL bukan salinan rehearsal"; exit 9;; esac; npx prisma generate >/dev/null && node /app/uji-tulis.mjs' \
+  </dev/null > "$BK_DIR/uji-tulis.log" 2>&1 || { tail -n 20 "$BK_DIR/uji-tulis.log"; die "uji tulis rehearsal gagal"; }
+UT="$(grep '^{"ujiTulis"' "$BK_DIR/uji-tulis.log" | tail -n 1)"; printf '%s\n' "$UT" | grep -q '"ujiTulis":"LULUS"' || die "uji tulis tidak LULUS: ${UT}"; ok "uji tulis pada salinan: ${UT}"
+bersih; REH_DB=""; REH_SRC_SIMPAN="$REH_SRC"; REH_SRC=""
+if [ "$MODE" = rehearsal ]; then
+  [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "container live berubah selama rehearsal"
+  say "Rehearsal selesai: produksi TIDAK dimigrasi, TIDAK di-build, TIDAK di-switch. Backup segar: ${BACKUP_FILE}"; trap - EXIT; exit 0
+fi
+
+PHASE=5; say "5. Migrasi aditif lalu switch satu kali"
+[ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "container berubah sebelum switch"
+dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate.log" 2>&1 || { tail -n 15 "$BK_DIR/migrate.log"; die "migrasi produksi gagal"; }
+gd_baseline
+T_SWITCH="$(date -u +%FT%TZ)"; dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "up gagal"
+UP=0; for i in $(seq 1 60); do curl -fsS -m4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done; [ "$UP" = 1 ] || die "backend baru tidak sehat"
+CID_NEW="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"; [ "$(printf '%s\n' "$CID_NEW" | grep -c .)" = 1 ] || die "harus tepat satu backend setelah switch"
+ok "switch ${T_SWITCH}"
+
+PHASE=6; say "6. Verifikasi dan smoke (baca-saja)"
+[ "$(curl -fsS -m15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel publik bukan dist baru"
+[ "$(sha256sum "$PERSIST/backend/.env" | cut -c1-16)" = "$ENV_SHA" ] || die ".env berubah"
+gd_verifikasi
+for ep in /api/production/pengajuan-pemakaian /api/finance/hpp-order/meta; do [ "$(curl -s -o /dev/null -w '%{http_code}' -m15 "${PUBLIC_URL}${ep}")" = 401 ] || die "${ep} tanpa token harus 401"; done
+sleep 15; [ "$(docker inspect -f '{{.RestartCount}}' "$CID_NEW")" = 0 ] || die "backend restart sendiri"
+[ "$(psql_live -At -c 'select (select count(*) from pengajuan_pemakaian_produksi) + (select count(*) from pengajuan_pemakaian_produksi_events)')" = 0 ] || die "tabel pengajuan tidak kosong sesudah switch"
+ok "smoke lulus; tabel pengajuan kosong; tidak ada data yang diisi"
+trap - EXIT; say "SELESAI ${DEPLOY_SHORT}. Rollback: bash /tmp/ppp.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback"

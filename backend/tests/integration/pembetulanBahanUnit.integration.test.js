@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -19,12 +20,12 @@ const HARI = 86400_000;
 const wib = (d) => new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 const tgl = (hariLalu = 0) => wib(Date.now() - hariLalu * HARI);
 async function dunia({ status = "DELIVERED", saldo = 100 } = {}) {
-  const admin = await createTestUser({ roles: ["ADMIN"] }); const fin = await createTestUser({ roles: ["FINANCE"] }); const sales = await createTestUser({ roles: ["SALES"] });
+  const admin = await createTestUser({ roles: ["ADMIN"] }); const fin = await createTestUser({ roles: ["FINANCE"] }); const sales = await createTestUser({ roles: ["SALES"] }); const admin2 = await createTestUser({ roles: ["ADMIN"] }); // penyetuju koreksi pemakaian = ADMIN lain (keputusan Owner Nov 2026; Finance/Owner bukan penyetuju operasional bahan)
   const mat = await createTestMaterial({ code: `BHN-${++seq}`, name: "BUSA UJI", unit: "KG" });
   if (saldo) await seedBalance(mat.id, saldo, { unitCost: 20000 });
   const { unit, order } = await createTestUnit({ status, createdAt: new Date(Date.now() - 20 * HARI) });
-  const c = (u) => makeClient(server.baseUrl, u.token);
-  return { admin, fin, sales, a: c(admin), f: c(fin), s: c(sales), mat, unit, order };
+  const c = (u) => denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl);
+  return { admin, admin2, fin, sales, a: c(admin), a2: c(admin2), f: c(fin), s: c(sales), mat, unit, order };
 }
 const snap = async () => ({
   mov: await testPrisma.stockMovement.count(), jurnal: await testPrisma.finJournalEntry.count(), val: await testPrisma.finStockMovementValuation.count(),
@@ -208,10 +209,11 @@ test("P12. koreksi jumlah berpersetujuan (layanan resmi) bekerja pada unit terki
   const aj = await w.a.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: w.mat.id, qtyBaru: 3, alasan: "Pemakaian sebenarnya 3 kg" }, { "Idempotency-Key": kunci("kor") }); assert.equal(aj.status, 201, JSON.stringify(aj.body));
   assert.equal(await saldo(w.mat.id), 95, "diajukan = stok belum berubah");
   const sendiri = await w.a.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {}); assert.equal(sendiri.status, 403);
-  const setuju = await w.f.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {}); assert.equal(setuju.status, 200, JSON.stringify(setuju.body));
+  assert.equal((await w.f.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {})).status, 403, "Finance bukan penyetuju operasional bahan");
+  const setuju = await w.a2.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {}); assert.equal(setuju.status, 200, JSON.stringify(setuju.body));
   assert.equal(await saldo(w.mat.id), 97);
   const rows = await testPrisma.stockMovement.findMany({ where: { unitId: w.unit.id }, orderBy: { createdAt: "asc" } }); assert.equal(rows.length, 2); assert.equal(rows[1].type, "RETURN"); assert.equal(rows[1].correctsMovementId, rows[0].id); assert.equal(Number(rows[0].qty), -5, "baris asal utuh");
-  const kor = await testPrisma.warehouseCorrection.findFirst({ where: { docId: w.unit.id } }); assert.equal(kor.status, "POSTED"); assert.equal(kor.reason, "Pemakaian sebenarnya 3 kg"); assert.equal(kor.requestedById, w.admin.user.id); assert.equal(kor.decidedById, w.fin.user.id);
+  const kor = await testPrisma.warehouseCorrection.findFirst({ where: { docId: w.unit.id } }); assert.equal(kor.status, "POSTED"); assert.equal(kor.reason, "Pemakaian sebenarnya 3 kg"); assert.equal(kor.requestedById, w.admin.user.id); assert.equal(kor.decidedById, w.admin2.user.id);
 });
 
 test("P13. unit DIBATALKAN tidak diperluas: POST materials berperilaku seperti semula (tanpa persyaratan pembetulan), tidak ada awalan/log pembetulan", async () => {

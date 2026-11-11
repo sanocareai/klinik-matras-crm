@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -19,7 +20,7 @@ const iso = (d) => new Date(d).toISOString(); const menitLalu = (n) => new Date(
 const saldo = async (m) => Number((await testPrisma.stockMovement.aggregate({ where: { materialId: m }, _sum: { qty: true } }))._sum.qty ?? 0);
 const seedLama = (materialId, qty) => testPrisma.stockMovement.create({ data: { materialId, type: "RECEIPT", qty, note: "saldo awal", createdAt: new Date(Date.now() - 5 * 86_400_000) } }); // sebelum waktu pengamatan
 async function dunia() {
-  const mk = async (role) => { const u = await createTestUser({ roles: [role] }); return { ...u, api: makeClient(server.baseUrl, u.token) }; };
+  const mk = async (role) => { const u = await createTestUser({ roles: [role] }); return { ...u, api: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) }; };
   const [gudangA, gudangC, owner, admin] = await Promise.all([mk("WAREHOUSE"), mk("WAREHOUSE"), mk("OWNER"), mk("ADMIN")]);
   const m1 = await createTestMaterial({ name: "Busa Opname", unit: "SHEET", itemGroup: "REBONDED" }); await seedLama(m1.id, 100);
   const m2 = await createTestMaterial({ name: "Kain Opname", unit: "METER", itemGroup: "KAIN" }); await seedLama(m2.id, 50);

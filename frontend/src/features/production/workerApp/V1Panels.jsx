@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { AlertTriangle, Camera, CheckCircle2, Loader2, PauseCircle, PlayCircle, WifiOff, X } from "lucide-react";
 import { api } from "@/api.js";
+import { adminBahanSaatIni, kabarkanPengajuan, menunggu } from "@/features/production/pengajuan/pengajuanModel.js";
+import PemakaianTertunda from "@/features/production/pengajuan/PemakaianTertunda.jsx";
+import { kunciIdempoten } from "@/features/production/orderProduksiModel.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { compressImage } from "@/utils/compressImage.js";
 import { PAUSE_REASON_REAL } from "@/features/bengkel/unitStatus.js";
@@ -79,7 +82,7 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
   return (
     <>
       <div className="wa-actionbar" data-testid="v1-actionbar"><div className="wa-actionbar-inner">
-        {msg.text && <p role={msg.kind === "error" ? "alert" : "status"} data-testid="v1-action-msg" className={`m-0 rounded-btn px-3 py-2 text-[13px] ${msg.kind === "error" ? "bg-redbg text-red" : "bg-greenbg text-green"}`}>{msg.text}</p>}
+        {msg.text && <p role={msg.kind === "error" ? "alert" : "status"} data-testid="v1-action-msg" className={`m-0 rounded-btn px-3 py-2 text-[13px] ${msg.kind === "error" ? "bg-redbg text-red" : msg.kind === "aju" ? "bg-orangebg text-ink" : "bg-greenbg text-green"}`}>{msg.text}</p>}
         {!online && <OfflineNote />}
         {action.kind === "NONE" && <p data-testid="v1-no-action" className="m-0 rounded-btn bg-inset px-3 py-3 text-[13.5px] font-semibold text-ink2">{action.reason}</p>}
         {action.kind === "START" && <button type="button" className="wa-primary" data-mutates data-testid="v1-primary" disabled={gate.disabled} onClick={() => run(() => api.startUnitStage(unitId), "Tahap dimulai.")}>{busy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : <PlayCircle size={21} aria-hidden />} {action.label}</button>}
@@ -136,32 +139,35 @@ export function V1MaterialsPanel({ unitId, roles, onChanged }) {
   const canWrite = canMaterialV1(roles);
   const [usage, setUsage] = useState(null); const [catalog, setCatalog] = useState([]);
   const [form, setForm] = useState({ materialId: "", qty: "", note: "" });
-  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState({ kind: "", text: "" });
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState({ kind: "", text: "" }); const kunciRef = useRef(null);
   const load = useCallback(() => api.getUnitMaterials(unitId).then(setUsage).catch((e) => setMsg({ kind: "error", text: e.message })), [unitId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (canWrite) api.getMaterials({ active: true, untuk: "produksi" }).then((d) => setCatalog(Array.isArray(d) ? d : d.materials || [])).catch(() => {}); }, [canWrite]);
   async function add() {
     setBusy(true); setMsg({ kind: "", text: "" });
-    try { await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note, satuan: catalog.find((m) => m.id === form.materialId)?.unit || undefined }); setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.(); setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }
+    kunciRef.current ??= kunciIdempoten("v1-pakai");
+    try { const mv = await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note, satuan: catalog.find((m) => m.id === form.materialId)?.unit || undefined }, kunciRef.current); kunciRef.current = null; setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.();
+      if (menunggu(mv)) { kabarkanPengajuan(); setMsg({ kind: "aju", text: "Pemakaian dilaporkan — menunggu verifikasi ADMIN. Stok belum berubah; pekerjaan tetap bisa dilanjutkan." }); } else setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }
     catch (e) { setMsg({ kind: "error", text: e.message || "Gagal mencatat" }); } finally { setBusy(false); }
   }
   const totals = usage?.totals || [];
   return (
     <div data-testid="v1-materials" className="space-y-3">
-      <p className="m-0 text-[12.5px] text-ink3">Pekerjaan ini belum punya rencana bahan; pemakaian dicatat langsung dan stok gudang berkurang otomatis.</p>
+      <p className="m-0 text-[12.5px] text-ink3">{adminBahanSaatIni(roles) ? "Pekerjaan ini belum punya rencana bahan; pemakaian dicatat langsung dan stok gudang berkurang otomatis." : "Pekerjaan ini belum punya rencana bahan; pemakaian dilaporkan ke ADMIN dan stok gudang berkurang sesudah diverifikasi."}</p>
+      <PemakaianTertunda unitId={unitId} besar />
       {usage && (totals.length ? <ul className="m-0 list-none space-y-1.5 p-0">{totals.map((t) => <li key={t.material.id} className="flex items-center justify-between rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{t.material.name}</span><span className="shrink-0 tabular-nums text-ink2">{t.usedQty} {t.material.unit || ""}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">Belum ada pemakaian bahan.</p>)}
       {canWrite ? (
         <div className="space-y-2 rounded-btn bg-inset p-3">
-          <select data-testid="v1-material-select" aria-label="Pilih bahan" className={FIELD} value={form.materialId} onChange={(e) => setForm({ ...form, materialId: e.target.value })}><option value="">Pilih bahan…</option>{catalog.map((m) => <option key={m.id} value={m.id}>{m.name}{m.unit ? ` (${m.unit})` : ""}</option>)}</select>
+          <select data-testid="v1-material-select" aria-label="Pilih bahan" className={FIELD} value={form.materialId} onChange={(e) => { kunciRef.current = null; setForm({ ...form, materialId: e.target.value }); }}><option value="">Pilih bahan…</option>{catalog.map((m) => <option key={m.id} value={m.id}>{m.name}{m.unit ? ` (${m.unit})` : ""}</option>)}</select>
           <div className="grid grid-cols-[1fr_2fr] gap-2">
-            <input data-testid="v1-material-qty" aria-label="Jumlah" inputMode="decimal" className={FIELD} placeholder="Jumlah" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
+            <input data-testid="v1-material-qty" aria-label="Jumlah" inputMode="decimal" className={FIELD} placeholder="Jumlah" value={form.qty} onChange={(e) => { kunciRef.current = null; setForm({ ...form, qty: e.target.value }); }} />
             <input aria-label="Catatan bahan" className={FIELD} placeholder="Catatan (opsional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </div>
           {!online && <OfflineNote />}
           <button type="button" data-mutates data-testid="v1-material-save" className="flex min-h-[52px] w-full items-center justify-center rounded-btn bg-accent text-[15px] font-bold text-white disabled:opacity-50" disabled={busy || !online || !form.materialId || !Number(form.qty)} onClick={add}>{busy ? "Mencatat…" : "Catat pemakaian"}</button>
         </div>
       ) : <p className="m-0 text-[13px] text-ink3">Peran Anda tidak mencatat pemakaian bahan.</p>}
-      {msg.text && <p role={msg.kind === "error" ? "alert" : "status"} data-testid="v1-material-msg" className={`m-0 rounded-btn px-3 py-2 text-[13px] ${msg.kind === "error" ? "bg-redbg text-red" : "bg-greenbg text-green"}`}>{msg.text}</p>}
+      {msg.text && <p role={msg.kind === "error" ? "alert" : "status"} data-testid="v1-material-msg" className={`m-0 rounded-btn px-3 py-2 text-[13px] ${msg.kind === "error" ? "bg-redbg text-red" : msg.kind === "aju" ? "bg-orangebg text-ink" : "bg-greenbg text-green"}`}>{msg.text}</p>}
     </div>
   );
 }

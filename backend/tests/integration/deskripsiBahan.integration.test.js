@@ -6,6 +6,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 import fs from "node:fs";
 
 let server;
@@ -13,7 +14,7 @@ test.before(async () => { await truncateAll(); server = await startTestServer(bu
 test.after(async () => { await server.close(); await truncateAll(); await testPrisma.$disconnect(); });
 test.afterEach(async () => { await truncateAll(); });
 
-async function akun(roles) { const u = await createTestUser({ roles }); return { ...u, c: makeClient(server.baseUrl, u.token) }; }
+async function akun(roles) { const u = await createTestUser({ roles }); return { ...u, c: denganVerifikasiOtomatis(makeClient(server.baseUrl, u.token), server.baseUrl) }; }
 const TEKS = "Merek ABC. Dibeli per pack, 1 pack isi 12 pcs.\nDipakai per pcs.";
 
 test("D1 Admin dan Gudang mengisi, mengubah, mengosongkan; tampil di daftar stok; jejak mencatat sebelum dan sesudah", async () => {

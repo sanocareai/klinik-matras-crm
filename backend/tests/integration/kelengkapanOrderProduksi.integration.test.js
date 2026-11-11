@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { denganVerifikasiOtomatis } from "./setup/verifikasiOtomatis.js"; // non-ADMIN: pengajuan → diverifikasi ADMIN uji lain (jalur tulis yang sama)
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -20,11 +21,11 @@ const tgl = (d) => new Date(Date.now() - d * HARI);
 
 async function dunia() {
   const admin = await createTestUser({ roles: ["ADMIN"] }); const sales = await createTestUser({ roles: ["SALES"] });
-  const c = makeClient(server.baseUrl, admin.token);
+  const c = denganVerifikasiOtomatis(makeClient(server.baseUrl, admin.token), server.baseUrl);
   const busa = await createTestMaterial({ code: "KL-BUSA", name: "BUSA KELENGKAPAN", unit: "SHEET" }); await seedBalance(busa.id, 100, { unitCost: 20000 });
   await testPrisma.materialHargaBerlaku.create({ data: { materialId: busa.id, jenis: "HARGA", unitPrice: "20000", satuan: "SHEET", effectiveFrom: new Date(Date.now() - 60 * HARI), createdAt: new Date(Date.now() - 60 * HARI), reason: "Harga uji kelengkapan HPP", idempotencyKey: kunci("hb-busa") } });
   const lem = await createTestMaterial({ code: "KL-LEM", name: "LEM KELENGKAPAN", unit: "KG" }); await seedBalance(lem.id, 100);
-  return { admin, sales, a: c, s: makeClient(server.baseUrl, sales.token), busa, lem };
+  return { admin, sales, a: c, s: denganVerifikasiOtomatis(makeClient(server.baseUrl, sales.token), server.baseUrl), busa, lem };
 }
 /** Unit dengan status + umur (hari sejak dibuat) + nomor order yang bisa dicari. */
 async function unit(status, umur, nomor, extra = {}) {
@@ -174,7 +175,7 @@ test("C9. IZIN: Sales (hanya-lihat) boleh membaca daftar/hitungan tetapi DITOLAK
   assert.equal((await w.s.post(`${url}/cabut`, { alasan: "Mau mencabut sendiri" })).status, 403);
   assert.equal(await hitungTabel("unit_material_declarations"), 0);
   assert.equal((await w.a.post(`/api/production/units/${batal.id}/pernyataan-tanpa-bahan`, { alasan: "Unit dibatalkan" }, { "Idempotency-Key": kunci("p") })).status, 409);
-  assert.equal((await (await makeClient(server.baseUrl, null).get("/api/production/work-orders/kelengkapan-hitung")).status), 401);
+  assert.equal((await (await denganVerifikasiOtomatis(makeClient(server.baseUrl, null), server.baseUrl).get("/api/production/work-orders/kelengkapan-hitung")).status), 401);
 });
 
 test("C10. BACA-SAJA: daftar, hitungan, filter, drawer, dan ekspor TIDAK menulis status bisnis apa pun", async () => {

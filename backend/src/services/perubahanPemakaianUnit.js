@@ -11,6 +11,7 @@ import { bukukanNilaiPergerakanBaru } from "./finance/posting/inventory.js";
 import { guardV1UnitWrite } from "./unitV2Ownership.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { hasPermission } from "../middleware/authorize.js";
+import { adminBahan } from "./peranAdminBahan.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
 import { STATUS } from "./warehouseCorrection.js";
 import { PembetulanError, bangunWaktu, catatanPembetulan, legStok, tanggalDilaporkan, unitSelesai } from "./pembetulanBahanUnit.js";
@@ -32,7 +33,7 @@ function bacaQty(v, label, { boleh0 }) {
  * Rencana + pratinjau SATU perubahan pemakaian. Baca-saja. mode: UBAH_JUMLAH (materialId → qtyBaru) | GANTI_BAHAN (materialId → qtyBaru [default 0] dan keMaterialId dikeluarkan sebanyak qtyKe).
  * ringan = dipakai DI DALAM transaksi penerapan (saldo ledger saja).
  */
-export async function rencanaPerubahan(db, user, { unitId, materialId, qtyBaru, keMaterialId = null, qtyKe = null, tanggalPemakaian = null, ajukan = false } = {}, { sekarang = new Date(), ringan = false } = {}) {
+export async function rencanaPerubahan(db, user, { unitId, materialId, qtyBaru, keMaterialId = null, qtyKe = null, tanggalPemakaian = null, ajukan = false } = {}, { sekarang = new Date(), ringan = false, diverifikasi = false } = {}) {
   wajib(UUID.test(String(unitId ?? "")), "unit tidak valid", "UNIT_TIDAK_VALID");
   wajib(UUID.test(String(materialId ?? "")), "bahan tidak valid", "BAHAN_TIDAK_VALID");
   const unit = await db.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, createdAt: true, orderId: true, order: { select: { orderNumber: true, status: true } } } });
@@ -62,13 +63,17 @@ export async function rencanaPerubahan(db, user, { unitId, materialId, qtyBaru, 
     if (bersih > EPS && qb >= bersih - EPS) penghalang.push({ kode: "GANTI_TANPA_PENGEMBALIAN", pesan: "Jumlah bahan lama yang tetap dipakai harus kurang dari pemakaian sekarang. Isi 0 bila bahan lama tidak jadi dipakai sama sekali." });
   } else if (bersih > EPS && Math.abs(qb - bersih) < EPS) penghalang.push({ kode: "TIDAK_ADA_PERUBAHAN", pesan: "Jumlah yang benar sama dengan yang tercatat." });
 
-  const bolehLangsung = hasPermission(user, P.UNIT_MATERIAL_WRITE);
-  const bolehAjukan = bolehLangsung || hasPermission(user, P.INVENTORY_WRITE);
+  // Keputusan Owner (Nov 2026): hanya ADMIN yang langsung berlaku. Non-ADMIN: ubah jumlah → koreksi pemakaian (diverifikasi ADMIN lain); ganti bahan → pengajuan pemakaian
+  // (services/pengajuanPemakaian.js) yang dijalankan lewat fungsi ini dengan diverifikasi=true sesudah ADMIN lain mengesahkan.
+  const bolehTulis = hasPermission(user, P.UNIT_MATERIAL_WRITE);
+  const bolehLangsung = (bolehTulis && adminBahan(user)) || diverifikasi === true;
+  const bolehAjukan = bolehTulis || hasPermission(user, P.INVENTORY_WRITE);
   let jalur = "LANGSUNG";
   if (mode === "UBAH_JUMLAH" && (ajukan === true || adaMI || !bolehLangsung)) jalur = "AJUKAN"; // bahan ASAL Material Issue selalu lewat persetujuan / Return Produksi, apa pun status unit
+  const menungguVerifikasi = mode === "GANTI_BAHAN" && !bolehLangsung && bolehTulis;
   if (mode === "GANTI_BAHAN") {
     if (adaMI) penghalang.push({ kode: "GANTI_BAHAN_DOKUMEN_GUDANG", pesan: `Bahan ${dari.code} dikeluarkan lewat dokumen Material Issue Gudang. Mengganti bahannya dilakukan lewat Gudang (Return Produksi); jumlahnya masih bisa diubah lewat “Ajukan perubahan”.` });
-    if (!bolehLangsung) penghalang.push({ kode: "TANPA_IZIN", pesan: "Akun Anda tidak boleh mengganti bahan secara langsung." });
+    if (!bolehTulis) penghalang.push({ kode: "TANPA_IZIN", pesan: "Akun Anda tidak boleh mengganti bahan." });
   }
   // Catatan sisa/rusak (WASTE) tidak punya padanan aman di layar ini (jalur lamanya = Gudang): jumlah/bahan yang memuat WASTE tidak diubah dari sini.
   if (adaWaste) penghalang.push({ kode: "PERUBAHAN_ADA_SISA_RUSAK", pesan: "Pemakaian bahan ini mencakup catatan sisa/rusak (WASTE); perubahannya dilakukan lewat Gudang." });
@@ -91,18 +96,19 @@ export async function rencanaPerubahan(db, user, { unitId, materialId, qtyBaru, 
   const ringkas = [];
   if (mode === "UBAH_JUMLAH") ringkas.push(`Ubah jumlah ${dari.name} pada ${unit.unitCode}: ${bersih} → ${qb} ${dari.unit}.`);
   else ringkas.push(`Ganti bahan pada ${unit.unitCode}: ${dari.name} ${bersih} → ${qb} ${dari.unit} (${r4(Math.max(bersih - qb, 0))} ${dari.unit} dikembalikan ke stok), lalu ${ke.name} ${qk} ${ke.unit} dikeluarkan dari stok.`);
-  if (jalur === "AJUKAN") ringkas.push("Ini PENGAJUAN: stok belum berubah sampai Owner/Finance (orang lain dari pemohon) menyetujui. Setelah disetujui, pergerakan tercatat sebagai baris baru bertaut pemakaian asal.");
+  if (jalur === "AJUKAN") ringkas.push("Ini PENGAJUAN: stok belum berubah sampai ADMIN (orang lain dari pemohon) menyetujui. Setelah disetujui, pergerakan tercatat sebagai baris baru bertaut pemakaian asal.");
+  else if (menungguVerifikasi) ringkas.push("Ini PENGAJUAN: stok dan HPP belum berubah sampai ADMIN (orang lain dari pengaju) memverifikasi. Sesudah itu kedua langkah disimpan sekaligus.");
   else if (mode === "GANTI_BAHAN") ringkas.push("Dua langkah resmi (pengembalian bahan lama, pengeluaran bahan baru) disimpan SEKALIGUS dalam satu transaksi: bila salah satu ditolak, tidak ada yang tersimpan.");
   else ringkas.push("Disimpan sekarang sebagai baris BARU di riwayat (pengembalian atau pengeluaran); baris lama tidak diubah atau dihapus.");
   if (tertunda > 0 && jalur === "LANGSUNG") ringkas.push("Catatan: ada koreksi pemakaian yang masih menunggu persetujuan pada unit ini; perubahan ini dapat membuatnya perlu diajukan ulang.");
   const perluKonfirmasiGanda = langkah.some((l) => l.sudahTercatat?.perluKonfirmasi);
   return {
     unit: { id: unit.id, kode: unit.unitCode, status: unit.status, selesai, order: unit.order?.orderNumber ?? null },
-    mode, jalur, waktu, tanggalWajib: selesai,
+    mode, jalur, menungguVerifikasi, waktu, tanggalWajib: selesai,
     dari: { bahan: bahanRingkas(dari), bersihSebelum: bersih, bersihSesudah: qb, dokumenGudang: adaMI }, ke: ke ? { bahan: bahanRingkas(ke), qty: qk } : null,
     langkah, ringkas, penghalang, boleh: penghalang.length === 0 && langkah.length > 0, perluKonfirmasiGanda, tertunda,
     sidik: { bersih, legs: langkah.map((l) => ({ materialId: l.bahan.id, jenis: l.jenis, saldo: l.saldo, hppSidik: l.hppOperasional.sidik })) },
-    alasanWajib: true, izin: { bolehLangsung, bolehAjukan, penyetujuKoreksi: "Owner atau Finance (orang lain dari pemohon)" },
+    alasanWajib: true, izin: { bolehLangsung, bolehAjukan, penyetujuKoreksi: "ADMIN (orang lain dari pemohon)" },
   };
 }
 
@@ -120,7 +126,7 @@ const ringkasCatatan = (p, l) => {
  * Terapkan perubahan LANGSUNG, atomik. Idempotency-Key (12–128) wajib: klik ganda/retry = satu hasil. Gagal di langkah mana pun = seluruh transaksi dibatalkan (tidak ada hasil setengah jadi).
  * dilihat = { bersih, legs: [{ materialId, jenis, saldo, hppSidik }] } dari pratinjau; server membandingkan dengan keadaan SEKARANG di bawah kunci bahan.
  */
-export async function terapkanPerubahanPemakaian(prisma, user, input, { kunci } = {}) {
+export async function terapkanPerubahanPemakaian(prisma, user, input, { kunci, diverifikasi = false, sekarang: sekarangPengajuan = null, penjaga = null } = {}) {
   const k = String(kunci ?? "").trim();
   wajib(k.length >= 12 && k.length <= 128, "Idempotency-Key wajib (12–128 karakter)", "IDEMPOTENCY_KEY_INVALID", 400);
   const { unitId, materialId, keMaterialId = null } = input;
@@ -133,11 +139,13 @@ export async function terapkanPerubahanPemakaian(prisma, user, input, { kunci } 
   try {
     return await prisma.$transaction(async (tx) => {
       await tx.v2Command.create({ data: { domain: "PRODUCTION_V1", actorId: user.id, idempotencyKey: k, commandType: "UNIT_MATERIAL_EDIT_V1", aggregateType: "unit", aggregateId: unitId, requestHash, status: "PROCESSING" } });
+      if (penjaga) await penjaga(tx); // dari verifikasi pengajuan: pengajuan masih aktif (terkunci)
       await guardV1UnitWrite(tx, unitId, { what: "perubahan pemakaian bahan", actorId: user.id }); // kunci unit -> kepemilikan -> tulis, satu transaksi
       for (const id of [...new Set([materialId, keMaterialId].filter(Boolean))].sort()) await lockMaterialBalance(tx, id); // urutan kunci tetap: tanpa deadlock antar-perubahan
-      const sekarang = new Date();
-      const p = await rencanaPerubahan(tx, user, { unitId, materialId, qtyBaru: input.qtyBaru, keMaterialId, qtyKe: input.qtyKe, tanggalPemakaian: input.tanggalPemakaian, ajukan: false }, { sekarang, ringan: true });
+      const sekarang = sekarangPengajuan ? new Date(sekarangPengajuan) : new Date(); // dijalankan dari verifikasi: waktu pemakaian = waktu pengajuan
+      const p = await rencanaPerubahan(tx, user, { unitId, materialId, qtyBaru: input.qtyBaru, keMaterialId, qtyKe: input.qtyKe, tanggalPemakaian: input.tanggalPemakaian, ajukan: false }, { sekarang, ringan: true, diverifikasi });
       wajib(p.jalur === "LANGSUNG", "Perubahan ini perlu persetujuan orang lain: gunakan “Ajukan perubahan”.", "UNIT_PERLU_PERSETUJUAN", 409);
+      wajib(!p.menungguVerifikasi, "Perubahan ini dicatat sebagai pengajuan dan berlaku sesudah diverifikasi ADMIN.", "UNIT_PERLU_VERIFIKASI", 409);
       wajib(Math.abs(r4(dilihat.bersih) - p.dari.bersihSebelum) <= 0.00005, `Pemakaian bahan ini sudah berubah: pratinjau Anda memakai ${r4(dilihat.bersih)}, sekarang ${p.dari.bersihSebelum}. Lihat dampak lagi; tidak ada yang tersimpan.`, "UNIT_PEMAKAIAN_BERGESER", 409, { dilihat: r4(dilihat.bersih), sekarang: p.dari.bersihSebelum });
       for (const l of p.langkah) {
         const lihat = dilihat.legs.find((x) => x.materialId === l.bahan.id && x.jenis === l.jenis);
