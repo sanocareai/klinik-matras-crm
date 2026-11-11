@@ -7,7 +7,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SCRIPT = path.join(root, "scripts/release-task-meeting-sso.sh");
-const BASE = "e3a7a4057c3b93faea623923e4fd5b5fae51a58b";
+const BASE = "fba65a14744ab1762cb9ba440dd1c35dcdcc4ca7";
 const src = fs.readFileSync(SCRIPT, "utf8");
 const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");

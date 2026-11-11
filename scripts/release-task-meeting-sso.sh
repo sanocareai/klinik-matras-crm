@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RILIS BACKEND + FRONTEND: Task & Meeting SSO (D-200) dalam keadaan MATI (HUB_SSO_ENABLED=false). Dua migrasi aditif
 #   (tabel baru hub_handoffs + satu nilai enum Role HUB_MEMBER), tanpa perubahan data. FAIL-CLOSED.
-#   Kandidat dikirim lewat bundle: BUNDLE=/tmp/tms1.bundle (branch release/task-meeting-sso-on-e3a7a405).
+#   Kandidat dikirim lewat bundle: BUNDLE=/tmp/tms1.bundle (branch release/task-meeting-sso-on-fba65a14).
 #   tr -d '\r' < scripts/release-task-meeting-sso.sh | ssh ubuntu@43.133.152.6 'cat > /tmp/tms1.sh'
 #   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/tms1.bundle bash /tmp/tms1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # baca-saja
 #   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/tms1.bundle nohup bash /tmp/tms1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/tms1.out 2>&1 < /dev/null &'
@@ -17,8 +17,8 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-release/task-meeting-sso-on-e3a7a405}"
-EXPECT_BASE="e3a7a4057c3b93faea623923e4fd5b5fae51a58b"
+CAND_BRANCH="${CAND_BRANCH:-release/task-meeting-sso-on-fba65a14}"
+EXPECT_BASE="fba65a14744ab1762cb9ba440dd1c35dcdcc4ca7"
 [ "$BASE_SHA" = "$EXPECT_BASE" ] || { echo "STOP: skrip ini diaudit untuk baseline ${EXPECT_BASE:0:8}, bukan ${BASE_SHA:0:8}" >&2; exit 1; }
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ frontend/dist, lihat kepala berkas).
 ALLOWED_RE='^(backend/\.env\.example|backend/prisma/schema\.prisma|backend/prisma/migrations/20261231190300_hub_handoff_sso/migration\.sql|backend/prisma/migrations/20261231190400_add_hub_member_role/migration\.sql|backend/scripts/stage5-rehearsal/staging-db\.mjs|backend/scripts/stage5-rehearsal/staging-seed\.mjs|backend/scripts/stage5-rehearsal/staging-pair\.mjs|backend/scripts/stage5-rehearsal/_pair-selftest\.mjs|backend/src/constants/permissions\.js|backend/src/index\.js|backend/src/lib/activityLog\.js|backend/src/lib/domain/hubSso\.js|backend/src/lib/domain/hubSummary\.js|backend/src/routes/auth\.js|backend/src/routes/hubSso\.js|backend/src/routes/users\.js|backend/src/services/hubSso\.js|backend/src/services/hubSummary\.js|backend/tests/hubSso\.test\.js|backend/tests/hubSummary\.test\.js|backend/tests/integration/hubSso\.integration\.test\.js|backend/tests/integration/setup/testDb\.js|backend/tests/releaseTaskMeetingSso\.test\.js|docs/HUB-SSO\.md|docs/sano-hub/DECISIONS\.md|docs/sso-stage5-rehearsal/[A-Za-z0-9._-]+|frontend/src/App\.jsx|frontend/src/api\.js|frontend/src/features/portal/MainHubWidgets\.jsx|frontend/src/pages/HubLaunch\.jsx|frontend/src/pages/Portal\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/appleGelombang1\.test\.js|frontend/dist/.+|scripts/release-task-meeting-sso\.sh)$'
@@ -254,7 +254,7 @@ for s in "hub/summary/me" "Pantauan Leader"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$s")" ] || die "[skrip] '${s}' SUDAH ada di dist aktif — perbaiki pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s")" ] || die "dist baru TIDAK memuat '${s}'"
 done
-for s in "Lead tanpa spam" "Dibeli per pack" "drawer-deskripsi" "Catat hasil SO" "Definisi dan sumber angka" "Sumber & Link" "Kelola biaya iklan" "Iklan tidak terbaca" "Per kreatif" "Tanpa persetujuan (koreksi langsung Admin)" "Biaya kosong" "Catat dari catatan ini" "Batalkan pengajuan saya" "Dilaporkan sebagai pengajuan"; do
+for s in "Lead tanpa spam" "Dibeli per pack" "drawer-deskripsi" "Catat hasil SO" "Definisi dan sumber angka" "Sumber & Link" "Kelola biaya iklan" "Iklan tidak terbaca" "Per kreatif" "Tanpa persetujuan (koreksi langsung Admin)" "Biaya kosong" "Catat dari catatan ini" "Batalkan pengajuan saya" "Dilaporkan sebagai pengajuan" "Aktif di periode" "ROAS (Booked) = nilai order"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$s")" ] || die "[skrip] '${s}' tidak ada di dist aktif — perbaiki pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s")" ] || die "dist baru KEHILANGAN fitur: ${s}"
 done
