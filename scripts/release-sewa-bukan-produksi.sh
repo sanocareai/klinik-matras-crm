@@ -35,7 +35,7 @@ trap 'rc=$?; [ $rc -ne 0 ] && { pulihkan; printf "Berhenti di fase %s. Bila suda
 
 # ── GERBANG DATA (sama dengan nls1): A. statis identik persis; B. tabel operasional identik pada batas cutoff (baris baru sesudah cutoff = trafik sah) ──
 GD_BERGERAK=( 'Message|"Message"|"createdAt"' 'stock_movements|stock_movements|created_at' 'material_issues|material_issues|created_at' 'stock_transfers|stock_transfers|created_at'
-  'warehouse_corrections|warehouse_corrections|requested_at' 'units|units|created_at' 'Order|"Order"|"createdAt"' 'order_biaya_tanpa_stok|order_biaya_tanpa_stok|created_at' )
+  'warehouse_corrections|warehouse_corrections|requested_at' 'units|units|created_at' 'Order|"Order"|"createdAt"' 'order_biaya_tanpa_stok|order_biaya_tanpa_stok|diajukan_pada' )
 GD_SQL_STATIS="select 'migrasi|' || count(*) filter (where finished_at is not null) || '|' || md5(coalesce(string_agg(migration_name || ':' || checksum || ':' || (finished_at is not null)::text, ',' order by migration_name), '')) from _prisma_migrations
 union all select 'skema|' || md5(coalesce(string_agg(table_name || '.' || column_name || ':' || data_type || ':' || udt_name || ':' || is_nullable || ':' || coalesce(column_default, ''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema = 'public'
 union all select 'indeks|' || md5(coalesce(string_agg(tablename || ':' || indexdef, ',' order by tablename, indexname), '')) from pg_indexes where schemaname = 'public'
