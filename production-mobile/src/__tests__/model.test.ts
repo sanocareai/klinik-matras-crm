@@ -32,6 +32,9 @@ test("kartu V2: aktif hanya bila ada operasi berjalan di bucket kerja; jeda berw
   const jeda = kartuDariV2(v2({ runId: "005", bucket: "LAPISAN", activeOp: { stageLabel: "Ganti Kain", status: "PAUSED", startedAt: null, delayKind: "BREAK", delayNote: null } }));
   expect(jeda.tone).toBe("orange");
   expect(jeda.tahap).toBe("Jeda · Ganti Kain");
+  const tunda = kartuDariV2(v2({ runId: "008", bucket: "FONDASI", activeOp: { stageLabel: "Upgrade Fondasi", status: "BLOCKED", startedAt: null, delayKind: "ARAHAN", delayNote: null } }));
+  expect(tunda.tone).toBe("red");
+  expect(tunda.tahap).toBe("Tertunda · Upgrade Fondasi");
   const tunggu = kartuDariV2(v2({ runId: "006", bucket: "FONDASI", next: { action: "WAIT" }, activeOp: { stageLabel: "x", status: "IN_PROGRESS", startedAt: null, delayKind: null, delayNote: null } }));
   expect(tunggu.aktif).toBe(false);
 });
@@ -73,4 +76,22 @@ test("media: dikelompokkan Sebelum/Proses/Sesudah, video dikenali, URL kosong di
   expect(g.map((x) => x.key)).toEqual(["before", "process"]);
   expect(g[0]!.items).toHaveLength(1);
   expect(g[1]!.items[0]!.video).toBe(true);
+});
+
+test("berat pemakai dari order: per pemakai bila ada, selain itu berat badan order", () => {
+  const { beratPemakai, teksBerat } = jest.requireActual("@/features/model");
+  expect(beratPemakai({ weightKg: 70, weightEntries: [{ label: "Suami", beratKg: 85 }, { label: "Istri", beratKg: 58 }] })).toEqual([{ label: "Suami", kg: 85 }, { label: "Istri", kg: 58 }]);
+  expect(beratPemakai({ weightKg: 70, weightEntries: [] })).toEqual([{ label: "Customer", kg: 70 }]);
+  expect(beratPemakai({ weightKg: null })).toEqual([]);
+  expect(teksBerat(beratPemakai({ weightKg: 70 }))).toBe("70 kg");
+  expect(teksBerat(beratPemakai({ weightEntries: [{ label: "Suami", beratKg: 85 }, { label: "Istri", beratKg: 58 }] }))).toBe("Suami 85 kg · Istri 58 kg");
+});
+
+test("geser urutan: naik/turun, batas tidak berubah", () => {
+  const { geser } = jest.requireActual("@/features/model");
+  expect(geser(["a", "b", "c"], 2, -1)).toEqual(["a", "c", "b"]);
+  expect(geser(["a", "b", "c"], 0, 1)).toEqual(["b", "a", "c"]);
+  const xs = ["a", "b"];
+  expect(geser(xs, 0, -1)).toBe(xs);
+  expect(geser(xs, 1, 1)).toBe(xs);
 });

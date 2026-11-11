@@ -70,13 +70,13 @@ export function Divider({ inset = 16 }: { inset?: number }) {
   return <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: C.line, marginLeft: inset }} />;
 }
 
-type ButtonKind = "primary" | "success" | "tinted" | "danger" | "plain";
+type ButtonKind = "primary" | "success" | "destructive" | "tinted" | "danger" | "plain";
 export function Button({ label, onPress, kind = "primary", tone = "blue", icon, disabled, busy, style, accessibilityLabel }: {
   label?: string; onPress?: () => void; kind?: ButtonKind; tone?: ToneKey; icon?: React.ReactNode; disabled?: boolean; busy?: boolean;
   style?: StyleProp<ViewStyle>; accessibilityLabel?: string;
 }) {
-  const t = TONE[kind === "success" ? "green" : kind === "danger" ? "red" : tone];
-  const solid = kind === "primary" || kind === "success";
+  const t = TONE[kind === "success" ? "green" : kind === "danger" || kind === "destructive" ? "red" : tone];
+  const solid = kind === "primary" || kind === "success" || kind === "destructive";
   const bg = kind === "plain" ? "transparent" : solid ? t.fill : t.tint;
   const fg = solid ? C.white : t.text;
   return (

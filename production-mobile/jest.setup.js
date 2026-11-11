@@ -16,3 +16,4 @@ jest.mock("expo-crypto", () => ({
   }),
 }));
 jest.mock("lucide-react-native", () => new Proxy({}, { get: (_t, nama) => (nama === "__esModule" ? true : () => null) }));
+jest.mock("expo-video", () => ({ useVideoPlayer: jest.fn(() => ({})), VideoView: () => null }));

@@ -53,6 +53,23 @@ export class ApiClient {
     return this.kirim<T>(metode, path, opts, idempotencyKey);
   }
 
+  /**
+   * Unggah multipart (foto/video bukti). Server menamai berkas dengan hash isinya, jadi unggah ulang berkas sama = URL sama:
+   * aman diulang otomatis setelah galat jaringan (maks 3 kali). Timeout panjang karena video bisa puluhan MB.
+   */
+  async upload<T>(path: string, form: FormData, opts: Pick<RequestOptions, "timeoutMs" | "signal"> = {}): Promise<T> {
+    let terakhir: unknown;
+    for (let i = 0; i < 3; i++) {
+      try {
+        return await this.kirim<T>("POST", path, { ...opts, timeoutMs: opts.timeoutMs ?? 180_000 }, null, false, form);
+      } catch (e) {
+        terakhir = e;
+        if (!(e instanceof ApiError && e.isNetwork)) throw e;
+      }
+    }
+    throw terakhir;
+  }
+
   private url(path: string, query?: RequestOptions["query"]) {
     const q = Object.entries(query ?? {})
       .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -61,7 +78,7 @@ export class ApiClient {
     return `${this.deps.baseUrl}${path}${q ? `?${q}` : ""}`;
   }
 
-  private async kirim<T>(metode: Metode, path: string, opts: RequestOptions, idempotencyKey: string | null, sudahRefresh = false): Promise<T> {
+  private async kirim<T>(metode: Metode, path: string, opts: RequestOptions, idempotencyKey: string | null, sudahRefresh = false, form?: FormData): Promise<T> {
     if (this.deps.wajibHttps && !/^https:\/\//i.test(this.deps.baseUrl)) {
       throw new ApiError({ status: 0, code: "HTTPS_WAJIB", message: "Koneksi tidak aman diblokir. Hubungi admin." });
     }
@@ -71,13 +88,16 @@ export class ApiClient {
     const headers: Record<string, string> = { Accept: "application/json", "X-Request-Id": requestId };
     if (auth && tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
     if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
-    let body: string | undefined;
-    if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+    // Multipart: Content-Type (dengan boundary) diisi fetch sendiri — jangan diset manual.
+    let body: string | FormData | undefined;
+    if (form) body = form;
+    else if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
 
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), opts.timeoutMs ?? this.deps.timeoutMs ?? 30_000);
     opts.signal?.addEventListener("abort", () => ctl.abort());
-    const perintah = metode !== "GET";
+    // Unggahan TIDAK dianggap "tidak pasti": idempoten oleh hash isi, aman diulang.
+    const perintah = metode !== "GET" && !form;
 
     let res: Response;
     try {
@@ -120,7 +140,7 @@ export class ApiClient {
     if (res.status === 401 && auth) {
       if (err.code === "TOKEN_INVALID" && tokens && !sudahRefresh) {
         await this.refresh();
-        return this.kirim<T>(metode, path, opts, idempotencyKey, true);
+        return this.kirim<T>(metode, path, opts, idempotencyKey, true, form);
       }
       if (err.isAuthLost || err.code === "TOKEN_INVALID") this.deps.onSessionLost(String(err.code));
     }

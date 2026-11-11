@@ -4,7 +4,7 @@ Aplikasi Android lantai produksi Klinik Matras — React Native + Expo (SDK 57),
 Desain: kanvas "SANSS Production App" (gaya iOS: latar grouped, kartu membulat, warna tim & status).
 Backend SANSS tetap **satu-satunya sumber kebenaran**; aplikasi memakai endpoint yang sama dengan Aplikasi Meja web & Andon TV.
 
-## Status slice 1 (12 Nov 2026) — BACA-SAJA
+## Slice 1 (12 Nov 2026) — bacaan
 
 | Tab | Untuk | Sumber |
 |---|---|---|
@@ -16,8 +16,58 @@ Backend SANSS tetap **satu-satunya sumber kebenaran**; aplikasi memakai endpoint
 
 "Live" = diambil ulang tiap 20 detik saat aplikasi di depan (sama dengan Andon TV web) + tarik-untuk-muat-ulang.
 
-**Belum ada di slice ini:** mulai/jeda/selesai tahap, putusan QC, unggah foto/video dokumentasi, ubah urutan/PIC target,
-notifikasi push. Semua itu tetap lewat SANSS Web sampai slice berikutnya.
+## Slice 2a — aksi tahap dari HP
+
+Di Detail Unit muncul SATU tombol utama sesuai `next` dari server (hanya bila giliran PIC ini / boleh semua PIC):
+
+| Aksi | Endpoint (sama dengan Aplikasi Meja web) |
+|---|---|
+| Mulai tahap / Lanjutkan (continueOnly) | `POST /production-v2/runs/:runId/steps/:stepNo` (payload kosong) |
+| Lanjutkan Pekerjaan (setelah tunda) | `POST /production-v2/units/:unitId/resume-work` |
+| Formulir tahap 1, 2, 3, 4, 9, 11, 12 + foto/video | unggah `POST /production-v2/evidence/upload`, lalu `steps/:stepNo` dengan `media: [url]` |
+| Tunda (arahan / kendala / lainnya) | `POST /production-v2/runs/:runId/delay` |
+
+Foto & video diambil dari **kamera (foto atau video) atau galeri**, langsung diunggah (video ≤ 80 MB, foto ≤ 15 MB, diatur server);
+tahap yang mewajibkan video (uji rasa awal, uji fondasi) tidak bisa dikirim tanpa video. Payload & validasi mencerminkan
+`frontend/src/features/production/experience.js` — bila salah satu berubah, samakan (`src/features/langkah.ts` + tesnya).
+
+**Masih lewat SANSS Web:** tahap 5 (wizard Diagnosa), 6/7/10 (pilih bahan Gudang), lapor kurang bahan, jalur Pengerjaan Pesanan,
+Konfirmasi Selesai dengan serah ke Gudang (kontrak Corner V2), putusan QC, ubah urutan/PIC target, notifikasi push.
+
+## Slice 2b — QC, urutan target, berat dari order, video
+
+| Fitur | Endpoint |
+|---|---|
+| Tab **QC** (pemegang `qc:write`): antrean menunggu putusan | `GET /production-planning/qc/queue?tab=AWAITING_QC` |
+| Putusan Lulus / Gagal → rework (foto wajib, berat acuan, tahap rework) | `POST /production-planning/qc/runs/:runId/inspect` (+ foto `POST /units/:unitId/photos`) |
+| Gerbang Lulus putaran ini (uji fondasi baru, hasil aktual, uji kasur jadi) | `GET /production-v2/component-notes/units/:unitId` → `assembly` |
+| **Target**: Admin mengatur urutan satu meja (naik/turun) | `GET /production-v2/board?date=` + `POST /production-v2/stations/reorder` |
+| Berat penguji (Uji Fondasi) & berat acuan (QC) terisi otomatis dari **order** | `customer.weightEntries` (Suami/Istri/…) → cadangan `Order.beratBadan` |
+| Video diputar di dalam aplikasi | `expo-video` |
+
+Logika QC mencerminkan `frontend/src/features/production/qcHandoff.js` + `componentNotesModel.js#decisionGate` (`src/features/qc.ts`).
+Waive QC, override preferensi customer, dan bahan tambahan rework tetap di Hub QC web.
+
+## Push notifikasi
+
+| Kejadian | Penerima | Layar saat diketuk |
+|---|---|---|
+| Kartu pindah ke QC (menunggu Uji Berat Badan) | semua peran `QC_LEAD` | `/qc/:runId` |
+| QC Lulus → Corner | PIC Corner rencana | `/unit/:runId` |
+| QC Gagal → kembali ke Meja (rework) | PIC Meja rencana | `/unit/:runId` |
+| Admin mengubah urutan meja | para PIC unit di meja itu | `/kerja` |
+
+Pelaku aksi tidak dikirimi; isi tanpa nama customer. Tautan divalidasi daftar putih (`src/lib/tautan.ts`).
+
+**Syarat menyalakan (semua MATI secara bawaan):**
+1. Rilis backend dengan migrasi `20261231200000_mobile_device_tokens_app` (kolom `app`, baris lama = `finance`).
+2. `eas init` proyek ini + kredensial FCM (google-services.json & kunci FCM V1 di Expo) → build dengan `EXPO_PUBLIC_PUSH_ENABLED=true`.
+3. Server: `PRODUCTION_PUSH_ENABLED=true`. Saat mati, route tidak melakukan query tambahan apa pun.
+4. Pengguna menekan **Aktifkan notifikasi** di tab Akun.
+
+Token ditandai aplikasi oleh SERVER dari klaim token akses (bukan dari body); pengirim Finance kini hanya mengirim ke `app="finance"`.
+
+> `expo-image-picker` & `expo-video` adalah modul native → butuh build APK baru (bukan sekadar OTA).
 
 ## Login & keamanan
 

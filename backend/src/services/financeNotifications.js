@@ -95,7 +95,8 @@ export async function dispatchFinanceNotification({
     if (!target.length) return ringkasan;
     channelId = channelId || CHANNEL_KATEGORI[category] || "approval";
 
-    const tokens = await db.mobileDeviceToken.findMany({ where: { userId: { in: target } } });
+    // Hanya token aplikasi Finance — token SANSS Produksi (app="production") memakai pengirim sendiri (productionNotifications.js).
+    const tokens = await db.mobileDeviceToken.findMany({ where: { userId: { in: target }, app: "finance" } });
     if (!tokens.length) return ringkasan;
 
     const fcmTokens = tokens.filter((t) => t.provider === "fcm");

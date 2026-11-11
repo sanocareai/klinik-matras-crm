@@ -5,15 +5,16 @@ import { Check } from "lucide-react-native";
 import { useReport, useRunCard } from "@/api/production";
 import { pesanUntukPengguna } from "@/api/errors";
 import type { StepStatus } from "@/api/types";
-import { formatMenit, grupMedia, kartuDariV2, kodePendek } from "@/features/model";
+import { beratPemakai, formatMenit, grupMedia, kartuDariV2, kodePendek, teksBerat } from "@/features/model";
 import { Thumb } from "@/features/Galeri";
+import { BarAksi } from "@/features/BarAksi";
 import { NavBar } from "@/design/NavBar";
 import { Card, Chip, ProgressBar, Screen, Section, StateView, T } from "@/design/ui";
 import { C, TONE, type ToneKey } from "@/design/tokens";
 import { jamWib } from "@/lib/waktu";
 
 // DETAIL UNIT — kartu kerja V2 (GET /production-v2/runs/:runId/card) + media laporan, live 20 detik.
-// Tahap ini BACA-SAJA: tombol Mulai/Jeda/Terhambat/Selesai Tahap menyusul di slice berikutnya.
+// Batang aksi bawah (BarAksi): satu tombol sesuai `next` server + Tunda; formulir tahap di /langkah/[runId].
 export default function UnitDetail() {
   const { runId } = useLocalSearchParams<{ runId: string }>();
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function UnitDetail() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul={k ? k.kodePendek : "Unit"} />} refreshing={card.isRefetching} onRefresh={() => { void card.refetch(); void report.refetch(); }} bottomPad={40}>
+      <Screen header={<NavBar judul={k ? k.kodePendek : "Unit"} />} refreshing={card.isRefetching} onRefresh={() => { void card.refetch(); void report.refetch(); }} bottomPad={170}>
         {card.isLoading ? <StateView kind="loading" title="Memuat unit…" /> : null}
         {card.error ? <StateView kind="error" title="Unit tidak bisa dimuat" text={pesanUntukPengguna(card.error)} onRetry={() => void card.refetch()} /> : null}
 
@@ -50,7 +51,7 @@ export default function UnitDetail() {
                 {v.plan?.stationLabel ? <Chip label={`${v.plan.stationLabel}${v.plan.operator?.name ? ` · ${v.plan.operator.name}` : ""}`} tone="indigo" /> : null}
                 {v.plan?.cornerOperator?.name ? <Chip label={`Corner · ${v.plan.cornerOperator.name}`} tone="teal" /> : null}
                 {v.plan?.targetDate || v.plan?.productionDate ? <Chip label={`Target ${v.plan?.targetDate ?? v.plan?.productionDate}`} tone={v.plan?.targetMissed ? "red" : "gray"} /> : null}
-                {v.customer.weightKg ? <Chip label={`Berat pemakai ${v.customer.weightKg} kg`} tone="purple" /> : null}
+                {beratPemakai(v.customer).length ? <Chip label={`Berat ${teksBerat(beratPemakai(v.customer))}`} tone="purple" /> : <Chip label="Berat badan belum diisi Sales" tone="orange" />}
               </View>
               {k.catatan ? (
                 <View style={{ backgroundColor: "#FFF8E6", borderRadius: 12, padding: 10 }}>
@@ -96,12 +97,10 @@ export default function UnitDetail() {
               </Section>
             ) : null}
 
-            <Card style={{ backgroundColor: TONE.blue.tint }}>
-              <T.Sub style={{ color: TONE.blue.text }}>Versi ini untuk memantau. Mulai/selesai tahap dan unggah foto/video masih lewat Aplikasi Meja di SANSS Web sampai versi berikutnya.</T.Sub>
-            </Card>
           </>
         ) : null}
       </Screen>
+      {v ? <BarAksi card={v} onBerubah={() => { void card.refetch(); void report.refetch(); }} /> : null}
     </View>
   );
 }

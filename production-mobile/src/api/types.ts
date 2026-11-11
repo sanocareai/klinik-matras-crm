@@ -44,14 +44,17 @@ export type RunView = {
   unit: { id: string; unitCode: string; merk: string | null; ukuran: string | null; status: string; photoUrl: string | null; service: { code: string; label: string } | null };
   customer: {
     orderNumber: string | null; name: string | null; city: string | null; weightKg: number | null;
+    /** Berat per pemakai dari order (mis. Suami 80 kg, Istri 60 kg). Kosong = pakai weightKg (Order.beratBadan). */
+    weightEntries?: { label: string; beratKg: number }[];
     complaints: string[]; request: string | null; salesServices: string[]; promiseDate: string | null; salesName: string | null;
   };
   plan: {
+    id?: string;
     productionDate: string | null; stationCode: string | null; stationLabel: string | null; stationSequence: number | null;
     priorityLabel: string; priorityRank: number; targetDate: string | null; targetMissed: boolean;
-    operator: { id: string; name: string | null } | null; cornerOperator: { id: string; name: string | null } | null;
+    operator: { id: string; userId?: string; name: string | null } | null; cornerOperator: { id: string; userId?: string; name: string | null } | null;
   } | null;
-  next: { action?: string; stepNo?: number; wait?: string; label?: string } | null;
+  next: RunNext | null;
   progress: Progress;
   timer: Timer;
   activeOp: { stageLabel: string | null; status: string; startedAt: string | null; delayKind: string | null; delayNote: string | null } | null;
@@ -60,11 +63,27 @@ export type RunView = {
   warnings?: { code: string; label?: string }[];
 };
 
+/** Aksi berikutnya dari server (lib/domain/productionSteps.js#nextAction). */
+export type RunNext = {
+  actor?: "TABLE" | "CORNER" | "QC" | "WAREHOUSE" | "NONE";
+  stepNo?: number | null;
+  action?: "START_WITH_EVIDENCE" | "START" | "RESUME" | "COMPLETE" | "EVIDENCE" | "TEST" | "HANDOFF" | "START_CORNER" | "FINISH" | "WAIT";
+  wait?: string;
+  label?: string;
+  continueOnly?: boolean;
+  rework?: boolean;
+  gated?: boolean;
+  layersRequired?: boolean;
+};
+
 /** Status 12 langkah Produksi V2 (stepStatuses di server). NA = tidak berlaku untuk unit ini. */
 export type StepStatus = { no: number; code: string; label: string; status: "DONE" | "CURRENT" | "WAITING" | "PENDING" | "SKIPPED" | "NA"; at: string | null };
 
 /** Kartu kerja lengkap (GET /production-v2/runs/:runId/card) — RunView + bukti per langkah. */
 export type RunCard = RunView & {
+  workCenterId: string | null;
+  adaptation: { policy: string } | null;
+  cornerView?: { contractV2?: boolean; request?: unknown } | null;
   evidence: { id: string; stepNo: number; stepLabel: string | null; createdAt: string; actor: string | null; media: { kind: string; url: string }[] }[];
 };
 

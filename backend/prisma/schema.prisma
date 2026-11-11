@@ -8992,11 +8992,15 @@ model MobileDeviceToken {
   provider   String   @default("fcm")
   fcmToken   String   @unique @map("fcm_token")
   appVersion String?  @map("app_version")
+  // Aplikasi pemilik token (12 Nov 2026): "finance" (SANO Finance, nilai bawaan baris lama) | "production" (SANSS Produksi).
+  // Diisi server dari klaim `app` token akses — bukan dari body. Pengirim push memfilter per aplikasi.
+  app        String   @default("finance")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, deviceId])
   @@index([sessionId])
+  @@index([app, userId])
   @@map("mobile_device_tokens")
 }
 

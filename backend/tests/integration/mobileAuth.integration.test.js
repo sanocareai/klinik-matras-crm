@@ -11,6 +11,8 @@ import { createTestUser } from "./setup/fixtures.js";
 import { createLoginUser, makeRaw, DEVICE } from "./setup/authFixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { resetRateLimits } from "../../src/lib/rateLimit.js";
+import { dispatchFinanceNotification, setExpoFetchForTests } from "../../src/services/financeNotifications.js";
+import { dispatchProductionNotification, setProductionExpoFetchForTests } from "../../src/services/productionNotifications.js";
 
 let server;
 let raw;
@@ -342,6 +344,37 @@ test("Token push perangkat: daftar (FCM & Expo), upsert per perangkat, deviceId 
   assert.equal(await testPrisma.mobileDeviceToken.count({ where: { userId: u.user.id } }), 0, "logout menghapus token push perangkat");
   rows = await testPrisma.mobileSession.findMany({ where: { userId: u.user.id } });
   assert.ok(rows.every((s) => s.revokedAt));
+});
+
+test("Token push ditandai per aplikasi (dari klaim token, bukan body); pengirim Finance & Produksi tidak saling menyentuh", async () => {
+  const u = await createLoginUser({ roles: ["ADMIN"] }); // Admin memegang Finance DAN Produksi
+  const fin = await loginMobile(u, DEVICE("dev-fin"));
+  const prodRes = await raw("POST", "/api/mobile/auth/login", { body: { email: u.email, password: u.password, device: DEVICE("dev-prod"), app: "production" } });
+  assert.equal(prodRes.status, 200, JSON.stringify(prodRes.body));
+  const TF = "ExponentPushToken[finance111]";
+  const TP = "ExponentPushToken[produksi222]";
+  assert.equal((await raw("POST", "/api/mobile/devices", { token: fin.accessToken, body: { deviceId: "dev-fin", token: TF, provider: "expo", app: "production" } })).status, 201);
+  assert.equal((await raw("POST", "/api/mobile/devices", { token: prodRes.body.accessToken, body: { deviceId: "dev-prod", token: TP, provider: "expo" } })).status, 201);
+  const rows = await testPrisma.mobileDeviceToken.findMany({ where: { userId: u.user.id }, orderBy: { deviceId: "asc" } });
+  assert.deepEqual(rows.map((r) => [r.deviceId, r.app]), [["dev-fin", "finance"], ["dev-prod", "production"]], "body.app diabaikan; aplikasi dari klaim token");
+
+  const terkirim = [];
+  const tangkap = async (_url, init) => { const msgs = JSON.parse(init.body); terkirim.push(...msgs.map((m) => m.to)); return { json: async () => ({ data: msgs.map(() => ({ status: "ok" })) }) }; };
+  setExpoFetchForTests(tangkap); setProductionExpoFetchForTests(tangkap);
+  const lamaF = process.env.FINANCE_PUSH_ENABLED; const lamaP = process.env.PRODUCTION_PUSH_ENABLED;
+  process.env.FINANCE_PUSH_ENABLED = "true"; process.env.PRODUCTION_PUSH_ENABLED = "true";
+  try {
+    await dispatchFinanceNotification({ title: "t", body: "b", userIds: [u.user.id], db: testPrisma });
+    assert.deepEqual(terkirim, [TF], "Finance hanya ke token Finance");
+    terkirim.length = 0;
+    const r = await dispatchProductionNotification({ userIds: [u.user.id], title: "Siap QC", body: "004-U1 siap Uji Berat Badan.", db: testPrisma });
+    assert.deepEqual(terkirim, [TP], "Produksi hanya ke token Produksi");
+    assert.equal(r.terkirim, 1);
+  } finally {
+    setExpoFetchForTests(null); setProductionExpoFetchForTests(null);
+    if (lamaF === undefined) delete process.env.FINANCE_PUSH_ENABLED; else process.env.FINANCE_PUSH_ENABLED = lamaF;
+    if (lamaP === undefined) delete process.env.PRODUCTION_PUSH_ENABLED; else process.env.PRODUCTION_PUSH_ENABLED = lamaP;
+  }
 });
 
 test("Token push yang sama dipindah ke pengguna lain → baris lama dihapus (satu token = satu pemilik)", async () => {

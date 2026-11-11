@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, useSession } from "@/auth/session";
-import type { AndonBoard, ProductionReport, RunCard, V1Queue, WorkerQueue } from "./types";
+import type { AndonBoard, ProductionReport, RunCard, RunView, V1Queue, WorkerQueue } from "./types";
 
 // BACAAN PRODUKSI — semua endpoint SUDAH ADA dan dipakai versi web (WorkerLane, ProductionAndon, laporan).
 // "Live": diambil ulang tiap 20 detik saat aplikasi di depan (sama dengan Andon TV web) + tarik-untuk-muat-ulang.
@@ -69,4 +69,19 @@ export function useLayout() {
     docs: !!p?.docs,
     executeAny: !!p?.executeAny,
   };
+}
+
+/** Papan rencana per tanggal (GET /production-v2/board) — kartu lengkap dengan plan.id, dipakai Target untuk mengatur urutan. */
+export type BoardStation = { code: string; label: string; operatorNames: string[]; items: RunView[] };
+export function useBoard(date: string) {
+  return useQuery({
+    queryKey: ["board", date],
+    queryFn: () => api.get<{ readerMode: string; date?: string; stations?: BoardStation[] }>("/production-v2/board", { query: { date } }),
+    refetchInterval: LIVE_MS,
+  });
+}
+
+/** Simpan urutan SATU meja: daftar LENGKAP plan id menurut urutan baru (server 409 STATION_ORDER_STALE bila isi meja berubah). */
+export function simpanUrutan(productionDate: string, stationCode: string, orderedPlanIds: string[], kunci: string) {
+  return api.command<unknown>("POST", "/production-v2/stations/reorder", kunci, { body: { productionDate, stationCode, orderedPlanIds } });
 }

@@ -51,6 +51,7 @@ const gabung = (...xs: (string | null | undefined)[]) => xs.map(bersih).filter(B
 export function kartuDariV2(v: RunView): Kartu {
   const tunggu = v.next?.action === "WAIT";
   const jeda = v.activeOp?.status === "PAUSED";
+  const tertunda = v.activeOp?.status === "BLOCKED";
   const aktif = BUCKET_AKTIF.includes(v.bucket) && !tunggu && !!v.activeOp;
   const tahapLabel = v.activeOp?.stageLabel || v.next?.label || v.bucketLabel;
   return {
@@ -59,8 +60,8 @@ export function kartuDariV2(v: RunView): Kartu {
     customer: bersih(v.customer?.name) ?? "Customer belum dicatat",
     kasur: gabung(v.unit.merk, v.unit.ukuran),
     layanan: v.customer?.salesServices?.length ? v.customer.salesServices.join(", ") : v.unit.service?.label ?? null,
-    tahap: jeda ? `Jeda · ${tahapLabel}` : tahapLabel,
-    tone: jeda ? "orange" : BUCKET_TONE[v.bucket] ?? "gray",
+    tahap: tertunda ? `Tertunda · ${tahapLabel}` : jeda ? `Jeda · ${tahapLabel}` : tahapLabel,
+    tone: tertunda ? "red" : jeda ? "orange" : BUCKET_TONE[v.bucket] ?? "gray",
     aktif,
     menit: aktif ? v.timer?.stepElapsedMinutes ?? null : null,
     progres: v.progress && v.progress.total > 0 ? { done: v.progress.done + v.progress.skipped, total: v.progress.total } : null,
@@ -132,4 +133,27 @@ export function grupMedia(r: ProductionReport | undefined): GrupMedia[] {
     key, judul, items: xs.filter((m) => !!m.url).map((m) => ({ ...m, video: isVideo(m) })),
   });
   return [g("before", "Sebelum", r.media.before), g("process", "Proses", r.media.process), g("after", "Sesudah", r.media.after)].filter((x) => x.items.length > 0);
+}
+
+export type BeratPemakai = { label: string; kg: number };
+
+/**
+ * Berat pemakai dari ORDER (diisi Sales): daftar per pemakai bila ada (Suami/Istri/…), selain itu Order.beratBadan.
+ * Dipakai mengisi otomatis berat penguji (Uji Fondasi) & berat acuan (QC) — tetap bisa diubah bila penguji berbeda.
+ */
+export function beratPemakai(c: { weightKg?: number | null; weightEntries?: { label: string; beratKg: number }[] } | null | undefined): BeratPemakai[] {
+  const list = (c?.weightEntries ?? []).filter((e) => Number.isFinite(e.beratKg) && e.beratKg > 0).map((e) => ({ label: e.label?.trim() || "Pemakai", kg: e.beratKg }));
+  if (list.length) return list;
+  return c?.weightKg && c.weightKg > 0 ? [{ label: "Customer", kg: c.weightKg }] : [];
+}
+
+export const teksBerat = (b: BeratPemakai[]) => b.map((x) => (b.length > 1 || x.label !== "Customer" ? `${x.label} ${x.kg} kg` : `${x.kg} kg`)).join(" · ");
+
+/** Geser satu baris naik (-1) / turun (+1) — salinan baru; di luar batas = tidak berubah. */
+export function geser<T>(xs: T[], i: number, arah: -1 | 1): T[] {
+  const j = i + arah;
+  if (i < 0 || i >= xs.length || j < 0 || j >= xs.length) return xs;
+  const out = [...xs];
+  [out[i], out[j]] = [out[j]!, out[i]!];
+  return out;
 }

@@ -254,6 +254,8 @@ mobileRouter.post("/devices", requireAuth, async (req, res) => {
       return fail(res, 400, "Token push tidak valid");
     }
 
+    // Aplikasi pemilik token dari KLAIM token akses (diterbitkan server saat login), bukan dari body.
+    const app = req.user?.app === "production" ? "production" : "finance";
     const session = await prisma.mobileSession.findUnique({ where: { id: req.mobileSessionId }, select: { deviceId: true } });
     if (!session || session.deviceId !== String(deviceId)) {
       return fail(res, 400, "deviceId tidak sama dengan perangkat sesi ini");
@@ -268,11 +270,11 @@ mobileRouter.post("/devices", requireAuth, async (req, res) => {
         where: { userId_deviceId: { userId: req.user.id, deviceId: String(deviceId) } },
         create: {
           userId: req.user.id, sessionId: req.mobileSessionId, deviceId: String(deviceId),
-          platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr,
+          platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr, app,
           appVersion: appVersion ? String(appVersion).slice(0, 40) : null,
         },
         update: {
-          sessionId: req.mobileSessionId, platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr,
+          sessionId: req.mobileSessionId, platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr, app,
           appVersion: appVersion ? String(appVersion).slice(0, 40) : null,
         },
       });

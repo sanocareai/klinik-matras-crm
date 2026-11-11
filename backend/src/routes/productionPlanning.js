@@ -23,6 +23,7 @@ import {
   resolveHandoffRejection, resolveRunException, sweepRunExceptions,
 } from "../services/productionQcHandoffCommandService.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
+import { denganNotifikasiPerpindahan } from "../services/productionNotifications.js";
 
 export const productionPlanningRouter = express.Router();
 productionPlanningRouter.use(requireAuth);
@@ -296,13 +297,14 @@ productionPlanningRouter.get("/qc/runs/:runId", requireAnyPermission(...READ_PER
 productionPlanningRouter.post("/qc/runs/:runId/inspect", requireAnyPermission(...QC_DECIDE_PERMS), async (req, res) => {
   try {
     const b = req.body || {};
-    res.json(await recordQualityInspection(prisma, {
+    // Push SANSS Produksi (sakelar mati = tanpa query tambahan): Lulus → PIC Corner; Gagal → PIC Meja (rework).
+    res.json(await denganNotifikasiPerpindahan(req.params.runId, req.user.id, () => recordQualityInspection(prisma, {
       runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: b.expectedRevision,
       canInspect: hasPermission(req.user, P.QC_WRITE), canWaive: hasPermission(req.user, P.QC_WAIVE),
       result: b.result, note: b.note, reason: b.reason, photoUrls: b.photoUrls, referenceWeightKg: b.referenceWeightKg, fitVerdict: b.fitVerdict,
       customerPreferenceOverride: b.customerPreferenceOverride, educationGiven: b.educationGiven, items: b.items, reworkStageId: b.reworkStageId,
       supplementalMaterials: b.supplementalMaterials,
-    }));
+    })));
   } catch (err) { handleErr(err, res); }
 });
 

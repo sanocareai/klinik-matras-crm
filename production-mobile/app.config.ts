@@ -68,6 +68,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-splash-screen",
       { image: "./assets/splash-icon.png", imageWidth: 160, resizeMode: "contain", backgroundColor: "#F2F2F7" },
     ],
+    [
+      "expo-image-picker",
+      {
+        // Foto & video dokumentasi tahap (mis. uji fondasi). Video direkam aplikasi kamera bawaan HP, jadi
+        // aplikasi ini sendiri tidak meminta izin mikrofon (RECORD_AUDIO tetap diblokir di atas).
+        photosPermission: "SANSS Produksi butuh akses galeri untuk melampirkan foto/video dokumentasi produksi",
+        cameraPermission: "SANSS Produksi butuh kamera untuk memotret dan merekam dokumentasi produksi",
+        microphonePermission: false,
+      },
+    ],
+    "expo-video",
     ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#4A62E8" }],
     [
       "expo-build-properties",

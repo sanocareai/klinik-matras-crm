@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { AppState, Text, View } from "react-native";
 import NetInfo from "@react-native-community/netinfo";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
@@ -13,6 +13,7 @@ import { Inter_800ExtraBold } from "@expo-google-fonts/inter/800ExtraBold";
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSession } from "@/auth/session";
+import { pasangPendengarTautan, segarkanTokenPush } from "@/auth/push";
 import { C } from "@/design/tokens";
 
 void SplashScreen.preventAutoHideAsync();
@@ -54,6 +55,14 @@ export default function RootLayout() {
   }, []);
   useEffect(() => { void useSession.getState().restore(); }, []);
 
+  // Push (hanya bila dinyalakan saat build): segarkan token diam-diam setelah masuk & saat kembali ke aplikasi.
+  useEffect(() => {
+    if (status !== "signedIn") return undefined;
+    void segarkanTokenPush();
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") void segarkanTokenPush(); });
+    return () => sub.remove();
+  }, [status]);
+
   const siap = fontsLoaded && status !== "loading";
   useEffect(() => { if (siap) void SplashScreen.hideAsync(); }, [siap]);
   if (!siap) return null;
@@ -67,12 +76,23 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="unit/[runId]" />
             <Stack.Screen name="media/[runId]" />
+            <Stack.Screen name="langkah/[runId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="tunda/[runId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="qc/[runId]" options={{ animation: "slide_from_bottom" }} />
           </Stack.Protected>
           <Stack.Protected guard={status === "signedOut"}>
             <Stack.Screen name="login" />
           </Stack.Protected>
         </Stack>
+        {status === "signedIn" ? <TautanNotifikasi /> : null}
       </QueryClientProvider>
     </SafeAreaProvider>
   );
+}
+
+/** Ketuk notifikasi → buka layar tujuan (hanya setelah masuk; rute divalidasi daftar putih di lib/tautan.ts). */
+function TautanNotifikasi() {
+  const router = useRouter();
+  useEffect(() => pasangPendengarTautan((rute) => router.push(rute as never)), [router]);
+  return null;
 }
