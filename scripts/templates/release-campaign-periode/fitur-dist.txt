@@ -4,7 +4,7 @@ for c1 in "mk-kpi-grid--sumber" "mk-kpi[data-nada=jingga]"; do
   [ -z "$(cari_dist "$PREV_DIR" css "$c1")" ] || die "[skrip] ${c1} SUDAH ada di CSS release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" css "$c1")" ] || die "CSS baru TIDAK memuat aturan ${c1}"
 done
-for j1 in "Aktif di periode" "mk-kolom-sumber-roas" "tanpa spend di periode ini disembunyikan" "kartu-sumber-"; do
+for j1 in "Aktif di periode" "mk-kolom-sumber-roas" "tanpa spend di periode ini disembunyikan" "ROAS (Booked) = nilai order"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$j1")" ] || die "[skrip] '${j1}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$j1")" ] || die "dist baru TIDAK memuat fitur cip1: ${j1}"
 done
