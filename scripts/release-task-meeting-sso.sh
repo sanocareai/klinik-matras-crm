@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RILIS BACKEND + FRONTEND: Task & Meeting SSO (D-200) dalam keadaan MATI (HUB_SSO_ENABLED=false). Dua migrasi aditif
 #   (tabel baru hub_handoffs + satu nilai enum Role HUB_MEMBER), tanpa perubahan data. FAIL-CLOSED.
-#   Kandidat dikirim lewat bundle: BUNDLE=/tmp/tms1.bundle (branch release/task-meeting-sso-on-e82899c0).
+#   Kandidat dikirim lewat bundle: BUNDLE=/tmp/tms1.bundle (branch release/task-meeting-sso-on-e3a7a405).
 #   tr -d '\r' < scripts/release-task-meeting-sso.sh | ssh ubuntu@43.133.152.6 'cat > /tmp/tms1.sh'
 #   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/tms1.bundle bash /tmp/tms1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # baca-saja
 #   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/tms1.bundle nohup bash /tmp/tms1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/tms1.out 2>&1 < /dev/null &'
@@ -17,15 +17,15 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-release/task-meeting-sso-on-e82899c0}"
-EXPECT_BASE="e82899c02dd0d76286bb1275fcd30bb63e20d31b"
+CAND_BRANCH="${CAND_BRANCH:-release/task-meeting-sso-on-e3a7a405}"
+EXPECT_BASE="e3a7a4057c3b93faea623923e4fd5b5fae51a58b"
 [ "$BASE_SHA" = "$EXPECT_BASE" ] || { echo "STOP: skrip ini diaudit untuk baseline ${EXPECT_BASE:0:8}, bukan ${BASE_SHA:0:8}" >&2; exit 1; }
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ frontend/dist, lihat kepala berkas).
-ALLOWED_RE='^(backend/\.env\.example|backend/prisma/schema\.prisma|backend/prisma/migrations/20261231190000_hub_handoff_sso/migration\.sql|backend/prisma/migrations/20261231190100_add_hub_member_role/migration\.sql|backend/scripts/stage5-rehearsal/staging-db\.mjs|backend/scripts/stage5-rehearsal/staging-seed\.mjs|backend/scripts/stage5-rehearsal/staging-pair\.mjs|backend/scripts/stage5-rehearsal/_pair-selftest\.mjs|backend/src/constants/permissions\.js|backend/src/index\.js|backend/src/lib/activityLog\.js|backend/src/lib/domain/hubSso\.js|backend/src/lib/domain/hubSummary\.js|backend/src/routes/auth\.js|backend/src/routes/hubSso\.js|backend/src/routes/users\.js|backend/src/services/hubSso\.js|backend/src/services/hubSummary\.js|backend/tests/hubSso\.test\.js|backend/tests/hubSummary\.test\.js|backend/tests/integration/hubSso\.integration\.test\.js|backend/tests/integration/setup/testDb\.js|backend/tests/releaseTaskMeetingSso\.test\.js|docs/HUB-SSO\.md|docs/sano-hub/DECISIONS\.md|docs/sso-stage5-rehearsal/[A-Za-z0-9._-]+|frontend/src/App\.jsx|frontend/src/api\.js|frontend/src/features/portal/MainHubWidgets\.jsx|frontend/src/pages/HubLaunch\.jsx|frontend/src/pages/Portal\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/appleGelombang1\.test\.js|frontend/dist/.+|scripts/release-task-meeting-sso\.sh)$'
+ALLOWED_RE='^(backend/\.env\.example|backend/prisma/schema\.prisma|backend/prisma/migrations/20261231190300_hub_handoff_sso/migration\.sql|backend/prisma/migrations/20261231190400_add_hub_member_role/migration\.sql|backend/scripts/stage5-rehearsal/staging-db\.mjs|backend/scripts/stage5-rehearsal/staging-seed\.mjs|backend/scripts/stage5-rehearsal/staging-pair\.mjs|backend/scripts/stage5-rehearsal/_pair-selftest\.mjs|backend/src/constants/permissions\.js|backend/src/index\.js|backend/src/lib/activityLog\.js|backend/src/lib/domain/hubSso\.js|backend/src/lib/domain/hubSummary\.js|backend/src/routes/auth\.js|backend/src/routes/hubSso\.js|backend/src/routes/users\.js|backend/src/services/hubSso\.js|backend/src/services/hubSummary\.js|backend/tests/hubSso\.test\.js|backend/tests/hubSummary\.test\.js|backend/tests/integration/hubSso\.integration\.test\.js|backend/tests/integration/setup/testDb\.js|backend/tests/releaseTaskMeetingSso\.test\.js|docs/HUB-SSO\.md|docs/sano-hub/DECISIONS\.md|docs/sso-stage5-rehearsal/[A-Za-z0-9._-]+|frontend/src/App\.jsx|frontend/src/api\.js|frontend/src/features/portal/MainHubWidgets\.jsx|frontend/src/pages/HubLaunch\.jsx|frontend/src/pages/Portal\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/appleGelombang1\.test\.js|frontend/dist/.+|scripts/release-task-meeting-sso\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/constants/permissions.js backend/src/index.js backend/src/lib/activityLog.js backend/src/lib/domain/hubSso.js backend/src/lib/domain/hubSummary.js backend/src/routes/auth.js backend/src/routes/hubSso.js backend/src/routes/users.js backend/src/services/hubSso.js backend/src/services/hubSummary.js"
-MIG1="backend/prisma/migrations/20261231190000_hub_handoff_sso/migration.sql"
+MIG1="backend/prisma/migrations/20261231190300_hub_handoff_sso/migration.sql"
 MIG1_SHA="188e8d696b61324cd5900ad99824ab4455bb8fd4dd32e85a11f57598c8e3ac67"
-MIG2="backend/prisma/migrations/20261231190100_add_hub_member_role/migration.sql"
+MIG2="backend/prisma/migrations/20261231190400_add_hub_member_role/migration.sql"
 MIG2_SHA="3c8c87cf65502f0d1c18a703764f8a28d837f8a03413e20213c730958d352497"
 # sha256 dari baris '+' pada `git diff -U0 BASE DEPLOY -- backend/prisma/schema.prisma` (tanpa \r, tanpa header +++).
 SCHEMA_ADD_SHA="013709a33b75ca8e20cd3be06b0bddc36e2e46a9d14fdccffa3d87024e7cbdc2"
@@ -149,7 +149,7 @@ LUAR="$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED_RE" || true)"
 SCAN="$( { sg show "${DEPLOY_SHA}:${MIG1}"; echo; sg show "${DEPLOY_SHA}:${MIG2}"; } | tr -d '\r' | scan_migrations)" || die "pemindai migrasi menemukan pernyataan di luar allow-list"
 [ "$SCAN" = "$SCAN_EXPECT" ] || die "jumlah pernyataan migrasi ${SCAN} != ${SCAN_EXPECT}"
 LAST_BASE_MIG="$(sg ls-tree -d --name-only "${BASE_SHA}:backend/prisma/migrations" | LC_ALL=C sort | tail -n 1)"
-[[ "$LAST_BASE_MIG" < "20261231190000_hub_handoff_sso" ]] || die "migrasi baru tidak terurut SESUDAH migrasi terakhir baseline (${LAST_BASE_MIG})"
+[[ "$LAST_BASE_MIG" < "20261231190300_hub_handoff_sso" ]] || die "migrasi baru tidak terurut SESUDAH migrasi terakhir baseline (${LAST_BASE_MIG})"
 ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}; origin/main (${MAIN_SHA:0:8}) leluhur keduanya; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist; backend/src = $(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w) berkas diaudit; schema = tambahan yang dipin; 2 migrasi dipin, ${SCAN} pernyataan diizinkan, terurut sesudah ${LAST_BASE_MIG}"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
@@ -254,7 +254,7 @@ for s in "hub/summary/me" "Pantauan Leader"; do
   [ -z "$(cari_dist "$PREV_DIR" js "$s")" ] || die "[skrip] '${s}' SUDAH ada di dist aktif — perbaiki pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s")" ] || die "dist baru TIDAK memuat '${s}'"
 done
-for s in "Lead tanpa spam" "Dibeli per pack" "drawer-deskripsi" "Catat hasil SO" "Definisi dan sumber angka" "Sumber & Link" "Kelola biaya iklan" "Iklan tidak terbaca" "Per kreatif" "Tanpa persetujuan (koreksi langsung Admin)" "Biaya kosong" "Catat dari catatan ini"; do
+for s in "Lead tanpa spam" "Dibeli per pack" "drawer-deskripsi" "Catat hasil SO" "Definisi dan sumber angka" "Sumber & Link" "Kelola biaya iklan" "Iklan tidak terbaca" "Per kreatif" "Tanpa persetujuan (koreksi langsung Admin)" "Biaya kosong" "Catat dari catatan ini" "Batalkan pengajuan saya" "Dilaporkan sebagai pengajuan"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$s")" ] || die "[skrip] '${s}' tidak ada di dist aktif — perbaiki pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s")" ] || die "dist baru KEHILANGAN fitur: ${s}"
 done
@@ -334,7 +334,7 @@ done
 ok "journal.js, orderRevenue.js, authorize.js, auth.js tidak berubah dari baseline"
 MIG_SESUDAH="$(dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null" </dev/null)"
 [ "$MIG_SESUDAH" = "$(( MIG_SEBELUM + 2 ))" ] || die "jumlah migrasi tidak bertambah tepat dua (${MIG_SEBELUM} -> ${MIG_SESUDAH})"
-[ "$(dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "select string_agg(migration_name, ' ' order by migration_name) from _prisma_migrations where finished_at is not null and migration_name in ('20261231190000_hub_handoff_sso','20261231190100_add_hub_member_role')" </dev/null)" = "20261231190000_hub_handoff_sso 20261231190100_add_hub_member_role" ] || die "dua migrasi rilis tidak tercatat selesai"
+[ "$(dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "select string_agg(migration_name, ' ' order by migration_name) from _prisma_migrations where finished_at is not null and migration_name in ('20261231190300_hub_handoff_sso','20261231190400_add_hub_member_role')" </dev/null)" = "20261231190300_hub_handoff_sso 20261231190400_add_hub_member_role" ] || die "dua migrasi rilis tidak tercatat selesai"
 ok "migrasi terpasang ${MIG_SEBELUM} -> ${MIG_SESUDAH} (dua migrasi rilis tercatat selesai)"
 
 PHASE="8b-smoke"; say "8b. Smoke baca-saja (fitur mati)"

@@ -966,14 +966,14 @@ test("migrasi: FK ON DELETE CASCADE — menghapus pengguna membersihkan handoff-
 // Forward-port ke main (lihat km-sanss-task-meeting-sso-forward-port): migrasi
 // asli tahap 3 (20260926090000_hub_handoff_sso) + tahap 4
 // (20260927060000_hub_handoff_state) DIGABUNG jadi SATU migrasi baru
-// (20261231190000_hub_handoff_sso, timestamp baru supaya tetap terurut
+// (20261231190300_hub_handoff_sso, timestamp baru supaya tetap terurut
 // setelah migrasi terbaru main saat forward-port ini dibuat) — bukan reuse
 // timestamp lama yang sudah tidak terurut benar lagi. state_hash karena itu
 // bagian dari CREATE TABLE awal, bukan ALTER TABLE ADD COLUMN terpisah;
 // nullable & tipe TEXT-nya sudah diverifikasi lewat introspeksi skema di tes
 // "migrasi: bentuk tabel hub_handoffs" di atas.
 test("migrasi: additive murni — file SQL hanya CREATE TABLE/INDEX dan ALTER TABLE atas hub_handoffs (tanpa DROP/UPDATE/DELETE)", () => {
-  const dir = path.resolve("prisma/migrations/20261231190000_hub_handoff_sso");
+  const dir = path.resolve("prisma/migrations/20261231190300_hub_handoff_sso");
   const sql = fs.readFileSync(path.join(dir, "migration.sql"), "utf8").replace(/--.*$/gm, "");
   // Klausa FK "ON DELETE/ON UPDATE CASCADE" bukan perintah data — dibuang dulu sebelum mencari kata destruktif.
   // "NOT NULL" SENGAJA tidak dilarang di sini — CREATE TABLE baru wajar punya kolom wajib
@@ -990,7 +990,7 @@ test("migrasi: additive murni — file SQL hanya CREATE TABLE/INDEX dan ALTER TA
 });
 
 test("migrasi: tercatat selesai di _prisma_migrations", async () => {
-  const name = "20261231190000_hub_handoff_sso";
+  const name = "20261231190300_hub_handoff_sso";
   const rows = await testPrisma.$queryRawUnsafe(
     `SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations WHERE migration_name = '${name}'`);
   assert.equal(rows.length, 1, name);
