@@ -2,7 +2,7 @@
 // dengan backend/src/lib/domain/productionComponents.js). Server tetap otoritas validasi (recordComponentSection).
 // Endpoint: GET /production-v2/component-notes/units/:unitId · POST …/units/:unitId/sections/:section { expectedVersion, data, media, reason? }
 // Catatan ini INFORMASI: tidak memotong stok, bukan BOM/pemakaian.
-// Dari HP: lapisan & fondasi sebelum bongkar, hasil aktual (Meja), dan 4 pengujian PIC QC. Racikan rencana tetap lewat SANSS Web.
+// Dari HP: lapisan & fondasi sebelum bongkar, racikan rencana & hasil aktual (Meja/PIC QC), dan 4 pengujian PIC QC.
 
 export type KunciBagian =
   | "LAYERS_BEFORE" | "FOUNDATION_BEFORE" | "AFTER" | "WHOLE_TEST_BEFORE" | "FOUNDATION_TEST_BEFORE" | "FOUNDATION_TEST_AFTER" | "WHOLE_TEST_AFTER" | "PLAN_RACIKAN";
@@ -17,8 +17,12 @@ export const BAGIAN_KOMPONEN: Record<KunciBagian, { label: string; qc: boolean }
   WHOLE_TEST_AFTER: { label: "Uji kasur jadi", qc: true },
   PLAN_RACIKAN: { label: "Racikan rencana", qc: false },
 };
-/** Bagian yang bisa diisi dari HP (racikan rencana tetap di SANSS Web). */
-export const BAGIAN_HP: KunciBagian[] = ["LAYERS_BEFORE", "FOUNDATION_BEFORE", "AFTER", "WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE", "FOUNDATION_TEST_AFTER", "WHOLE_TEST_AFTER"];
+/** Bagian yang bisa diisi dari HP — semuanya. */
+export const BAGIAN_HP: KunciBagian[] = ["LAYERS_BEFORE", "FOUNDATION_BEFORE", "PLAN_RACIKAN", "AFTER", "WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE", "FOUNDATION_TEST_AFTER", "WHOLE_TEST_AFTER"];
+/** Urutan tampilan (cermin DISPLAY_ORDER web). */
+export const URUTAN_TAMPIL: KunciBagian[] = ["LAYERS_BEFORE", "FOUNDATION_BEFORE", "PLAN_RACIKAN", "AFTER", "WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE", "FOUNDATION_TEST_AFTER", "WHOLE_TEST_AFTER"];
+/** Racikan rencana & hasil aktual berbentuk SAMA (fondasi + lapisan atas→bawah dengan tindakan) — satu normalizer di server. */
+export const bentukHasil = (b: KunciBagian) => b === "AFTER" || b === "PLAN_RACIKAN";
 
 export const KONDISI = [
   { value: "BAIK", label: "Baik" }, { value: "CUKUP", label: "Cukup / layak" }, { value: "AUS", label: "Aus / menipis" }, { value: "KEMPES", label: "Kempes / amblas" },
@@ -85,7 +89,7 @@ export type Draf = {
   // uji
   testerWeight: string; testMethod: string; sameMethod: boolean;
   complaintMatch: string; complaintNote: string; feelNote: string; wholeDrop: string; qcInFrame: boolean;
-  // AFTER
+  // AFTER / PLAN_RACIKAN
   foundationOn: boolean; foundation: { action: string; system: string; material: RefBahan | null; note: string }; layersAfter: BarisSesudah[]; deviationNote: string;
 };
 
@@ -108,9 +112,9 @@ export function drafDari(bagian: KunciBagian, e: EntriKomponen | null | undefine
     unloadedHeight: t(d.unloadedHeightCm), loadedHeight: t(d.loadedHeightCm),
     testerWeight: t(d.testerWeightKg), testMethod: t(d.testMethod), sameMethod: false, // konfirmasi sebanding dibuat ULANG setiap simpan
     complaintMatch: t(d.complaintMatch), complaintNote: t(d.complaintNote), feelNote: t(d.feelNote), wholeDrop: t(d.wholeDropCm), qcInFrame: !!d.qcInFrame,
-    foundationOn: bagian === "AFTER" ? (e ? !!f : true) : false,
+    foundationOn: bentukHasil(bagian) ? (e ? !!f : true) : false,
     foundation: { action: t(f?.action), system: t(f?.system), material: rapikanBahan(f?.material), note: t(f?.note) },
-    layersAfter: bagian === "AFTER" ? ((d.layers ?? []) as Record<string, unknown>[]).map((l) => ({ id: idBaris(), action: t(l.action), fromOrder: t(l.fromOrder), material: rapikanBahan(l.material), thickness: t(l.thicknessCm), note: t(l.note) })) : [],
+    layersAfter: bentukHasil(bagian) ? ((d.layers ?? []) as Record<string, unknown>[]).map((l) => ({ id: idBaris(), action: t(l.action), fromOrder: t(l.fromOrder), material: rapikanBahan(l.material), thickness: t(l.thicknessCm), note: t(l.note) })) : [],
     deviationNote: t(d.deviationNote),
   };
 }
@@ -201,8 +205,8 @@ export function validasiKomponen(b: KunciBagian, d: Draf, opsi: { koreksi?: bool
     if (d.material && !bahanSah(d.material)) return "Lengkapi bahan fondasi atau kosongkan.";
     return null;
   }
-  // AFTER
-  if (!d.foundationOn && !d.layersAfter.length) return "Isi fondasi atau minimal satu lapisan hasil akhir.";
+  // AFTER / PLAN_RACIKAN
+  if (!d.foundationOn && !d.layersAfter.length) return b === "PLAN_RACIKAN" ? "Isi fondasi atau minimal satu lapisan pada racikan rencana." : "Isi fondasi atau minimal satu lapisan hasil akhir.";
   if (d.foundationOn) {
     if (!d.foundation.action) return "Fondasi: pilih dipertahankan / diperbaiki / diganti.";
     if (d.foundation.action === "REPLACE" && !d.foundation.system) return `Fondasi diganti: pilih jenis fondasi baru (boleh “${LABEL_TIDAK_TAHU}”).`;
@@ -240,7 +244,7 @@ export function payloadKomponen(b: KunciBagian, d: Draf): Record<string, unknown
   return {
     foundation: d.foundationOn ? { action: d.foundation.action, system: d.foundation.system || null, material: d.foundation.material || null, note: d.foundation.note.trim() || null } : null,
     layers: d.layersAfter.map((l) => ({ action: l.action, fromOrder: l.fromOrder === "" ? null : Number(l.fromOrder), material: l.material || null, thicknessCm: n2(l.thickness), note: l.note.trim() || null })),
-    note, ...(d.deviationNote.trim() ? { deviationNote: d.deviationNote.trim() } : {}),
+    note, ...(b === "AFTER" && d.deviationNote.trim() ? { deviationNote: d.deviationNote.trim() } : {}),
   };
 }
 export const mediaKomponen = (d: Draf) => d.media.map((m) => ({ url: m.url, caption: m.caption.trim() || null }));

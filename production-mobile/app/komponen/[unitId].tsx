@@ -11,7 +11,7 @@ import { useRunCard } from "@/api/production";
 import {
   BAGIAN_HP, BAGIAN_KOMPONEN, KESESUAIAN_KELUHAN, KONDISI, MAKS_LAPISAN, SISTEM_FONDASI, TINDAKAN,
   barisSebelumKosong, barisSesudahKosong, drafDari, drafDariRencana, maksMedia, mediaKomponen, minMedia, payloadKomponen, penurunanFondasi, perbedaanDariRencana,
-  ringkasLapisan, validasiKomponen, type Draf, type KunciBagian,
+  bentukHasil, ringkasLapisan, validasiKomponen, type Draf, type KunciBagian,
 } from "@/features/komponen";
 import { bolehCobaLagi } from "@/features/langkah";
 import { LampiranKomponen, PemilihBahan } from "@/features/KomponenUI";
@@ -68,7 +68,7 @@ export default function Komponen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <Screen header={<NavBar judul={meta?.label ?? "Catatan Komponen"} kembali="Batal" />} bottomPad={140}>
-        {!bagian ? <StateView kind="empty" title="Bagian ini diisi lewat SANSS Web" /> : null}
+        {!bagian ? <StateView kind="empty" title="Bagian catatan tidak dikenal" /> : null}
         {q.isLoading ? <StateView kind="loading" title="Memuat catatan…" /> : null}
         {q.error ? <StateView kind="error" title="Catatan tidak bisa dimuat" text={pesanUntukPengguna(q.error)} onRetry={() => void q.refetch()} /> : null}
         {q.data?.readerMode === "OFF" ? <StateView kind="empty" title="Produksi V2 belum aktif" /> : null}
@@ -141,9 +141,10 @@ export default function Komponen() {
               </>
             ) : null}
 
-            {bagian === "AFTER" ? (
+            {bentukHasil(bagian) ? (
               <>
-                {rencana ? <Button kind="tinted" label="Isi dari racikan rencana" onPress={() => set(drafDariRencana(rencana, d))} /> : null}
+                {bagian === "PLAN_RACIKAN" ? <Card><T.Sub>Racikan RENCANA ditentukan PIC Meja/PIC QC: fondasi & lapisan yang dipertahankan, diperbaiki, atau diganti. Hasil aktualnya dicatat terpisah di “Hasil aktual sesudah pengerjaan”. PIC Bahan memakai racikan ini sebagai acuan rencana bahan.</T.Sub></Card> : null}
+                {bagian === "AFTER" && rencana ? <Button kind="tinted" label="Isi dari racikan rencana" onPress={() => set(drafDariRencana(rencana, d))} /> : null}
                 <CentangBaris label="Catat fondasi" value={d.foundationOn} onChange={(v) => set({ foundationOn: v })} />
                 {d.foundationOn ? (
                   <Card style={{ gap: 10 }}>
@@ -153,7 +154,7 @@ export default function Komponen() {
                     <PemilihBahan label="Bahan fondasi" opsional value={d.foundation.material} onChange={(m) => set({ foundation: { ...d.foundation, material: m } })} />
                   </Card>
                 ) : null}
-                <T.Caption style={{ marginHorizontal: 4 }}>Lapisan hasil akhir, dari ATAS ke BAWAH.</T.Caption>
+                <T.Caption style={{ marginHorizontal: 4 }}>{bagian === "PLAN_RACIKAN" ? "Lapisan rencana" : "Lapisan hasil akhir"}, dari ATAS ke BAWAH.</T.Caption>
                 {d.layersAfter.map((l, i) => {
                   const ubahBaris = (p: Partial<typeof l>) => set({ layersAfter: d.layersAfter.map((x) => (x.id === l.id ? { ...x, ...p } : x)) });
                   return (

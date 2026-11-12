@@ -82,6 +82,10 @@ export default function RootLayout() {
             <Stack.Screen name="kurang-bahan/[runId]" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="diagnosa/[runId]" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="komponen/[unitId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="catat-bahan/[runId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="rencana-bahan/[runId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="bahan-rework/[runId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="atur-pengerjaan/[runId]" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="jadwal" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="pic-meja" options={{ animation: "slide_from_bottom" }} />
           </Stack.Protected>

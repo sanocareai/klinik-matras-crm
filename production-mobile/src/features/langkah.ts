@@ -1,4 +1,5 @@
 import type { CornerView, RunCard, RunNext } from "@/api/types";
+import { bahanOlehPicKartu } from "./picBahan";
 
 // MODEL MURNI aksi tahap Produksi V2 — CERMIN frontend/src/features/production/experience.js (validateStepForm,
 // buildStepPayload, MEDIA_RULES, isQuickAction, actionLabel) yang sendiri mencerminkan kontrak server.
@@ -22,6 +23,12 @@ export const PETUNJUK: Record<number, string> = {
   11: "Foto/video hasil jahitan + checklist kerapian.",
   12: "Foto kasur selesai/terbungkus, lalu serahkan ke Gudang.",
 };
+
+/** Jalur Pengerjaan Pesanan (BUILD, pesanan baru/custom): tahap 6 = "Pengerjaan Pesanan"; tahap 1–5 & 7 tidak berlaku (server menandai NA). */
+export const LABEL_PENGERJAAN = "Pengerjaan Pesanan";
+export const PETUNJUK_PENGERJAAN = "Foto/video hasil pengerjaan sesuai spesifikasi & layanan pesanan Sales. Catat bahan Gudang yang dipakai bila ada.";
+export const PETUNJUK_PENGERJAAN_KASUR = "Catat racikan fondasi/lapisan yang dipakai (bersama PIC QC), foto/video hasil pengerjaan, dan bahan Gudang yang dipakai bila ada.";
+export const labelTahap = (n: number, track?: string) => (track === "BUILD" && n === 6 ? LABEL_PENGERJAAN : LABEL_TAHAP[n] ?? "Tahap");
 
 /** Kebutuhan media per tahap (cermin MEDIA_RULES web/server). video=true → minimal satu video. */
 export const ATURAN_MEDIA: Record<number, { min: number; video: boolean }> = {
@@ -69,23 +76,25 @@ export type FormLangkah = {
   materials?: { materialId: string; qty: string }[];
   mattressStyle?: string; fabricSpec?: string; borderColor?: string;
   verdict?: string;
+  /** Jalur BUILD tahap 6 (kasur custom): racikan fondasi/lapisan yang dipakai. */
+  racikanFondasi?: string; racikanLapisan?: string;
   requestChecked?: boolean; fabricMode?: string; requestMatch?: string; requestNote?: string; salesConfirmation?: string;
 };
 
-type KartuBahan = Pick<RunCard, "track" | "materialPic">;
-/** PIC Bahan sudah mencatat pemakaian (LAYANAN) → Meja tidak mengisi bahan lagi. Cermin materialsByPic (jalur restorasi). */
-export const bahanOlehPic = (card: KartuBahan) => card.track !== "BUILD" && !!(card.materialPic?.materialOperator || card.materialPic?.record);
+type KartuBahan = Pick<RunCard, "track" | "materialPic"> & Partial<Pick<RunCard, "build" | "product">>;
+/** PIC Bahan ditugaskan/sudah mencatat → Meja tidak mengisi bahan (dan racikan, jalur BUILD) lagi. Cermin materialsByPic. */
+export const bahanOlehPic = (card: KartuBahan) => bahanOlehPicKartu(card);
 /** Cermin stepMaterialsByPic web: tahap 6 selalu, tahap 7 hanya pada restorasi ber-PIC Bahan. */
-export const langkahBahanOlehPic = (card: KartuBahan, stepNo: number) => (stepNo === 6 || (stepNo === 7 && !!card.materialPic)) && bahanOlehPic(card);
+export const langkahBahanOlehPic = (card: KartuBahan, stepNo: number) => (stepNo === 6 || (stepNo === 7 && card.track !== "BUILD" && !!card.materialPic)) && bahanOlehPic(card);
 export type MediaTerunggah = { url: string; kind: "image" | "video"; previewUrl?: string | null };
 
 /** Aksi satu-ketuk (tanpa formulir): Mulai, Lanjutkan, atau "Lanjutkan" ketika buktinya sudah ada di sumbernya. */
 export const aksiCepat = (next: RunNext | null | undefined) =>
   !!next && (next.action === "START" || next.action === "RESUME" || ((next.action === "COMPLETE" || next.action === "TEST") && !!next.continueOnly));
 
-export function labelAksi(next: RunNext | null | undefined, stageLabel?: string | null): string | null {
+export function labelAksi(next: RunNext | null | undefined, stageLabel?: string | null, track?: string): string | null {
   if (!next || next.stepNo == null) return null;
-  const nama = LABEL_TAHAP[next.stepNo] ?? "Tahap";
+  const nama = labelTahap(next.stepNo, track);
   switch (next.action) {
     case "START_WITH_EVIDENCE": return "Mulai: Foto Sebelum Bongkar";
     case "START": return `Mulai ${stageLabel || nama}`;
@@ -101,12 +110,11 @@ export function labelAksi(next: RunNext | null | undefined, stageLabel?: string 
 }
 
 /**
- * Formulir tahap ini bisa diisi dari HP? Masih lewat SANSS Web: jalur Pengerjaan Pesanan (BUILD), 8 (uji tekstur ditulis PIC QC),
- * tahap 3/7 yang menunggu Catatan Komponen. Tahap 5 = wizard Diagnosa (layar terpisah); 6/7/10 memakai bahan yang SUDAH diserahkan Gudang.
+ * Formulir tahap ini bisa diisi dari HP? Tahap 3/7 yang menunggu Catatan Komponen diisi dulu lewat layar Catatan Komponen.
+ * Tahap 5 = wizard Diagnosa (layar terpisah); 6/7/10 memakai bahan yang SUDAH diserahkan Gudang; jalur BUILD tahap 6 = Pengerjaan Pesanan.
  */
 export function formulirDidukung(card: Pick<RunCard, "track" | "cornerView">, next: RunNext): { ok: true } | { ok: false; alasan: string } {
   const n = next.stepNo ?? 0;
-  if (card.track === "BUILD") return { ok: false, alasan: "Jalur Pengerjaan Pesanan masih lewat SANSS Web." };
   if (n === 3 && next.gated && next.layersRequired) return { ok: false, alasan: "Catat susunan lapisan awal (Catatan Komponen) dulu." };
   if (n === 7 && next.gated && next.layersAfterRequired) return { ok: false, alasan: "Catat susunan hasil aktual (Catatan Komponen) dulu." };
   if (n >= 1 && n <= 12) return { ok: true }; // 5 = wizard Diagnosa (app/diagnosa); 8 = uji tekstur Meja (jalur tanpa gerbang perakitan)
@@ -128,7 +136,7 @@ export function validasiMulaiCorner(f: FormLangkah, brief: NonNullable<CornerVie
   return null;
 }
 
-export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTerunggah[], opsi: { track?: string; gated?: boolean; cornerV2?: boolean; byPic?: boolean; cornerBrief?: CornerView["request"] | null } = {}): string | null {
+export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTerunggah[], opsi: { track?: string; alur?: string | null; gated?: boolean; cornerV2?: boolean; byPic?: boolean; cornerBrief?: CornerView["request"] | null } = {}): string | null {
   const r = aturanMedia(stepNo, opsi.track);
   if (media.length < r.min) return `Lampirkan minimal ${r.min} foto/video.`;
   if (r.video && !media.some((m) => m.kind === "video")) return "Tahap ini wajib video.";
@@ -144,6 +152,10 @@ export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTeru
       return null;
     }
     case 6:
+      if (opsi.track === "BUILD") { // bahan opsional; kasur custom wajib racikan fondasi dan/atau lapisan (kecuali dicatat PIC Bahan)
+        if (opsi.alur === "KASUR" && !opsi.byPic && (f.racikanFondasi ?? "").trim().length < 3 && (f.racikanLapisan ?? "").trim().length < 3) return "Isi racikan fondasi dan/atau lapisan.";
+        return (f.note ?? "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan.";
+      }
       if (!opsi.byPic && !adaBahan(f)) return "Isi jumlah bahan Gudang yang dipakai.";
       return (f.note ?? "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
     case 7: return opsi.byPic || adaBahan(f) ? null : "Isi jumlah bahan Gudang yang dipakai.";
@@ -173,13 +185,17 @@ const opt = (s?: string) => (s && s.trim() ? s.trim() : undefined);
 /** Payload server dari formulir (bentuk SAMA dengan buildStepPayload web). */
 const barisBahan = (f: FormLangkah) => (f.materials ?? []).filter((m) => angka(m.qty) > 0).map((m) => ({ materialId: m.materialId, qty: angka(m.qty) }));
 
-export function payloadLangkah(stepNo: number, f: FormLangkah, opsi: { cornerV2?: boolean; byPic?: boolean } = {}): Record<string, unknown> {
+export function payloadLangkah(stepNo: number, f: FormLangkah, opsi: { cornerV2?: boolean; byPic?: boolean; track?: string; alur?: string | null } = {}): Record<string, unknown> {
   switch (stepNo) {
     case 1: return { conditionConfirmed: !!f.conditionConfirmed, conditionNote: opt(f.conditionNote) };
     case 2: return { feelNote: (f.feelNote ?? "").trim() };
     case 3: return { oldMaterials: (f.oldMaterials ?? []).map((type) => ({ type })), note: opt(f.note) };
     case 4: return { heightBeforeCm: angka(f.heightBeforeCm), heightCompressedCm: angka(f.heightCompressedCm), testerWeightKg: angka(f.testerWeightKg), foundationIssues: [], note: opt(f.note) };
-    case 6: return { materials: opsi.byPic ? [] : barisBahan(f), note: (f.note ?? "").trim() };
+    case 6: {
+      const base: Record<string, unknown> = { materials: opsi.byPic ? [] : barisBahan(f), note: (f.note ?? "").trim() };
+      if (opsi.track === "BUILD" && opsi.alur === "KASUR" && !opsi.byPic) base.racikan = { fondasi: opt(f.racikanFondasi), lapisan: opt(f.racikanLapisan) };
+      return base;
+    }
     case 7: return { materials: opsi.byPic ? [] : barisBahan(f), note: opt(f.note) };
     case 8: return { verdict: f.verdict, testerWeightKg: angka(f.testerWeightKg), note: opt(f.note) };
     case 9: return { note: opt(f.note) };

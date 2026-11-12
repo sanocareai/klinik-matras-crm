@@ -49,7 +49,7 @@ export type RunView = {
     complaints: string[]; request: string | null; salesServices: string[]; promiseDate: string | null; salesName: string | null;
   };
   plan: {
-    id?: string;
+    id?: string; status?: string; revision?: number;
     productionDate: string | null; stationCode: string | null; stationLabel: string | null; stationSequence: number | null;
     priorityLabel: string; priorityRank: number; targetDate: string | null; targetMissed: boolean;
     operator: { id: string; userId?: string; name: string | null } | null; cornerOperator: { id: string; userId?: string; name: string | null } | null;
@@ -96,6 +96,16 @@ export type CornerView = {
   records?: { start?: { salesConfirmation?: string | null; byName?: string | null; at?: string | null } | null } | null;
 };
 
+export type Racikan = { fondasi?: string | null; lapisan?: string | null };
+export type BarisBahanTercatat = { materialId: string; qty: number; code?: string | null; name?: string | null; uom?: string | null };
+/** toBuildView server: dipakai jalur BUILD (card.build) dan LAYANAN ber-PIC Bahan (card.materialPic). */
+export type PengaturanBahan = {
+  materialOperator?: { id?: string; userId?: string | null; name: string | null; active?: boolean } | null;
+  corner?: { required: boolean | null; reason: string | null; confirmed: boolean; locked?: boolean } | null;
+  record?: { version?: number; racikan?: Racikan | null; note?: string | null; at?: string; materials?: BarisBahanTercatat[] } | null;
+  usageRecorded?: boolean;
+};
+
 /** Kartu kerja lengkap (GET /production-v2/runs/:runId/card) — RunView + bukti per langkah. */
 export type RunCard = RunView & {
   workCenterId: string | null;
@@ -104,9 +114,17 @@ export type RunCard = RunView & {
   /** Bahan yang diserahkan Gudang untuk unit ini (diserahkan / terpakai / sisa — tiga angka terpisah). */
   issuedMaterials?: BahanDiserahkan[];
   /** Rencana bahan (BOM) — urutan pertama saat memilih bahan yang kurang. */
-  bom?: { materialId: string; code: string; name: string; qty: number; uom: string | null }[];
+  bom?: { materialId: string; code: string; name: string; qty: number; uom: string | null; supplier?: string | null; itemGroup?: string | null; supplemental?: boolean }[];
   /** PIC Bahan (LAYANAN): bila sudah ada, pemakaian bahan tahap 6 (dan 7 restorasi PIC) tidak diisi lagi oleh Meja. */
-  materialPic?: { materialOperator?: { name: string | null } | null; record?: { materials?: { name?: string | null; code?: string | null; qty: number }[] } | null } | null;
+  materialPic?: PengaturanBahan | null;
+  /** Jalur Pengerjaan Pesanan (BUILD): PIC Bahan, kebutuhan Corner, catatan racikan/pemakaian terbaru (toBuildView di server). */
+  build?: PengaturanBahan | null;
+  /** BUILD: alur produk kanonis — KASUR (racikan + uji), NON_KASUR (divan/sofa), atau belum jelas (problem diisi). */
+  product?: { class?: string | null; flow?: "KASUR" | "NON_KASUR" | "UNCONFIRMED" | null; problem?: string | null } | null;
+  /** BUILD: racikan terakhir (bukti tahap 6 atau catatan PIC Bahan). */
+  racikan?: Racikan | null;
+  /** Gerbang perakitan LAYANAN: putaran & status rework (permintaan bahan rework PIC Bahan). */
+  assembly?: { applicable?: boolean; round?: number; rework?: { open: boolean; issue: { issueId: string; issueNumber: string | null; status: string } | null } | null } | null;
   evidence: { id: string; stepNo: number; stepLabel: string | null; createdAt: string; actor: string | null; media: { kind: string; url: string }[] }[];
 };
 

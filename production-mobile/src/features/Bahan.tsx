@@ -8,6 +8,7 @@ import type { BahanDiserahkan, CornerView, RunCard } from "@/api/types";
 import { Card, StateView, T } from "@/design/ui";
 import { C, F, TONE } from "@/design/tokens";
 import { LABEL_KONFIRMASI_SALES } from "./langkah";
+import { teksRacikan } from "./picBahan";
 
 // KOMPONEN TAHAP 4 — cermin MaterialLines, CornerRequestCard, dan FinishPreviewBlock di SANSS Web. Baca-saja kecuali isian jumlah bahan.
 
@@ -47,13 +48,15 @@ export function BahanDipakai({ diserahkan, value, onChange, kosong }: { diserahk
 }
 
 /** Pemakaian bahan sudah dicatat PIC Bahan → Meja tidak mengisi lagi. */
-export function BahanOlehPic({ card }: { card: Pick<RunCard, "materialPic"> }) {
-  const p = card.materialPic;
+export function BahanOlehPic({ card }: { card: Pick<RunCard, "materialPic" | "track" | "build" | "racikan"> }) {
+  const build = card.track === "BUILD";
+  const p = build ? card.build : card.materialPic;
   const pakai = p?.record?.materials ?? [];
+  const racikan = build ? teksRacikan(card.racikan ?? p?.record?.racikan) : null;
   return (
     <Card style={{ gap: 4 }}>
-      <T.Headline>Pemakaian bahan dicatat PIC Bahan{p?.materialOperator?.name ? `: ${p.materialOperator.name}` : ""}</T.Headline>
-      <T.Sub>Racikan fondasi/lapisan ada di Catatan Komponen — tidak perlu diisi lagi di sini.</T.Sub>
+      <T.Headline>{build ? "Racikan & bahan" : "Pemakaian bahan"} dicatat PIC Bahan{p?.materialOperator?.name ? `: ${p.materialOperator.name}` : ""}</T.Headline>
+      <T.Sub>{build ? (racikan ? `Racikan: ${racikan}` : "Racikan belum dicatat PIC Bahan — pengerjaan boleh berjalan, bukti dikirim setelah racikan tercatat.") : "Racikan fondasi/lapisan ada di Catatan Komponen — tidak perlu diisi lagi di sini."}</T.Sub>
       {pakai.length ? <T.Sub>Bahan dipakai: {pakai.map((m) => `${m.name || m.code} ${m.qty}`).join(", ")}</T.Sub> : null}
     </Card>
   );

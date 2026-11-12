@@ -17,10 +17,10 @@ test("aksi cepat: Mulai/Lanjutkan & continueOnly; tahap berisi bukti tidak", () 
   expect(labelAksi({ action: "COMPLETE", stepNo: 4 })).toBe("Kirim Uji Fondasi Lama");
 });
 
-test("formulir yang didukung HP: tahap 1–12; BUILD & gerbang Catatan Komponen (diisi lewat layar Catatan Komponen) tidak", () => {
+test("formulir yang didukung HP: tahap 1–12 (termasuk jalur Pengerjaan Pesanan); gerbang Catatan Komponen diisi dulu lewat layarnya", () => {
   const c = { track: "RESTORATION" as const, cornerView: null };
   for (let n = 1; n <= 12; n++) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(true);
-  expect(formulirDidukung({ track: "BUILD", cornerView: null }, { stepNo: 1 }).ok).toBe(false);
+  expect(formulirDidukung({ track: "BUILD", cornerView: null }, { stepNo: 6, action: "EVIDENCE" }).ok).toBe(true);
   expect(formulirDidukung(c, { stepNo: 3, gated: true, layersRequired: true }).ok).toBe(false);
   expect(formulirDidukung(c, { stepNo: 7, gated: true, layersAfterRequired: true }).ok).toBe(false);
   expect(formulirDidukung({ track: "RESTORATION", cornerView: { contractV2: true } }, { stepNo: 12 }).ok).toBe(true);
@@ -118,4 +118,22 @@ test("tunda: Lainnya wajib keterangan; MIME berkas dikenali", () => {
   expect(mimeBerkas({ uri: "file:///a/VID_1.MOV" })).toBe("video/quicktime");
   expect(mimeBerkas({ uri: "file:///a/b", type: "video" })).toBe("video/mp4");
   expect(mimeBerkas({ uri: "file:///a/b.heic", mimeType: "image/heic" })).toBe("image/jpeg");
+});
+
+test("jalur Pengerjaan Pesanan (BUILD) tahap 6: label, media foto ATAU video, racikan wajib untuk kasur kecuali dicatat PIC Bahan; payload sama dengan web", () => {
+  expect(labelAksi({ action: "EVIDENCE", stepNo: 6 }, null, "BUILD")).toBe("Kirim Bukti Pengerjaan Pesanan");
+  const kasur = { track: "BUILD", alur: "KASUR" };
+  expect(validasiLangkah(6, { note: "kasur custom" }, [], kasur)).toMatch(/Lampirkan minimal 1/);
+  expect(validasiLangkah(6, { note: "kasur custom" }, [foto], kasur)).toMatch(/racikan fondasi/);
+  expect(validasiLangkah(6, { note: "kasur custom", racikanLapisan: "latex 3 cm" }, [foto], kasur)).toBeNull();
+  expect(validasiLangkah(6, { racikanLapisan: "latex 3 cm" }, [foto], kasur)).toMatch(/pengerjaan pesanan/);
+  expect(validasiLangkah(6, { note: "divan" }, [foto], { track: "BUILD", alur: "NON_KASUR" })).toBeNull(); // bahan opsional
+  expect(validasiLangkah(6, { note: "ok ok" }, [foto], { ...kasur, byPic: true })).toBeNull();
+  const f = { note: " kasur custom ", racikanFondasi: "pocket 25 cm", racikanLapisan: "", materials: [{ materialId: "m1", qty: "1" }] };
+  expect(payloadLangkah(6, f, { track: "BUILD", alur: "KASUR" })).toEqual({ materials: [{ materialId: "m1", qty: 1 }], note: "kasur custom", racikan: { fondasi: "pocket 25 cm", lapisan: undefined } });
+  expect(payloadLangkah(6, f, { track: "BUILD", alur: "UNCONFIRMED" })).toEqual({ materials: [{ materialId: "m1", qty: 1 }], note: "kasur custom" });
+  expect(payloadLangkah(6, f, { track: "BUILD", alur: "KASUR", byPic: true })).toEqual({ materials: [], note: "kasur custom" });
+  // PIC Bahan jalur BUILD dibaca dari card.build (bukan materialPic)
+  expect(langkahBahanOlehPic({ track: "BUILD", materialPic: null, build: { materialOperator: { name: "Nadya" } } }, 6)).toBe(true);
+  expect(langkahBahanOlehPic({ track: "BUILD", materialPic: null, build: { materialOperator: null, record: null } }, 6)).toBe(false);
 });

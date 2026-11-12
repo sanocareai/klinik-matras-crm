@@ -8,9 +8,10 @@ import { catatLangkah, kunciNiat } from "@/api/aksi";
 import { ApiError, pesanUntukPengguna } from "@/api/errors";
 import { useRunCard } from "@/api/production";
 import {
-  CHECKLIST_CORNER, KESESUAIAN, VERDIK_TEKSTUR, LABEL_KONFIRMASI_SALES, LABEL_TAHAP, MATERIAL_LAMA, MODE_KAIN, MODEL_KASUR, PETUNJUK, aturanMedia, bolehCobaLagi, formulirDidukung,
-  langkahBahanOlehPic, payloadLangkah, validasiLangkah, type FormLangkah,
+  CHECKLIST_CORNER, KESESUAIAN, VERDIK_TEKSTUR, LABEL_KONFIRMASI_SALES, MATERIAL_LAMA, MODE_KAIN, MODEL_KASUR, PETUNJUK, PETUNJUK_PENGERJAAN, PETUNJUK_PENGERJAAN_KASUR,
+  aturanMedia, bolehCobaLagi, formulirDidukung, labelTahap, langkahBahanOlehPic, payloadLangkah, validasiLangkah, type FormLangkah,
 } from "@/features/langkah";
+import { alurProduk } from "@/features/picBahan";
 import { BahanDipakai, BahanOlehPic, PermintaanCorner, PratinjauSelesai } from "@/features/Bahan";
 import { PanelLampiran, useLampiran } from "@/features/Lampiran";
 import { beratPemakai } from "@/features/model";
@@ -42,6 +43,10 @@ export default function Langkah() {
   const dukung = c && next ? formulirDidukung(c, next) : null;
   const cornerV2 = !!c?.cornerView?.contractV2;
   const byPic = !!c && langkahBahanOlehPic(c, stepNo);
+  const build = c?.track === "BUILD";
+  const alur = c ? alurProduk(c) : null;
+  const judulTahap = labelTahap(stepNo, c?.track);
+  const petunjuk = build && stepNo === 6 ? (alur === "KASUR" && !byPic ? PETUNJUK_PENGERJAAN_KASUR : PETUNJUK_PENGERJAAN) : PETUNJUK[stepNo];
   const brief = c?.cornerView?.request ?? null;
   const diserahkan = c?.issuedMaterials ?? [];
   const aturan = aturanMedia(stepNo, c?.track);
@@ -55,12 +60,12 @@ export default function Langkah() {
     if (lamp.adaGagal) { setGalat("Ada unggahan gagal — ulangi atau hapus dulu."); return; }
     // Berat penguji uji fondasi: bawaan = berat badan customer (sama dengan yang tampil di isian).
     const isi: FormLangkah = (stepNo === 4 || stepNo === 8) && f.testerWeightKg === undefined && beratBawaan ? { ...f, testerWeightKg: beratBawaan } : f;
-    const v = validasiLangkah(stepNo, isi, lamp.selesai, { track: c.track, gated: !!next.gated, cornerV2, byPic, cornerBrief: brief });
+    const v = validasiLangkah(stepNo, isi, lamp.selesai, { track: c.track, alur, gated: !!next.gated, cornerV2, byPic, cornerBrief: brief });
     if (v) { setGalat(v); return; }
     setBusy(true); setGalat(null);
     const kunci = kunciNiat.untuk(c.runId, stepNo, c.revision);
     try {
-      await catatLangkah({ runId: c.runId, revision: c.revision, workCenterId: c.workCenterId }, stepNo, payloadLangkah(stepNo, isi, { cornerV2, byPic }), lamp.selesai.map((m) => m.url), kunci);
+      await catatLangkah({ runId: c.runId, revision: c.revision, workCenterId: c.workCenterId }, stepNo, payloadLangkah(stepNo, isi, { cornerV2, byPic, track: c.track, alur }), lamp.selesai.map((m) => m.url), kunci);
       kunciNiat.lepas(c.runId, stepNo, c.revision);
       await qc.invalidateQueries();
       router.back();
@@ -74,7 +79,7 @@ export default function Langkah() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Screen header={<NavBar judul={stepNo ? `Tahap ${stepNo} · ${LABEL_TAHAP[stepNo]}` : "Tahap"} kembali="Batal" />} bottomPad={140}>
+      <Screen header={<NavBar judul={stepNo ? `Tahap ${stepNo} · ${judulTahap}` : "Tahap"} kembali="Batal" />} bottomPad={140}>
         {card.isLoading ? <StateView kind="loading" title="Memuat…" /> : null}
         {card.error ? <StateView kind="error" title="Kartu tidak bisa dimuat" text={pesanUntukPengguna(card.error)} onRetry={() => void card.refetch()} /> : null}
         {dukung && !dukung.ok ? <StateView kind="empty" title="Isi lewat SANSS Web" text={dukung.alasan} /> : null}
@@ -82,7 +87,7 @@ export default function Langkah() {
         {c && dukung?.ok ? (
           <>
             <Card style={{ backgroundColor: TONE.blue.tint }}>
-              <T.Sub style={{ color: TONE.blue.text }}>{next?.rework ? "Rework — " : ""}{PETUNJUK[stepNo]}</T.Sub>
+              <T.Sub style={{ color: TONE.blue.text }}>{next?.rework ? "Rework — " : ""}{petunjuk}</T.Sub>
             </Card>
 
             {stepNo === 1 ? (
@@ -108,7 +113,29 @@ export default function Langkah() {
                 <Isian label="Catatan (opsional)" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline />
               </>
             ) : null}
-            {stepNo === 6 || stepNo === 7 ? (
+            {build && stepNo === 6 ? (
+              <>
+                {alur === "UNCONFIRMED" ? (
+                  <Card style={{ backgroundColor: TONE.orange.tint }}>
+                    <T.Sub style={{ color: TONE.orange.text }}>Jenis produk belum jelas pada order{c.product?.problem ? ` (${c.product.problem})` : ""} — racikan kasur ditahan sampai Sales mengonfirmasi. Catatan & dokumentasi umum tetap bisa dikirim.</T.Sub>
+                  </Card>
+                ) : null}
+                {byPic ? <BahanOlehPic card={c} /> : (
+                  <>
+                    {alur === "KASUR" ? (
+                      <>
+                        <Isian label="Racikan fondasi" value={f.racikanFondasi ?? ""} onChange={(v) => set({ racikanFondasi: v })} placeholder="mis. pocket spring 25 cm + penguat pinggir" />
+                        <Isian label="Racikan lapisan" value={f.racikanLapisan ?? ""} onChange={(v) => set({ racikanLapisan: v })} placeholder="mis. latex 3 cm + busa D23 2 cm" />
+                      </>
+                    ) : null}
+                    <BahanDipakai diserahkan={diserahkan} value={f.materials ?? []} onChange={(v) => set({ materials: v })}
+                      kosong="Belum ada bahan yang diserahkan Gudang untuk pekerjaan ini (bahan opsional di jalur ini)." />
+                  </>
+                )}
+                <Isian label="Penjelasan pengerjaan" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline placeholder="mis. kasur custom 160×200, sesuai spesifikasi Sales" />
+              </>
+            ) : null}
+            {!build && (stepNo === 6 || stepNo === 7) ? (
               <>
                 {byPic ? <BahanOlehPic card={c} /> : (
                   <BahanDipakai diserahkan={diserahkan} value={f.materials ?? []} onChange={(v) => set({ materials: v })}
@@ -187,7 +214,7 @@ export default function Langkah() {
       {c && dukung?.ok ? (
         <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 30, backgroundColor: C.barBg, borderTopWidth: 1, borderTopColor: C.barLine }}>
           <Button
-            label={busy ? "Mengirim…" : lamp.sibuk ? "Menunggu unggahan…" : `Kirim ${LABEL_TAHAP[stepNo]}`}
+            label={busy ? "Mengirim…" : lamp.sibuk ? "Menunggu unggahan…" : `Kirim ${judulTahap}`}
             kind="success"
             icon={<Send color="#fff" size={20} />}
             onPress={() => void kirim()}

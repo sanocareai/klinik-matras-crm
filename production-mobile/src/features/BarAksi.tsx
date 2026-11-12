@@ -32,6 +32,17 @@ const TUNGGU: Record<string, string> = {
   FOUNDATION_NEW_TEST_PENDING: "Menunggu PIC QC: uji fondasi baru.",
   FINISHED_TEST_PENDING: "Menunggu PIC QC: uji kasur jadi.",
   AFTER_PENDING: "Menunggu Meja mencatat hasil aktual susunan.",
+  PRODUCT_TYPE_UNCONFIRMED: "Jenis produk perlu dikonfirmasi Sales pada order — racikan & uji khusus kasur ditahan.",
+  CORNER_NOT_CONFIRMED: "Lead perlu mengonfirmasi kebutuhan Corner (Detail Unit › Atur Corner & PIC Bahan).",
+  USAGE_NOT_RECORDED: "Menunggu PIC Bahan mencatat pemakaian bahan.",
+  RACIKAN_NOT_RECORDED: "Menunggu PIC Bahan mencatat racikan fondasi/lapisan.",
+  SERVICE_NOT_SET: "Rute pengerjaan belum bisa ditentukan dari Layanan Sales — Admin/Sales perlu memperbaikinya.",
+  DIAGNOSIS_MANUAL_UNMAPPED: "Menunggu Lead memetakan bahan manual diagnosa ke katalog.",
+  DIAGNOSIS_BOM_EMPTY: "Rencana bahan masih kosong — isi bahan di Revisi Diagnosis.",
+  READY_TO_FINISH: "Semua tahap kerja tuntas — tinggal Selesaikan Produksi.",
+  AWAITING_WAREHOUSE: "Barang jadi menunggu diterima Gudang.",
+  HANDOFF_REJECTED: "Barang jadi ditolak Gudang — Lead menentukan tindak lanjut.",
+  EXCEPTION_OPEN: "Ada konflik data pada unit ini — hubungi Lead.",
   COMPLETED: "Produksi unit ini sudah selesai.",
 };
 
@@ -47,7 +58,7 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
 
   const next = card.next;
   const giliran = giliranSaya(card, userId, { lane: l.lane, executeAny: l.executeAny });
-  const label = labelAksi(next, card.activeOp?.stageLabel);
+  const label = labelAksi(next, card.activeOp?.stageLabel, card.track);
 
   const setelah = async () => { await qc.invalidateQueries(); onBerubah(); };
   // Catatan Komponen yang ditunggu kartu (lapisan awal / hasil aktual oleh Meja, pengujian oleh PIC QC).

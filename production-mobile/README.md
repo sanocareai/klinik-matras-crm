@@ -31,7 +31,7 @@ Foto & video diambil dari **kamera (foto atau video) atau galeri**, langsung diu
 tahap yang mewajibkan video (uji rasa awal, uji fondasi) tidak bisa dikirim tanpa video. Payload & validasi mencerminkan
 `frontend/src/features/production/experience.js` — bila salah satu berubah, samakan (`src/features/langkah.ts` + tesnya).
 
-**Masih lewat SANSS Web:** jalur Pengerjaan Pesanan (BUILD) dan racikan rencana di Catatan Komponen.
+Sejak slice 7 semua alur Meja bisa dari HP — termasuk jalur Pengerjaan Pesanan (BUILD) dan racikan rencana.
 (Putusan QC → slice 2b; jadwal & PIC → slice 3; bahan & Corner → slice 4; Diagnosa → slice 5; Catatan Komponen & tahap 8 → slice 6.)
 
 ## Slice 2b — QC, urutan target, berat dari order, video
@@ -105,8 +105,26 @@ menawarkan "Tutup tahap Diagnosa". Draf isian disimpan di memori aplikasi per un
 Endpoint: `GET/POST /production-v2/component-notes/units/:unitId[/sections/:section]`, unggah `…/units/:unitId/upload`,
 katalog `…/component-notes/materials`, antrean PIC QC `…/component-notes/qc-queue` (tab QC → "Pengujian ditunggu").
 Pintu masuk: tombol "Isi …" di Detail Unit saat kartu menunggu catatan itu. Setiap simpan = versi baru; koreksi wajib beralasan.
-Berat penguji pengujian = berat AKTUAL (tidak diisi otomatis; berat order hanya ditampilkan sebagai acuan). Racikan rencana tetap di SANSS Web.
+Berat penguji pengujian = berat AKTUAL (tidak diisi otomatis; berat order hanya ditampilkan sebagai acuan).
 Logika: `src/features/komponen.ts` (cermin `componentNotesModel.js`) + tes.
+
+## Slice 7 — Pengerjaan Pesanan (BUILD), PIC Bahan, racikan rencana
+
+| Fitur | Siapa | Endpoint (sama dengan web) |
+|---|---|---|
+| Tahap 6 "Pengerjaan Pesanan" (foto ATAU video; racikan fondasi/lapisan wajib untuk kasur kecuali dicatat PIC Bahan; bahan Gudang opsional) | PIC Meja | `POST /production-v2/runs/:runId/steps/6` |
+| Antrean PIC Bahan (segmen **PIC Bahan** di tab Kerja, muncul hanya bila akun ini PIC Bahan pekerjaan aktif) | PIC Bahan | `GET /production-v2/worker/material` |
+| Catat Racikan & Bahan (BUILD) / Catat Bahan Dipakai (LAYANAN); non-ADMIN = pengajuan menunggu verifikasi ADMIN | PIC Bahan | `POST /runs/:runId/build/materials`, `GET /production/pengajuan-pemakaian?runId=` |
+| Rencana Bahan (BOM) — acuan racikan rencana, terkunci setelah Gudang menyerahkan bahan | PIC Bahan (LAYANAN) | `POST /runs/:runId/build/plan-bom` (revisi RENCANA) |
+| Minta Bahan Rework (sekali, setelah QC gagal, sebelum rework dimulai) | PIC Bahan | `POST /runs/:runId/build/rework-material` |
+| Atur Corner & PIC Bahan (pesanan baru/custom) | Lead/Admin/Owner | `POST /runs/:runId/build/corner`, `…/build/material-operator` |
+| Racikan rencana (`PLAN_RACIKAN`) di Catatan Komponen | PIC Meja / PIC QC | `POST /component-notes/units/:unitId/sections/PLAN_RACIKAN` |
+
+Detail Unit kini punya panel **Pengerjaan Pesanan / PIC Bahan** (ringkasan + tombol aksi sesuai peran) dan daftar **Catatan Komponen**
+(semua bagian, status versi, ketuk untuk mengisi). Tidak ada yang menulis stok: stok keluar hanya saat Gudang menyerahkan bahan.
+Logika: `src/features/picBahan.ts` (cermin `experience.js`, `materialRows.js`, `materialChainModel.js`) + tes `picBahan.test.ts`.
+
+**Tetap di web:** pemetaan bahan manual diagnosa ke katalog, waive/override QC, registrasi operator. Pembaruan data = polling 20 detik (bukan SSE).
 
 ## Push notifikasi
 
@@ -145,6 +163,23 @@ npm install
 cp .env.example .env        # EXPO_PUBLIC_API_URL → backend lokal (emulator: http://10.0.2.2:4000/api)
 npx expo start
 ```
+
+### Uji di HP dengan Expo dev build (development build)
+
+Pakai *development build*, bukan Expo Go: izin kamera, nama paket, plugin native (`expo-image-picker`, `expo-video`,
+`expo-notifications`), dan izin HTTP polos ke backend lokal hanya sama dengan APK sungguhan di development build. `expo-dev-client` sudah terpasang dan profil `development` sudah ada di `eas.json`
+(APK, paket `com.sanomatrassehat.produksi.dev`, nama "SANSS Produksi (Dev)" — bisa terpasang berdampingan dengan versi lain).
+
+1. **Bangun APK dev SEKALI** (ulangi hanya bila dependensi native berubah):
+   - di cloud: `npx eas build --profile development --platform android` (butuh `eas init` proyek ini + `EAS_PROJECT_ID`), atau
+   - lokal: `npx expo run:android` (butuh Android SDK; HP tersambung USB dengan USB debugging).
+2. **Backend:** perubahan backend di branch ini belum ada di produksi, jadi login `app: "production"` hanya jalan di backend
+   dari branch ini. Jalankan backend lokal (`cd backend && npm run dev`, port 4000) dan isi `.env`:
+   - emulator: `EXPO_PUBLIC_API_URL=http://10.0.2.2:4000/api`
+   - HP fisik (satu Wi-Fi dengan laptop): `EXPO_PUBLIC_API_URL=http://<IP-LAN-laptop>:4000/api` — varian development mengizinkan HTTP polos.
+3. `npx expo start` → buka "SANSS Produksi (Dev)" di HP → pilih server Metro (atau pindai QR dari terminal).
+   Perubahan JS/TS langsung termuat ulang tanpa build baru. `EXPO_PUBLIC_*` dibaca Metro saat start — setelah mengubah `.env`,
+   jalankan ulang `npx expo start -c`.
 
 ## Pemeriksaan
 

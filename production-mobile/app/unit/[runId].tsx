@@ -8,6 +8,7 @@ import type { StepStatus } from "@/api/types";
 import { beratPemakai, formatMenit, grupMedia, kartuDariV2, kodePendek, teksBerat } from "@/features/model";
 import { Thumb } from "@/features/Galeri";
 import { BarAksi } from "@/features/BarAksi";
+import { PanelKomponen, PanelPengerjaan } from "@/features/PanelPengerjaan";
 import { NavBar } from "@/design/NavBar";
 import { Card, Chip, ProgressBar, Screen, Section, StateView, T } from "@/design/ui";
 import { C, TONE, type ToneKey } from "@/design/tokens";
@@ -89,6 +90,8 @@ export default function UnitDetail() {
               )}
             </Section>
 
+            <PanelPengerjaan card={v} />
+
             {steps.length ? (
               <Section title={`Tahapan · ${steps.filter((s) => s.status === "DONE" || s.status === "SKIPPED").length} dari ${steps.length}`}>
                 <Card style={{ paddingVertical: 8 }}>
@@ -97,6 +100,7 @@ export default function UnitDetail() {
               </Section>
             ) : null}
 
+            <PanelKomponen card={v} />
           </>
         ) : null}
       </Screen>
