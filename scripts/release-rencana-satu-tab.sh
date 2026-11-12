@@ -165,7 +165,7 @@ PHASE=6; say "6. Verifikasi dan smoke (baca-saja)"
 gd_verifikasi
 for ep in /api/production/rencana/minggu /api/production/rencana/antrean /api/production/penerimaan-workshop/pilihan /api/production-v2/corner-board /api/production/work-orders; do [ "$(curl -s -o /dev/null -w '%{http_code}' -m15 "${PUBLIC_URL}${ep}")" = 401 ] || die "${ep} tanpa token harus 401"; done
 docker exec "$CID_NEW" test -f /app/src/services/pickupDitutupProduksi.js || die "container baru tanpa pickupDitutupProduksi.js"
-OLDF="$(ls "$PREV_DIR"/frontend/dist/assets/*.js | sed -n 1p)"; [ "$(curl -s -o /dev/null -w '%{http_code}' -m15 "${PUBLIC_URL}/assets/${OLDF##*/}")" = 200 ] || die "aset lama tidak lagi 200"
+OLDF="$(find "$PREV_DIR/frontend/dist/assets" -maxdepth 1 -name '*.js' -print -quit)"; [ "$(curl -s -o /dev/null -w '%{http_code}' -m15 "${PUBLIC_URL}/assets/${OLDF##*/}")" = 200 ] || die "aset lama tidak lagi 200"
 # Lokasi workshop bawaan (dibutuhkan "Tandai tiba"): dibaca-saja dari container baru; tidak valid = PERHATIAN (fitur menolak dengan pesan jelas, tidak ada yang berubah), bukan STOP.
 LOK="$(docker exec "$CID_NEW" node --input-type=module -e 'import { prisma } from "./src/db.js"; import { inspectWorkshopDefaultLocation } from "./src/services/productionSettingsService.js"; const s = await inspectWorkshopDefaultLocation(prisma); console.log(s.valid ? "VALID " + s.location.code : "TIDAK_VALID " + s.problem); await prisma.$disconnect();' 2>&1 | tail -n 1)"
 case "$LOK" in VALID*) ok "lokasi workshop bawaan: ${LOK#VALID }";; *) warn "lokasi workshop bawaan ${LOK} — 'Tandai tiba' akan menolak sampai Admin mengaturnya di Pengaturan Produksi › Alur Kerja";; esac
