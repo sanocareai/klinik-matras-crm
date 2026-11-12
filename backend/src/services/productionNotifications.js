@@ -13,12 +13,15 @@
 //   • Kartu berpindah ke Corner                           → PIC Corner rencana itu
 //   • Kartu kembali ke Meja (mis. QC gagal → rework)      → PIC Meja rencana itu
 //   • Urutan satu meja diubah Admin                       → para PIC unit di meja itu
+//   • Kasus Komplain dibuka untuk unit yang SEDANG di workshop → pemegang izin penjadwalan (Admin/Kepala Produksi)
+//     + PIC rencana unit itu (dipanggil dari services/complaintCase.js setelah transaksi commit)
 // Pelaku aksi sendiri tidak dikirimi.
 
 import { prisma } from "../db.js";
 import { fcmConfigured, sendFcm } from "./fcmTransport.js";
 import { loadRuns, viewsOf } from "./productionExperienceReadService.js";
 import { parseProductionDate } from "../lib/domain/productionBoard.js";
+import { PERMISSIONS, ROLE_PERMISSIONS } from "../constants/permissions.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 let expoFetch = (...a) => globalThis.fetch(...a);
@@ -165,4 +168,57 @@ export function kabariUrutanBerubah({ productionDate, stationCode, actorId, db =
       console.warn("[productionPush] kabari urutan gagal:", err.message);
     }
   })();
+}
+
+/** Peran yang memegang satu izin (dari ROLE_PERMISSIONS — satu sumber kebenaran, bukan daftar nama peran yang ditulis ulang). */
+export function rolesWithPermission(perm) {
+  return Object.entries(ROLE_PERMISSIONS).filter(([, perms]) => Array.isArray(perms) && perms.includes(perm)).map(([role]) => role);
+}
+
+const UNIT_DI_WORKSHOP = ["RECEIVED", "IN_PRODUCTION"];
+const RUN_SELESAI = ["COMPLETED", "CANCELLED"];
+
+/**
+ * MURNI — pesan push Komplain dari kasus + unit workshop yang terdampak. null = tidak ada unit di workshop (tidak dikirim).
+ * Isi TANPA nama customer (tampil di layar terkunci).
+ */
+export function pesanKomplainProduksi(kasus, units) {
+  if (!kasus || !units?.length) return null;
+  const kode = units.map((u) => kodePendek(u.unitCode)).join(", ");
+  const runId = units.length === 1 ? units[0].runId : null;
+  return {
+    title: "Komplain — prioritaskan",
+    body: `${kasus.caseNumber || "Kasus baru"}: ${kode} sedang di workshop. Urutan meja tidak berubah otomatis — atur di Target.`,
+    data: { path: runId ? `/unit/${runId}` : "/target", runId: runId ?? undefined, jenis: "KOMPLAIN" },
+    channelId: "penting",
+  };
+}
+
+/**
+ * Kasus Komplain baru → kabari Admin/Kepala Produksi (+ PIC rencana unitnya) bila unit order itu sedang di workshop.
+ * Dipanggil best-effort SETELAH kasus tersimpan; push mati = tanpa query. Tidak pernah melempar.
+ */
+export async function kabariKomplainProduksi(kasus, { db = prisma } = {}) {
+  if (!productionPushEnabled() || !kasus?.orderId) return null;
+  try {
+    const units = await db.unit.findMany({
+      where: { ...(kasus.unitId ? { id: kasus.unitId } : { orderId: kasus.orderId }), status: { in: UNIT_DI_WORKSHOP } },
+      select: {
+        unitCode: true,
+        productionRunsV2: {
+          where: { status: { notIn: RUN_SELESAI } }, take: 1,
+          select: { id: true, plan: { select: { operator: { select: { userId: true } }, cornerOperator: { select: { userId: true } } } } },
+        },
+      },
+    });
+    const terdampak = units.map((u) => ({ unitCode: u.unitCode, runId: u.productionRunsV2[0]?.id ?? null, plan: u.productionRunsV2[0]?.plan ?? null }));
+    const pesan = pesanKomplainProduksi(kasus, terdampak);
+    if (!pesan) return null;
+    const admin = (await Promise.all(rolesWithPermission(PERMISSIONS.PRODUCTION_ASSIGNMENT_WRITE).map((r) => usersWithRole(db, r)))).flat();
+    const pic = terdampak.flatMap((u) => [u.plan?.operator?.userId, u.plan?.cornerOperator?.userId]).filter(Boolean);
+    return await dispatchProductionNotification({ userIds: [...admin, ...pic], ...pesan, excludeUserId: kasus.createdById ?? null, db });
+  } catch (err) {
+    console.warn("[productionPush] kabari komplain gagal:", err.message);
+    return null;
+  }
 }

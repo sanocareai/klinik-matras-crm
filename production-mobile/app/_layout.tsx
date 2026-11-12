@@ -79,6 +79,8 @@ export default function RootLayout() {
             <Stack.Screen name="langkah/[runId]" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="tunda/[runId]" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="qc/[runId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="jadwal" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="pic-meja" options={{ animation: "slide_from_bottom" }} />
           </Stack.Protected>
           <Stack.Protected guard={status === "signedOut"}>
             <Stack.Screen name="login" />

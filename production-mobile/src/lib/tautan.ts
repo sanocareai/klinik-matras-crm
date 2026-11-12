@@ -2,7 +2,7 @@
 // diketahui dengan id berbentuk UUID — notifikasi tidak bisa membuka sembarang rute.
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const POLA = [new RegExp(`^/unit/${UUID}$`, "i"), new RegExp(`^/qc/${UUID}$`, "i"), /^\/kerja$/, /^\/papan$/, /^\/qc$/];
+const POLA = [new RegExp(`^/unit/${UUID}$`, "i"), new RegExp(`^/qc/${UUID}$`, "i"), /^\/kerja$/, /^\/papan$/, /^\/qc$/, /^\/target$/];
 
 export function ruteDariNotifikasi(data: unknown): string | null {
   const path = (data as { path?: unknown } | null | undefined)?.path;

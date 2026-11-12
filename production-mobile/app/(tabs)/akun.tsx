@@ -39,7 +39,7 @@ export default function Akun() {
       <Section title="Notifikasi">
         <Card style={{ gap: 10 }}>
           <T.Sub>
-            {!pushTersedia() ? "Notifikasi belum diaktifkan di versi aplikasi ini." : izin === "granted" ? "Aktif — kamu dikabari saat kasur siap QC, siap Corner, kembali untuk rework, atau urutan meja berubah." : "Dapatkan kabar saat ada kasur yang menunggu kamu."}
+            {!pushTersedia() ? "Notifikasi belum diaktifkan di versi aplikasi ini." : izin === "granted" ? "Aktif — kamu dikabari saat kasur siap QC, siap Corner, kembali untuk rework, urutan meja berubah, atau ada Komplain untuk unit di workshop (Admin)." : "Dapatkan kabar saat ada kasur yang menunggu kamu."}
           </T.Sub>
           {pushTersedia() && izin !== "granted" ? <Button kind="tinted" label="Aktifkan notifikasi" icon={<Bell color={TONE.blue.text} size={20} />} onPress={() => void nyalakan()} /> : null}
           {pesanNotif ? <T.Caption>{pesanNotif}</T.Caption> : null}

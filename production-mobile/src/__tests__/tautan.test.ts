@@ -5,6 +5,7 @@ test("tautan notifikasi: hanya layar terdaftar dengan UUID sah", () => {
   expect(ruteDariNotifikasi({ path: `/unit/${id}` })).toBe(`/unit/${id}`);
   expect(ruteDariNotifikasi({ path: `/qc/${id}` })).toBe(`/qc/${id}`);
   expect(ruteDariNotifikasi({ path: "/kerja" })).toBe("/kerja");
+  expect(ruteDariNotifikasi({ path: "/target" })).toBe("/target"); // push Komplain dengan banyak unit
   expect(ruteDariNotifikasi({ path: "/unit/../login" })).toBeNull();
   expect(ruteDariNotifikasi({ path: "https://contoh.com" })).toBeNull();
   expect(ruteDariNotifikasi({ path: `/persetujuan/expense/${id}` })).toBeNull();

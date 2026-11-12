@@ -32,7 +32,7 @@ tahap yang mewajibkan video (uji rasa awal, uji fondasi) tidak bisa dikirim tanp
 `frontend/src/features/production/experience.js` — bila salah satu berubah, samakan (`src/features/langkah.ts` + tesnya).
 
 **Masih lewat SANSS Web:** tahap 5 (wizard Diagnosa), 6/7/10 (pilih bahan Gudang), lapor kurang bahan, jalur Pengerjaan Pesanan,
-Konfirmasi Selesai dengan serah ke Gudang (kontrak Corner V2), putusan QC, ubah urutan/PIC target, notifikasi push.
+Konfirmasi Selesai dengan serah ke Gudang (kontrak Corner V2). (Putusan QC → slice 2b; urutan, jadwal & PIC → slice 3.)
 
 ## Slice 2b — QC, urutan target, berat dari order, video
 
@@ -48,6 +48,21 @@ Konfirmasi Selesai dengan serah ke Gudang (kontrak Corner V2), putusan QC, ubah 
 Logika QC mencerminkan `frontend/src/features/production/qcHandoff.js` + `componentNotesModel.js#decisionGate` (`src/features/qc.ts`).
 Waive QC, override preferensi customer, dan bahan tambahan rework tetap di Hub QC web.
 
+## Slice 3 — kontrol Admin dari HP (tab Target)
+
+Untuk pemegang `production_assignment:write` (Admin, Owner, Kepala Produksi). Endpoint SAMA dengan Rencana Produksi web;
+aturan & body mencerminkan `ScheduleModal` (`frontend/src/features/production/ScheduleModals.jsx`) → `src/features/jadwal.ts` + tesnya.
+
+| Fitur | Endpoint |
+|---|---|
+| **Perlu perhatian**: Komplain (di papan & belum dijadwalkan), lewat target, tertunda/menunggu bahan, Tinggi belum dijadwalkan | dari papan + backlog (hanya memberi tahu — prioritas tetap manual) |
+| **Belum dijadwalkan**: cari & daftar bertahap | `GET /production-v2/backlog?q=&page=` |
+| **Jadwalkan / Aktifkan & jadwalkan**: tanggal, meja (kapasitas), prioritas, workshop, PIC Meja (ikut bawaan / khusus), PIC Corner, keputusan Corner (jalur pesanan) | `GET /production-v2/planning/refs` + `POST /production-v2/plans` |
+| **Ubah jadwal** kartu di papan: pindah tanggal/meja/PIC, alasan wajib bila lewat target, keluarkan dari papan | `POST /production-v2/plans/:id/schedule` (`expectedRevision`) |
+| **PIC bawaan meja** per tanggal | `PUT /production-v2/stations/:code/pic` |
+
+Tidak dari HP: target khusus per kartu (dipertahankan apa adanya), mendaftarkan akun sebagai operator/PIC, mengatur lini operator.
+
 ## Push notifikasi
 
 | Kejadian | Penerima | Layar saat diketuk |
@@ -56,6 +71,7 @@ Waive QC, override preferensi customer, dan bahan tambahan rework tetap di Hub Q
 | QC Lulus → Corner | PIC Corner rencana | `/unit/:runId` |
 | QC Gagal → kembali ke Meja (rework) | PIC Meja rencana | `/unit/:runId` |
 | Admin mengubah urutan meja | para PIC unit di meja itu | `/kerja` |
+| Kasus **Komplain** dibuka untuk unit yang sedang di workshop | Admin/Owner/Kepala Produksi (peran pemegang `production_assignment:write`) + PIC rencana unit itu | `/unit/:runId` (1 unit) atau `/target` |
 
 Pelaku aksi tidak dikirimi; isi tanpa nama customer. Tautan divalidasi daftar putih (`src/lib/tautan.ts`).
 
