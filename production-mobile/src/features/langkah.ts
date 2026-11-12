@@ -97,16 +97,15 @@ export function labelAksi(next: RunNext | null | undefined, stageLabel?: string 
 }
 
 /**
- * Formulir tahap ini bisa diisi dari HP? Masih lewat SANSS Web: jalur Pengerjaan Pesanan (BUILD), tahap 5 (wizard Diagnosa),
- * 8 (uji tekstur ditulis PIC QC), tahap 3/7 yang menunggu Catatan Komponen. Tahap 6/7/10 memakai bahan yang SUDAH diserahkan Gudang.
+ * Formulir tahap ini bisa diisi dari HP? Masih lewat SANSS Web: jalur Pengerjaan Pesanan (BUILD), 8 (uji tekstur ditulis PIC QC),
+ * tahap 3/7 yang menunggu Catatan Komponen. Tahap 5 = wizard Diagnosa (layar terpisah); 6/7/10 memakai bahan yang SUDAH diserahkan Gudang.
  */
 export function formulirDidukung(card: Pick<RunCard, "track" | "cornerView">, next: RunNext): { ok: true } | { ok: false; alasan: string } {
   const n = next.stepNo ?? 0;
   if (card.track === "BUILD") return { ok: false, alasan: "Jalur Pengerjaan Pesanan masih lewat SANSS Web." };
   if (n === 3 && next.gated && next.layersRequired) return { ok: false, alasan: "Catat susunan lapisan awal di Catatan Komponen (SANSS Web) dulu." };
   if (n === 7 && next.gated && next.layersAfterRequired) return { ok: false, alasan: "Catat susunan hasil aktual di Catatan Komponen › Sesudah pengerjaan (SANSS Web) dulu." };
-  if (n === 5) return { ok: false, alasan: "Diagnosa (rencana bahan & layanan teknis) masih lewat Aplikasi Meja di SANSS Web." };
-  if ([1, 2, 3, 4, 6, 7, 9, 10, 11, 12].includes(n)) return { ok: true };
+  if ([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12].includes(n)) return { ok: true }; // 5 = wizard Diagnosa (app/diagnosa)
   return { ok: false, alasan: `${LABEL_TAHAP[n] ?? "Tahap ini"} diisi PIC QC lewat SANSS Web.` };
 }
 

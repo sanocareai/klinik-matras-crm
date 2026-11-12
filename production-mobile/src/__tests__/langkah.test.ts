@@ -17,10 +17,10 @@ test("aksi cepat: Mulai/Lanjutkan & continueOnly; tahap berisi bukti tidak", () 
   expect(labelAksi({ action: "COMPLETE", stepNo: 4 })).toBe("Kirim Uji Fondasi Lama");
 });
 
-test("formulir yang didukung HP: 1-4, 6, 7, 9-12; Diagnosa, uji tekstur, BUILD & gerbang Catatan Komponen ke Web", () => {
+test("formulir yang didukung HP: semua kecuali uji tekstur (8), BUILD & gerbang Catatan Komponen", () => {
   const c = { track: "RESTORATION" as const, cornerView: null };
-  for (const n of [1, 2, 3, 4, 6, 7, 9, 10, 11, 12]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(true);
-  for (const n of [5, 8]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(false);
+  for (const n of [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(true);
+  expect(formulirDidukung(c, { stepNo: 8, action: "COMPLETE" }).ok).toBe(false);
   expect(formulirDidukung({ track: "BUILD", cornerView: null }, { stepNo: 1 }).ok).toBe(false);
   expect(formulirDidukung(c, { stepNo: 3, gated: true, layersRequired: true }).ok).toBe(false);
   expect(formulirDidukung(c, { stepNo: 7, gated: true, layersAfterRequired: true }).ok).toBe(false);

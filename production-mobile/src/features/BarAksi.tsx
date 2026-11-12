@@ -105,7 +105,9 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
             label={label}
             busy={busy}
             disabled={cepat && !online}
-            onPress={cepat ? () => void satuKetuk() : () => router.push({ pathname: "/langkah/[runId]", params: { runId: card.runId } })}
+            onPress={cepat ? () => void satuKetuk() : next.stepNo === 5
+              ? () => router.push({ pathname: "/diagnosa/[runId]", params: { runId: card.runId } })
+              : () => router.push({ pathname: "/langkah/[runId]", params: { runId: card.runId } })}
             style={{ flex: bisaTunda || bisaKurang ? 2 : 1 }}
           />
         ) : null}

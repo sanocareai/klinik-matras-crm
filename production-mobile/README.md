@@ -31,8 +31,8 @@ Foto & video diambil dari **kamera (foto atau video) atau galeri**, langsung diu
 tahap yang mewajibkan video (uji rasa awal, uji fondasi) tidak bisa dikirim tanpa video. Payload & validasi mencerminkan
 `frontend/src/features/production/experience.js` — bila salah satu berubah, samakan (`src/features/langkah.ts` + tesnya).
 
-**Masih lewat SANSS Web:** tahap 5 (wizard Diagnosa), tahap 8 (uji tekstur, PIC QC), jalur Pengerjaan Pesanan (BUILD), dan tahap 3/7 yang
-menunggu Catatan Komponen. (Putusan QC → slice 2b; jadwal & PIC → slice 3; bahan & Corner → slice 4.)
+**Masih lewat SANSS Web:** tahap 8 (uji tekstur, PIC QC), jalur Pengerjaan Pesanan (BUILD), dan tahap 3/7 yang
+menunggu Catatan Komponen. (Putusan QC → slice 2b; jadwal & PIC → slice 3; bahan & Corner → slice 4; Diagnosa → slice 5.)
 
 ## Slice 2b — QC, urutan target, berat dari order, video
 
@@ -75,6 +75,22 @@ Tidak dari HP: target khusus per kartu (dipertahankan apa adanya), mendaftarkan 
 
 Pintu masuk Bahan kurang: tombol di Detail Unit (belum mulai / menunggu bahan disiapkan) dan dari layar Tunda ("Menunggu bahan?").
 Logika di `src/features/langkah.ts` (cermin `experience.js` & `workerSheets.jsx#ShortageSheet`), komponen di `src/features/Bahan.tsx`.
+
+## Slice 5 — Diagnosa (tahap 5)
+
+Wizard 6 bagian (`app/diagnosa/[runId].tsx`, cermin `DiagnosisWizard.jsx`): Info Sales (baca-saja) · Hasil Bongkar (kondisi, kerusakan
+utama, tingkat, foto/video wajib ≥1) · Fondasi (tindakan wajib) · Lapisan (≤10 baris) & komponen · Bahan (katalog → rencana bahan/Planned
+BOM; bahan manual ≤20 untuk dipetakan Production Lead) · Kirim (kesimpulan ≥10 huruf).
+
+| Langkah | Endpoint |
+|---|---|
+| Muat diagnosis (revisi: isian, BOM aktif, foto lama, bahan manual belum dipetakan) | `GET /production-v2/diagnosis/:runId` |
+| Kirim diagnosis (menulis Planned BOM dalam satu transaksi) | `POST /production-v2/diagnosis/:runId/submit` |
+| Tutup tahap 5 (payload sama dengan web) | `POST /production-v2/runs/:runId/steps/5` |
+| Cari bahan katalog | `GET /production-v2/materials/search` |
+
+Validasi = aturan server saat submit (`src/features/diagnosa.ts` + tes). Bila penutupan tahap gagal, diagnosis tetap tersimpan dan layar
+menawarkan "Tutup tahap Diagnosa". Draf isian disimpan di memori aplikasi per unit (bukan disk); foto/video baru tidak ikut draf.
 
 ## Push notifikasi
 
