@@ -189,7 +189,9 @@ studioRouter.post("/sessions/:id/messages", async (req, res) => {
     ]);
     const model = req.body?.model && MODELS.includes(req.body.model) ? req.body.model : session.model || "claude-haiku-5-5";
 
-    const customerMsg = await prisma.studioMessage.create({ data: { sessionId: session.id, role: "CUSTOMER", content: { text } } });
+    // Panggil model DULU; pesan customer & balasan baru disimpan berdua setelah
+    // berhasil — kalau model gagal (saldo habis, timeout), riwayat sesi tidak
+    // menyisakan pesan customer tanpa balasan.
     const hasil = await runTurn({
       skillFiles: version.files,
       products,
@@ -198,17 +200,23 @@ studioRouter.post("/sessions/:id/messages", async (req, res) => {
       model,
       callModel: ({ model: m, systemPrompt, messages, maxTokens }) => anthropicChat({ apiKey, model: m, systemPrompt, messages, maxTokens }),
     });
-    const agentMsg = await prisma.studioMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "AGENT",
-        content: hasil.output,
-        model,
-        inputTokens: hasil.usage.inputTokens || 0,
-        outputTokens: hasil.usage.outputTokens || 0,
-        cacheReadTokens: hasil.usage.cacheReadTokens || 0,
-        costUsd: hasil.costUsd,
-      },
+    const [customerMsg, agentMsg] = await prisma.$transaction(async (tx) => {
+      const c = await tx.studioMessage.create({ data: { sessionId: session.id, role: "CUSTOMER", content: { text } } });
+      // +1 ms supaya urutan createdAt customer → agent selalu stabil.
+      const a = await tx.studioMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "AGENT",
+          content: hasil.output,
+          model,
+          inputTokens: hasil.usage.inputTokens || 0,
+          outputTokens: hasil.usage.outputTokens || 0,
+          cacheReadTokens: hasil.usage.cacheReadTokens || 0,
+          costUsd: hasil.costUsd,
+          createdAt: new Date(c.createdAt.getTime() + 1),
+        },
+      });
+      return [c, a];
     });
     res.status(201).json({ customer: customerMsg, agent: { ...agentMsg, feedback: [] } });
   } catch (err) {

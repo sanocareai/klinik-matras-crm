@@ -22,7 +22,7 @@ Agent pertama: **Mattress Consultant** (skill `sano-mattress-consultant`).
 - PORTALS backend sengaja **tanpa SALES** → sales tetap auto-skip ke CRM saat login; masuk AI Studio lewat WorkspaceSwitcher.
 
 ## Database
-Migrasi `prisma/migrations/20261227090000_add_ai_studio/` — **additive**: 6 tabel `studio_*` + 4 enum `Studio*`, tanpa FK ke tabel lama.
+Migrasi `prisma/migrations/20261228090000_add_ai_studio/` — **additive**: 6 tabel `studio_*` + 4 enum `Studio*`, tanpa FK ke tabel lama.
 Rollback ada di baris komentar teratas `migration.sql`.
 
 ## Environment
