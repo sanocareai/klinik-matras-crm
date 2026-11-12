@@ -34,11 +34,13 @@ test("api.js: setUserDivisions memakai PUT /users/:id/divisions dengan daftar di
   assert.match(api, /setUserDivisions: \(id, divisions\) =>\s*request\(`\/users\/\$\{id\}\/divisions`, \{ method: "PUT", body: JSON\.stringify\(\{ divisions \}\) \}\)/);
 });
 
-test("Layout: menu Pengajuan Biaya mengikuti divisi (bolehDivisi) untuk Marketing, Management, HR-GA, Produksi, Gudang; divisi dimuat dari server", () => {
+test("Layout: menu Pengajuan Biaya mengikuti divisi (bolehDivisi) untuk Management, HR-GA, Produksi, Gudang; divisi dimuat dari server", () => {
   const layout = baca("components/Layout.jsx");
-  for (const [rute, div] of [["/marketing/pengajuan-biaya", "MARKETING"], ["/kendali/pengajuan-biaya", "MANAGEMENT"], ["/kendali/pengajuan-hrga", "HR_GA"], ["/warehouse/pengajuan-biaya", "WAREHOUSE"]]) {
+  for (const [rute, div] of [["/kendali/pengajuan-biaya", "MANAGEMENT"], ["/kendali/pengajuan-hrga", "HR_GA"], ["/warehouse/pengajuan-biaya", "WAREHOUSE"]]) {
     assert.match(layout, new RegExp(`to: "${rute.replace(/\//g, "\\/")}"[^}]*bolehDivisi: \\["${div}"\\]`), rute);
   }
+  // 12 Nov 2026: menu Pengajuan/Laporan Biaya Marketing dicabut dari sidebar Sales CRM (permintaan owner).
+  assert.doesNotMatch(layout, /to: "\/marketing\/(pengajuan|laporan)-biaya"/);
   assert.match(layout, /api\.getMyPortals\(\)\.then\(\(me\) =>[^)]*divisions/);
   // P8.1 (UI & Navigation Consolidation) — logika filter bolehPeran/bolehDivisi
   // dipindah ke lib/menuVisibility.js (testable via `node --test`, lihat

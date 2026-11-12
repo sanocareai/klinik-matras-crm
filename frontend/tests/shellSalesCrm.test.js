@@ -20,7 +20,8 @@ const bagian14 = cssTanpaKomentar.slice(cssTanpaKomentar.indexOf(":root .app-she
 test("Ikon: setiap menu Sales CRM punya ikon SVG di peta; pemetaan hanya untuk divisi growth dan Finance (Fase Ringkasan Finance)", () => {
   const growth = layout.slice(layout.indexOf("growth: {"), layout.indexOf("// ── PRODUCTION OPERATIONS"));
   const rute = [...growth.matchAll(/\{ to: "([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(rute.length >= 15, "daftar menu growth terbaca");
+  // 12 Nov 2026: 5 menu (biaya Marketing, SPI, Tanya Sano, Otomasi) dicabut dari sidebar Growth → ambang 15 jadi 12.
+  assert.ok(rute.length >= 12, "daftar menu growth terbaca");
   for (const r of rute) assert.ok(ikon.includes(`"${r}":`), `ikon untuk ${r}`);
   assert.ok(layout.includes("const sectionsVisible = crmShell ? (divisionKey === \"warehouse\" ? denganIkonGudang(sectionsBase) : denganIkonSales(sectionsBase)) : sectionsBase;"));
   // Gelombang 1-2 redesain Apple (Nov 2026): Main Hub, Delivery (armada), All Teams (kendali), dan B2B ikut kerangka baru lewat `apSkin` (bukan driver-only / APK driver).
@@ -72,7 +73,8 @@ test("Pencarian HP: kolom jadi tombol ikon ≤1100px; hamburger disembunyikan ha
 test("Sidebar: nav scroll terpisah, bantuan = satu tombol kecil, workspace nama pendek", () => {
   const promo = baca("src/features/settings/SidebarPromo.jsx");
   assert.ok(promo.includes("if (ringkas)") && promo.includes('className="sidebar-help-btn"') && promo.includes('navigate("/copilot")'));
-  assert.ok(layout.includes("<SidebarPromo ringkas={crmShell} />") && layout.includes("ringkas={crmShell}"));
+  // 12 Nov 2026: kartu SidebarPromo (Tanya Sano) dicabut dari sidebar Sales CRM — fitur AI pindah ke workspace AI Agents.
+  assert.ok(!layout.includes("<SidebarPromo") && layout.includes("ringkas={crmShell}"));
   const ws = baca("src/components/WorkspaceSwitcher.jsx");
   assert.ok(ws.includes('short: "Sales CRM"') && ws.includes("ringkas && aktif?.short ? aktif.short : judul"));
   assert.ok(css.includes(":root .app-shell.crm-skin .sidebar-nav {"), "nav discroll sendiri (bagian 11)");
