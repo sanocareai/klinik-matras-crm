@@ -20,8 +20,8 @@ MODE=release; for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; 
 BUNDLE="${BUNDLE:-}"; CAND_BRANCH="${CAND_BRANCH:-feat/production-mobile-on-fba65a14}"; CAND_REF="refs/remotes/origin/cand-rpm"
 # production-mobile/** tidak ikut ke server (aplikasi Android dibangun terpisah lewat EAS); diizinkan agar diff branch lolos.
 ALLOWED_RE='^(backend/prisma/migrations/20261231200000_mobile_device_tokens_app/migration\.sql|backend/prisma/schema\.prisma|backend/src/middleware/auth\.js|backend/src/routes/mobileAuth\.js|backend/src/routes/productionExperience\.js|backend/src/routes/productionPlanning\.js|backend/src/services/capabilities\.js|backend/src/services/complaintCase\.js|backend/src/services/financeNotifications\.js|backend/src/services/mobileSession\.js|backend/src/services/productionNotifications\.js|backend/tests/capabilitiesProductionApp\.test\.js|backend/tests/integration/mobileAuth\.integration\.test\.js|backend/tests/productionNotifications\.test\.js|production-mobile/.+|scripts/release-produksi-mobile\.sh)$'
-MIG_NAME='20261231200000_mobile_device_tokens_app'; MIG_SHA='3d4dae845dd254f4767f6e90fbfcd5eaf58a81f71511aabdde510282ace28dbe'; DIFF_SHA='f2921c6f773d58f32141d8d89d223987f2ec1e28dd81522d2537f31d7049b82e'
-MIG_DASAR='20261231190200_pengajuan_pemakaian_produksi'
+MIG_NAME='20261231200000_mobile_device_tokens_app'; MIG_SHA='3d4dae845dd254f4767f6e90fbfcd5eaf58a81f71511aabdde510282ace28dbe'; DIFF_SHA='c0a00b5699bf8d421d81a021a80651a9383194048ebdb7be2efda102404c7361'
+MIG_DASAR='20261231190400_add_hub_member_role'
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"; PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
 DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; RELEASES="$HOME/releases/klinik-matras"; PERSIST="$HOME/klinik-matras"; SRC="$HOME/release-src/klinik-matras.git"; NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 MIN_FREE_KB=$((4 * 1024 * 1024)); REH_FREE_KB=$((3 * 1024 * 1024)); TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/produksi-mobile-${DEPLOY_SHORT}-${TS}"
