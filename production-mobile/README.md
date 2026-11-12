@@ -31,8 +31,8 @@ Foto & video diambil dari **kamera (foto atau video) atau galeri**, langsung diu
 tahap yang mewajibkan video (uji rasa awal, uji fondasi) tidak bisa dikirim tanpa video. Payload & validasi mencerminkan
 `frontend/src/features/production/experience.js` — bila salah satu berubah, samakan (`src/features/langkah.ts` + tesnya).
 
-**Masih lewat SANSS Web:** tahap 5 (wizard Diagnosa), 6/7/10 (pilih bahan Gudang), lapor kurang bahan, jalur Pengerjaan Pesanan,
-Konfirmasi Selesai dengan serah ke Gudang (kontrak Corner V2). (Putusan QC → slice 2b; urutan, jadwal & PIC → slice 3.)
+**Masih lewat SANSS Web:** tahap 5 (wizard Diagnosa), tahap 8 (uji tekstur, PIC QC), jalur Pengerjaan Pesanan (BUILD), dan tahap 3/7 yang
+menunggu Catatan Komponen. (Putusan QC → slice 2b; jadwal & PIC → slice 3; bahan & Corner → slice 4.)
 
 ## Slice 2b — QC, urutan target, berat dari order, video
 
@@ -62,6 +62,19 @@ aturan & body mencerminkan `ScheduleModal` (`frontend/src/features/production/Sc
 | **PIC bawaan meja** per tanggal | `PUT /production-v2/stations/:code/pic` |
 
 Tidak dari HP: target khusus per kartu (dipertahankan apa adanya), mendaftarkan akun sebagai operator/PIC, mengatur lini operator.
+
+## Slice 4 — bahan & Corner
+
+| Fitur | Endpoint / sumber |
+|---|---|
+| Tahap 6 Fondasi Baru & 7 Lapisan Baru: jumlah bahan dipakai per bahan yang **sudah diserahkan Gudang** (diserahkan · sisa) | `card.issuedMaterials` → `POST steps/:stepNo` dengan `materials[{materialId, qty}]` |
+| Bahan sudah dicatat PIC Bahan → Meja tidak mengisi lagi (ringkasan saja) | `card.materialPic` (cermin `stepMaterialsByPic`) |
+| Tahap 10 Mulai Jahit: model kasur, kain, list; Corner V2: kartu permintaan Sales, cek kain lama/baru, kesesuaian, konfirmasi Sales bila motif/warna belum tertulis | `card.cornerView` (cermin `validateCornerStartForm`) |
+| Tahap 12 Corner V2: ringkasan syarat sebelum selesai (QC, Corner, retur sisa bahan) | `GET /production-v2/runs/:runId/finish-preview` (baca-saja) |
+| **Bahan kurang** (tahap 3–8, PIC Meja): pilih bahan (BOM dulu, lalu katalog) + qty opsional + catatan untuk Gudang | `GET /production-v2/materials/search` + `POST /production-v2/runs/:runId/material-shortage` |
+
+Pintu masuk Bahan kurang: tombol di Detail Unit (belum mulai / menunggu bahan disiapkan) dan dari layar Tunda ("Menunggu bahan?").
+Logika di `src/features/langkah.ts` (cermin `experience.js` & `workerSheets.jsx#ShortageSheet`), komponen di `src/features/Bahan.tsx`.
 
 ## Push notifikasi
 

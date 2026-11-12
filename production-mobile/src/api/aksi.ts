@@ -55,3 +55,28 @@ export async function unggahBukti(runId: string, b: BerkasLokal): Promise<MediaT
   if (!it?.url) throw new Error("Server tidak mengembalikan berkas");
   return it;
 }
+
+// ---- Tahap 4: bahan & Corner ------------------------------------------------------------------------------------------------
+//   POST /production-v2/runs/:runId/material-shortage  { expectedRevision, workCenterId, items: [{ materialId, qty? }], note? }
+//   GET  /production-v2/materials/search?q=            katalog bahan aktif (izin unit:stage:write)
+//   GET  /production-v2/runs/:runId/finish-preview     pratinjau sebelum Konfirmasi Selesai (kontrak Corner V2), baca-saja
+
+export function laporKurangBahan(runId: string, body: Record<string, unknown>, kunci: string) {
+  return api.command<unknown>("POST", `/production-v2/runs/${runId}/material-shortage`, kunci, { body });
+}
+
+export type BahanKatalog = { id: string; code: string; name: string; unit: string | null; onHandQty?: number };
+export function cariBahan(q: string) {
+  return api.get<{ items: BahanKatalog[] }>("/production-v2/materials/search", { query: { q: q || undefined, limit: 40 } });
+}
+
+export type PratinjauSelesai = {
+  kind: string;
+  checks: { key: string; label: string; detail: string; ok: boolean; status?: string; policy?: string | null }[];
+  expectedReturns: { code?: string; name?: string; qty: number; unit?: string | null }[];
+  blockers: { code: string; text: string }[];
+  statement: string;
+};
+export function ambilPratinjauSelesai(runId: string) {
+  return api.get<PratinjauSelesai>(`/production-v2/runs/${runId}/finish-preview`);
+}

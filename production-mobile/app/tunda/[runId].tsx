@@ -7,13 +7,13 @@ import { randomUUID } from "expo-crypto";
 import { tundaPekerjaan } from "@/api/aksi";
 import { pesanUntukPengguna } from "@/api/errors";
 import { useRunCard } from "@/api/production";
-import { ALASAN_TUNDA, bolehCobaLagi, tundaSah, type AlasanTunda } from "@/features/langkah";
+import { ALASAN_TUNDA, bolehCobaLagi, bolehLaporKurang, tundaSah, type AlasanTunda } from "@/features/langkah";
 import { Isian, PilihanChip } from "@/design/Form";
 import { NavBar } from "@/design/NavBar";
 import { Button, Card, Screen, StateView, T } from "@/design/ui";
 import { C, TONE } from "@/design/tokens";
 
-// TUNDA PEKERJAAN — POST /production-v2/runs/:runId/delay. "Menunggu bahan" butuh daftar bahan Gudang → tetap di SANSS Web.
+// TUNDA PEKERJAAN — POST /production-v2/runs/:runId/delay. "Menunggu bahan" = Lapor kurang bahan (daftar bahan untuk Gudang).
 export default function Tunda() {
   const { runId } = useLocalSearchParams<{ runId: string }>();
   const router = useRouter();
@@ -51,9 +51,9 @@ export default function Tunda() {
             <T.Headline style={{ marginHorizontal: 4 }}>Kenapa pekerjaan ditunda?</T.Headline>
             <PilihanChip options={ALASAN_TUNDA.map((a) => ({ value: a.key, label: a.label }))} value={[alasan]} onChange={(v) => v[0] && setAlasan(v[0])} />
             <Isian label={alasan === "LAINNYA" ? "Jelaskan alasannya (wajib)" : "Keterangan (opsional)"} value={catatan} onChange={setCatatan} multiline />
-            <Card style={{ backgroundColor: TONE.orange.tint }}>
-              <T.Sub style={{ color: TONE.orange.text }}>Kurang bahan? Laporkan lewat SANSS Web (Aplikasi Meja → Tunda → Menunggu bahan) supaya Gudang langsung melihat daftar bahannya.</T.Sub>
-            </Card>
+            {bolehLaporKurang(c, c.next?.actor === "TABLE" ? "TABLE" : null) ? (
+              <Button kind="tinted" tone="red" label="Menunggu bahan? Lapor kurang bahan" onPress={() => router.replace({ pathname: "/kurang-bahan/[runId]", params: { runId: c.runId } })} />
+            ) : null}
             {galat ? <Card style={{ backgroundColor: TONE.red.tint }}><T.Sub style={{ color: TONE.red.text }}>{galat}</T.Sub></Card> : null}
             <Button label="Tunda Pekerjaan" kind="danger" onPress={() => void kirim()} busy={busy} disabled={!online || !tundaSah(alasan, catatan)} />
             {!online ? <T.Caption style={{ textAlign: "center" }}>Offline — kirim saat sinyal kembali.</T.Caption> : null}

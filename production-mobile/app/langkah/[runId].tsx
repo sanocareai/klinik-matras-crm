@@ -8,8 +8,10 @@ import { catatLangkah, kunciNiat } from "@/api/aksi";
 import { ApiError, pesanUntukPengguna } from "@/api/errors";
 import { useRunCard } from "@/api/production";
 import {
-  CHECKLIST_CORNER, LABEL_TAHAP, MATERIAL_LAMA, PETUNJUK, aturanMedia, bolehCobaLagi, formulirDidukung, payloadLangkah, validasiLangkah, type FormLangkah,
+  CHECKLIST_CORNER, KESESUAIAN, LABEL_KONFIRMASI_SALES, LABEL_TAHAP, MATERIAL_LAMA, MODE_KAIN, MODEL_KASUR, PETUNJUK, aturanMedia, bolehCobaLagi, formulirDidukung,
+  langkahBahanOlehPic, payloadLangkah, validasiLangkah, type FormLangkah,
 } from "@/features/langkah";
+import { BahanDipakai, BahanOlehPic, PermintaanCorner, PratinjauSelesai } from "@/features/Bahan";
 import { PanelLampiran, useLampiran } from "@/features/Lampiran";
 import { beratPemakai } from "@/features/model";
 import { PilihBerat } from "@/features/PilihBerat";
@@ -39,6 +41,9 @@ export default function Langkah() {
   const stepNo = next?.stepNo ?? 0;
   const dukung = c && next ? formulirDidukung(c, next) : null;
   const cornerV2 = !!c?.cornerView?.contractV2;
+  const byPic = !!c && langkahBahanOlehPic(c, stepNo);
+  const brief = c?.cornerView?.request ?? null;
+  const diserahkan = c?.issuedMaterials ?? [];
   const aturan = aturanMedia(stepNo, c?.track);
   const pemakai = beratPemakai(c?.customer);
   // Berat penguji bawaan = berat pemakai PERTAMA dari order (diisi Sales); bisa diganti chip lain atau diketik.
@@ -50,12 +55,12 @@ export default function Langkah() {
     if (lamp.adaGagal) { setGalat("Ada unggahan gagal — ulangi atau hapus dulu."); return; }
     // Berat penguji uji fondasi: bawaan = berat badan customer (sama dengan yang tampil di isian).
     const isi: FormLangkah = stepNo === 4 && f.testerWeightKg === undefined && beratBawaan ? { ...f, testerWeightKg: beratBawaan } : f;
-    const v = validasiLangkah(stepNo, isi, lamp.selesai, { track: c.track, gated: !!next.gated, cornerV2 });
+    const v = validasiLangkah(stepNo, isi, lamp.selesai, { track: c.track, gated: !!next.gated, cornerV2, byPic, cornerBrief: brief });
     if (v) { setGalat(v); return; }
     setBusy(true); setGalat(null);
     const kunci = kunciNiat.untuk(c.runId, stepNo, c.revision);
     try {
-      await catatLangkah({ runId: c.runId, revision: c.revision, workCenterId: c.workCenterId }, stepNo, payloadLangkah(stepNo, isi, { cornerV2 }), lamp.selesai.map((m) => m.url), kunci);
+      await catatLangkah({ runId: c.runId, revision: c.revision, workCenterId: c.workCenterId }, stepNo, payloadLangkah(stepNo, isi, { cornerV2, byPic }), lamp.selesai.map((m) => m.url), kunci);
       kunciNiat.lepas(c.runId, stepNo, c.revision);
       await qc.invalidateQueries();
       router.back();
@@ -103,6 +108,42 @@ export default function Langkah() {
                 <Isian label="Catatan (opsional)" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline />
               </>
             ) : null}
+            {stepNo === 6 || stepNo === 7 ? (
+              <>
+                {byPic ? <BahanOlehPic card={c} /> : (
+                  <BahanDipakai diserahkan={diserahkan} value={f.materials ?? []} onChange={(v) => set({ materials: v })}
+                    kosong="Belum ada bahan yang diserahkan Gudang untuk unit ini. Kalau bahannya belum ada, kembali lalu tekan Bahan kurang." />
+                )}
+                <Isian label={stepNo === 6 ? "Penjelasan isi fondasi" : "Catatan lapisan (opsional)"} value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline
+                  placeholder={stepNo === 6 ? "mis. pocket spring baru + penguat pinggir" : undefined} />
+              </>
+            ) : null}
+            {stepNo === 10 ? (
+              <>
+                {cornerV2 ? (
+                  <>
+                    <PermintaanCorner cv={c.cornerView} />
+                    <CentangBaris label="Permintaan Sales di atas sudah saya periksa" value={!!f.requestChecked} onChange={(v) => set({ requestChecked: v })} />
+                    <PilihanChip label="Kain yang dipakai" options={MODE_KAIN} value={f.fabricMode ? [f.fabricMode as (typeof MODE_KAIN)[number]["value"]] : []} onChange={(v) => set({ fabricMode: v[0] })} />
+                    <PilihanChip label="Kesesuaian dengan permintaan Sales" options={KESESUAIAN} value={f.requestMatch ? [f.requestMatch as (typeof KESESUAIAN)[number]["value"]] : []} onChange={(v) => set({ requestMatch: v[0] })} />
+                    {f.requestMatch === "ADA_PERBEDAAN" ? <Isian label="Jelaskan perbedaannya (wajib)" value={f.requestNote ?? ""} onChange={(v) => set({ requestNote: v })} multiline /> : null}
+                    {brief?.needsSalesConfirmation || f.fabricMode === "NEW_INSTALLED" ? (
+                      <Isian label={brief?.needsSalesConfirmation ? `Konfirmasi Sales yang dicatat (${LABEL_KONFIRMASI_SALES}) *` : "Konfirmasi Sales yang dicatat (opsional)"}
+                        value={f.salesConfirmation ?? ""} onChange={(v) => set({ salesConfirmation: v })} multiline placeholder="mis. Sales (telepon): motif polos, abu-abu tua" />
+                    ) : null}
+                  </>
+                ) : null}
+                <PilihanChip label="Model kasur" options={MODEL_KASUR} value={f.mattressStyle ? [f.mattressStyle as (typeof MODEL_KASUR)[number]["value"]] : []} onChange={(v) => set({ mattressStyle: v[0] })} />
+                <Isian label="Spesifikasi / warna kain" value={f.fabricSpec ?? ""} onChange={(v) => set({ fabricSpec: v })} placeholder="mis. Knitting putih quilting" />
+                <Isian label="Warna list" value={f.borderColor ?? ""} onChange={(v) => set({ borderColor: v })} placeholder="mis. Abu-abu tua" />
+                {diserahkan.length ? (
+                  <>
+                    <T.Sub style={{ marginHorizontal: 4 }}>Bahan kain dari Gudang (opsional)</T.Sub>
+                    <BahanDipakai diserahkan={diserahkan} value={f.materials ?? []} onChange={(v) => set({ materials: v })} kosong="" />
+                  </>
+                ) : null}
+              </>
+            ) : null}
             {stepNo === 9 ? <Isian label="Catatan untuk Corner (opsional)" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline /> : null}
             {stepNo === 11 ? (
               <>
@@ -121,6 +162,7 @@ export default function Langkah() {
             ) : null}
             {stepNo === 12 ? (
               <>
+                {cornerV2 && !c.adaptation ? <PratinjauSelesai runId={c.runId} revision={c.revision} /> : null}
                 <CentangBaris label="Kasur selesai & siap diserahkan" value={!!f.confirm} onChange={(v) => set({ confirm: v })} />
                 <Isian label="Catatan (opsional)" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline />
               </>

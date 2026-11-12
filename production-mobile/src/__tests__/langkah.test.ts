@@ -1,5 +1,6 @@
 import {
-  aksiCepat, buatKunciNiat, formulirDidukung, giliranSaya, labelAksi, payloadLangkah, tundaSah, validasiLangkah, type MediaTerunggah,
+  aksiCepat, bahanUrutBom, bodyKurangBahan, bolehLaporKurang, buatKunciNiat, formulirDidukung, giliranSaya, labelAksi, langkahBahanOlehPic, payloadLangkah,
+  tundaSah, validasiLangkah, type MediaTerunggah,
 } from "@/features/langkah";
 import { mimeBerkas } from "@/api/aksi";
 
@@ -16,13 +17,60 @@ test("aksi cepat: Mulai/Lanjutkan & continueOnly; tahap berisi bukti tidak", () 
   expect(labelAksi({ action: "COMPLETE", stepNo: 4 })).toBe("Kirim Uji Fondasi Lama");
 });
 
-test("formulir yang didukung HP: 1-4, 9, 11, 12; bahan/wizard/BUILD ke Web", () => {
+test("formulir yang didukung HP: 1-4, 6, 7, 9-12; Diagnosa, uji tekstur, BUILD & gerbang Catatan Komponen ke Web", () => {
   const c = { track: "RESTORATION" as const, cornerView: null };
-  for (const n of [1, 2, 3, 4, 9, 11, 12]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(true);
-  for (const n of [5, 6, 7, 8, 10]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(false);
+  for (const n of [1, 2, 3, 4, 6, 7, 9, 10, 11, 12]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(true);
+  for (const n of [5, 8]) expect(formulirDidukung(c, { stepNo: n, action: "COMPLETE" }).ok).toBe(false);
   expect(formulirDidukung({ track: "BUILD", cornerView: null }, { stepNo: 1 }).ok).toBe(false);
   expect(formulirDidukung(c, { stepNo: 3, gated: true, layersRequired: true }).ok).toBe(false);
-  expect(formulirDidukung({ track: "RESTORATION", cornerView: { contractV2: true } }, { stepNo: 12 }).ok).toBe(false);
+  expect(formulirDidukung(c, { stepNo: 7, gated: true, layersAfterRequired: true }).ok).toBe(false);
+  expect(formulirDidukung({ track: "RESTORATION", cornerView: { contractV2: true } }, { stepNo: 12 }).ok).toBe(true);
+});
+
+test("tahap 6/7: bahan dari Gudang wajib (qty > 0) kecuali dicatat PIC Bahan; payload sama dengan web", () => {
+  const f = { materials: [{ materialId: "m1", qty: "2,5" }, { materialId: "m2", qty: "" }], note: "pocket spring baru" };
+  expect(validasiLangkah(6, { note: "isi" }, [video])).toMatch(/bahan Gudang/);
+  expect(validasiLangkah(6, { ...f, note: "ok" }, [video])).toMatch(/fondasi baru/);
+  expect(validasiLangkah(6, f, [foto])).toBe("Tahap ini wajib video.");
+  expect(validasiLangkah(6, f, [video])).toBeNull();
+  expect(payloadLangkah(6, f)).toEqual({ materials: [{ materialId: "m1", qty: 2.5 }], note: "pocket spring baru" });
+  expect(validasiLangkah(7, {}, [foto], { byPic: true })).toBeNull();
+  expect(payloadLangkah(7, f, { byPic: true })).toEqual({ materials: [], note: "pocket spring baru" });
+  const pic = { track: "RESTORATION" as const, materialPic: { materialOperator: { name: "Nadya" } } };
+  expect(langkahBahanOlehPic(pic, 6)).toBe(true);
+  expect(langkahBahanOlehPic(pic, 7)).toBe(true);
+  expect(langkahBahanOlehPic({ track: "RESTORATION", materialPic: null }, 6)).toBe(false);
+});
+
+test("tahap 10 Corner V2: cek permintaan Sales, ganti kain diminta tapi kain lama → wajib 'Ada perbedaan', konfirmasi Sales bila motif/warna belum tertulis", () => {
+  const dasar = { mattressStyle: "BIASA", fabricSpec: "Knitting putih", borderColor: "Abu" };
+  expect(validasiLangkah(10, dasar, [])).toBeNull(); // non-V2
+  const brief = { fabricChangeRequested: true, needsSalesConfirmation: true, missing: ["motif", "warna"] };
+  const v2 = { cornerV2: true, cornerBrief: brief };
+  expect(validasiLangkah(10, dasar, [], v2)).toMatch(/permintaan Sales sudah Anda periksa/);
+  expect(validasiLangkah(10, { ...dasar, requestChecked: true, fabricMode: "OLD_REUSED", requestMatch: "SESUAI" }, [], v2)).toMatch(/Ada perbedaan/);
+  expect(validasiLangkah(10, { ...dasar, requestChecked: true, fabricMode: "NEW_INSTALLED", requestMatch: "SESUAI" }, [], v2)).toMatch(/motif dan warna/);
+  const ok = { ...dasar, requestChecked: true, fabricMode: "NEW_INSTALLED", requestMatch: "SESUAI", salesConfirmation: "polos abu" };
+  expect(validasiLangkah(10, ok, [], v2)).toBeNull();
+  expect(payloadLangkah(10, ok, { cornerV2: true })).toEqual({
+    mattressStyle: "BIASA", fabricSpec: "Knitting putih", borderColor: "Abu", materials: [], note: undefined,
+    requestChecked: true, fabricMode: "NEW_INSTALLED", requestMatch: "SESUAI", requestNote: undefined, salesConfirmation: "polos abu",
+  });
+});
+
+test("lapor kurang bahan: hanya Meja, tahap 3–8, belum ada laporan terbuka; BOM dulu; qty opsional", () => {
+  const kartu = (next: object, shortage: unknown = null) => ({ next, shortage } as never);
+  expect(bolehLaporKurang(kartu({ stepNo: 6, action: "COMPLETE" }), "TABLE")).toBe(true);
+  expect(bolehLaporKurang(kartu({ stepNo: 6, action: "WAIT", wait: "MATERIAL_NOT_READY" }), "TABLE")).toBe(true);
+  expect(bolehLaporKurang(kartu({ stepNo: 6, action: "WAIT", wait: "AWAITING_QC" }), "TABLE")).toBe(false);
+  expect(bolehLaporKurang(kartu({ stepNo: 10, action: "COMPLETE" }), "TABLE")).toBe(false);
+  expect(bolehLaporKurang(kartu({ stepNo: 6, action: "COMPLETE" }), "CORNER")).toBe(false);
+  expect(bolehLaporKurang(kartu({ stepNo: 6, action: "COMPLETE" }, { items: [] }), "TABLE")).toBe(false);
+  expect(bahanUrutBom([{ materialId: "b", code: "B", name: "Busa" }], [{ id: "a", code: "A", name: "Latex" }, { id: "b", code: "B", name: "Busa" }]).map((m) => m.id)).toEqual(["b", "a"]);
+  expect(bodyKurangBahan({ revision: 4, workCenterId: "wc" }, {}, "")).toBeNull();
+  expect(bodyKurangBahan({ revision: 4, workCenterId: "wc" }, { a: { qty: "3" }, b: { qty: "" } }, " cepat ")).toEqual({
+    expectedRevision: 4, workCenterId: "wc", items: [{ materialId: "a", qty: 3 }, { materialId: "b" }], note: "cepat",
+  });
 });
 
 test("validasi: media minimal, video wajib untuk uji fondasi, angka uji fondasi masuk akal", () => {

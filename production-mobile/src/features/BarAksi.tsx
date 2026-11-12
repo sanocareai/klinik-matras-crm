@@ -3,13 +3,13 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNetInfo } from "@react-native-community/netinfo";
-import { Pause, Play } from "lucide-react-native";
+import { PackageX, Pause, Play } from "lucide-react-native";
 import { catatLangkah, kunciNiat, lanjutkanPekerjaan } from "@/api/aksi";
 import { pesanUntukPengguna } from "@/api/errors";
 import { useLayout } from "@/api/production";
 import type { RunCard } from "@/api/types";
 import { useSession } from "@/auth/session";
-import { aksiCepat, bolehCobaLagi, formulirDidukung, giliranSaya, labelAksi } from "./langkah";
+import { aksiCepat, bolehCobaLagi, bolehLaporKurang, formulirDidukung, giliranSaya, labelAksi } from "./langkah";
 import { Button, T } from "@/design/ui";
 import { C, TONE } from "@/design/tokens";
 
@@ -17,7 +17,8 @@ import { C, TONE } from "@/design/tokens";
 //   RESUME              → Lanjutkan Pekerjaan (POST units/:unitId/resume-work)
 //   START / continueOnly→ satu ketuk (POST steps/:stepNo, payload kosong)
 //   tahap berisi bukti  → buka formulir tahap (foto/video + isian)
-//   operasi berjalan    → tombol kedua "Tunda"
+//   operasi berjalan    → tombol kedua "Tunda" (di dalamnya: Menunggu bahan → Lapor kurang bahan)
+//   belum berjalan, tahap 3–8 → tombol kedua "Bahan kurang" (POST runs/:runId/material-shortage)
 // Bukan giliran saya / menunggu QC dll → keterangan, tanpa tombol.
 
 const TUNGGU: Record<string, string> = {
@@ -65,9 +66,15 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
 
   if (!giliran) {
     const teks = next.action === "WAIT" ? TUNGGU[next.wait ?? ""] ?? "Menunggu tahap sebelumnya." : "Tahap berikutnya milik tim/PIC lain.";
+    // Menunggu bahan disiapkan Gudang: PIC Meja rencana ini tetap boleh melaporkan bahan yang kurang (cermin canShortage web).
+    const picMeja = l.lane && (l.executeAny || (!!userId && card.plan?.operator?.userId === userId));
+    const kurang = next.wait === "MATERIAL_NOT_READY" && picMeja && bolehLaporKurang(card, "TABLE");
     return (
       <Wadah>
         <T.Sub style={{ textAlign: "center", color: C.ink2 }}>{teks}</T.Sub>
+        {kurang ? (
+          <Button kind="tinted" tone="red" icon={<PackageX color={TONE.red.text} size={18} />} label="Bahan kurang" onPress={() => router.push({ pathname: "/kurang-bahan/[runId]", params: { runId: card.runId } })} />
+        ) : null}
       </Wadah>
     );
   }
@@ -76,6 +83,7 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
   const dukung = cepat ? { ok: true as const } : formulirDidukung(card, next);
   const bisaTunda = card.activeOp?.status === "ACTIVE";
   const dijeda = card.activeOp?.status === "PAUSED" || card.activeOp?.status === "BLOCKED";
+  const bisaKurang = !bisaTunda && bolehLaporKurang(card, giliran);
 
   return (
     <Wadah>
@@ -87,6 +95,8 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
       <View style={{ flexDirection: "row", gap: 8 }}>
         {bisaTunda ? (
           <Button kind="tinted" tone="orange" icon={<Pause color={TONE.orange.text} size={18} fill={TONE.orange.text} />} label="Tunda" onPress={() => router.push({ pathname: "/tunda/[runId]", params: { runId: card.runId } })} style={{ flex: 1 }} />
+        ) : bisaKurang ? (
+          <Button kind="tinted" tone="red" icon={<PackageX color={TONE.red.text} size={18} />} label="Bahan kurang" onPress={() => router.push({ pathname: "/kurang-bahan/[runId]", params: { runId: card.runId } })} style={{ flex: 1 }} />
         ) : null}
         {dukung.ok && label ? (
           <Button
@@ -96,7 +106,7 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
             busy={busy}
             disabled={cepat && !online}
             onPress={cepat ? () => void satuKetuk() : () => router.push({ pathname: "/langkah/[runId]", params: { runId: card.runId } })}
-            style={{ flex: bisaTunda ? 2 : 1 }}
+            style={{ flex: bisaTunda || bisaKurang ? 2 : 1 }}
           />
         ) : null}
       </View>

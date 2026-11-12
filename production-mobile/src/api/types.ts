@@ -74,16 +74,37 @@ export type RunNext = {
   rework?: boolean;
   gated?: boolean;
   layersRequired?: boolean;
+  /** Tahap 7 (LAYANAN): hasil aktual susunan wajib dicatat di Catatan Komponen dulu. */
+  layersAfterRequired?: boolean;
 };
 
 /** Status 12 langkah Produksi V2 (stepStatuses di server). NA = tidak berlaku untuk unit ini. */
 export type StepStatus = { no: number; code: string; label: string; status: "DONE" | "CURRENT" | "WAITING" | "PENDING" | "SKIPPED" | "NA"; at: string | null };
 
+export type BahanDiserahkan = { materialId: string; code: string; name: string; uom: string | null; qty: number; usedQty?: number; remainingQty?: number };
+
+/** Permintaan Sales untuk Corner + status Corner (loadCornerView di server). */
+export type CornerView = {
+  contractV2?: boolean;
+  request?: {
+    fabricChangeRequested?: boolean; fabricItems?: string[]; notes?: string | null; noteOnly?: boolean;
+    motifMentioned?: boolean; colorMentioned?: boolean; missing?: string[]; needsSalesConfirmation?: boolean; hint?: string | null;
+  } | null;
+  status?: { status?: string; reason?: string | null; note?: string | null; decidedBy?: string | null } | null;
+  records?: { start?: { salesConfirmation?: string | null; byName?: string | null; at?: string | null } | null } | null;
+};
+
 /** Kartu kerja lengkap (GET /production-v2/runs/:runId/card) — RunView + bukti per langkah. */
 export type RunCard = RunView & {
   workCenterId: string | null;
   adaptation: { policy: string } | null;
-  cornerView?: { contractV2?: boolean; request?: unknown } | null;
+  cornerView?: CornerView | null;
+  /** Bahan yang diserahkan Gudang untuk unit ini (diserahkan / terpakai / sisa — tiga angka terpisah). */
+  issuedMaterials?: BahanDiserahkan[];
+  /** Rencana bahan (BOM) — urutan pertama saat memilih bahan yang kurang. */
+  bom?: { materialId: string; code: string; name: string; qty: number; uom: string | null }[];
+  /** PIC Bahan (LAYANAN): bila sudah ada, pemakaian bahan tahap 6 (dan 7 restorasi PIC) tidak diisi lagi oleh Meja. */
+  materialPic?: { materialOperator?: { name: string | null } | null; record?: { materials?: { name?: string | null; code?: string | null; qty: number }[] } | null } | null;
   evidence: { id: string; stepNo: number; stepLabel: string | null; createdAt: string; actor: string | null; media: { kind: string; url: string }[] }[];
 };
 

@@ -1,4 +1,4 @@
-import type { RunCard, RunNext } from "@/api/types";
+import type { CornerView, RunCard, RunNext } from "@/api/types";
 
 // MODEL MURNI aksi tahap Produksi V2 — CERMIN frontend/src/features/production/experience.js (validateStepForm,
 // buildStepPayload, MEDIA_RULES, isQuickAction, actionLabel) yang sendiri mencerminkan kontrak server.
@@ -14,6 +14,9 @@ export const PETUNJUK: Record<number, string> = {
   2: "Video uji tekan/rebah sebelum dibongkar + catatan rasa awal.",
   3: "Foto/video bagian dalam setelah dibuka + centang material lama.",
   4: "Video uji fondasi oleh penguji seberat customer + tinggi awal & saat ditekan.",
+  6: "Video uji fondasi baru + bahan Gudang yang dipakai + penjelasan isi fondasi.",
+  7: "Foto/video lapisan baru + bahan Gudang yang dipakai.",
+  10: "Periksa permintaan Sales, isi model kasur, kain & list, lalu mulai jahit.",
   9: "Foto/video kasur siap dibungkus kain, lalu kirim ke meja jahit.",
   11: "Foto/video hasil jahitan + checklist kerapian.",
   12: "Foto kasur selesai/terbungkus, lalu serahkan ke Gudang.",
@@ -32,6 +35,12 @@ export const MATERIAL_LAMA = [
   { value: "PER", label: "Per / Spring" }, { value: "BUSA", label: "Busa" }, { value: "REBONDED", label: "Rebonded" },
   { value: "KAIN", label: "Kain" }, { value: "LATEX", label: "Latex" }, { value: "KAPUK", label: "Kapuk" }, { value: "LAINNYA", label: "Lainnya" },
 ] as const;
+export const MODEL_KASUR = [
+  { value: "BIASA", label: "Kasur Biasa" }, { value: "PLUSHTOP", label: "Plushtop" }, { value: "PILLOWTOP", label: "Pillowtop" },
+] as const;
+export const MODE_KAIN = [{ value: "OLD_REUSED", label: "Kain lama dipakai" }, { value: "NEW_INSTALLED", label: "Kain baru dipasang" }] as const;
+export const KESESUAIAN = [{ value: "SESUAI", label: "Sesuai permintaan Sales" }, { value: "ADA_PERBEDAAN", label: "Ada perbedaan" }] as const;
+export const LABEL_KONFIRMASI_SALES = "Perlu konfirmasi Sales";
 export const CHECKLIST_CORNER = [
   { key: "jahitan", label: "Jahitan rapi & kuat" }, { key: "list", label: "List terpasang rata" },
   { key: "resleting", label: "Resleting berfungsi" }, { key: "kebersihan", label: "Kasur bersih" },
@@ -53,7 +62,17 @@ export type FormLangkah = {
   heightBeforeCm?: string; heightCompressedCm?: string; testerWeightKg?: string;
   checklist?: Record<string, boolean>; cornerWork?: string; noDifference?: boolean; differenceNote?: string;
   confirm?: boolean;
+  /** Tahap 6/7/10: bahan Gudang yang dipakai (qty teks dari isian; hanya qty > 0 yang dikirim). */
+  materials?: { materialId: string; qty: string }[];
+  mattressStyle?: string; fabricSpec?: string; borderColor?: string;
+  requestChecked?: boolean; fabricMode?: string; requestMatch?: string; requestNote?: string; salesConfirmation?: string;
 };
+
+type KartuBahan = Pick<RunCard, "track" | "materialPic">;
+/** PIC Bahan sudah mencatat pemakaian (LAYANAN) → Meja tidak mengisi bahan lagi. Cermin materialsByPic (jalur restorasi). */
+export const bahanOlehPic = (card: KartuBahan) => card.track !== "BUILD" && !!(card.materialPic?.materialOperator || card.materialPic?.record);
+/** Cermin stepMaterialsByPic web: tahap 6 selalu, tahap 7 hanya pada restorasi ber-PIC Bahan. */
+export const langkahBahanOlehPic = (card: KartuBahan, stepNo: number) => (stepNo === 6 || (stepNo === 7 && !!card.materialPic)) && bahanOlehPic(card);
 export type MediaTerunggah = { url: string; kind: "image" | "video"; previewUrl?: string | null };
 
 /** Aksi satu-ketuk (tanpa formulir): Mulai, Lanjutkan, atau "Lanjutkan" ketika buktinya sudah ada di sumbernya. */
@@ -78,21 +97,35 @@ export function labelAksi(next: RunNext | null | undefined, stageLabel?: string 
 }
 
 /**
- * Formulir tahap ini bisa diisi dari HP? Tahap 5 (wizard Diagnosa), 6/7/10 (pilih bahan Gudang), 8 (uji tekstur ditulis PIC QC),
- * tahap 3 yang menunggu Catatan Komponen, dan tahap 12 dengan kontrak Corner V2 (pratinjau barang jadi) masih lewat SANSS Web.
+ * Formulir tahap ini bisa diisi dari HP? Masih lewat SANSS Web: jalur Pengerjaan Pesanan (BUILD), tahap 5 (wizard Diagnosa),
+ * 8 (uji tekstur ditulis PIC QC), tahap 3/7 yang menunggu Catatan Komponen. Tahap 6/7/10 memakai bahan yang SUDAH diserahkan Gudang.
  */
 export function formulirDidukung(card: Pick<RunCard, "track" | "cornerView">, next: RunNext): { ok: true } | { ok: false; alasan: string } {
   const n = next.stepNo ?? 0;
   if (card.track === "BUILD") return { ok: false, alasan: "Jalur Pengerjaan Pesanan masih lewat SANSS Web." };
   if (n === 3 && next.gated && next.layersRequired) return { ok: false, alasan: "Catat susunan lapisan awal di Catatan Komponen (SANSS Web) dulu." };
-  if (n === 12 && card.cornerView?.contractV2) return { ok: false, alasan: "Konfirmasi selesai dengan serah ke Gudang masih lewat SANSS Web." };
-  if ([1, 2, 3, 4, 9, 11, 12].includes(n)) return { ok: true };
-  return { ok: false, alasan: `${LABEL_TAHAP[n] ?? "Tahap ini"} butuh pilihan bahan/wizard — isi lewat Aplikasi Meja di SANSS Web.` };
+  if (n === 7 && next.gated && next.layersAfterRequired) return { ok: false, alasan: "Catat susunan hasil aktual di Catatan Komponen › Sesudah pengerjaan (SANSS Web) dulu." };
+  if (n === 5) return { ok: false, alasan: "Diagnosa (rencana bahan & layanan teknis) masih lewat Aplikasi Meja di SANSS Web." };
+  if ([1, 2, 3, 4, 6, 7, 9, 10, 11, 12].includes(n)) return { ok: true };
+  return { ok: false, alasan: `${LABEL_TAHAP[n] ?? "Tahap ini"} diisi PIC QC lewat SANSS Web.` };
 }
 
 const angka = (v: unknown) => Number(String(v ?? "").replace(",", "."));
 
-export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTerunggah[], opsi: { track?: string; gated?: boolean; cornerV2?: boolean } = {}): string | null {
+const adaBahan = (f: FormLangkah) => (f.materials ?? []).some((m) => angka(m.qty) > 0);
+
+/** Cermin validateCornerStartForm (tahap 10, kontrak Corner V2). */
+export function validasiMulaiCorner(f: FormLangkah, brief: NonNullable<CornerView["request"]> | null | undefined): string | null {
+  if (!f.requestChecked) return "Centang bahwa permintaan Sales sudah Anda periksa.";
+  if (!f.fabricMode) return "Pilih: kain lama dipakai kembali atau kain baru dipasang.";
+  if (!f.requestMatch) return "Pilih apakah pekerjaan sesuai permintaan Sales atau ada perbedaan.";
+  if (f.requestMatch === "ADA_PERBEDAAN" && (f.requestNote ?? "").trim().length < 3) return "Jelaskan perbedaan dari permintaan Sales.";
+  if (brief?.fabricChangeRequested && f.fabricMode === "OLD_REUSED" && f.requestMatch !== "ADA_PERBEDAAN") return "Sales meminta ganti kain tetapi kain lama dipakai kembali — pilih \"Ada perbedaan\" dan jelaskan alasannya.";
+  if (brief?.needsSalesConfirmation && f.fabricMode === "NEW_INSTALLED" && (f.salesConfirmation ?? "").trim().length < 3) return `${LABEL_KONFIRMASI_SALES}: tulis hasil konfirmasi Sales untuk ${(brief.missing ?? []).join(" dan ")} sebelum memasang kain baru.`;
+  return null;
+}
+
+export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTerunggah[], opsi: { track?: string; gated?: boolean; cornerV2?: boolean; byPic?: boolean; cornerBrief?: CornerView["request"] | null } = {}): string | null {
   const r = aturanMedia(stepNo, opsi.track);
   if (media.length < r.min) return `Lampirkan minimal ${r.min} foto/video.`;
   if (r.video && !media.some((m) => m.kind === "video")) return "Tahap ini wajib video.";
@@ -107,7 +140,16 @@ export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTeru
       if (!(w > 0)) return "Isi berat penguji (kg).";
       return null;
     }
+    case 6:
+      if (!opsi.byPic && !adaBahan(f)) return "Isi jumlah bahan Gudang yang dipakai.";
+      return (f.note ?? "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
+    case 7: return opsi.byPic || adaBahan(f) ? null : "Isi jumlah bahan Gudang yang dipakai.";
     case 9: return null;
+    case 10:
+      if (!f.mattressStyle) return "Pilih model kasur.";
+      if ((f.fabricSpec ?? "").trim().length < 2) return "Isi spesifikasi/warna kain.";
+      if ((f.borderColor ?? "").trim().length < 2) return "Isi warna list.";
+      return opsi.cornerV2 ? validasiMulaiCorner(f, opsi.cornerBrief) : null;
     case 11:
       if (!CHECKLIST_CORNER.every((c) => f.checklist?.[c.key])) return "Lengkapi checklist jahitan.";
       if (opsi.cornerV2) {
@@ -123,13 +165,21 @@ export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTeru
 const opt = (s?: string) => (s && s.trim() ? s.trim() : undefined);
 
 /** Payload server dari formulir (bentuk SAMA dengan buildStepPayload web). */
-export function payloadLangkah(stepNo: number, f: FormLangkah, opsi: { cornerV2?: boolean } = {}): Record<string, unknown> {
+const barisBahan = (f: FormLangkah) => (f.materials ?? []).filter((m) => angka(m.qty) > 0).map((m) => ({ materialId: m.materialId, qty: angka(m.qty) }));
+
+export function payloadLangkah(stepNo: number, f: FormLangkah, opsi: { cornerV2?: boolean; byPic?: boolean } = {}): Record<string, unknown> {
   switch (stepNo) {
     case 1: return { conditionConfirmed: !!f.conditionConfirmed, conditionNote: opt(f.conditionNote) };
     case 2: return { feelNote: (f.feelNote ?? "").trim() };
     case 3: return { oldMaterials: (f.oldMaterials ?? []).map((type) => ({ type })), note: opt(f.note) };
     case 4: return { heightBeforeCm: angka(f.heightBeforeCm), heightCompressedCm: angka(f.heightCompressedCm), testerWeightKg: angka(f.testerWeightKg), foundationIssues: [], note: opt(f.note) };
+    case 6: return { materials: opsi.byPic ? [] : barisBahan(f), note: (f.note ?? "").trim() };
+    case 7: return { materials: opsi.byPic ? [] : barisBahan(f), note: opt(f.note) };
     case 9: return { note: opt(f.note) };
+    case 10: return {
+      mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec ?? "").trim(), borderColor: (f.borderColor ?? "").trim(), materials: barisBahan(f), note: opt(f.note),
+      ...(opsi.cornerV2 ? { requestChecked: !!f.requestChecked, fabricMode: f.fabricMode, requestMatch: f.requestMatch, requestNote: opt(f.requestNote), salesConfirmation: opt(f.salesConfirmation) } : {}),
+    };
     case 11: return {
       ...(opsi.cornerV2 ? { cornerWork: (f.cornerWork ?? "").trim(), noDifference: !!f.noDifference, differenceNote: f.noDifference ? undefined : opt(f.differenceNote) } : {}),
       checklist: Object.fromEntries(CHECKLIST_CORNER.map((c) => [c.key, !!f.checklist?.[c.key]])),
@@ -170,3 +220,30 @@ export const bolehCobaLagi = (e: unknown) => {
   const s = (e as { status?: number })?.status;
   return !s || (s >= 500 && s !== 503);
 };
+
+// ---- Lapor kurang bahan (cermin ShortageSheet web) -------------------------------------------------------------------------
+
+/** Tombol "Bahan kurang" tampil? Cermin canShortage web: lane Meja, belum ada laporan terbuka, tahap 3–8, bukan menunggu hal lain. */
+export function bolehLaporKurang(card: Pick<RunCard, "shortage" | "next">, giliran: "TABLE" | "CORNER" | null): boolean {
+  const n = card.next;
+  if (giliran !== "TABLE" || card.shortage || !n?.stepNo || n.stepNo < 3 || n.stepNo > 8) return false;
+  return n.action !== "WAIT" || n.wait === "MATERIAL_NOT_READY";
+}
+
+export type BahanPilihan = { id: string; code: string; name: string };
+/** BOM unit dulu, lalu hasil cari katalog (tanpa duplikat). */
+export function bahanUrutBom(bom: { materialId: string; code: string; name: string }[] | undefined, katalog: BahanPilihan[]): BahanPilihan[] {
+  const dariBom = (bom ?? []).map((b) => ({ id: b.materialId, code: b.code, name: b.name }));
+  const ada = new Set(dariBom.map((b) => b.id));
+  return [...dariBom, ...katalog.filter((m) => !ada.has(m.id))];
+}
+
+/** Body POST /runs/:runId/material-shortage; qty kosong = tidak dikirim. null bila belum ada bahan dipilih. */
+export function bodyKurangBahan(card: Pick<RunCard, "revision" | "workCenterId">, dipilih: Record<string, { qty: string }>, catatan: string) {
+  const items = Object.entries(dipilih).map(([materialId, v]) => {
+    const q = angka(v.qty);
+    return q > 0 ? { materialId, qty: q } : { materialId };
+  });
+  if (!items.length) return null;
+  return { expectedRevision: card.revision, workCenterId: card.workCenterId, items, note: catatan.trim() || undefined };
+}
