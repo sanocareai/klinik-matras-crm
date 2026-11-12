@@ -12205,6 +12205,8 @@ model PengajuanPemakaianProduksiEvent {
 
   @@index([pengajuanId, createdAt], map: "pppe_pengajuan_waktu")
   @@map("pengajuan_pemakaian_produksi_events")
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // AI STUDIO — MVP 1 (November 2026)
 // Workspace terpisah untuk MELATIH & MENGUJI agent AI (agent pertama:
