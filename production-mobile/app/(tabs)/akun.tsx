@@ -5,6 +5,7 @@ import { aktifkanNotifikasi, pushTersedia, statusIzin, type StatusIzin } from "@
 import { useLayout } from "@/api/production";
 import { useSession } from "@/auth/session";
 import { Button, Card, Chip, Screen, Section, T } from "@/design/ui";
+import { PanelKeamanan } from "@/features/PanelKeamanan";
 import { TONE } from "@/design/tokens";
 import { ENV } from "@/lib/env";
 
@@ -45,6 +46,7 @@ export default function Akun() {
           {pesanNotif ? <T.Caption>{pesanNotif}</T.Caption> : null}
         </Card>
       </Section>
+      <PanelKeamanan />
       <View style={{ marginTop: 8 }}>
         <Button label="Keluar" kind="danger" icon={<LogOut color={TONE.red.text} size={20} />} onPress={() => void logout()} />
       </View>

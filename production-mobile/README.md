@@ -154,6 +154,27 @@ Token ditandai aplikasi oleh SERVER dari klaim token akses (bukan dari body); pe
 - Server menolak akun tanpa akses produksi (`NOT_PRODUCTION_TEAM`). Token Produksi hanya menjangkau
   `/api/production*`, `/api/units`, `/api/mobile`, `/api/auth/me` — bukan jalur Finance.
 - Tab yang tampil ditentukan `capabilities.production` dari server, bukan nama peran.
+- Sesi bertahan 14 hari sejak terakhir dipakai (maksimal 60 hari); setelah itu, atau setelah Keluar, perlu masuk lagi.
+
+### Masuk cepat & kunci aplikasi (sidik jari / wajah / PIN HP)
+
+Kode: `src/auth/biometrik.ts` (dialog sistem, `expo-local-authentication`), `src/auth/keamanan.ts` (store), layar `app/login.tsx`,
+`src/features/GerbangKunci.tsx` (layar kunci), `src/features/PanelKeamanan.tsx` (Akun › Keamanan). Tes: `keamanan.test.ts`, `login.test.tsx`.
+
+- **Masuk cepat** — saat masuk dengan kata sandi, centang "Simpan untuk masuk cepat" → setelah server menerima kata sandi, HP meminta
+  sidik jari/wajah/PIN HP sekali, lalu email + kata sandi disimpan di `expo-secure-store` (Android Keystore, hanya perangkat ini, tidak
+  ikut backup). Berikutnya layar login langsung memunculkan dialog sidik jari; kata sandi HANYA dibaca setelah lolos autentikasi.
+  Kata sandi yang sudah diganti (server 401) otomatis dihapus dan pengguna diminta mengetik kata sandi baru. Hapus: Akun › Keamanan.
+- **Kunci aplikasi** (mati bawaan) — dibuka dari nol atau kembali setelah 1/5/15/30 menit tidak dipakai → layar kunci + dialog sidik jari.
+  Menyalakan/mematikan wajib lolos autentikasi. Selama dialog terbuka (termasuk layar PIN HP dan kamera yang membuka aplikasi lain)
+  perpindahan latar belakang diabaikan, jadi tidak ada kunci berulang. Saat ke latar belakang isi layar ditutup (daftar aplikasi terbaru).
+- Cadangan selalu PIN/pola HP; HP tanpa kunci layar tidak bisa memakai fitur ini (dan tidak pernah terkunci di luar). Email terakhir
+  diingat untuk mengisi kolom login. Kolom login bertanda autofill (Google Password Manager).
+- `expo-local-authentication` = modul native baru → perlu **build APK/dev build baru** (bukan OTA).
+
+Diuji 12 Nov 2026 di emulator Pixel 8 (Android 17, sidik jari virtual) terhadap backend branch ini + salinan DB lokal: login + simpan,
+masuk cepat sidik jari, jari tak terdaftar ditolak, batal tanpa galat, masuk cepat via PIN HP, kunci saat cold start, buka via PIN
+setelah 70 dtk di layar PIN (tanpa kunci berulang), latar belakang 20 dtk (tidak terkunci) vs 65 dtk (terkunci), kata sandi diganti → dihapus.
 
 ## Menjalankan
 
@@ -173,6 +194,10 @@ Pakai *development build*, bukan Expo Go: izin kamera, nama paket, plugin native
 1. **Bangun APK dev SEKALI** (ulangi hanya bila dependensi native berubah):
    - di cloud: `npx eas build --profile development --platform android` (butuh `eas init` proyek ini + `EAS_PROJECT_ID`), atau
    - lokal: `npx expo run:android` (butuh Android SDK; HP tersambung USB dengan USB debugging).
+     Di laptop Windows ini: path proyek terlalu panjang untuk kompilasi C++ React Native (batas 260 karakter) dan disk C: sering penuh.
+     Build dari drive pendek + cache di D:, contoh (PowerShell `subst X: "<folder repo>"`, lalu di Git Bash):
+     `cd X:/production-mobile && GRADLE_USER_HOME=D:/sanss-build-cache/gradle JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" npx expo run:android`
+     — lepas lagi dengan `subst X: /D`.
 2. **Backend:** perubahan backend di branch ini belum ada di produksi, jadi login `app: "production"` hanya jalan di backend
    dari branch ini. Jalankan backend lokal (`cd backend && npm run dev`, port 4000) dan isi `.env`:
    - emulator: `EXPO_PUBLIC_API_URL=http://10.0.2.2:4000/api`

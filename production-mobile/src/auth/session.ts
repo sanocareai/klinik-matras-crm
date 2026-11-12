@@ -7,6 +7,7 @@ import type { Capabilities, LoginResponse, SessionUser } from "@/api/types";
 import { ENV } from "@/lib/env";
 import { log } from "@/lib/log";
 import { clearSession, getDeviceId, loadSession, saveSession, saveTokens } from "./storage";
+import { useKeamanan } from "./keamanan";
 
 // SESI — satu-satunya tempat yang memegang token di memori (SecureStore untuk persisten).
 //   restore()   saat app dibuka; capabilities dimuat ulang dari GET /auth/me.
@@ -76,6 +77,11 @@ export const useSession = create<SessionState>((set, get) => ({
       accessTokenExpiresAt: r.accessTokenExpiresAt, refreshTokenExpiresAt: r.refreshTokenExpiresAt,
     };
     await saveSession({ tokens, user: r.user, capabilities: r.capabilities });
+    // Baru saja membuktikan diri dengan kata sandi → tidak perlu dikunci; email diingat; kata sandi masuk cepat diperbarui bila berganti.
+    const k = useKeamanan.getState();
+    k.lepasKunci();
+    await k.ingatEmail(email).catch(() => {});
+    await k.perbaruiSandiTersimpan(email, password).catch(() => {});
     set({ status: "signedIn", user: r.user, capabilities: r.capabilities, sesiHilang: null });
   },
 

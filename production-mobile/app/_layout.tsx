@@ -13,6 +13,8 @@ import { Inter_800ExtraBold } from "@expo-google-fonts/inter/800ExtraBold";
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSession } from "@/auth/session";
+import { useKeamanan } from "@/auth/keamanan";
+import { GerbangKunci } from "@/features/GerbangKunci";
 import { pasangPendengarTautan, segarkanTokenPush } from "@/auth/push";
 import { C } from "@/design/tokens";
 
@@ -45,15 +47,19 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold });
   const status = useSession((s) => s.status);
+  const keamananSiap = useKeamanan((s) => s.siap);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (st) => {
       focusManager.setFocused(st === "active");
+      // Kunci aplikasi: ke belakang → tutup layar & catat waktu; ke depan → kunci bila lewat batas (src/auth/keamanan.ts).
+      if (st === "background") useKeamanan.getState().keBelakang();
+      if (st === "active") useKeamanan.getState().keDepan();
       if (st === "active") void useSession.getState().refreshMe(); // perubahan peran berlaku saat app dibuka lagi
     });
     return () => sub.remove();
   }, []);
-  useEffect(() => { void useSession.getState().restore(); }, []);
+  useEffect(() => { void useKeamanan.getState().muat(); void useSession.getState().restore(); }, []);
 
   // Push (hanya bila dinyalakan saat build): segarkan token diam-diam setelah masuk & saat kembali ke aplikasi.
   useEffect(() => {
@@ -63,7 +69,7 @@ export default function RootLayout() {
     return () => sub.remove();
   }, [status]);
 
-  const siap = fontsLoaded && status !== "loading";
+  const siap = fontsLoaded && status !== "loading" && keamananSiap; // gerbang kunci siap SEBELUM isi tampil (tidak ada kilasan data)
   useEffect(() => { if (siap) void SplashScreen.hideAsync(); }, [siap]);
   if (!siap) return null;
 
@@ -94,6 +100,7 @@ export default function RootLayout() {
           </Stack.Protected>
         </Stack>
         {status === "signedIn" ? <TautanNotifikasi /> : null}
+        <GerbangKunci />
       </QueryClientProvider>
     </SafeAreaProvider>
   );

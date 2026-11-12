@@ -79,6 +79,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     "expo-video",
+    // Sidik jari / wajah / PIN HP untuk masuk cepat & kunci aplikasi (izin USE_BIOMETRIC ditambahkan modulnya).
+    ["expo-local-authentication", { faceIDPermission: "SANSS Produksi memakai Face ID untuk masuk cepat dan membuka kunci aplikasi." }],
     ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#4A62E8" }],
     [
       "expo-build-properties",
