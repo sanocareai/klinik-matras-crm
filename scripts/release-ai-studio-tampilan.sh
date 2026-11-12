@@ -28,7 +28,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;; esac; done
-CAND_BRANCH="${CAND_BRANCH:-feat/ai-studio-on-9eedb8a0}"
+CAND_BRANCH="${CAND_BRANCH:-feat/ai-studio-tampilan-on-35fa88f9}"
 CAND_REF="refs/remotes/origin/cand-ast1"
 BUNDLE="${BUNDLE:-}"
 ALLOWED_RE='^(frontend/src/components/Layout\.jsx|frontend/src/pages/aiStudio/AiStudio\.jsx|frontend/src/styles/sanss-ai-studio\.css|frontend/tests/appleGelombang1\.test\.js|frontend/tests/shellSalesCrm\.test\.js|scripts/release-ai-studio-tampilan\.sh)$'
