@@ -41,7 +41,7 @@ Kamu sedang membalas chat WhatsApp customer. Balas HANYA dengan satu objek JSON 
 }
 Isi dataTerkumpul dengan SEMUA data yang sudah diketahui dari seluruh percakapan (bukan hanya pesan terakhir). prioritas handover: "TINGGI" untuk komplain/marah, selain itu "NORMAL".`;
 
-// Baca folder skill bawaan (backend/data/studio-skills/<slug>) → { path: isi }.
+// Baca folder skill bawaan (backend/src/services/agentStudio/skill-bawaan/<slug>) → { path: isi }.
 // Dipakai untuk menanam versi 1 saat tabel masih kosong.
 export function readSkillFolder(dir) {
   const files = {};

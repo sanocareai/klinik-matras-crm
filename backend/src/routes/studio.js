@@ -16,7 +16,7 @@ import { readSkillFolder } from "../services/agentStudio/skillLoader.js";
 import { runTurn, MODELS } from "../services/agentStudio/runtime.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SKILL_ROOT = path.join(__dirname, "../../data/studio-skills");
+const SKILL_ROOT = path.join(__dirname, "../services/agentStudio/skill-bawaan");
 
 export const studioRouter = express.Router();
 studioRouter.use(requireAuth);

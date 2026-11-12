@@ -10,7 +10,7 @@ Agent pertama: **Mattress Consultant** (skill `sano-mattress-consultant`).
 ## Yang dikirim
 | Bagian | Berkas |
 |---|---|
-| Skill bawaan (versi 1) | `backend/data/studio-skills/sano-mattress-consultant/` (SKILL.md + references) |
+| Skill bawaan (versi 1) | `backend/src/services/agentStudio/skill-bawaan/sano-mattress-consultant/` (di dalam image; BUKAN `backend/data` yang di produksi ditimpa volume persisten) (SKILL.md + references) |
 | Perakit prompt, cek keras, runtime | `backend/src/services/agentStudio/{skillLoader,checks,runtime}.js` |
 | API | `backend/src/routes/studio.js` → `/api/studio/*` |
 | Portal & izin | `backend/src/constants/permissions.js` (PORTALS `aistudio`: ADMIN/OWNER) |

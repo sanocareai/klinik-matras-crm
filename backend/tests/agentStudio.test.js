@@ -10,7 +10,7 @@ import { runChecks, extractPrices, countPriceAsks } from "../src/services/agentS
 import { runTurn, parseAgentJson, estimateCost, toModelMessages } from "../src/services/agentStudio/runtime.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = path.join(__dirname, "../data/studio-skills/sano-mattress-consultant");
+const SKILL_DIR = path.join(__dirname, "../src/services/agentStudio/skill-bawaan/sano-mattress-consultant");
 const PRODUCTS = [
   { name: "Paket Upgrade 160 Fondasi+lapisan Matras sehat", category: "Upgrade", price: 3290000, priceUnit: "per unit", active: true },
   { name: "Service 160 Fondasi+Tambah busa", category: "Servis", price: 1600000, priceUnit: "per unit", active: true },
