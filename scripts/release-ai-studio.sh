@@ -2,7 +2,7 @@
 # RILIS BACKEND + FRONTEND: AI Studio MVP 1 (workspace latih & uji agent AI "Mattress Consultant").
 #   Satu migrasi ADITIF (6 tabel studio_* + 4 enum Studio*, tanpa FK ke tabel lama, tanpa perubahan data).
 #   TIDAK ada jalur kirim ke customer: balasan AI hanya tampil di Playground internal. FAIL-CLOSED.
-#   Kandidat dikirim lewat bundle: BUNDLE=/tmp/ais1.bundle (branch feat/ai-studio-on-257e6112).
+#   Kandidat dikirim lewat bundle: BUNDLE=/tmp/ais1.bundle (branch feat/ai-studio-on-9eedb8a0).
 #   tr -d '\r' < scripts/release-ai-studio.sh | ssh ubuntu@43.133.152.6 'cat > /tmp/ais1.sh'
 #   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/ais1.bundle bash /tmp/ais1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # baca-saja
 #   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/ais1.bundle nohup bash /tmp/ais1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ais1.out 2>&1 < /dev/null &'
@@ -10,7 +10,7 @@
 #   STUDIO_ANTHROPIC_API_KEY=<kunci organisasi yang ditautkan ke Max> (nilai tidak pernah dicetak).
 #   Opsional STUDIO_MAX_COST_USD_MONTH (default 20). Kode lama mengabaikan kedua variabel ini.
 # ROLLBACK: kode saja, tanpa pemulihan database (lihat instruksi saat berhenti). Tabel studio_* diabaikan kode lama.
-# Pola dan pagar = scripts/release-task-meeting-sso.sh (live cce91dd7 → 257e6112). Kelonggaran KHUSUS rilis ini:
+# Pola dan pagar = scripts/release-task-meeting-sso.sh (live cce91dd7); baseline rilis ini = live 9eedb8a0 (ssc1, sidebar Sales CRM ringkas). Kelonggaran KHUSUS rilis ini:
 #   - schema.prisma: hanya baris tambahan yang sidik jarinya dipin (SCHEMA_ADD_SHA); satu baris dihapus pun = berhenti.
 #   - migrasi: tepat SATU berkas dengan sha256 dipin + pemindai pernyataan (allow-list per pernyataan) + uji negatif pemindai.
 #   - skill bawaan: 26 berkas .md di backend/src/services/agentStudio/skill-bawaan (tree git dipin; bukan kode yang dieksekusi).
@@ -21,8 +21,8 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-feat/ai-studio-on-257e6112}"
-EXPECT_BASE="257e611248c86d21c65d6873445d99f5cd5da7a0"
+CAND_BRANCH="${CAND_BRANCH:-feat/ai-studio-on-9eedb8a0}"
+EXPECT_BASE="9eedb8a059234ff36ab8319c793ce042322f4f8f"
 [ "$BASE_SHA" = "$EXPECT_BASE" ] || { echo "STOP: skrip ini diaudit untuk baseline ${EXPECT_BASE:0:8}, bukan ${BASE_SHA:0:8}" >&2; exit 1; }
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skill bawaan .md, + frontend/dist, lihat kepala berkas).
 ALLOWED_RE='^(backend/prisma/schema\.prisma|backend/prisma/migrations/20270101090000_add_ai_studio/migration\.sql|backend/src/constants/permissions\.js|backend/src/index\.js|backend/src/routes/studio\.js|backend/src/services/agentStudio/checks\.js|backend/src/services/agentStudio/runtime\.js|backend/src/services/agentStudio/skillLoader\.js|backend/src/services/agentStudio/skill-bawaan/sano-mattress-consultant/[A-Za-z0-9._/-]+\.md|backend/tests/agentStudio\.test\.js|backend/tests/authorize\.test\.js|docs/migration-log/ai-studio-mvp1\.md|frontend/src/api\.js|frontend/src/components/Layout\.jsx|frontend/src/components/WorkspaceSwitcher\.jsx|frontend/src/pages/Portal\.jsx|frontend/src/pages/aiStudio/AiStudio\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/dist/.+|scripts/release-ai-studio\.sh)$'
@@ -270,6 +270,14 @@ done
 for s in "hub/summary/me" "Pantauan Leader" "Lead tanpa spam" "Dibeli per pack" "drawer-deskripsi" "Catat hasil SO" "Definisi dan sumber angka" "Sumber & Link" "Kelola biaya iklan" "Iklan tidak terbaca" "Per kreatif" "Tanpa persetujuan (koreksi langsung Admin)" "Biaya kosong" "Catat dari catatan ini" "Batalkan pengajuan saya" "Dilaporkan sebagai pengajuan" "Aktif di periode" "ROAS (Booked) = nilai order"; do
   [ -n "$(cari_dist "$PREV_DIR" js "$s")" ] || die "[skrip] '${s}' tidak ada di dist aktif — perbaiki pembanding"
   [ -n "$(cari_dist "$NEW_DIR" js "$s")" ] || die "dist baru KEHILANGAN fitur: ${s}"
+done
+# Sidebar Sales CRM ringkas (ssc1, live 9eedb8a0): menu yang DICABUT tidak boleh kembali; rute halamannya tetap ada.
+# Diperiksa SEBELUM aset lama dibawa (dist aktif memuat chunk lama yang masih menyebut menu itu).
+for d1 in 'to:"/marketing/pengajuan-biaya"' 'to:"/marketing/laporan-biaya"' 'to:"/sales-intelligence"' 'to:"/copilot"' 'to:"/automation"' 'section:"AI & OTOMASI"' 'sidebar-help-btn'; do
+  [ -z "$(cari_dist "$NEW_DIR" js "$d1")" ] || die "dist baru MENGEMBALIKAN menu yang dicabut ssc1: ${d1}"
+done
+for k1 in 'to:"/kendali/pengajuan-biaya"' 'to:"/warehouse/pengajuan-biaya"' 'to:"/broadcast-sales"' 'to:"/laporan"' 'path:"/copilot"' 'path:"/automation"' 'path:"/sales-intelligence"' 'path:"/marketing/pengajuan-biaya"' 'path:"/ai-studio"' 'to:"/ai-studio/test-case"'; do
+  [ -n "$(cari_dist "$NEW_DIR" js "$k1")" ] || die "dist baru KEHILANGAN menu/rute yang harus ada: ${k1}"
 done
 [ -n "$(cari_dist "$NEW_DIR" css ".gud-halaman")" ] || die "CSS baru KEHILANGAN .gud-halaman"
 grep -qF 'addEventListener("push"' "$NEW_DIR/frontend/dist/sw.js" || die "sw.js baru KEHILANGAN penerima notifikasi push"
