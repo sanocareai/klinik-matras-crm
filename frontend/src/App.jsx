@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { legacyRedirectFor } from "./lib/legacyProductionRoutes.js";
 import { deactivateDemo } from "./features/production/demo/demoGate.js";
 import Login from "./pages/Login.jsx";
+import { api } from "./api.js";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
@@ -61,6 +62,11 @@ export default function App() {
     }
     deactivateDemo(); // Mode Latihan selalu mati saat keluar (default OFF untuk pengguna berikutnya)
     aturUlangPeriodeFinance(); // rentang tanggal Finance bersama kembali ke bulan berjalan (tidak diwarisi pengguna berikutnya)
+    // D-200 tahap 4 — best-effort, TIDAK PERNAH memblokir logout: beri tahu
+    // Task & Meeting untuk mencabut sesinya. Dipanggil SEBELUM token dihapus
+    // (endpoint ini butuh Authorization header), hasilnya diabaikan — gagal
+    // di sini tidak pernah menahan atau mengubah logout lokal di bawah.
+    api.logout().catch(() => {});
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     disconnectSocket();

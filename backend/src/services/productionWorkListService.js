@@ -7,6 +7,7 @@
 // Scope: "aktif" (default) = order yang masih punya unit belum Terkirim/Dibatalkan; "riwayat" = order yang seluruh unitnya Terkirim/Dibatalkan.
 // Order selesai tidak memenuhi antrean aktif. Order batal, pelanggan SPAM/internal tidak ditampilkan (sama dengan daftar Order Produksi "nyata").
 import { UNIT_INCLUDE, perkayaBarisUnit } from "./productionOrderList.js";
+import { whereUnitProduksi } from "../lib/domain/unitBukanProduksi.js";
 import { displayStatusOfOrder, displayStatusOfUnit } from "../lib/domain/productionDisplay.js";
 import {
   ATTENTION, UNIT_SELESAI, WORK_FILTER_KEYS, isUnitAktif, tindakanTersedia, WORK_SORT_KEYS, hitungFilter, lolosFilter, perhatianUnit, ringkasOrder, urutkanOrder,
@@ -90,18 +91,20 @@ export async function listWorkList(prisma, query = {}, { now = new Date() } = {}
   const cari = whereCari(query.q);
 
   // Hitungan ringkas dua antrean (selalu jujur dari server): aktif vs riwayat.
-  const adaAktif = { status: { notIn: [...UNIT_SELESAI] } };
+  // Kasur SEWA bukan pekerjaan Produksi (keputusan Owner 12 Nov 2026): unit sewa tidak dihitung sebagai unit aktif/riwayat dan tidak dimuat. Lihat lib/domain/unitBukanProduksi.js.
+  const adaAktif = { AND: [{ status: { notIn: [...UNIT_SELESAI] } }, whereUnitProduksi()] };
+  const unitProduksi = whereUnitProduksi();
   const whereOrderAktif = { ...ORDER_NYATA, units: { some: adaAktif } };
-  const whereOrderRiwayat = { ...ORDER_NYATA, units: { some: {}, none: adaAktif } };
+  const whereOrderRiwayat = { ...ORDER_NYATA, units: { some: unitProduksi, none: adaAktif } };
   const [jumlahAktif, jumlahRiwayat] = await Promise.all([prisma.order.count({ where: whereOrderAktif }), prisma.order.count({ where: whereOrderRiwayat })]);
 
   if (scope === "riwayat") {
-    const where = { ...ORDER_NYATA, AND: [{ units: { some: {}, none: adaAktif } }, ...(cari ? [{ units: { some: cari } }] : [])] };
+    const where = { ...ORDER_NYATA, AND: [{ units: { some: unitProduksi, none: adaAktif } }, ...(cari ? [{ units: { some: { AND: [cari, unitProduksi] } } }] : [])] };
     const [total, orders] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.findMany({ where, select: ORDER_SELECT, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], skip: (page - 1) * pageSize, take: pageSize }),
     ]);
-    const units = await prisma.unit.findMany({ where: { orderId: { in: orders.map((o) => o.id) } }, include: UNIT_INCLUDE, orderBy: [{ seq: "asc" }, { id: "asc" }] });
+    const units = await prisma.unit.findMany({ where: { orderId: { in: orders.map((o) => o.id) }, AND: [unitProduksi] }, include: UNIT_INCLUDE, orderBy: [{ seq: "asc" }, { id: "asc" }] });
     const rows = await perkayaBarisUnit(prisma, units, { kelengkapan: false });
     const alur = await muatAlurMeja(prisma, units.map((u) => u.id)); // hanya untuk mendeteksi pekerjaan Meja yang belum ditutup
     const byOrder = new Map(); for (const r of rows) { if (!byOrder.has(r.orderId)) byOrder.set(r.orderId, []); byOrder.get(r.orderId).push(r); }
@@ -112,12 +115,12 @@ export async function listWorkList(prisma, query = {}, { now = new Date() } = {}
   }
 
   // AKTIF: semua order yang punya unit aktif (dan cocok pencarian) dimuat → diperkaya → disaring/diurutkan di memori → dipaginasi per order.
-  const orderIdsKandidat = (await prisma.order.findMany({ where: { ...ORDER_NYATA, AND: [{ units: { some: adaAktif } }, ...(cari ? [{ units: { some: cari } }] : [])] }, select: { id: true }, take: BATAS_UNIT_AKTIF + 1 })).map((o) => ({ orderId: o.id }));
+  const orderIdsKandidat = (await prisma.order.findMany({ where: { ...ORDER_NYATA, AND: [{ units: { some: adaAktif } }, ...(cari ? [{ units: { some: { AND: [cari, unitProduksi] } } }] : [])] }, select: { id: true }, take: BATAS_UNIT_AKTIF + 1 })).map((o) => ({ orderId: o.id }));
   if (orderIdsKandidat.length > BATAS_UNIT_AKTIF) { const e = new Error(`Terlalu banyak order aktif (${BATAS_UNIT_AKTIF}+). Persempit dengan pencarian.`); e.statusCode = 413; e.code = "TERLALU_BANYAK"; throw e; }
   const ids = orderIdsKandidat.map((x) => x.orderId);
   const [orders, units] = await Promise.all([
     prisma.order.findMany({ where: { id: { in: ids } }, select: ORDER_SELECT }),
-    prisma.unit.findMany({ where: { orderId: { in: ids } }, include: UNIT_INCLUDE, orderBy: [{ seq: "asc" }, { id: "asc" }] }),
+    prisma.unit.findMany({ where: { orderId: { in: ids }, AND: [unitProduksi] }, include: UNIT_INCLUDE, orderBy: [{ seq: "asc" }, { id: "asc" }] }),
   ]);
   const rows = await perkayaBarisUnit(prisma, units, { kelengkapan: false });
   const alurByUnit = await muatAlurMeja(prisma, rows.map((r) => r.id));

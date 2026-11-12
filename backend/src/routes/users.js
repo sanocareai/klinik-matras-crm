@@ -11,6 +11,7 @@ import { rolesOf } from "../middleware/authorize.js";
 import { bulatkanFoto } from "../services/avatarImage.js";
 import { revokeAllForUser } from "../services/mobileSession.js";
 import { DIVISI_KEANGGOTAAN } from "../services/expenseSubmission/access.js";
+import { notifyHubRevoke, syncHubAccessOnUserChange } from "../services/hubSso.js";
 
 // Peran valid — sumber kebenaran TUNGGAL adalah kunci ROLE_PERMISSIONS
 // (constants/permissions.js), supaya daftar ini tidak pernah drift dari
@@ -406,6 +407,15 @@ userRouter.patch("/:id", adminOnly, async (req, res) => {
     if (active === false) {
       revokeAllForUser(prisma, req.params.id, "akun_dinonaktifkan").catch((e) => console.error("[users] cabut sesi mobile:", e.message));
     }
+    // D-200 — akun dinonaktifkan ATAU role (kolom lama, jalur materializeRoles
+    // belum tentu tersentuh) berubah: cabut kode handoff SANSS yang belum
+    // terpakai + beri tahu HUB mencabut sesinya. Best-effort (tidak pernah
+    // menggagalkan respons ini) — lihat notifyHubRevoke.
+    if (active === false || role !== undefined) {
+      syncHubAccessOnUserChange(req.params.id, { deactivated: active === false }).catch((e) =>
+        console.error("[users] sinkron akses Task & Meeting gagal:", e.message),
+      );
+    }
     res.json({
       ...updated,
       assignedCustomersCount: updated._count.assignedCustomers,
@@ -473,6 +483,14 @@ userRouter.delete("/:id/roles/:role", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "User harus punya minimal 1 peran" });
     }
     await prisma.userRole.deleteMany({ where: { userId: req.params.id, role: req.params.role } });
+    // D-200 — kalau pencabutan role ini menghilangkan HUB_ACCESS (dicek ULANG
+    // dari database setelah delete, bukan ditebak dari nama role yang
+    // dicabut), cabut kode handoff SANSS + sesi HUB. Role yang tidak
+    // memengaruhi Task & Meeting (mis. mencabut SALES dari seseorang yang
+    // juga ADMIN) sengaja TIDAK memaksa logout — lihat syncHubAccessOnUserChange.
+    syncHubAccessOnUserChange(req.params.id, { deactivated: false, reason: "role_changed" }).catch((e) =>
+      console.error("[users] sinkron akses Task & Meeting gagal:", e.message),
+    );
     const rows = await prisma.userRole.findMany({ where: { userId: req.params.id }, select: { role: true } });
     res.json({ roles: rows.map((r) => r.role) });
   } catch (err) {
@@ -591,6 +609,11 @@ userRouter.delete("/:id", adminOnly, async (req, res) => {
     // SalesTarget: metadata pribadi, hapus bersama user-nya (lihat komentar di atas).
     await prisma.salesTarget.deleteMany({ where: { userId } });
     await prisma.user.delete({ where: { id: userId } });
+    // D-200 — user dihapus sama sekali: beri tahu HUB mencabut sesinya.
+    // Best-effort, setelah delete sudah commit (lihat notifyHubRevoke).
+    notifyHubRevoke({ sub: userId, reason: "deactivated" }).catch((e) =>
+      console.error("[users] beri tahu HUB (hapus user) gagal:", e.message),
+    );
 
     res.json({ ok: true });
   } catch (err) {

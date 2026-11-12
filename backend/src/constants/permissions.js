@@ -224,6 +224,36 @@ export const PERMISSIONS = {
   // memegang FINANCE_ADMIN dan PRODUCTION_SETTINGS_WRITE — "Finance Admin" dan "Production Admin" bukan peran terpisah di sistem ini). Peran biasa hanya MEMBACA/MEMILIH katalog
   // (finance:read di form PKR). SENGAJA bukan production_settings:write: katalog ini dipakai Finance dan Produksi, dan izin pengaturan Produksi tidak boleh jadi pintu belakang.
   PKR_CATALOG_MANAGE: "pkr_catalog:manage",
+
+  // --- Workspace Task & Meeting (D-200, 26 September 2026) ---------------
+  // Aplikasi SANO-HUB (Next.js + database sendiri) berjalan TERPISAH dari
+  // SANSS, tapi identitas & hak akses tetap milik SANSS: siapa yang boleh
+  // dibukakan pintunya diputuskan di sini, lewat SSO (docs/HUB-SSO.md).
+  // DEFAULT DENY — tidak ada role yang memegangnya kecuali disebut eksplisit
+  // di ROLE_PERMISSIONS. Pemetaan awal HANYA ADMIN/OWNER (OWNER mewarisi
+  // ADMIN_PERMS); melebarkan ke role lain = tambah baris di sini + tes, bukan
+  // cek role ad-hoc di route.
+  //   HUB_ACCESS — boleh menerima handoff & masuk workspace (peran HUB: MEMBER)
+  //   HUB_ADMIN  — dipetakan ke peran ADMIN di workspace itu (OWNER SANSS → OWNER)
+  HUB_ACCESS: "hub:access",
+  HUB_ADMIN: "hub:admin",
+
+  // --- Main Hub: ringkasan Task & Meeting lintas leader (Okt 2026) -------
+  // Perubahan arah Owner: Main Hub SANSS jadi pusat task SELURUH leader,
+  // bukan cuma kartu pembuka HUB. "Tugas Saya"/"Hasil Meeting" di Main Hub
+  // adalah RINGKASAN MILIK SENDIRI — dipagari HUB_ACCESS yang SUDAH ada (kalau
+  // boleh masuk HUB, boleh lihat ringkasan tugas/meeting miliknya sendiri di
+  // Main Hub; itu strictly LEBIH SEMPIT daripada yang sudah ia lihat kalau
+  // membuka HUB langsung). TIDAK butuh permission baru untuk itu.
+  //
+  // "Pantauan Leader" (lintas leader/divisi) beda cerita — ini permission
+  // BARU, DEFAULT DENY, dan SENGAJA TIDAK masuk ADMIN_PERMS: instruksi Owner
+  // eksplisit "jangan otomatis buka ke semua leader di tahap ini (Owner-only
+  // dulu)" — jadi bahkan ADMIN biasa TIDAK memegangnya kecuali ditambahkan
+  // eksplisit nanti. Hanya dipetakan ke OWNER sendiri di bawah, terpisah dari
+  // ADMIN_PERMS, supaya pelebaran ke role lain kelak = satu baris + tes, BUKAN
+  // melebarkan ADMIN_PERMS (yang akan diam-diam ikut membuka ke ADMIN juga).
+  HUB_LEADER_MONITOR: "hub:leader_monitor",
 };
 
 const P = PERMISSIONS;
@@ -294,6 +324,8 @@ const ADMIN_PERMS = [
   P.DELIVERY_CONTROL_ACCESS,
   // Katalog Item PKR (kategori, produk, pemetaan rute Produksi, komposisi bundel).
   P.PKR_CATALOG_MANAGE,
+  // D-200 — workspace Task & Meeting. Pemetaan awal HANYA ADMIN/OWNER.
+  P.HUB_ACCESS, P.HUB_ADMIN,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -307,7 +339,10 @@ export const ROLE_PERMISSIONS = {
   // otomatis TIDAK kebagian tanpa perlu disentuh sama sekali. Permission-
   // nya = ADMIN penuh + B2B_READ/WRITE — role ini TIDAK PERNAH mengurangi
   // apa pun, cuma menambah.
-  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE, P.FINANCE_HARGA_BERLAKU_EDIT, P.FINANCE_HARGA_BERLAKU_APPROVE],
+  // HUB_LEADER_MONITOR (Pantauan Leader, Main Hub) Owner-only di sini SENGAJA
+  // — lihat catatan panjang di PERMISSIONS.HUB_LEADER_MONITOR. Menambahkannya
+  // ke ADMIN_PERMS akan diam-diam membukanya untuk ADMIN juga.
+  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE, P.FINANCE_HARGA_BERLAKU_EDIT, P.FINANCE_HARGA_BERLAKU_APPROVE, P.HUB_LEADER_MONITOR],
 
   SALES: [
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
@@ -521,6 +556,35 @@ export const ROLE_PERMISSIONS = {
     // sendiri (tanpa INCENTIVE_SNAPSHOT_CREATE/REVIEW).
     P.INCENTIVE_SNAPSHOT_APPROVE, P.INCENTIVE_SNAPSHOT_READ,
   ],
+
+  // HUB_MEMBER — Main Hub, akses Task & Meeting eksplisit untuk leader (Okt
+  // 2026, keputusan Owner). SATU-SATUNYA permission: P.HUB_ACCESS. BUKAN
+  // P.HUB_ADMIN — hubRoleFor memetakan ini ke peran HUB "MEMBER", bukan
+  // "ADMIN" (lihat lib/domain/hubSso.js#hubRoleFor: OWNER→OWNER,
+  // HUB_ADMIN→ADMIN, HUB_ACCESS saja→MEMBER). Ini MEKANISME GRANT
+  // EKSPLISIT per-pengguna — pola yang SAMA dengan role aditif sempit lain
+  // di berkas ini (LEADER_DRIVER, PRODUCTION_DOCUMENTER): Admin/Owner
+  // menambahkannya SATU PER SATU lewat Pengguna & Peran (POST
+  // /users/:id/roles), BUKAN diwariskan otomatis dari role operasional
+  // (SALES, PRODUCTION_LEAD, dst.) atau dari UserDivision.isLeader — dua
+  // hal itu TETAP sepenuhnya terpisah dari HUB_ACCESS. Seorang leader yang
+  // ditandai isLeader=true tapi belum diberi HUB_MEMBER secara eksplisit
+  // TIDAK mendapat akses HUB sama sekali (tampil "Belum terhubung" di
+  // Pantauan Leader, bukan error).
+  //
+  // "Scope terbatas, bukan ADMIN" (instruksi Owner): begitu di DALAM HUB,
+  // peran "MEMBER" tunduk pada model otorisasi HUB SENDIRI — workspace
+  // flat, setiap anggota (MEMBER/ADMIN/OWNER) bisa melihat/mengubah task
+  // & meeting siapa pun di workspace yang sama (desain HUB sejak awal,
+  // bukan sesuatu yang diubah di sini — lihat docs/HUB-SSO.md "Main Hub —
+  // onboarding leader"). Yang BENAR-BENAR dibatasi oleh HUB_MEMBER (vs
+  // ADMIN_PERMS) adalah di SISI SANSS: Main Hub TIDAK menampilkan "Pantauan
+  // Leader" (itu P.HUB_LEADER_MONITOR, Owner-only, permission terpisah),
+  // dan ringkasan "Tugas Saya"/"Hasil Meeting" di Main Hub SANSS sendiri
+  // (bukan di dalam HUB) hanya pernah menampilkan data milik pengguna itu
+  // sendiri (dikunci oleh identitas sesi, tidak menerima parameter id dari
+  // browser sama sekali).
+  HUB_MEMBER: [P.HUB_ACCESS],
 };
 
 // Portal → role yang boleh masuk. Dipakai landing page untuk memilih kartu

@@ -1,0 +1,1 @@
+import{r as c}from"./vendor-query-lt1T2TzN.js";import{u as i,a as n}from"./vendor-react-zxmyrhiv.js";import{b2 as h}from"./index-UE65BoDY.js";function T(t){const[e]=i(),{pathname:s}=n(),{replaceActivePath:o}=h(),[r,p]=c.useState(e.get("tahap")??"");return[r,a=>{p(a),o(a?`${t??s}?tahap=${a}`:t??s)}]}export{T as u};

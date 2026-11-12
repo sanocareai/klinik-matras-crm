@@ -9,6 +9,7 @@
 //
 // "SELESAI": posisi SAAT INI (status Siap Kirim ke atas) dibedakan dari KEJADIAN selesai bertanggal (bukti resmi: serah barang jadi, fase handoff, pelepasan Siap Kirim, status kerja Selesai).
 // Selesai tanpa tanggal tercatat dilaporkan sebagai jumlah sendiri — TIDAK ditebak ke tren tanggal dan TIDAK ditampilkan sebagai 0.
+import { whereUnitProduksiAtauBerbiaya } from "../lib/domain/unitBukanProduksi.js";
 import { parsePeriod } from "../lib/domain/productionMetrics.js";
 import { BOARD_DEFAULTS, stationLabel } from "../lib/domain/productionBoard.js";
 import { TIPE_OP } from "./finance/hargaBerlaku.js";
@@ -82,7 +83,8 @@ export async function bangunKonteks(prisma, query = {}) {
   const periode = kunciPeriode(query);
   const hanyaPemakaian = String(query.hanyaPemakaian ?? "") === "1";
   const semuaMov = await muatPergerakan(prisma);
-  const units = await prisma.unit.findMany({ where: { status: { not: "CANCELLED" } }, select: { id: true, unitCode: true, status: true, orderId: true, seq: true, createdAt: true, order: { select: { id: true, orderNumber: true, status: true, customer: { select: { name: true } } } } } });
+  // Kasur SEWA bukan pekerjaan Produksi (keputusan Owner 12 Nov 2026) — tidak ikut laporan, kecuali sudah punya pergerakan stok (biaya tercatat tetap terlihat).
+  const units = await prisma.unit.findMany({ where: { status: { not: "CANCELLED" }, AND: [whereUnitProduksiAtauBerbiaya()] }, select: { id: true, unitCode: true, status: true, orderId: true, seq: true, createdAt: true, order: { select: { id: true, orderNumber: true, status: true, customer: { select: { name: true } } } } } });
   const unitById = new Map(units.map((u) => [u.id, u]));
   const timelines = await loadWorkshopTimelines(prisma, units.map((u) => u.id));
   const selesai = klasifikasiSelesai(units, await muatBuktiSelesai(prisma, units.map((u) => u.id), timelines));

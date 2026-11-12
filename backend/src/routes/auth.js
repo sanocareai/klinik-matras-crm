@@ -8,6 +8,7 @@ import { capabilitiesFor } from "../services/capabilities.js";
 import { divisiEfektif, muatDivisiPengguna } from "../services/expenseSubmission/access.js";
 import { createFailureLimiter, clientIp, tooMany } from "../lib/rateLimit.js";
 import { cariUserUntukLogin } from "../lib/loginEmail.js";
+import { notifyHubRevoke, portalsWithHub, revokeHandoffs } from "../services/hubSso.js";
 
 export const authRouter = express.Router();
 
@@ -109,7 +110,10 @@ authRouter.post("/login", async (req, res) => {
         roles,
         divisions: await divisiUntukKlien(user.id, roles),
         avatarUrl: user.avatarUrl,
-        portals: portalsFor({ roles }),
+        // D-200 — portalsFor({roles}) TIDAK diubah; kartu Task & Meeting
+        // ditambahkan TERPISAH oleh portalsWithHub (flag ON + HUB_ACCESS),
+        // tidak lewat daftar role statis PORTALS.
+        portals: portalsWithHub({ roles, role: user.role }),
         capabilities: capabilitiesFor({ roles, role: user.role }),
         // isOnline/onlineSince (12 Sep 2026) — driver-mobile langsung tahu
         // status Online/Offline sejak login pertama, tidak perlu panggilan
@@ -140,11 +144,33 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const roles = await loadRoles(user);
     // capabilities (19 Sep 2026): daftar kemampuan dari role/permission AKTUAL,
     // supaya klien tidak menyalin peta role→izin. Additive — field lama utuh.
-    res.json({ ...user, roles, divisions: await divisiUntukKlien(user.id, roles), portals: portalsFor({ roles }), capabilities: capabilitiesFor({ roles, role: user.role }) });
+    res.json({ ...user, roles, divisions: await divisiUntukKlien(user.id, roles), portals: portalsWithHub({ roles, role: user.role }), capabilities: capabilitiesFor({ roles, role: user.role }) });
   } catch (err) {
     console.error("Auth me error:", err.message);
     res.status(500).json({ error: "Server error: " + err.message });
   }
+});
+
+// POST /api/auth/logout — D-200. Login web/JWT SENGAJA stateless (D-001/
+// D-010: tidak ada tabel sesi web, tidak seperti sesi mobile Finance di
+// routes/mobileAuth.js) — jadi endpoint ini TIDAK mencabut token JWT
+// pemanggil sendiri (tidak ada yang bisa dicabut sisi server) dan frontend
+// TETAP menghapus token dari localStorage sendiri seperti sebelumnya
+// (App.jsx#handleLogout). Satu-satunya pekerjaan nyata di sini: memberi tahu
+// Task & Meeting untuk mencabut SESI HUB milik user ini, kalau ada. Dipanggil
+// best-effort dari frontend — TIDAK PERNAH boleh menggagalkan logout, jadi
+// balasannya SELALU 200 (bahkan kalau HUB tidak terjangkau; HUB sendiri
+// punya jaring pengaman introspeksi berkala ≤60 detik untuk kasus itu).
+authRouter.post("/logout", requireAuth, async (req, res) => {
+  try {
+    await revokeHandoffs({ userId: req.user.id, reason: "logout" });
+  } catch (err) {
+    console.error("[auth] cabut kode handoff SANSS saat logout gagal:", err.message);
+  }
+  notifyHubRevoke({ sub: req.user.id, reason: "logout" }).catch((err) =>
+    console.error("[auth] beri tahu HUB saat logout gagal:", err.message),
+  );
+  res.json({ ok: true });
 });
 
 // GET /api/auth/portal-summary — satu angka HIDUP per workspace, untuk kartu
