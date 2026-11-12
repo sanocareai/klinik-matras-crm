@@ -76,6 +76,8 @@ export type RunNext = {
   layersRequired?: boolean;
   /** Tahap 7 (LAYANAN): hasil aktual susunan wajib dicatat di Catatan Komponen dulu. */
   layersAfterRequired?: boolean;
+  /** Tahap 8: hasil uji tekstur sebelumnya (rework). */
+  lastVerdict?: string | null;
 };
 
 /** Status 12 langkah Produksi V2 (stepStatuses di server). NA = tidak berlaku untuk unit ini. */

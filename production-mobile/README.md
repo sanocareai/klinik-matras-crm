@@ -31,8 +31,8 @@ Foto & video diambil dari **kamera (foto atau video) atau galeri**, langsung diu
 tahap yang mewajibkan video (uji rasa awal, uji fondasi) tidak bisa dikirim tanpa video. Payload & validasi mencerminkan
 `frontend/src/features/production/experience.js` — bila salah satu berubah, samakan (`src/features/langkah.ts` + tesnya).
 
-**Masih lewat SANSS Web:** tahap 8 (uji tekstur, PIC QC), jalur Pengerjaan Pesanan (BUILD), dan tahap 3/7 yang
-menunggu Catatan Komponen. (Putusan QC → slice 2b; jadwal & PIC → slice 3; bahan & Corner → slice 4; Diagnosa → slice 5.)
+**Masih lewat SANSS Web:** jalur Pengerjaan Pesanan (BUILD) dan racikan rencana di Catatan Komponen.
+(Putusan QC → slice 2b; jadwal & PIC → slice 3; bahan & Corner → slice 4; Diagnosa → slice 5; Catatan Komponen & tahap 8 → slice 6.)
 
 ## Slice 2b — QC, urutan target, berat dari order, video
 
@@ -91,6 +91,22 @@ BOM; bahan manual ≤20 untuk dipetakan Production Lead) · Kirim (kesimpulan �
 
 Validasi = aturan server saat submit (`src/features/diagnosa.ts` + tes). Bila penutupan tahap gagal, diagnosis tetap tersimpan dan layar
 menawarkan "Tutup tahap Diagnosa". Draf isian disimpan di memori aplikasi per unit (bukan disk); foto/video baru tidak ikut draf.
+
+## Slice 6 — Catatan Komponen & uji tekstur (alur LAYANAN lengkap di HP)
+
+| Bagian | Pengisi | Kapan ditunggu kartu (`next`) |
+|---|---|---|
+| Lapisan sebelum dibongkar (atas→bawah: bahan, kondisi, tebal) | Meja | tahap 3 `gated` + `layersRequired` |
+| Fondasi sebelum dibongkar | Meja | opsional |
+| Hasil aktual sesudah pengerjaan (isi dari racikan rencana; beda dari rencana wajib beralasan) | Meja | `AFTER_PENDING` / tahap 7 `layersAfterRequired` |
+| QC sebelum bongkar · Uji fondasi awal · Uji fondasi baru · Uji kasur jadi | PIC QC (`qc:write`) | `QC_BEFORE_PENDING` · `FOUNDATION_TEST_PENDING` · `FOUNDATION_NEW_TEST_PENDING` · `FINISHED_TEST_PENDING` |
+| Tahap 8 Uji Tekstur Akhir (PAS / terlalu keras / terlalu empuk, video wajib) | Meja | jalur tanpa gerbang perakitan |
+
+Endpoint: `GET/POST /production-v2/component-notes/units/:unitId[/sections/:section]`, unggah `…/units/:unitId/upload`,
+katalog `…/component-notes/materials`, antrean PIC QC `…/component-notes/qc-queue` (tab QC → "Pengujian ditunggu").
+Pintu masuk: tombol "Isi …" di Detail Unit saat kartu menunggu catatan itu. Setiap simpan = versi baru; koreksi wajib beralasan.
+Berat penguji pengujian = berat AKTUAL (tidak diisi otomatis; berat order hanya ditampilkan sebagai acuan). Racikan rencana tetap di SANSS Web.
+Logika: `src/features/komponen.ts` (cermin `componentNotesModel.js`) + tes.
 
 ## Push notifikasi
 

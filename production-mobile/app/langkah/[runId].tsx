@@ -8,7 +8,7 @@ import { catatLangkah, kunciNiat } from "@/api/aksi";
 import { ApiError, pesanUntukPengguna } from "@/api/errors";
 import { useRunCard } from "@/api/production";
 import {
-  CHECKLIST_CORNER, KESESUAIAN, LABEL_KONFIRMASI_SALES, LABEL_TAHAP, MATERIAL_LAMA, MODE_KAIN, MODEL_KASUR, PETUNJUK, aturanMedia, bolehCobaLagi, formulirDidukung,
+  CHECKLIST_CORNER, KESESUAIAN, VERDIK_TEKSTUR, LABEL_KONFIRMASI_SALES, LABEL_TAHAP, MATERIAL_LAMA, MODE_KAIN, MODEL_KASUR, PETUNJUK, aturanMedia, bolehCobaLagi, formulirDidukung,
   langkahBahanOlehPic, payloadLangkah, validasiLangkah, type FormLangkah,
 } from "@/features/langkah";
 import { BahanDipakai, BahanOlehPic, PermintaanCorner, PratinjauSelesai } from "@/features/Bahan";
@@ -54,7 +54,7 @@ export default function Langkah() {
     if (lamp.sibuk) { setGalat("Tunggu unggahan selesai."); return; }
     if (lamp.adaGagal) { setGalat("Ada unggahan gagal — ulangi atau hapus dulu."); return; }
     // Berat penguji uji fondasi: bawaan = berat badan customer (sama dengan yang tampil di isian).
-    const isi: FormLangkah = stepNo === 4 && f.testerWeightKg === undefined && beratBawaan ? { ...f, testerWeightKg: beratBawaan } : f;
+    const isi: FormLangkah = (stepNo === 4 || stepNo === 8) && f.testerWeightKg === undefined && beratBawaan ? { ...f, testerWeightKg: beratBawaan } : f;
     const v = validasiLangkah(stepNo, isi, lamp.selesai, { track: c.track, gated: !!next.gated, cornerV2, byPic, cornerBrief: brief });
     if (v) { setGalat(v); return; }
     setBusy(true); setGalat(null);
@@ -142,6 +142,15 @@ export default function Langkah() {
                     <BahanDipakai diserahkan={diserahkan} value={f.materials ?? []} onChange={(v) => set({ materials: v })} kosong="" />
                   </>
                 ) : null}
+              </>
+            ) : null}
+            {stepNo === 8 ? (
+              <>
+                {next?.lastVerdict ? <Card style={{ backgroundColor: TONE.orange.tint }}><T.Sub style={{ color: TONE.orange.text }}>Uji sebelumnya: {VERDIK_TEKSTUR.find((v) => v.value === next.lastVerdict)?.label ?? next.lastVerdict}. Lapisan sudah disesuaikan.</T.Sub></Card> : null}
+                <PilihanChip label="Hasil uji tekstur akhir" options={VERDIK_TEKSTUR} value={f.verdict ? [f.verdict as (typeof VERDIK_TEKSTUR)[number]["value"]] : []} onChange={(v) => set({ verdict: v[0] })} />
+                {f.verdict && f.verdict !== "PAS" ? <Card style={{ backgroundColor: TONE.orange.tint }}><T.Sub style={{ color: TONE.orange.text }}>Hasil ini mewajibkan rework: sesuaikan lapisan lalu kirim ulang bukti lapisan.</T.Sub></Card> : null}
+                <PilihBerat label="Berat penguji (seberat pemakai)" value={f.testerWeightKg ?? beratBawaan} onChange={(v) => set({ testerWeightKg: v })} pemakai={pemakai} />
+                <Isian label="Catatan (opsional)" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline />
               </>
             ) : null}
             {stepNo === 9 ? <Isian label="Catatan untuk Corner (opsional)" value={f.note ?? ""} onChange={(v) => set({ note: v })} multiline /> : null}

@@ -3,13 +3,14 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNetInfo } from "@react-native-community/netinfo";
-import { PackageX, Pause, Play } from "lucide-react-native";
+import { ClipboardList, PackageX, Pause, Play } from "lucide-react-native";
 import { catatLangkah, kunciNiat, lanjutkanPekerjaan } from "@/api/aksi";
 import { pesanUntukPengguna } from "@/api/errors";
 import { useLayout } from "@/api/production";
 import type { RunCard } from "@/api/types";
 import { useSession } from "@/auth/session";
 import { aksiCepat, bolehCobaLagi, bolehLaporKurang, formulirDidukung, giliranSaya, labelAksi } from "./langkah";
+import { BAGIAN_KOMPONEN, catatanDitunggu } from "./komponen";
 import { Button, T } from "@/design/ui";
 import { C, TONE } from "@/design/tokens";
 
@@ -26,6 +27,11 @@ const TUNGGU: Record<string, string> = {
   PENDING_ARRIVAL: "Menunggu konfirmasi unit tiba di workshop.",
   MATERIAL_SHORTAGE: "Tertunda — menunggu bahan dari Gudang.",
   MATERIAL_NOT_READY: "Menunggu bahan disiapkan Gudang.",
+  QC_BEFORE_PENDING: "Menunggu PIC QC: QC sebelum bongkar.",
+  FOUNDATION_TEST_PENDING: "Menunggu PIC QC: uji fondasi awal.",
+  FOUNDATION_NEW_TEST_PENDING: "Menunggu PIC QC: uji fondasi baru.",
+  FINISHED_TEST_PENDING: "Menunggu PIC QC: uji kasur jadi.",
+  AFTER_PENDING: "Menunggu Meja mencatat hasil aktual susunan.",
   COMPLETED: "Produksi unit ini sudah selesai.",
 };
 
@@ -44,6 +50,14 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
   const label = labelAksi(next, card.activeOp?.stageLabel);
 
   const setelah = async () => { await qc.invalidateQueries(); onBerubah(); };
+  // Catatan Komponen yang ditunggu kartu (lapisan awal / hasil aktual oleh Meja, pengujian oleh PIC QC).
+  const ditunggu = catatanDitunggu(next);
+  const picMejaSaya = l.lane && (l.executeAny || (!!userId && card.plan?.operator?.userId === userId));
+  const bolehCatat = !!ditunggu && (ditunggu.oleh === "QC" ? l.qc || l.executeAny : picMejaSaya);
+  const bukaCatatan = () => ditunggu && router.push({ pathname: "/komponen/[unitId]", params: { unitId: card.unit.id, bagian: ditunggu.bagian, runId: card.runId } });
+  const tombolCatatan = bolehCatat && ditunggu ? (
+    <Button kind="primary" icon={<ClipboardList color="#fff" size={18} />} label={`Isi ${BAGIAN_KOMPONEN[ditunggu.bagian].label}`} onPress={bukaCatatan} />
+  ) : null;
 
   const satuKetuk = async () => {
     if (!next) return;
@@ -72,6 +86,7 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
     return (
       <Wadah>
         <T.Sub style={{ textAlign: "center", color: C.ink2 }}>{teks}</T.Sub>
+        {tombolCatatan}
         {kurang ? (
           <Button kind="tinted" tone="red" icon={<PackageX color={TONE.red.text} size={18} />} label="Bahan kurang" onPress={() => router.push({ pathname: "/kurang-bahan/[runId]", params: { runId: card.runId } })} />
         ) : null}
@@ -92,6 +107,7 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
       {galat ? <T.Sub style={{ color: TONE.red.text }}>{galat}</T.Sub> : null}
       {!online && cepat ? <T.Caption style={{ textAlign: "center" }}>Offline — aksi dikirim saat sinyal kembali.</T.Caption> : null}
       {!dukung.ok ? <T.Sub style={{ color: TONE.blue.text, textAlign: "center" }}>{dukung.alasan}</T.Sub> : null}
+      {!dukung.ok ? tombolCatatan : null}
       <View style={{ flexDirection: "row", gap: 8 }}>
         {bisaTunda ? (
           <Button kind="tinted" tone="orange" icon={<Pause color={TONE.orange.text} size={18} fill={TONE.orange.text} />} label="Tunda" onPress={() => router.push({ pathname: "/tunda/[runId]", params: { runId: card.runId } })} style={{ flex: 1 }} />

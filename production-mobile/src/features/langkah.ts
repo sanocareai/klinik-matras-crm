@@ -16,6 +16,7 @@ export const PETUNJUK: Record<number, string> = {
   4: "Video uji fondasi oleh penguji seberat customer + tinggi awal & saat ditekan.",
   6: "Video uji fondasi baru + bahan Gudang yang dipakai + penjelasan isi fondasi.",
   7: "Foto/video lapisan baru + bahan Gudang yang dipakai.",
+  8: "Video uji tekstur akhir oleh penguji seberat customer, lalu pilih hasilnya.",
   10: "Periksa permintaan Sales, isi model kasur, kain & list, lalu mulai jahit.",
   9: "Foto/video kasur siap dibungkus kain, lalu kirim ke meja jahit.",
   11: "Foto/video hasil jahitan + checklist kerapian.",
@@ -35,6 +36,8 @@ export const MATERIAL_LAMA = [
   { value: "PER", label: "Per / Spring" }, { value: "BUSA", label: "Busa" }, { value: "REBONDED", label: "Rebonded" },
   { value: "KAIN", label: "Kain" }, { value: "LATEX", label: "Latex" }, { value: "KAPUK", label: "Kapuk" }, { value: "LAINNYA", label: "Lainnya" },
 ] as const;
+/** Hasil uji tekstur akhir (tahap 8) — selain PAS mewajibkan rework lapisan. */
+export const VERDIK_TEKSTUR = [{ value: "PAS", label: "PAS" }, { value: "TERLALU_KERAS", label: "Terlalu Keras" }, { value: "TERLALU_EMPUK", label: "Terlalu Empuk" }] as const;
 export const MODEL_KASUR = [
   { value: "BIASA", label: "Kasur Biasa" }, { value: "PLUSHTOP", label: "Plushtop" }, { value: "PILLOWTOP", label: "Pillowtop" },
 ] as const;
@@ -65,6 +68,7 @@ export type FormLangkah = {
   /** Tahap 6/7/10: bahan Gudang yang dipakai (qty teks dari isian; hanya qty > 0 yang dikirim). */
   materials?: { materialId: string; qty: string }[];
   mattressStyle?: string; fabricSpec?: string; borderColor?: string;
+  verdict?: string;
   requestChecked?: boolean; fabricMode?: string; requestMatch?: string; requestNote?: string; salesConfirmation?: string;
 };
 
@@ -103,10 +107,10 @@ export function labelAksi(next: RunNext | null | undefined, stageLabel?: string 
 export function formulirDidukung(card: Pick<RunCard, "track" | "cornerView">, next: RunNext): { ok: true } | { ok: false; alasan: string } {
   const n = next.stepNo ?? 0;
   if (card.track === "BUILD") return { ok: false, alasan: "Jalur Pengerjaan Pesanan masih lewat SANSS Web." };
-  if (n === 3 && next.gated && next.layersRequired) return { ok: false, alasan: "Catat susunan lapisan awal di Catatan Komponen (SANSS Web) dulu." };
-  if (n === 7 && next.gated && next.layersAfterRequired) return { ok: false, alasan: "Catat susunan hasil aktual di Catatan Komponen › Sesudah pengerjaan (SANSS Web) dulu." };
-  if ([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12].includes(n)) return { ok: true }; // 5 = wizard Diagnosa (app/diagnosa)
-  return { ok: false, alasan: `${LABEL_TAHAP[n] ?? "Tahap ini"} diisi PIC QC lewat SANSS Web.` };
+  if (n === 3 && next.gated && next.layersRequired) return { ok: false, alasan: "Catat susunan lapisan awal (Catatan Komponen) dulu." };
+  if (n === 7 && next.gated && next.layersAfterRequired) return { ok: false, alasan: "Catat susunan hasil aktual (Catatan Komponen) dulu." };
+  if (n >= 1 && n <= 12) return { ok: true }; // 5 = wizard Diagnosa (app/diagnosa); 8 = uji tekstur Meja (jalur tanpa gerbang perakitan)
+  return { ok: false, alasan: "Tahap ini belum bisa diisi dari HP." };
 }
 
 const angka = (v: unknown) => Number(String(v ?? "").replace(",", "."));
@@ -143,6 +147,9 @@ export function validasiLangkah(stepNo: number, f: FormLangkah, media: MediaTeru
       if (!opsi.byPic && !adaBahan(f)) return "Isi jumlah bahan Gudang yang dipakai.";
       return (f.note ?? "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
     case 7: return opsi.byPic || adaBahan(f) ? null : "Isi jumlah bahan Gudang yang dipakai.";
+    case 8:
+      if (!f.verdict) return "Pilih hasil uji: PAS, Terlalu Keras, atau Terlalu Empuk.";
+      return angka(f.testerWeightKg) > 0 ? null : "Isi berat penguji (kg).";
     case 9: return null;
     case 10:
       if (!f.mattressStyle) return "Pilih model kasur.";
@@ -174,6 +181,7 @@ export function payloadLangkah(stepNo: number, f: FormLangkah, opsi: { cornerV2?
     case 4: return { heightBeforeCm: angka(f.heightBeforeCm), heightCompressedCm: angka(f.heightCompressedCm), testerWeightKg: angka(f.testerWeightKg), foundationIssues: [], note: opt(f.note) };
     case 6: return { materials: opsi.byPic ? [] : barisBahan(f), note: (f.note ?? "").trim() };
     case 7: return { materials: opsi.byPic ? [] : barisBahan(f), note: opt(f.note) };
+    case 8: return { verdict: f.verdict, testerWeightKg: angka(f.testerWeightKg), note: opt(f.note) };
     case 9: return { note: opt(f.note) };
     case 10: return {
       mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec ?? "").trim(), borderColor: (f.borderColor ?? "").trim(), materials: barisBahan(f), note: opt(f.note),
