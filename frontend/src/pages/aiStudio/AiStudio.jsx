@@ -3,7 +3,9 @@ import {
   MessageSquare, PenLine, ClipboardCheck, FlaskConical, Sparkles, ThumbsUp, ThumbsDown,
   ArrowUp, Plus, Loader2, Check, AlertTriangle, LayoutGrid, Users,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api.js";
+import { rolesOf } from "@/lib/roles.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 
@@ -73,10 +75,10 @@ function fmtData(v) {
 }
 
 // ── Navigasi tab di dalam workspace (sidebar tetap milik Layout) ────────────
-function StudioTabs({ tab, onTab, menunggu }) {
+function StudioTabs({ tab, onTab, menunggu, bisaTinjau }) {
   const items = [
     ["playground", "Playground", MessageSquare, TILE.blue],
-    ["tinjauan", "Tinjauan", ClipboardCheck, TILE.purple],
+    ...(bisaTinjau ? [["tinjauan", "Tinjauan", ClipboardCheck, TILE.purple]] : []),
     ["test-case", "Test Case", FlaskConical, TILE.green],
   ];
   return (
@@ -272,7 +274,7 @@ function PanelAlasan({ m }) {
       </section>
 
       <section style={{ ...card, padding: "16px 18px", display: "flex", justifyContent: "space-between", gap: 10 }}>
-        {[["Model", (m.model || "—").replace("claude-", "").replace(/-/g, " ")], ["Token", (m.inputTokens + m.outputTokens + m.cacheReadTokens).toLocaleString("id-ID")], ["Biaya", `$${(m.costUsd || 0).toFixed(4)}`], ["Cache", m.cacheReadTokens ? `${Math.round((m.cacheReadTokens / (m.inputTokens + m.cacheReadTokens)) * 100)}%` : "0%"]].map(([l, v]) => (
+        {[["Model", (m.model || "—").replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-/g, " ")], ["Token", (m.inputTokens + m.outputTokens + m.cacheReadTokens).toLocaleString("id-ID")], ["Biaya", `$${(m.costUsd || 0).toFixed(4)}`], ["Cache", m.cacheReadTokens ? `${Math.round((m.cacheReadTokens / (m.inputTokens + m.cacheReadTokens)) * 100)}%` : "0%"]].map(([l, v]) => (
           <span key={l} style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 11.5, color: "var(--text-secondary)", fontWeight: 600 }}>{l}</span>
             <span style={{ fontSize: 14, fontWeight: 800, textTransform: l === "Model" ? "capitalize" : "none" }}>{v}</span>
@@ -335,6 +337,7 @@ function Playground({ meta, onChanged }) {
       setSession({ ...s, messages: [...(s.messages || []), r.customer, r.agent] });
       setSelectedId(r.agent.id);
       setText("");
+      muatDaftar().catch(() => {}); // jumlah pesan di daftar sesi ikut terbarui
       onChanged?.();
     } catch (e) {
       setErr(e.message || "Gagal mengirim");
@@ -505,7 +508,12 @@ function TestCases() {
 
 // ── HALAMAN ─────────────────────────────────────────────────────────────────
 export default function AiStudio({ tab = "playground" }) {
-  const [aktif, setAktif] = useState(tab);
+  const navigate = useNavigate();
+  // Tinjauan koreksi khusus ADMIN/OWNER (server menegakkan ulang) — SALES tidak melihat tab/menunya.
+  const bisaTinjau = useMemo(() => {
+    try { return rolesOf(JSON.parse(localStorage.getItem("user") || "null")).some((r) => r === "ADMIN" || r === "OWNER"); } catch { return false; }
+  }, []);
+  const aktif = tab === "tinjauan" && !bisaTinjau ? "playground" : tab;
   const [meta, setMeta] = useState(null);
   const [summary, setSummary] = useState(null);
   const [err, setErr] = useState("");
@@ -515,12 +523,9 @@ export default function AiStudio({ tab = "playground" }) {
     api.studioSummary().then(setSummary).catch(() => {});
   }, []);
   useEffect(muatMeta, [muatMeta]);
-  useEffect(() => setAktif(tab), [tab]);
 
-  const gantiTab = (k) => {
-    setAktif(k);
-    window.history.replaceState(null, "", k === "playground" ? "/ai-studio" : `/ai-studio/${k}`);
-  };
+  // Lewat router (bukan history.replaceState) supaya menu aktif di sidebar ikut berpindah.
+  const gantiTab = (k) => navigate(k === "playground" ? "/ai-studio" : `/ai-studio/${k}`);
   const agent = meta?.agents?.[0];
   const live = agent?.versions?.find((v) => v.status === "LIVE");
 
@@ -539,7 +544,7 @@ export default function AiStudio({ tab = "playground" }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {err && <div role="alert" style={{ ...card, padding: 14, color: "var(--red)", fontSize: 13.5 }}>{err}</div>}
           <Widgets summary={summary} biaya={meta ? { terpakai: meta.biayaBulanIni || 0, batas: meta.batasBiaya } : null} />
-          <StudioTabs tab={aktif} onTab={gantiTab} menunggu={summary?.menungguTinjauan || 0} />
+          <StudioTabs tab={aktif} onTab={gantiTab} menunggu={summary?.menungguTinjauan || 0} bisaTinjau={bisaTinjau} />
           {aktif === "playground" && <Playground meta={meta} onChanged={muatMeta} />}
           {aktif === "tinjauan" && <Tinjauan onChanged={muatMeta} />}
           {aktif === "test-case" && <TestCases />}

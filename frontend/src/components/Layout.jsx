@@ -528,7 +528,7 @@ const DIVISIONS = {
         section: "LATIH & UJI",
         items: [
           { to: "/ai-studio", label: "Playground", Icon: MessageSquare },
-          { to: "/ai-studio/tinjauan", label: "Tinjauan Koreksi", Icon: ClipboardCheck },
+          { to: "/ai-studio/tinjauan", label: "Tinjauan Koreksi", Icon: ClipboardCheck, bolehPeran: ["ADMIN", "OWNER"] },
           { to: "/ai-studio/test-case", label: "Test Case", Icon: FlaskConical },
         ],
       },
@@ -893,6 +893,8 @@ export default function Layout({ user, onLogout }) {
     // C1/C2.1 — dipindah ke lib/menuVisibility.js (P8.1, testable via `node --test`); perilaku sama persis.
     const saringPeran = (base) => filterMenuByPermission(base, { roles, divisiSaya });
     if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
+    // AI Studio: "Tinjauan Koreksi" hanya ADMIN/OWNER (bolehPeran) — SALES cuma Playground & Test Case.
+    if (divisionKey === "aistudio") return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     // Fase 2 — menu Delivery bertanda bolehPeran/bolehDivisi ("Laporan Biaya") disaring DULU; item tanpa penanda (semua menu Delivery lama) tidak terpengaruh.
     const armadaBase = divisionKey === "armada" ? saringPeran(divisionBase) : divisionBase;
