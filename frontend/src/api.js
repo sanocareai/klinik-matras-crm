@@ -2450,4 +2450,16 @@ export const api = {
   // kontak langsung ke WA pribadi owner, di luar Inbox omnichannel.
   getB2bOrders: () => request("/b2b/orders"),
   createB2bOrder: (data) => request("/b2b/orders", { method: "POST", body: JSON.stringify(data) }),
+
+  // AI Studio (MVP 1, November 2026) — workspace latih & uji agent AI.
+  studioAgents: () => request("/studio/agents"),
+  studioSummary: () => request("/studio/summary"),
+  studioSessions: () => request("/studio/sessions"),
+  studioCreateSession: (data) => request("/studio/sessions", { method: "POST", body: JSON.stringify(data) }),
+  studioSession: (id) => request(`/studio/sessions/${id}`),
+  studioSend: (id, text, model) => request(`/studio/sessions/${id}/messages`, { method: "POST", body: JSON.stringify({ text, model }) }),
+  studioFeedback: (messageId, data) => request(`/studio/messages/${messageId}/feedback`, { method: "POST", body: JSON.stringify(data) }),
+  studioFeedbackQueue: (status = "NEW") => request(`/studio/feedback?status=${status}`),
+  studioReview: (id, action) => request(`/studio/feedback/${id}`, { method: "PATCH", body: JSON.stringify({ action }) }),
+  studioTestCases: () => request("/studio/test-cases"),
 };

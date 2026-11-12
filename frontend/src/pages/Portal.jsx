@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar, Handshake, Landmark, ListChecks } from "lucide-react";
+import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar, Handshake, Landmark, ListChecks, Sparkles } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer } from "@/components/ui/page.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -42,6 +42,7 @@ export const PORTAL_ICONS = {
   finance: Landmark,
   b2b: Handshake,
   hub: ListChecks,
+  aistudio: Sparkles,
 };
 
 // BUG NYATA ditemukan lewat screenshot QA sungguhan (bukan tebakan dari

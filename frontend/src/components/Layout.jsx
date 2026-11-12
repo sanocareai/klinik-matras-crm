@@ -15,6 +15,7 @@ import {
   FileCheck,
   Scissors, Tv, Truck,
   PackagePlus,
+  FlaskConical,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -514,6 +515,25 @@ const DIVISIONS = {
       },
     ],
   },
+  // AI Studio (MVP 1, November 2026) — workspace TERPISAH dari Sales CRM
+  // (keputusan Owner): latih & uji agent AI. Satu halaman dengan tiga tab;
+  // agent berikutnya (Admin Delivery, Produksi) menyusul di seksi AGENT.
+  aistudio: {
+    label: "AI Studio",
+    accent: {
+      ...DIVISION_ACCENT,
+    },
+    sections: [
+      {
+        section: "LATIH & UJI",
+        items: [
+          { to: "/ai-studio", label: "Playground", Icon: MessageSquare },
+          { to: "/ai-studio/tinjauan", label: "Tinjauan Koreksi", Icon: ClipboardCheck },
+          { to: "/ai-studio/test-case", label: "Test Case", Icon: FlaskConical },
+        ],
+      },
+    ],
+  },
 };
 
 // Nav Main Hub (/portal) — SEBELUMNYA kosong total (lihat komentar di atas
@@ -599,6 +619,7 @@ function divisionFromPath(pathname) {
   if (pathname.startsWith("/kendali")) return "kendali";
   if (pathname.startsWith("/finance")) return "finance";
   if (pathname.startsWith("/b2b")) return "b2b";
+  if (pathname.startsWith("/ai-studio")) return "aistudio";
   return "growth";
 }
 

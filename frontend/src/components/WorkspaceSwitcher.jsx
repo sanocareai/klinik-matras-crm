@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check, ArrowUpDown, GripVertical, Handshake, Landmark } from "lucide-react";
+import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check, ArrowUpDown, GripVertical, Handshake, Landmark, Sparkles } from "lucide-react";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { applyCustomOrder, getWorkspaceOrder, saveWorkspaceOrder } from "@/lib/sidebarOrder.js";
@@ -43,6 +43,9 @@ export const WORKSPACES = [
   // BUKAN "ADMIN" juga (satu-satunya workspace dengan pola ini) — lihat
   // komentar panjang di backend/src/constants/permissions.js.
   { key: "b2b",       label: "B2B & Non-CRM Orders",       to: "/b2b",       Icon: Handshake, roles: ["OWNER"] },
+  // AI Studio (Nov 2026) — SALES ikut di sini (tidak di PORTALS backend) supaya
+  // sales tetap auto-skip ke CRM saat login, tapi bisa pindah ke AI Studio.
+  { key: "aistudio",  label: "AI Studio",                  to: "/ai-studio", Icon: Sparkles, roles: ["ADMIN", "OWNER", "SALES"] },
 ];
 
 export const WORKSPACE_LABEL = Object.fromEntries(WORKSPACES.map((w) => [w.key, w.label]));

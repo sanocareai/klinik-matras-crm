@@ -81,6 +81,7 @@ const LaporanBiayaDivisi    = lazy(() => import("../pages/laporanDivisi/LaporanB
 const FinanceReconciliation = lazy(() => import("../pages/finance/FinanceReconciliation.jsx"));
 const FinanceSettings       = lazy(() => import("../pages/finance/FinanceSettings.jsx"));
 const B2BOrders       = lazy(() => import("../pages/b2b/B2BOrders.jsx"));
+const AiStudio        = lazy(() => import("../pages/aiStudio/AiStudio.jsx")); // AI Studio MVP 1 (Nov 2026)
 const ComplaintCases  = lazy(() => import("../pages/ComplaintCases.jsx"));
 const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
@@ -264,6 +265,9 @@ const PAGES_DASAR = [
   { path: "/finance/accounts",       render: () => <FinanceAccounts /> },
   { path: "/finance/settings",       render: () => <FinanceSettings /> },
   { path: "/b2b",         render: () => <B2BOrders /> },
+  { path: "/ai-studio",           render: () => <AiStudio tab="playground" /> },
+  { path: "/ai-studio/tinjauan",  render: () => <AiStudio tab="tinjauan" /> },
+  { path: "/ai-studio/test-case", render: () => <AiStudio tab="test-case" /> },
   { path: "/komplain",    render: () => <ComplaintCases /> },
   { path: "/warehouse/dashboard/:jenis?/:id?", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/perlu-perhatian/:jenis?/:id?", render: () => <WarehousePerluPerhatian /> },

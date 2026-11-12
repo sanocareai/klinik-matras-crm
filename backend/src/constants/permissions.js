@@ -651,6 +651,20 @@ export const PORTALS = [
     roles: ["ADMIN", "OWNER", "FINANCE", "ACCOUNTANT", "APPROVER"],
   },
   {
+    // AI Studio (MVP 1, November 2026) — workspace TERPISAH dari Sales CRM
+    // (keputusan Owner): tim melatih & menguji agent AI di sini.
+    // ⚠️ SENGAJA tanpa "SALES" di daftar ini: sales yang punya >1 portal akan
+    // berhenti auto-skip ke CRM dan malah mendarat di halaman Portal (lihat
+    // Portal.jsx). Sales tetap bisa masuk lewat WorkspaceSwitcher
+    // (WORKSPACES di frontend menyertakan SALES) dan backend /api/studio
+    // mengizinkan SALES.
+    key: "aistudio",
+    label: "AI Studio",
+    description: "Latih, uji, dan sempurnakan agent AI bersama tim sales.",
+    path: "/ai-studio",
+    roles: ["ADMIN", "OWNER"],
+  },
+  {
     key: "b2b",
     label: "B2B & Non-CRM Orders",
     description: "Order vendor/korporat yang kontak langsung di luar Inbox omnichannel.",

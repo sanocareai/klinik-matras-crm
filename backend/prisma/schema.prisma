@@ -12205,4 +12205,142 @@ model PengajuanPemakaianProduksiEvent {
 
   @@index([pengajuanId, createdAt], map: "pppe_pengajuan_waktu")
   @@map("pengajuan_pemakaian_produksi_events")
+// ─────────────────────────────────────────────────────────────────────────
+// AI STUDIO — MVP 1 (November 2026)
+// Workspace terpisah untuk MELATIH & MENGUJI agent AI (agent pertama:
+// Mattress Consultant). Sales berperan sebagai customer di Playground,
+// menilai balasan AI, menulis balasan yang seharusnya; Owner/Admin meninjau
+// koreksi → jadi test case. BELUM ada balasan ke customer sungguhan.
+// Semua tabel ADDITIVE; relasi ke User sengaja string biasa (tanpa FK) —
+// pola isolasi yang sama dengan ReplySuggestionLog.
+// Rollback: DROP 6 tabel studio_* + 4 enum Studio* (lihat migration.sql).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum StudioVersionStatus {
+  DRAFT
+  LIVE
+  ARCHIVED
+}
+
+enum StudioMessageRole {
+  CUSTOMER
+  AGENT
+}
+
+enum StudioRating {
+  GOOD
+  BAD
+}
+
+enum StudioFeedbackStatus {
+  NEW
+  ACCEPTED
+  REJECTED
+}
+
+model StudioAgent {
+  id           String               @id @default(cuid())
+  slug         String               @unique // "mattress-consultant"
+  name         String
+  description  String?
+  defaultModel String               @default("claude-haiku-5-5")
+  config       Json? // model per tugas, fallback, anggaran (MVP 3)
+  active       Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  versions     StudioSkillVersion[]
+  sessions     StudioSession[]
+  testCases    StudioTestCase[]
+
+  @@map("studio_agents")
+}
+
+model StudioSkillVersion {
+  id            String              @id @default(cuid())
+  agentId       String
+  agent         StudioAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  status        StudioVersionStatus @default(DRAFT)
+  changeNote    String?
+  files         Json // { "SKILL.md": "...", "references/21-harga.md": "...", ... }
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime            @default(now())
+
+  @@unique([agentId, versionNumber])
+  @@index([agentId, status])
+  @@map("studio_skill_versions")
+}
+
+model StudioSession {
+  id             String          @id @default(cuid())
+  agentId        String
+  agent          StudioAgent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillVersionId String
+  title          String
+  scenario       String?
+  model          String?
+  createdById    String
+  createdAt      DateTime        @default(now())
+  messages       StudioMessage[]
+
+  @@index([createdById, createdAt])
+  @@index([agentId, createdAt])
+  @@map("studio_sessions")
+}
+
+model StudioMessage {
+  id              String            @id @default(cuid())
+  sessionId       String
+  session         StudioSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role            StudioMessageRole
+  content         Json // CUSTOMER: { text } · AGENT: { bubbles, kirimKatalog, tahap, dataTerkumpul, handover, catatanInternal, checks }
+  model           String?
+  inputTokens     Int               @default(0)
+  outputTokens    Int               @default(0)
+  cacheReadTokens Int               @default(0)
+  costUsd         Float             @default(0)
+  createdAt       DateTime          @default(now())
+  feedback        StudioFeedback[]
+
+  @@index([sessionId, createdAt])
+  @@index([createdAt])
+  @@map("studio_messages")
+}
+
+model StudioFeedback {
+  id           String               @id @default(cuid())
+  messageId    String
+  message      StudioMessage        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  rating       StudioRating
+  idealReply   String?
+  reasons      String[]
+  note         String?
+  status       StudioFeedbackStatus @default(NEW)
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdById  String
+  createdAt    DateTime             @default(now())
+
+  @@index([status, createdAt])
+  @@index([messageId])
+  @@map("studio_feedback")
+}
+
+model StudioTestCase {
+  id               String      @id @default(cuid())
+  agentId          String
+  agent            StudioAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  title            String
+  history          Json // [{ role: "customer"|"agent", text }]
+  idealReply       String
+  mustRules        String[]
+  sourceFeedbackId String?     @unique
+  active           Boolean     @default(true)
+  createdById      String
+  createdAt        DateTime    @default(now())
+
+  @@index([agentId, active])
+  @@map("studio_test_cases")
 }

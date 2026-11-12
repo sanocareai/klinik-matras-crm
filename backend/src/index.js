@@ -120,6 +120,7 @@ import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/
 import { gptActionsRouter, logStatusGptActions } from "./mcp/gptActions.js";
 import { chatGptMcpRouter } from "./mcp/chatgptPlugin.js";
 import { mcpHubRouter, logStatusMcpHub } from "./mcpHub/index.js";
+import { studioRouter } from "./routes/studio.js"; // AI Studio MVP 1 (Nov 2026)
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startVideoCompressJob } from "./services/videoCompressJob.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
@@ -257,6 +258,7 @@ app.use("/api/staff-broadcast", staffBroadcastRouter);
 app.use("/api/automation",   automationRouter);
 app.use("/api/ai",           aiRouter);
 app.use("/api/ai",           replyAssistantRouter); // Wave 4B.0 — additive, tidak mengubah aiRouter
+app.use("/api/studio",       studioRouter);         // AI Studio MVP 1 — workspace latih & uji agent
 app.use("/api/knowledge",    knowledgeRouter);
 // Sano Hub Phase 1 — dijaga permission (UNIT_STAGE_WRITE/QC_WRITE/dst).
 // Tidak ada user existing yang punya role produksi, jadi mounting ini AMAN:

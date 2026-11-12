@@ -232,8 +232,10 @@ test("portal disaring sesuai role", () => {
   // membuat regresi berikutnya tidak kelihatan.
   // "finance" (Finance & Accounting, D-180) adalah workspace KE-6 — ADMIN
   // memegang semuanya, sama pola dengan 5 portal sebelumnya.
+  // "aistudio" (AI Studio, Nov 2026) adalah workspace KE-7 — ADMIN/OWNER saja
+  // di PORTALS; sales TETAP satu portal (auto-skip ke CRM tidak berubah).
   assert.deepEqual(portalsFor(admin).map((p) => p.key),
-    ["growth", "bengkel", "warehouse", "armada", "kendali", "finance"]);
+    ["growth", "bengkel", "warehouse", "armada", "kendali", "finance", "aistudio"]);
   assert.deepEqual(portalsFor({ roles: [] }), []);
 });
 
