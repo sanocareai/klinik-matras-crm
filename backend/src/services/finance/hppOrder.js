@@ -10,6 +10,7 @@
 //   • Ganda ditolak MUTLAK hanya per identitas sumber, kunci idempotensi, atau tautan transaksi yang sama (indeks unik database). Tanggal + jumlah sama = indikator kuat:
 //     wajib alasan "bukan duplikat" dari pengaju dan persetujuan orang lain.
 //   • Biaya tanpa stok berlaku (masuk HPP operasional) langsung bila dicatat ADMIN, selain itu sesudah DIVERIFIKASI ADMIN lain; koreksi = entri pengganti yang disetujui atomik; tidak ada hapus (trigger database).
+import { unitBukanProduksi, whereUnitProduksiAtauBerbiaya } from "../../lib/domain/unitBukanProduksi.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
@@ -104,9 +105,9 @@ function tampilBiaya(e) {
 }
 
 /** Status HPP per unit dari hasil muatBiayaUnit. Baris yang dinilai = pergerakan unit bertipe biaya (tanpa SUSUT) + biaya tanpa stok DISETUJUI. */
-export function statusDariFakta(f) {
+export function statusDariFakta(f, { bukanProduksi = false } = {}) {
   const baris = [...f.stok.filter((b) => b.tipe !== "WASTE"), ...f.biaya].map((b) => ({ id: b.id, sumber: b.sumber, status: b.status, subtotal: b.subtotal }));
-  return statusUnitHpp({ baris, catatanTertahan: f.catatanTertahan.length, sementara: f.sementara, biayaDiajukan: f.diajukan.length, pernyataanTanpaBahan: !!f.pernyataan, konfirmasi: f.konfirmasi });
+  return statusUnitHpp({ baris, catatanTertahan: f.catatanTertahan.length, sementara: f.sementara, biayaDiajukan: f.diajukan.length, pernyataanTanpaBahan: !!f.pernyataan, konfirmasi: f.konfirmasi, bukanProduksi });
 }
 
 // ───────────────────────────── ANTREAN PIC (BACA-SAJA) ─────────────────────────────
@@ -122,8 +123,10 @@ async function unitTerkirimPeriode(db, { fromStr, toStr }) {
 export async function antreanHpp(db, { fromStr, toStr, izinHarga = false, status = "", q = "" } = {}) {
   periodeValid({ fromStr, toStr });
   const { diserahkan, jobTanpaUnit } = await unitTerkirimPeriode(db, { fromStr, toStr });
-  const ids = [...diserahkan.keys()];
-  const units = ids.length ? await db.unit.findMany({ where: { id: { in: ids } }, select: { id: true, unitCode: true, status: true, createdAt: true, orderId: true, order: { select: { orderNumber: true, status: true, customer: { select: { name: true } } } } } }) : [];
+  const idsTerkirim = [...diserahkan.keys()];
+  // Kasur SEWA bukan pekerjaan Produksi (keputusan Owner 12 Nov 2026): tidak masuk antrean HPP — kecuali sudah punya pergerakan stok (biaya tercatat tidak disembunyikan).
+  const units = idsTerkirim.length ? await db.unit.findMany({ where: { id: { in: idsTerkirim }, AND: [whereUnitProduksiAtauBerbiaya()] }, select: { id: true, unitCode: true, status: true, createdAt: true, orderId: true, order: { select: { orderNumber: true, status: true, customer: { select: { name: true } } } } } }) : [];
+  const ids = units.map((u) => u.id); const unitSewaDilewati = idsTerkirim.length - ids.length;
   const fakta = await muatBiayaUnit(db, ids);
   const tautan = await tautanSOAktif(db);
   const soTanggal = [...new Set([...tautan.values()].map((t) => t.soTanggal).filter(Boolean))].sort();
@@ -154,7 +157,7 @@ export async function antreanHpp(db, { fromStr, toStr, izinHarga = false, status
   return {
     periode: { from: fromStr, to: toStr }, dasar: "Unit yang pengirimannya selesai (job Delivery COMPLETED) pada periode — hari kalender WIB",
     ringkasan: { unit: baris.length, order: new Set(baris.map((b) => b.orderId)).size, adaPemakaian: baris.filter((b) => b.adaPemakaian).length, hppLengkap: baris.filter((b) => b.lengkap).length,
-      perStatus, jobTanpaUnit, nilaiDiketahui: izinHarga ? r2(baris.reduce((a, b) => a + (b.nilaiDiketahui ?? 0), 0)) : null },
+      perStatus, jobTanpaUnit, unitSewaDilewati, nilaiDiketahui: izinHarga ? r2(baris.reduce((a, b) => a + (b.nilaiDiketahui ?? 0), 0)) : null },
     tautanSO: { jumlahBahan: tautan.size, tanggalSO: soTanggal, teks: soTanggal.length ? `Bahan bertaut SO: pemakaian bertanggal pada/sebelum ${soTanggal.join(", ")} dicatat sebagai biaya tanpa stok; sesudahnya sebagai pengeluaran stok resmi.` : "Belum ada bahan bertaut SO: semua pemakaian lewat pengeluaran stok resmi." },
     jalur: JALUR, status: STATUS_UNIT, dasarHarga: DASAR_HARGA, baris: tampil,
     catatan: "Ada pemakaian ≠ HPP lengkap. Unit lengkap hanya bila semua baris bernilai, tidak ada catatan/biaya tertahan, dan PIC mengonfirmasi pemakaian lengkap (atau pernyataan tanpa bahan baru yang tercatat pelaku, waktu, dan alasannya). Biaya kosong = belum diketahui, bukan Rp0.",
@@ -564,7 +567,7 @@ export async function laporanHppOrder(prisma, { fromStr, toStr, izinHarga = fals
   }
   const diakui = [...pendapatanOrder.entries()].map(([orderId, a]) => ({ orderId, orderNomor: a.nomor, pendapatan: moneyToNumber(sumMoney(a.nilai)) })).filter((o) => o.pendapatan !== 0);
   const idDiakui = new Set(diakui.map((o) => o.orderId));
-  const unitsDiakui = idDiakui.size ? await prisma.unit.findMany({ where: { orderId: { in: [...idDiakui] }, status: { not: "CANCELLED" } }, select: { id: true, unitCode: true, orderId: true } }) : [];
+  const unitsDiakui = idDiakui.size ? await prisma.unit.findMany({ where: { orderId: { in: [...idDiakui] }, status: { not: "CANCELLED" } }, select: { id: true, unitCode: true, orderId: true, workCategory: true, order: { select: { category: true } } } }) : [];
   const unitDiakui = new Set(unitsDiakui.map((u) => u.id));
   const mulai = startOfDayWIB(fromStr);
   const bebanPokokBaris = baris.filter((r) => r.akunTipe === "BEBAN_POKOK");
@@ -597,7 +600,7 @@ export async function laporanHppOrder(prisma, { fromStr, toStr, izinHarga = fals
   const nilaiOperasionalUnit = (u) => { const f = fakta.get(u); return r2([...f.stok.filter((b) => b.tipe !== "WASTE" && !pakaiNilaiJurnal.has(b.id)), ...f.biaya].filter((b) => b.status === "DIBEKUKAN").reduce((a, b) => a + Number(b.subtotal), 0)); };
   const perOrder = diakui.map((o) => {
     const us = unitsDiakui.filter((u) => u.orderId === o.orderId);
-    const st = us.map((u) => ({ unitId: u.id, unitKode: u.unitCode, ...statusDariFakta(fakta.get(u.id)) }));
+    const st = us.map((u) => ({ unitId: u.id, unitKode: u.unitCode, ...statusDariFakta(fakta.get(u.id), { bukanProduksi: unitBukanProduksi(u) }) }));
     const so = statusOrderHpp(st);
     const bahanSebelumPeriode = r2(us.flatMap((u) => [...fakta.get(u.id).stok.filter((b) => b.tipe !== "WASTE"), ...fakta.get(u.id).biaya]).filter((b) => b.status === "DIBEKUKAN" && b.tanggalPemakaian && b.tanggalPemakaian < fromStr).reduce((a, b) => a + Number(b.subtotal), 0));
     return { orderId: o.orderId, orderNomor: o.orderNomor, pendapatan: izinHarga ? o.pendapatan : null, status: so.key, unit: so.unit, unitLengkap: so.unitLengkap, nilaiDiketahui: izinHarga ? so.nilaiDiketahui : null, nilaiLengkap: izinHarga ? so.nilaiLengkap : null,
