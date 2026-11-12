@@ -36,7 +36,8 @@ test("api.js: setUserDivisions memakai PUT /users/:id/divisions dengan daftar di
 
 test("Layout: menu Pengajuan Biaya mengikuti divisi (bolehDivisi) untuk Marketing, Management, HR-GA, Produksi, Gudang; divisi dimuat dari server", () => {
   const layout = baca("components/Layout.jsx");
-  for (const [rute, div] of [["/marketing/pengajuan-biaya", "MARKETING"], ["/kendali/pengajuan-biaya", "MANAGEMENT"], ["/kendali/pengajuan-hrga", "HR_GA"], ["/warehouse/pengajuan-biaya", "WAREHOUSE"]]) {
+  // Marketing dikeluarkan dari sidebar Growth (12 Nov 2026) — lihat pengajuanBiayaWorkspace.test.js
+  for (const [rute, div] of [["/kendali/pengajuan-biaya", "MANAGEMENT"], ["/kendali/pengajuan-hrga", "HR_GA"], ["/warehouse/pengajuan-biaya", "WAREHOUSE"]]) {
     assert.match(layout, new RegExp(`to: "${rute.replace(/\//g, "\\/")}"[^}]*bolehDivisi: \\["${div}"\\]`), rute);
   }
   assert.match(layout, /api\.getMyPortals\(\)\.then\(\(me\) =>[^)]*divisions/);
