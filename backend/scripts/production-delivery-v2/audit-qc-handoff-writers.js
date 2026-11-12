@@ -32,7 +32,8 @@ const PKR_ORDER_SERVICE = "src/services/penjualanKaryawanOrder.js";
 const PKR_KOREKSI_SERVICE = "src/services/penjualanKaryawanKoreksi.js";
 // Fungsi domain tunggal status lintas workspace (Sales/Delivery/Admin override): SATU-SATUNYA penulis status pengiriman/batal; keberadaan penyelarasan Produksi di dalamnya diperiksa di bawah.
 const DOMAIN_STATUS = "src/services/statusUnitLintasWorkspace.js";
-const KNOWN_UNIT_STATUS_WRITERS = new Set([ENGINE, ORDERS, DOMAIN_STATUS, "src/routes/armada.js", "src/services/orderStatusSync.js", "src/services/unitProvisioning.js", "src/services/complaintCase.js", PKR_ORDER_SERVICE, PKR_KOREKSI_SERVICE]);
+// pickupDitutupProduksi.js = efek SAMA dengan pickup selesai di armada.js (AWAITING_PICKUP/IN_TRANSIT_IN -> RECEIVED), dipicu Produksi saat unit sudah ada di workshop (keputusan Owner 12 Nov 2026).
+const KNOWN_UNIT_STATUS_WRITERS = new Set([ENGINE, ORDERS, DOMAIN_STATUS, "src/routes/armada.js", "src/services/pickupDitutupProduksi.js","src/services/orderStatusSync.js", "src/services/unitProvisioning.js", "src/services/complaintCase.js", PKR_ORDER_SERVICE, PKR_KOREKSI_SERVICE]);
 
 const writeRegex = (model) => new RegExp(String.raw`\.${model}\.${OPS}\s*\(`, "g");
 const RULES = [

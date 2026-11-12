@@ -1158,8 +1158,9 @@ export const api = {
   postStatusKerjaManual: (unitId, { status, note, expectedLatestId } = {}) =>
     request(`/production/units/${unitId}/work-progress`, { method: "POST", body: JSON.stringify({ status, note, expectedLatestId: expectedLatestId ?? null }) }),
   // Penerimaan workshop oleh petugas (Gudang/Produksi/Admin): catatan resmi pelaku+waktu+lokasi, TANPA mengaktifkan Produksi V2. Idempotency-Key dipakai server untuk jalur Run yang sudah menunggu kedatangan.
-  catatPenerimaanWorkshop: (unitId, { fisikDiterima, locationId, note } = {}, idempotencyKey = mutationKey("penerimaan")) =>
-    request(`/production/units/${unitId}/penerimaan-workshop`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ fisikDiterima: fisikDiterima === true, locationId: locationId || undefined, note: note || undefined }) }),
+  // tutupPickup=true: unit yang pickup-nya belum ditutup driver boleh diterima; server menutup pickup-nya (keputusan Owner 12 Nov 2026).
+  catatPenerimaanWorkshop: (unitId, { fisikDiterima, locationId, note, tutupPickup } = {}, idempotencyKey = mutationKey("penerimaan")) =>
+    request(`/production/units/${unitId}/penerimaan-workshop`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ fisikDiterima: fisikDiterima === true, locationId: locationId || undefined, note: note || undefined, tutupPickup: tutupPickup === true || undefined }) }),
   getPenerimaanWorkshopMenunggu: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/penerimaan-workshop/menunggu${qs ? `?${qs}` : ""}`);

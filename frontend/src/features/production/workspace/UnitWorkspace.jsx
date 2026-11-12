@@ -33,7 +33,7 @@ function RingkasanPemakaian({ data }) {
   );
 }
 
-export default function UnitWorkspace({ unitId, bagian, onBagian, onKembali, onChanged }) {
+export default function UnitWorkspace({ unitId, bagian, onBagian, onKembali, onChanged, labelKembali = "Daftar kerja" }) {
   const [data, setData] = useState(null); const [ruang, setRuang] = useState(null); const [error, setError] = useState(null); const [memuat, setMemuat] = useState(false);
   const [notice, setNotice] = useState(""); const reqRef = useRef(0); const judulRef = useRef(null);
 
@@ -65,7 +65,7 @@ export default function UnitWorkspace({ unitId, bagian, onBagian, onKembali, onC
       {/* header ringkas yang tetap terlihat */}
       <header className="prod-ruang-header" data-testid="ruang-header">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Button type="button" variant="neutral" size="sm" className="min-h-[44px] gap-1.5 px-2" onClick={onKembali} data-testid="kembali-daftar"><ArrowLeft size={16} aria-hidden /> Daftar kerja</Button>
+          <Button type="button" variant="neutral" size="sm" className="min-h-[44px] gap-1.5 px-2" onClick={onKembali} data-testid="kembali-daftar"><ArrowLeft size={16} aria-hidden /> {labelKembali}</Button>
           <div className="min-w-0 flex-1">
             <h1 ref={judulRef} tabIndex={-1} className="prod-ruang-judul m-0 truncate outline-none" data-testid="ruang-judul">{u ? u.unitCode : "Memuat unit…"}</h1>
             {u && <p className="m-0 truncate text-[12.5px] text-ink3">{[u.order?.customer?.name, u.order?.orderNumber, (ruang?.order?.layanan || []).join(" + ")].filter(Boolean).join(" · ")}</p>}

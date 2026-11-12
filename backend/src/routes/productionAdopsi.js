@@ -192,7 +192,7 @@ productionAdopsiRouter.post("/units/:id/penerimaan-workshop", bolehCatatPenerima
   try {
     const hasil = await catatPenerimaanWorkshop(prisma, {
       unitId: req.params.id, actorId: req.user.id, locationId: req.body?.locationId || null, note: req.body?.note, fisikDiterima: req.body?.fisikDiterima === true,
-      idempotencyKey: req.get("Idempotency-Key") || null,
+      tutupPickup: req.body?.tutupPickup === true, idempotencyKey: req.get("Idempotency-Key") || null,
     });
     res.status(hasil.replayed ? 200 : 201).json(hasil);
   } catch (err) { handleErr(err, res); }

@@ -458,7 +458,7 @@ export async function getAntrean(prisma, { query, config = BOARD_DEFAULTS, now =
     return {
       unitId: r.id, unitCode: r.unitCode, orderId: r.orderId, orderNumber: r.order?.orderNumber ?? null, customerName: r.order?.customer?.name ?? null,
       pekerjaan: (r.order?.items || []).map((i) => i.layananName).filter(Boolean), ukuran: r.ukuran ?? null, tab: tabUnit, alasan, tindakanBerikut: next,
-      boleh: !terjadwal && (!pg || false), perluKeputusan: !!pg, posisi: { key: r.adopsi.posisi?.key, label: r.adopsi.posisi?.label }, diterima,
+      boleh: !terjadwal && (!pg || false), perluKeputusan: !!pg, penghalang: pg?.code ?? null, posisi: { key: r.adopsi.posisi?.key, label: r.adopsi.posisi?.label }, diterima,
       orderStatus: r.orderStatusDisplay ?? null, targetSelesai: targetKey, prioritas: { ...r.priorityDisplay, key: r.priorityDisplay?.key }, pic: r.adopsi.pic?.nama ?? null, meja: r.adopsi.meja ?? null,
       bahan: bahan.get(r.id), jadwal, jalur: v2Owned || v2 ? "V2" : "ADMIN",
       jumlahUnitOrder: (saudaraPer.get(r.orderId) || []).length || 1, unitKe: Math.max((saudaraPer.get(r.orderId) || []).findIndex((u) => u.id === r.id) + 1, 1), revisiJadwal: schAny?.revision ?? 0, v2: v2Owned || !!v2, unitCas: { priority: r.priority, productionDueAt: r.productionDueAt }, _rank: complaintRank(r), _created: new Date(r.createdAt).getTime(),

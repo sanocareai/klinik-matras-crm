@@ -56,8 +56,8 @@ test("URL: keadaan minggu/hari/tab/cari/urut ditulis hanya bila berbeda dari baw
   const today = "2026-10-22";
   assert.equal(tulisUrl({ start: "2026-10-19", hari: today, tab: "BELUM", q: "", sort: "PRIORITAS" }, { today }), "");
   const s = tulisUrl({ start: "2026-10-26", hari: "2026-10-27", tab: "KEPUTUSAN", q: "Sari", sort: "TARGET" }, { today });
-  assert.deepEqual(bacaUrl(s, { today }), { start: "2026-10-26", hari: "2026-10-27", tab: "KEPUTUSAN", q: "Sari", sort: "TARGET" });
-  assert.deepEqual(bacaUrl("?tab=LIAR&hari=bukan&sort=X&minggu=2026-99-99", { today }), { start: "2026-10-19", hari: today, tab: "BELUM", q: "", sort: "PRIORITAS" }, "hari bawaan = hari ini; antrean bawaan = satu antrean Belum dijadwalkan");
+  assert.deepEqual(bacaUrl(s, { today }), { start: "2026-10-26", hari: "2026-10-27", tab: "KEPUTUSAN", q: "Sari", sort: "TARGET", tampilan: "meja" });
+  assert.deepEqual(bacaUrl("?tab=LIAR&hari=bukan&sort=X&minggu=2026-99-99", { today }), { start: "2026-10-19", hari: today, tab: "BELUM", q: "", sort: "PRIORITAS", tampilan: "meja" }, "hari bawaan = hari ini; antrean bawaan = satu antrean Belum dijadwalkan");
   assert.equal(TABS.map((t) => t.key).join(), "BELUM,TERJADWAL,KEPUTUSAN", "SATU antrean untuk unit layak (siap + menunggu tiba digabung)");
   assert.equal(bacaUrl("?tab=SIAP", { today }).tab, "BELUM"); assert.equal(bacaUrl("?tab=MENUNGGU_TIBA", { today }).tab, "BELUM", "alamat tersimpan dari versi lama tetap berfungsi"); assert.equal(TAB_BAWAAN, "BELUM");
 });
@@ -77,10 +77,11 @@ test("pengawatan: rute baru memakai kalender mingguan, Papan V2 lama tetap ada; 
   const page = src("pages", "bengkel", "ProductionRencanaMinggu.jsx");
   assert.match(page, /replaceActivePath/); assert.doesNotMatch(page, /setSearchParams\s*\(|setParams\s*\(/, "shell bertab: query lewat replaceActivePath");
   assert.match(page, /createPortal/, "pesan/undo di atas banner pasang aplikasi");
-  for (const dilarang of ["confirmProductionV2UnitArrival", "catatPenerimaanWorkshop", "postStatusKerjaManual", "putRencanaBahan", "planProductionV2Unit", "createProductionPlan"]) assert.ok(!page.includes(dilarang), `halaman jadwal tidak boleh memanggil ${dilarang}`);
+  // catatPenerimaanWorkshop SENGAJA diizinkan sejak 12 Nov 2026 (keputusan Owner): "Tandai tiba" dari kartu — lihat rencanaTandaiTiba.test.js.
+  for (const dilarang of ["confirmProductionV2UnitArrival", "postStatusKerjaManual", "putRencanaBahan", "planProductionV2Unit", "createProductionPlan"]) assert.ok(!page.includes(dilarang), `halaman jadwal tidak boleh memanggil ${dilarang}`);
   const akt = src("features", "production", "rencana", "AktivasiV2Modal.jsx");
   assert.match(akt, /activateUnit: true/); assert.match(akt, /aktivasi-paham/); assert.match(akt, /disabled=\{!bisa\}/);
-  const kartu = src("features", "production", "rencana", "KartuUnit.jsx"); assert.match(kartu, /draggable=\{\(draggable && !pending\) \|\| undefined\}/); assert.match(kartu, /aria-label=\{`Tindakan lain untuk/);
+  const kartu = src("features", "production", "rencana", "KartuUnit.jsx"); assert.match(kartu, /onPointerDown=\{!pending \? \(e\) => onSeretMulai/, "seret lewat Pointer Events (mouse + sentuh), tidak saat menyimpan"); assert.match(kartu, /aria-label=\{`Tindakan lain untuk/);
   const modal = src("features", "production", "rencana", "JadwalModal.jsx"); assert.match(modal, /jadwalkanUnit/); assert.match(modal, /expectedRevision: revisi/); assert.match(modal, /kunci\.current = null/, "kunci idempotensi diganti hanya setelah sukses/revisi basi (klik ulang = kunci sama)");
 });
 
@@ -96,8 +97,10 @@ test("kapasitas Minggu: Minggu libur (isLibur), slot bawaan melewati hari libur 
 test("pengawatan: kepala ringkas untuk HP (menu tambahan memuat Muat ulang/Export/Papan Meja/Corner), tautan Papan Meja + Corner di desktop, papan lama punya tautan kembali; kontras gelap lewat rencana.css", () => {
   const page = src("pages", "bengkel", "ProductionRencanaMinggu.jsx");
   assert.match(page, /useSempit/); assert.match(page, /data-testid="header-mobile"/); assert.match(page, /MenuHalaman/);
-  for (const label of ["Muat ulang", "Export Excel", "Papan Meja (harian)", "Corner"]) assert.ok(page.includes(`label: "${label}"`), `menu HP: ${label}`);
-  assert.match(page, /tampilan=corner/); assert.match(page, /data-testid="link-corner"/); assert.match(page, /data-testid="link-papan-meja"/);
+  for (const label of ["Muat ulang", "Export Excel", "Papan Meja (harian)"]) assert.ok(page.includes(`label: "${label}"`), `menu HP: ${label}`);
+  // Sejak 12 Nov 2026 Corner = tampilan DI tab ini (pengalih Meja | Corner, ?tampilan=corner lewat tulisUrl), bukan pindah ke papan lama.
+  assert.match(page, /"Corner"/); assert.match(page, /<RencanaCornerView /); assert.match(page, /keTampilan\(/); assert.match(page, /"link-corner"/); assert.match(page, /data-testid="link-papan-meja"/);
+  assert.equal(tulisUrl({ start: "2026-10-19", hari: "2026-10-22", tab: "BELUM", tampilan: "corner" }, { today: "2026-10-22" }), "?tampilan=corner");
   assert.match(page, /minggu\.ringkasan\.slotKerja/, "ringkasan minggu dari server (hari kerja saja)");
   const lama = src("pages", "bengkel", "ProductionRencanaWorkspace.jsx"); assert.match(lama, /data-testid="link-jadwal-mingguan"/); assert.match(lama, /searchParams\.get\("tampilan"\) === "corner"/);
   const css = src("features", "production", "rencana", "rencana.css"); for (const k of ["rc-cta", "rc-sek", "rc-b-accent", "rc-b-red", "rc-tab-on"]) assert.ok(css.includes(k), k); assert.match(css, /\[data-theme="dark"\]/);

@@ -64,6 +64,7 @@ export function aksiUtama(item, izin = {}) {
   if (item.sumber === "V2" || item.jalur === "V2") return { kind: "BUKA", label: "Buka ruang kerja" };
   if (!izin.jadwalkan) return { kind: "BUKA", label: "Buka ruang kerja" };
   if (item.sumber === "ADMIN" || item.jadwal) return { kind: "PILIH_MEJA", label: "Pindahkan" };
+  if (item.perluKeputusan && item.penghalang === "ORDER_MASIH_PENGAMBILAN" && izin.statusOrder) return { kind: "DIPROSES", label: "Ubah ke Diproses" }; // selesai di tab ini, tanpa pindah halaman
   if (item.perluKeputusan) return { kind: "KEPUTUSAN", label: "Lihat keputusan" };
   return { kind: "PILIH_MEJA", label: "Pilih meja" }; // alternatif seret untuk HP dan keyboard: layanan yang sama, satu ketukan
 }
@@ -76,6 +77,16 @@ export function badgeBahan(bahan) {
   return { tone: "neutral", text: "Tanpa rencana bahan" }; // rencana bahan OPSIONAL untuk menjadwalkan: tidak diwarnai peringatan
 }
 export const badgePosisi = (diterima) => (diterima ? { tone: "green", text: "Di workshop" } : { tone: "orange", text: "Belum tiba" });
+/** Unit masih di pelanggan / di jalan menurut pickup: menandai tiba ikut menutup pickup driver. */
+export const pickupBelumDitutup = (item) => ["MENUNGGU_DIJEMPUT", "DALAM_PENJEMPUTAN"].includes(item?.posisi?.key);
+/** Teks hasil tandai tiba (satu atau beberapa unit). */
+export function teksHasilTiba(hasil) {
+  const ok = hasil.filter((h) => h.ok); const gagal = hasil.filter((h) => !h.ok); const ditutup = ok.filter((h) => h.pickupDitutup).length;
+  const awal = ok.length === 1 ? `${ok[0].unitCode} diterima di workshop` : ok.length ? `${ok.length} unit diterima di workshop` : "";
+  const pickup = !ditutup ? "" : ok.length === 1 ? " · pickup ditutup" : ` · ${ditutup} pickup ditutup`;
+  const sisa = gagal.length ? `${awal ? ". " : ""}${gagal.length === 1 ? `${gagal[0].unitCode}: ${gagal[0].pesan}` : `${gagal.length} unit gagal — ${gagal[0].pesan}`}` : "";
+  return `${awal}${pickup}${sisa}`;
+}
 
 /**
  * Keputusan LEPAS di sel HARI (kalender mingguan). Tidak ada formulir: hasilnya PINDAH (langsung menyimpan), ABAIKAN (tidak ada perubahan), atau TOLAK (kartu tetap di tempatnya + alasan singkat).
@@ -128,15 +139,16 @@ export function bacaUrl(search, { today = todayWib() } = {}) {
   const hari = validKey(p.get("hari")) ? p.get("hari") : today;
   const start = validKey(p.get("minggu")) ? mondayOf(p.get("minggu")) : mondayOf(hari);
   const mentah = TAB_LAMA[p.get("tab")] || p.get("tab"); const tab = TABS.some((t) => t.key === mentah) ? mentah : TAB_BAWAAN;
-  return { start, hari, tab, q: (p.get("q") || "").slice(0, 80), sort: SORTS.some((s) => s.key === p.get("sort")) ? p.get("sort") : "PRIORITAS" };
+  return { start, hari, tab, q: (p.get("q") || "").slice(0, 80), sort: SORTS.some((s) => s.key === p.get("sort")) ? p.get("sort") : "PRIORITAS", tampilan: p.get("tampilan") === "corner" ? "corner" : "meja" };
 }
-export function tulisUrl({ start, hari, tab, q, sort }, { today = todayWib() } = {}) {
+export function tulisUrl({ start, hari, tab, q, sort, tampilan }, { today = todayWib() } = {}) {
   const p = new URLSearchParams();
   if (start && start !== mondayOf(today)) p.set("minggu", start);
   if (hari && hari !== today) p.set("hari", hari);
   if (tab && tab !== TAB_BAWAAN) p.set("tab", tab);
   if (q) p.set("q", q);
   if (sort && sort !== "PRIORITAS") p.set("sort", sort);
+  if (tampilan === "corner") p.set("tampilan", "corner"); // Meja (bawaan) | Corner — dua tampilan dalam SATU tab Rencana
   const s = p.toString(); return s ? `?${s}` : "";
 }
 
@@ -156,3 +168,6 @@ export function pesanGagalJadwal(e) {
   if (c === "UNIT_V2_OWNED") return "Unit ini sudah dikelola Pelaksanaan Meja — jadwalnya diatur dari Papan Meja.";
   return e?.message || "Jadwal gagal disimpan.";
 }
+
+/** Wadah portal di DALAM kulit aplikasi (gaya kartu/ruang kerja dicakup .app-shell.prod-skin); jatuh ke body bila tidak ada. */
+export const wadahPortal = () => (typeof document === "undefined" ? null : document.querySelector(".app-shell.prod-skin") || document.body);

@@ -18,6 +18,7 @@ import { assertLocationAllowed, confirmUnitArrival, custodyHooks, handoffDariPen
 import { requireWorkshopDefaultLocation } from "./productionSettingsService.js";
 import { loadMilestoneEvidence, WHERE_PICKUP_DONE_NOT_RECEIVED, WHERE_RECEIPT_AKTIF } from "./workshopMilestoneEvidence.js";
 import { productionWriterEnabledForUnit } from "./v2FeatureFlags.js";
+import { tutupPickupKarenaDiterimaInTx } from "./pickupDitutupProduksi.js";
 import { notifikasiPelangganAktif } from "./customerNotifications.js";
 import { RECEIVED_BASIS_LABEL } from "../lib/domain/workshopMilestone.js";
 import { displayStatusOfUnit } from "../lib/domain/productionDisplay.js";
@@ -113,8 +114,26 @@ export async function pratinjauKoreksi(client, unitId) {
  * Catat penerimaan fisik unit di workshop.
  * @param {boolean} p.fisikDiterima  WAJIB true — petugas menyatakan unit benar-benar sudah diterima fisik (bukan dugaan dari status pickup)
  * @param {string|null} p.locationId lokasi Receiving/WIP tempat unit diletakkan; kosong = lokasi workshop bawaan Admin (409 berkode bila belum diatur)
+ * @param {boolean} p.tutupPickup  true = unit yang masih Menunggu dijemput / Dalam perjalanan boleh diterima; pickup-nya ditutup oleh Produksi (services/pickupDitutupProduksi.js)
  */
-export async function catatPenerimaanWorkshop(prisma, { unitId, actorId, locationId = null, note = null, fisikDiterima = false, idempotencyKey = null }) {
+export async function catatPenerimaanWorkshop(prisma, p) {
+  const { unitId, actorId, fisikDiterima = false, tutupPickup = false } = p;
+  if (!unitId) throw new PenerimaanError("unitId wajib diisi", 400, "PENERIMAAN_UNIT_WAJIB");
+  if (!actorId) throw new PenerimaanError("Pelaku penerimaan wajib diketahui", 400, "PENERIMAAN_PELAKU_WAJIB");
+  if (fisikDiterima !== true) throw new PenerimaanError("Penerimaan hanya dicatat setelah unit benar-benar diterima fisik di workshop. Centang pernyataan penerimaan fisik.", 400, "PENERIMAAN_FISIK_WAJIB");
+  // Validasi catatan SEBELUM menutup pickup: permintaan yang pasti ditolak tidak boleh mengubah status unit/job.
+  if (typeof p.note === "string" && p.note.trim().length > MAX_NOTE) throw new PenerimaanError(`Catatan maksimal ${MAX_NOTE} karakter`, 400, "PENERIMAAN_CATATAN_PANJANG");
+  if (tutupPickup) {
+    // Lokasi penerimaan divalidasi SEBELUM menutup pickup: bila lokasi bawaan belum diatur / lokasi tidak sah, TIDAK ada yang berubah (bukan pickup tertutup tanpa catatan penerimaan).
+    const lokasi = p.locationId ? await prisma.storageLocation.findUnique({ where: { id: p.locationId } }) : await requireWorkshopDefaultLocation(prisma);
+    assertLocationAllowed("INBOUND", lokasi);
+  }
+  const pickup = tutupPickup ? await prisma.$transaction((tx) => tutupPickupKarenaDiterimaInTx(tx, { unitId, actorId })) : null;
+  const hasil = await catatPenerimaanInti(prisma, p);
+  return pickup?.ditutup ? { ...hasil, pickup } : hasil;
+}
+
+async function catatPenerimaanInti(prisma, { unitId, actorId, locationId = null, note = null, fisikDiterima = false, idempotencyKey = null }) {
   if (!unitId) throw new PenerimaanError("unitId wajib diisi", 400, "PENERIMAAN_UNIT_WAJIB");
   if (!actorId) throw new PenerimaanError("Pelaku penerimaan wajib diketahui", 400, "PENERIMAAN_PELAKU_WAJIB");
   if (fisikDiterima !== true) throw new PenerimaanError("Penerimaan hanya dicatat setelah unit benar-benar diterima fisik di workshop. Centang pernyataan penerimaan fisik.", 400, "PENERIMAAN_FISIK_WAJIB");
@@ -131,7 +150,7 @@ export async function catatPenerimaanWorkshop(prisma, { unitId, actorId, locatio
   }
   if (!STATUS_BOLEH.includes(unit.status)) {
     throw new PenerimaanError(unit.status === "AWAITING_PICKUP" || unit.status === "IN_TRANSIT_IN"
-      ? "Unit belum selesai dijemput — penerimaan di workshop dicatat setelah pickup selesai dan unit benar-benar tiba."
+      ? "Unit belum selesai dijemput. Bila unit memang sudah ada di workshop, tandai tiba dari Rencana Produksi — pickup-nya ikut ditutup."
       : `Unit berstatus ${unit.status}; penerimaan workshop tidak dapat dicatat pada status ini.`, 409, "PENERIMAAN_STATUS_UNIT", { status: unit.status });
   }
 

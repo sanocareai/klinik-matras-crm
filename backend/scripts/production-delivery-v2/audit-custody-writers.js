@@ -62,6 +62,11 @@ export function auditCustodyWriters(files) {
         const after = text.split("\n").slice(line - 1, line + 30).join("\n");
         const hooked = /offerUnitCustody\(tx,\s*\{\s*direction:\s*"(INBOUND|RETURN)"/.test(after);
         findings.push({ file: rel, line, kind: "UNIT_PATH_WRITER", operation: match[1], disposition: hooked ? "CUSTODY_HOOKED" : "PICKUP_RETURN_PATH_WITHOUT_CUSTODY", ok: hooked });
+      } else if (rel === "src/services/pickupDitutupProduksi.js") {
+        // Produksi menutup pickup karena unit SUDAH ada di workshop: bukti tiba = catatan penerimaan workshop yang dibuat pemanggil (catatPenerimaanWorkshop), bukan penawaran custody.
+        // Run PENDING_ARRIVAL ditangani confirmUnitArrival jalur tanpa-custody (unit tanpa handoff INBOUND). Wajib dipanggil hanya dari unitWorkshopReceiptService.js.
+        const caller = (files.get("src/services/unitWorkshopReceiptService.js") ?? "").includes("tutupPickupKarenaDiterimaInTx(");
+        findings.push({ file: rel, line, kind: "UNIT_PATH_WRITER", operation: match[1], disposition: caller ? "WORKSHOP_RECEIPT_EVIDENCE" : "PICKUP_CLOSE_WITHOUT_RECEIPT", ok: caller });
       } else if (PENDING.has(rel)) {
         findings.push({ file: rel, line, kind: "UNIT_PATH_WRITER", operation: match[1], disposition: "PENDING_LATER_SLICE", ok: true, note: PENDING.get(rel) });
       } else {

@@ -5750,16 +5750,18 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       // Lihat catatan simplifikasi di kepala file: PICKUP selesai langsung ke RECEIVED (bukan IN_TRANSIT_IN dulu) — belum ada fitur scan intake gudang yang akan mengonsumsi status antara itu.
       if (job.type === "DELIVERY") {
         await ubahStatusUnitInTx(tx, { unitIds: jobUnits.map((ju) => ju.unitId), ke: KE_STATUS.TERKIRIM, aktor: req.user.id, sumber: SUMBER_STATUS.DELIVERY_JOB, jobId: job.id, sinkronOrder: false });
-      } else {
-        await tx.unit.updateMany({
-          where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
-          data: { status: "RECEIVED" },
-        });
       }
+      // Unit yang SUDAH diterima Produksi selama job INI masih terbuka (pickupDitutupProduksi.js mencatat job itu di jobTetapBuka) tidak disentuh lagi:
+      // statusnya mungkin sudah maju (dikerjakan) dan tidak boleh mundur ke RECEIVED. Unit lain — termasuk pickup komplain/revisi — berperilaku persis seperti sebelumnya.
+      const sudahDiterimaProduksi = job.type === "DELIVERY" ? new Set() : new Set((await tx.activityEvent.findMany({
+        where: { entityType: "unit", entityId: { in: jobUnits.map((ju) => ju.unitId) }, eventType: EVENT_TYPES.PICKUP_CLOSED_BY_WORKSHOP }, select: { entityId: true, metadata: true },
+      })).filter((e) => (e.metadata?.jobTetapBuka ?? []).includes(job.id)).map((e) => e.entityId));
+      const masihDijemput = job.type === "DELIVERY" ? [] : jobUnits.map((ju) => ju.unitId).filter((id) => !sudahDiterimaProduksi.has(id));
+      if (masihDijemput.length) await tx.unit.updateMany({ where: { id: { in: masihDijemput } }, data: { status: "RECEIVED" } });
       // Custody Gudang V2 (P1–P2): pickup selesai menawarkan unit ke Gudang. V1 tetap RECEIVED; tanpa writer V2 (flag OFF /
       // unit di luar cohort) tidak ada yang dibuat. Satu transaksi dengan mutasi V1 -> atomik.
-      if (job.type === "PICKUP") {
-        await offerUnitCustody(tx, { direction: "INBOUND", unitIds: jobUnits.map((ju) => ju.unitId), jobId: job.id, actorId: req.user.id });
+      if (job.type === "PICKUP" && masihDijemput.length) {
+        await offerUnitCustody(tx, { direction: "INBOUND", unitIds: masihDijemput, jobId: job.id, actorId: req.user.id });
       }
       // forceStagedUnitIds (8 Oktober 2026) — unit yang BARU SAJA dipastikan RECEIVED/DELIVERED di
       // atas ikut dihitung agregasi weakest-link order walau belum pernah masuk stage engine

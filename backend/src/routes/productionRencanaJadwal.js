@@ -27,7 +27,12 @@ function handleErr(err, res) {
   console.error("Rencana Admin error:", err);
   return res.status(500).json({ error: pesanServerAman(err) });
 }
-const izin = (user) => ({ jadwalkan: hasPermission(user, P.UNIT_ROUTING_WRITE), aktivasiV2: hasPermission(user, P.PRODUCTION_SETTINGS_WRITE) });
+const izin = (user) => ({
+  jadwalkan: hasPermission(user, P.UNIT_ROUTING_WRITE), aktivasiV2: hasPermission(user, P.PRODUCTION_SETTINGS_WRITE),
+  terima: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_STAGE_WRITE), // sama dengan POST /units/:id/penerimaan-workshop
+  statusOrder: hasPermission(user, P.ORDER_WRITE), // "Ubah ke Diproses" lewat jalur Sales yang sama (PATCH /orders/:id)
+  pic: hasPermission(user, P.PRODUCTION_ASSIGNMENT_WRITE), // PIC bawaan Meja per tanggal + PIC Corner (PUT /production-v2/stations/:code/pic, penetapan Corner)
+});
 const kunci = (req) => req.get("Idempotency-Key");
 
 productionRencanaJadwalRouter.get("/rencana/minggu", requirePermission(P.UNIT_READ), async (req, res) => {

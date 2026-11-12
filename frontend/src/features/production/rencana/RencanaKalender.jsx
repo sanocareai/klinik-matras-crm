@@ -1,11 +1,13 @@
 import React, { useEffect, useRef } from "react";
-import { AlertTriangle, Info, Target } from "lucide-react";
-import KartuUnit from "@/features/production/rencana/KartuUnit.jsx";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertTriangle, ChevronDown, Info, Target, UserRound } from "lucide-react";
+import { LANE, laneOptions, optionText } from "@/features/production/picLanes.js";
+import KartuUnit, { IK, PEGAS } from "@/features/production/rencana/KartuUnit.jsx";
 import { labelHari, labelTanggal } from "@/features/production/rencana/rencanaModel.js";
 
 // Kalender mingguan RINGKAS: satu sel per hari (kapasitas, terencana Admin/V2, target selesai, perlu perhatian). Hari/meja kosong tidak memakai panel besar.
-// Klik hari = membuka rincian meja + daftar unit. Hari juga target lepas (seret) dan SEMUA tindakan tetap bisa lewat tombol/keyboard.
-export function WeekStrip({ minggu, hari, onPilih, dragAktif, onLepas, loading, ringkas = false }) {
+// Klik hari = membuka rincian meja + daftar unit. Hari juga sasaran lepas (data-drop, dibaca useSeretPointer.js) dan SEMUA tindakan tetap bisa lewat tombol/keyboard.
+export function WeekStrip({ minggu, hari, onPilih, dragAktif, sasaran = null, loading, ringkas = false }) {
   const aktifRef = useRef(null);
   useEffect(() => { if (ringkas) aktifRef.current?.scrollIntoView?.({ inline: "center", block: "nearest" }); }, [ringkas, hari, minggu?.start]);
   if (!minggu) return <div className={`${ringkas ? "h-[60px]" : "h-[92px]"} animate-pulse rounded-card bg-inset`} aria-busy="true" />;
@@ -24,10 +26,8 @@ export function WeekStrip({ minggu, hari, onPilih, dragAktif, onLepas, loading, 
               <button
                 ref={aktif ? aktifRef : null} type="button" aria-pressed={aktif} aria-label={label}
                 data-testid="hari-sel" data-date={d.date} data-aktif={aktif ? "1" : "0"} data-penuh={d.penuh ? "1" : "0"} data-libur={libur ? "1" : "0"}
-                onClick={() => onPilih(d.date)}
-                onDragOver={dragAktif ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } : undefined}
-                onDrop={dragAktif ? (e) => { e.preventDefault(); onLepas?.(d.date); } : undefined}
-                className={`prod-rc-hari${ringkas ? " ringkas" : ""}${aktif ? " aktif" : ""}${libur ? " libur" : ""}${d.isPast ? " lewat" : ""}${dragAktif && !libur ? " sasaran" : ""}`}
+                onClick={() => onPilih(d.date)} data-drop={dragAktif && !libur ? `hari:${d.date}` : undefined}
+                className={`prod-rc-hari${ringkas ? " ringkas" : ""}${aktif ? " aktif" : ""}${libur ? " libur" : ""}${d.isPast ? " lewat" : ""}${dragAktif && !libur ? " sasaran" : ""}${sasaran?.kunci === `hari:${d.date}` ? " atas" : ""}`}
               >
                 <span className="flex items-baseline justify-between gap-1">
                   <span className={`text-[11px] font-semibold uppercase tracking-wide ${aktif ? "text-accent" : "text-ink3"}`}>{d.hari}{d.isToday ? (ringkas ? "" : " · hari ini") : ""}</span>
@@ -43,7 +43,7 @@ export function WeekStrip({ minggu, hari, onPilih, dragAktif, onLepas, loading, 
                   <>
                     <span className="flex items-center justify-between text-[12px]">
                       <span className={`font-semibold ${d.penuh ? "text-red" : "text-ink"}`}>{d.terencana}<span className="font-normal text-ink3">/{d.kapasitas}{ringkas ? "" : " unit"}</span></span>
-                      {d.perhatian > 0 && <span className="inline-flex items-center gap-0.5 text-orange" title={`${d.perhatian} unit perlu perhatian`}><AlertTriangle size={12} aria-hidden />{d.perhatian}</span>}
+                      {d.perhatian > 0 && <span className="inline-flex items-center gap-0.5 text-orange" title={`${d.perhatian} unit perlu perhatian`}><AlertTriangle {...IK} size={12} aria-hidden />{d.perhatian}</span>}
                     </span>
                     <span className="flex h-1.5 w-full overflow-hidden rounded-full bg-inset" aria-hidden>
                       <span className="h-full bg-accent" style={{ width: `${pAdmin}%` }} /><span className="h-full bg-green" style={{ width: `${pV2}%` }} />
@@ -51,7 +51,7 @@ export function WeekStrip({ minggu, hari, onPilih, dragAktif, onLepas, loading, 
                     {!ringkas && (
                       <span className="flex items-center justify-between text-[11px] text-ink3">
                         <span>{d.admin ? `Admin ${d.admin}` : ""}{d.admin && d.v2 ? " · " : ""}{d.v2 ? `Berjalan ${d.v2}` : ""}{!d.admin && !d.v2 ? "Kosong" : ""}</span>
-                        {d.targetSelesai > 0 && <span className="inline-flex items-center gap-0.5" title="Unit dengan target selesai pada hari ini"><Target size={11} aria-hidden />{d.targetSelesai}</span>}
+                        {d.targetSelesai > 0 && <span className="inline-flex items-center gap-0.5" title="Unit dengan target selesai pada hari ini"><Target {...IK} size={11} aria-hidden />{d.targetSelesai}</span>}
                       </span>
                     )}
                   </>
@@ -66,53 +66,78 @@ export function WeekStrip({ minggu, hari, onPilih, dragAktif, onLepas, loading, 
   );
 }
 
-function MejaBaris({ s, dragAktif, onLepasMeja, children, menyimpan = false }) {
-  const kosong = s.items.length === 0; const [atas, setAtas] = React.useState(false);
+// PIC bawaan Meja untuk hari ini, langsung di kepala meja (tanpa pindah ke Papan Meja). Pemilih bawaan sistem (lembar pilihan iOS/Android di HP) bergaya pil.
+// Layanan & aturan SAMA dengan Papan Meja: PUT /production-v2/stations/:code/pic (hanya profil operator aktif ber-jalur Meja; kosong = hapus). Tanpa izin = teks saja.
+function PicMeja({ s, operators, onSetPic, sibuk }) {
+  const teks = s.pic ? `PIC ${s.pic.nama}${s.pic.aktif === false ? " (nonaktif)" : ""}` : "PIC belum ditetapkan";
+  if (!onSetPic || !operators) return <>{teks}</>;
+  const kini = s.pic?.operatorId ? { id: s.pic.operatorId, name: s.pic.nama } : null;
+  const opsi = laneOptions(operators, LANE.TABLE, kini);
+  if (opsi.length === 0) return <span data-testid="meja-pic-kosong" title="Tambahkan profil operator ber-jalur Meja di Pengaturan Produksi">{teks} · belum ada profil PIC Meja</span>; // dijelaskan, bukan pemilih kosong
+  return (
+    <label className={`rc-pic${s.pic ? "" : " kosong"}`} title={`PIC ${s.label} hari ini`}>
+      <UserRound {...IK} size={13} aria-hidden />
+      <select data-testid="meja-pic" aria-label={`PIC ${s.label} pada hari ini`} disabled={sibuk} value={s.pic?.operatorId || ""} onChange={(e) => onSetPic(s.code, e.target.value || null)}>
+        <option value="">{s.pic ? "Hapus PIC" : "Pilih PIC"}</option>
+        {opsi.map((o) => <option key={o.id} value={o.id}>{optionText(o, LANE.TABLE)}</option>)}
+      </select>
+      <span className="rc-pic-teks">{s.pic ? s.pic.nama : "Pilih PIC"}{s.pic?.aktif === false ? " · nonaktif" : ""}</span>
+      <ChevronDown {...IK} size={13} aria-hidden />
+    </label>
+  );
+}
+
+function MejaBaris({ s, dragAktif, sasaran, children, menyimpan = false, operators, onSetPic }) {
+  const kosong = s.items.length === 0; const atas = sasaran?.kunci === `meja:${s.code}`; const sisa = Math.max(0, s.capacity - s.items.length);
   return (
     <section
       className={`prod-rc-meja${kosong ? " kosong" : ""}${dragAktif ? " sasaran" : ""}${atas ? " atas" : ""}${s.capacity === 0 ? " libur" : ""}`}
       data-testid="meja-baris" data-meja={s.code} data-count={s.items.length} data-lepas={atas ? "1" : "0"} aria-busy={menyimpan || undefined}
-      onDragOver={dragAktif ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setAtas(true); } : undefined} onDragLeave={dragAktif ? () => setAtas(false) : undefined} onDrop={dragAktif ? (e) => { e.preventDefault(); setAtas(false); onLepasMeja?.(s.code); } : undefined}
+      data-drop={dragAktif && s.capacity > 0 ? `meja:${s.code}` : undefined}
     >
       <header className="prod-rc-meja-kepala">
         <h3 className="m-0">{s.label} <span className={`font-normal ${s.capacity > 0 && s.items.length >= s.capacity ? "text-red" : "text-ink3"}`}>{s.capacity === 0 ? `· ${s.items.length} unit · tanpa kapasitas rutin (libur)` : `· ${s.items.length}/${s.capacity} unit`}</span></h3>
         {/* Petunjuk lepas MENGGANTIKAN teks PIC di baris yang sama: tinggi baris tidak berubah saat seret dimulai, sehingga sasaran tidak melompat di bawah pointer. */}
         {dragAktif
           ? <span className="min-w-0 text-[12px] font-medium text-accent" data-testid="meja-lepas-petunjuk">{s.capacity === 0 ? "Hari libur — tidak bisa dijadwalkan." : `Lepas di sini untuk menjadwalkan ${s.label}.`}</span>
-          : <span className="min-w-0 text-[12px] text-ink3">{s.pic ? <>PIC {s.pic.nama}{s.pic.aktif === false ? " (nonaktif)" : ""}</> : "PIC belum ditetapkan"}{s.capacity === 0 ? "" : kosong ? ` · ${s.capacity} tempat kosong` : s.items.length < s.capacity ? ` · ${s.capacity - s.items.length} tempat kosong` : " · penuh"}</span>}
+          : <span className="flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-ink3"><PicMeja s={s} operators={operators} onSetPic={s.capacity > 0 ? onSetPic : null} sibuk={menyimpan} />{s.capacity === 0 ? "" : kosong ? ` · ${s.capacity} tempat kosong` : s.items.length < s.capacity ? ` · ${s.capacity - s.items.length} tempat kosong` : " · penuh"}</span>}
       </header>
       <div className="prod-rc-meja-isi">
-        {children}
-        {/* Slot kosong = sasaran lepas yang terlihat; kapasitas dari server (jumlah unit per meja), bukan jam. */}
-        {s.capacity > 0 && Array.from({ length: Math.max(0, s.capacity - s.items.length) }).map((_, i) => <div key={`slot-${i}`} className="prod-rc-slot" data-testid="meja-slot" aria-hidden="true"><span>{dragAktif ? "Lepas di sini" : "Seret unit ke sini"}</span><small>atau pilih meja</small></div>)}
+        <AnimatePresence initial={false}>{children}</AnimatePresence>
+        {/* SATU area tempat kosong dengan tinggi TETAP: saat diam tenang ("N tempat kosong"), saat menyeret menjadi sasaran jelas — tinggi baris tidak berubah, sasaran tidak melompat di bawah jari. */}
+        {s.capacity > 0 && sisa > 0 && (
+          <motion.div layout transition={PEGAS} className={`prod-rc-slot${dragAktif ? " siap" : ""}${atas ? " berikut" : ""}`} data-testid="meja-slot" aria-hidden="true">
+            <span>{atas ? "Lepas untuk menaruh di sini" : dragAktif ? "Lepas di sini" : `${sisa} tempat kosong`}</span>
+            <small>{dragAktif ? `${sisa} tempat kosong` : kosong ? "Seret unit ke sini atau tekan Pilih meja" : ""}</small>
+          </motion.div>
+        )}
       </div>
     </section>
   );
 }
 
-export function DayPanel({ dayData, loading, izin, onAksi, onBuka, draggingItem, onDragStart, onDragEnd, onLepasMeja, pendingIds = new Set(), menyimpan = false }) {
+export function DayPanel({ dayData, loading, izin, onAksi, onBuka, dragAktif = false, sasaran = null, onSeretMulai, seretIds = new Set(), pendingIds = new Set(), menyimpan = false, operators = null, onSetPic = null }) {
   if (!dayData) return <div className="h-40 animate-pulse rounded-card bg-inset" aria-busy="true" />;
   const total = dayData.stations.reduce((a, s) => a + s.items.length, 0) + dayData.tanpaMeja.length;
-  const dragAktif = !!draggingItem;
   const bolehSeret = (it) => !!izin.jadwalkan && it.sumber === "ADMIN";
   return (
     <section aria-label={`Rincian ${labelTanggal(dayData.date)}`} data-testid="day-panel" className="prod-rc-hari-panel min-w-0" aria-busy={loading || undefined}>
       <header className="prod-rc-hari-kepala">
         <h2 className="m-0">{labelHari(dayData.date)} <span>{total} unit terjadwal</span></h2>
-        <p className="m-0 flex items-center gap-1 text-[12px] text-ink3" data-testid="catatan-kapasitas"><Info size={12} aria-hidden /> {dayData.kapasitas.perMeja} unit per meja × {dayData.kapasitas.mejaCount} meja (Sen–Sab; Minggu libur). Durasi kerja belum tersedia, jadi kapasitas dihitung dari jumlah unit.</p>
+        <p className="m-0 flex items-center gap-1 text-[12px] text-ink3" data-testid="catatan-kapasitas"><Info {...IK} size={12} aria-hidden /> {dayData.kapasitas.perMeja} unit per meja × {dayData.kapasitas.mejaCount} meja (Sen–Sab; Minggu libur). Durasi kerja belum tersedia, jadi kapasitas dihitung dari jumlah unit.</p>
       </header>
       {dayData.libur && <p className="m-0 rounded-card bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="hari-libur" role="note">Hari Minggu libur — bukan hari kerja rutin, kapasitas rutin 0 dan Rencana Admin tidak bisa dijadwalkan di sini.{total > 0 ? " Unit di bawah terjadwal lewat jalur lain dan ditampilkan apa adanya." : ""}</p>}
       {total === 0 && <p className="m-0 rounded-card border border-dashed border-line px-3 py-3 text-[13px] text-ink3" data-testid="hari-kosong">Belum ada unit dijadwalkan pada hari ini. Seret unit dari antrean ke Meja 1–4, atau tekan Pilih meja pada kartu.</p>}
       <div className="prod-rc-meja-grid">
         {dayData.stations.map((s) => (
-          <MejaBaris key={s.code} s={s} dragAktif={dragAktif && !!izin.jadwalkan} onLepasMeja={onLepasMeja} menyimpan={menyimpan}>
-            {s.items.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onDragStart={onDragStart} onDragEnd={onDragEnd} pending={pendingIds.has(it.unitId)} />)}
+          <MejaBaris key={s.code} s={s} dragAktif={dragAktif && !!izin.jadwalkan} sasaran={sasaran} menyimpan={menyimpan} operators={operators} onSetPic={izin.pic ? onSetPic : null}>
+            {s.items.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onSeretMulai={onSeretMulai} diseret={seretIds.has(it.unitId)} pending={pendingIds.has(it.unitId)} />)}
           </MejaBaris>
         ))}
         {dayData.tanpaMeja.length > 0 && (
           <section className="prod-rc-meja" data-testid="tanpa-meja">
             <header className="prod-rc-meja-kepala"><h3 className="m-0">Tanpa meja <span>· hanya tanggal, meja belum dipilih</span></h3></header>
-            <div className="prod-rc-meja-isi">{dayData.tanpaMeja.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onDragStart={onDragStart} onDragEnd={onDragEnd} pending={pendingIds.has(it.unitId)} />)}</div>
+            <div className="prod-rc-meja-isi">{dayData.tanpaMeja.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onSeretMulai={onSeretMulai} diseret={seretIds.has(it.unitId)} pending={pendingIds.has(it.unitId)} />)}</div>
           </section>
         )}
       </div>

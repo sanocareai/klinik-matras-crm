@@ -7,3 +7,64 @@
 [data-theme="dark"] .rc-tab-on { color: #04182f !important; }
 [data-theme="dark"] .rc-tab-on .rc-tab-count { background: rgba(255, 255, 255, 0.38) !important; color: #04182f !important; }
 .rc-tab-count { background: rgba(255, 255, 255, 0.22); }
+
+/* Chip "Belum tiba" yang bisa diketuk (tandai tiba di workshop) + lembar konfirmasi satu ketukan. */
+.rc-chip-tiba { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 2px 8px 2px 9px; border-radius: 999px; border: 0; background: var(--ord-pending-bg, #FFF0C2); color: var(--ord-pending-fg, #6E4300); font-size: 12px; font-weight: 600; cursor: pointer; transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s ease, filter .18s ease; }
+.rc-chip-tiba:hover { filter: brightness(.97); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-pending-dot, #E59A00) 22%, transparent); }
+.rc-chip-tiba:active { transform: scale(.95); }
+.rc-chip-tiba:focus-visible { outline: 2px solid var(--ord-pending-dot, #E59A00); outline-offset: 2px; }
+.rc-chip-titik { width: 6px; height: 6px; border-radius: 50%; background: var(--ord-pending-dot, #E59A00); animation: rc-denyut 1.8s ease-in-out infinite; }
+@keyframes rc-denyut { 50% { opacity: .35; } }
+.rc-konfirmasi { animation: rc-muncul .22s cubic-bezier(.2,.8,.2,1); }
+.rc-konfirmasi.lembar { animation-name: rc-naik; }
+@keyframes rc-muncul { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+@keyframes rc-naik { from { transform: translateY(100%); } }
+.rc-konfirmasi-btn { flex: 1; min-height: 44px; border-radius: 12px; border: 0; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
+.rc-konfirmasi-btn:active { transform: scale(.97); }
+.rc-konfirmasi-btn.netral { background: rgba(120, 120, 128, .16); color: inherit; }
+.rc-konfirmasi-btn.utama { background: var(--crm-primary, #2563eb); color: #fff; }
+.rc-konfirmasi-btn:hover { filter: brightness(1.05); }
+@media (prefers-reduced-motion: reduce) { .rc-chip-titik, .rc-konfirmasi { animation: none; } }
+
+/* Seret-lepas berbasis pointer (useSeretPointer.js): kartu terangkat, sasaran di bawah jari/kursor; area tempat kosong bertinggi tetap. */
+body.rc-sedang-seret, body.rc-sedang-seret * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
+.rc-salinan { position: fixed; left: 0; top: 0; z-index: 10000; pointer-events: none; will-change: transform; }
+.rc-salinan-isi { position: relative; border-radius: 18px; box-shadow: 0 28px 60px -18px rgba(27, 27, 57, .55), 0 2px 6px rgba(27, 27, 57, .12); }
+.rc-salinan-isi > div > .prod-rc-kartu { opacity: 1 !important; transform: none !important; }
+.rc-salinan-tumpuk { position: absolute; inset: 6px -6px -6px 6px; border-radius: 18px; background: var(--crm-panel, #fff); box-shadow: inset 0 0 0 1px rgba(27, 27, 57, .1); z-index: -1; }
+.rc-salinan-jumlah { position: absolute; top: -8px; right: -8px; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 999px; background: var(--crm-primary, #2563eb); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px -2px rgba(37, 99, 235, .6); }
+:root .app-shell.crm-skin.prod-skin .prod-rc-hari { transition: transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .2s ease, background .2s ease; }
+:root .app-shell.crm-skin.prod-skin .prod-rc-hari.atas:not(.libur) { transform: scale(1.04); box-shadow: inset 0 0 0 2.5px var(--crm-primary), 0 14px 26px -16px rgba(57, 101, 250, .9); }
+:root .app-shell.crm-skin.prod-skin .prod-rc-meja.atas { transform: scale(1.01); transition: transform .2s cubic-bezier(.2,.8,.2,1), background .16s ease, box-shadow .16s ease; }
+:root .app-shell.crm-skin.prod-skin .prod-rc-slot { min-height: 56px; }
+:root .app-shell.crm-skin.prod-skin .prod-rc-slot.berikut { background: color-mix(in srgb, var(--crm-primary) 14%, transparent); outline-style: solid; }
+.prod-rc-kartu { will-change: transform; }
+.prod-rc-handle { touch-action: none; }
+
+/* Panel ruang kerja unit (PanelUnit.jsx): geser dari kanan di desktop, lembar dari bawah di HP. */
+body.rc-panel-terbuka { overflow: hidden; }
+.rc-panel-latar { position: fixed; inset: 0; z-index: 9000; background: rgba(15, 16, 35, .32); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.rc-panel { position: absolute; top: 10px; right: 10px; bottom: 10px; width: min(760px, calc(100vw - 20px)); display: flex; flex-direction: column; border-radius: 24px; background: var(--bg-page, #f6f7fb); color: var(--text-primary); box-shadow: 0 30px 80px -20px rgba(15, 16, 35, .55); overflow: hidden; }
+.rc-panel.lembar { top: 6vh; left: 0; right: 0; bottom: 0; width: auto; border-radius: 24px 24px 0 0; }
+:root[data-theme="dark"] .rc-panel { background: #15162e; }
+.rc-panel-alat { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 10px 12px 0; position: relative; }
+.rc-panel-pegangan { position: absolute; left: 50%; top: 6px; width: 38px; height: 5px; margin-left: -19px; border-radius: 999px; background: rgba(120, 120, 128, .35); }
+.rc-panel-tombol { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 999px; background: rgba(120, 120, 128, .14); color: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s ease, transform .12s ease; }
+.rc-panel-tombol:hover { background: rgba(120, 120, 128, .22); }
+.rc-panel-tombol:active { transform: scale(.96); }
+.rc-panel-tombol.bulat { width: 36px; padding: 0; justify-content: center; }
+.rc-panel-isi { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 18px 24px; }
+@media (prefers-reduced-motion: reduce) { :root .app-shell.crm-skin.prod-skin .prod-rc-hari.atas, :root .app-shell.crm-skin.prod-skin .prod-rc-meja.atas { transform: none; } }
+
+/* Pengalih tampilan Meja | Corner (gaya segmented control) dan pil PIC Meja. */
+.rc-segmen { display: inline-flex; align-self: flex-start; width: max-content; gap: 2px; padding: 3px; margin-bottom: 10px; border-radius: 12px; background: rgba(120, 120, 128, .14); }
+.rc-segmen button { position: relative; min-height: 34px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent; color: var(--text-secondary, #5b5b70); font-size: 13px; font-weight: 600; cursor: pointer; }
+.rc-segmen button.aktif { color: var(--text-primary, #111); }
+.rc-segmen-latar { position: absolute; inset: 0; border-radius: 9px; background: var(--crm-panel, #fff); box-shadow: 0 1px 3px rgba(15, 16, 35, .14), 0 0 0 .5px rgba(15, 16, 35, .06); }
+:root[data-theme="dark"] .rc-segmen-latar { background: #3a3b5c; }
+.rc-pic { position: relative; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .12); color: var(--text-primary); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s ease; }
+.rc-pic:hover { background: rgba(120, 120, 128, .2); }
+.rc-pic.kosong { color: var(--crm-primary-ink, #2a4bd7); background: color-mix(in srgb, var(--crm-primary, #3965fa) 12%, transparent); }
+.rc-pic select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 16px; } /* 16px: iOS tidak memperbesar halaman saat memilih */
+.rc-pic:focus-within { outline: 2px solid var(--crm-primary, #3965fa); outline-offset: 2px; }
+.rc-pic-teks { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
