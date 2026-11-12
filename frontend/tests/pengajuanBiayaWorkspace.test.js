@@ -118,7 +118,8 @@ test("C2: form data-driven — tipe tanggal/pilihan, jenis belum siap dinonaktif
 
 test("C2: menu — Marketing di Growth (SALES), Management di All Teams, hub semua divisi di Finance; gerbang peran tidak memberi akses silang", () => {
   const layout = baca("components/Layout.jsx");
-  assert.match(layout, /to: "\/marketing\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\], bolehDivisi: \["MARKETING"\]/); // C2.1: SALES bukan otomatis Marketing
+  // 12 Nov 2026: menu Pengajuan/Laporan Biaya Marketing dikeluarkan dari sidebar Growth (rute tetap ada di pageRegistry).
+  assert.doesNotMatch(layout, /to: "\/marketing\/(pengajuan|laporan)-biaya"/);
   assert.match(layout, /to: "\/kendali\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
   // menu Finance = hub (lib/financeHubs.js): item Pengajuan Biaya Divisi dengan gerbang peran yang sama
   assert.match(baca("lib/financeHubs.js"), /label: "Pengajuan Biaya Divisi", to: "\/finance\/pengajuan-divisi", bolehPeran: PERAN_PENGAJUAN/);

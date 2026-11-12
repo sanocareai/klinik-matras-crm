@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
-  Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
-  LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, Send,
+  Megaphone, BarChart3, Settings, UserCog, Bell,
+  LogOut, Package, X, Link2, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, Send,
   Wrench, Camera, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet, PiggyBank,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
-  Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
+  Boxes, ScanLine, ArrowUpDown, Check, Handshake,
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
   ShoppingCart,
   HandCoins,
@@ -35,7 +35,6 @@ import NotificationDrawer from "@/features/notifications/NotificationDrawer.jsx"
 import Avatar from "./Avatar.jsx";
 import { BRAND } from "@/lib/brand.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
-import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { FINANCE_HUBS, hubAktif, badgeHub } from "@/lib/financeHubs.js";
@@ -119,9 +118,6 @@ const DIVISIONS = {
         section: "DATA",
         items: [
           { to: "/customers", label: "Pelanggan",     Icon: Users },
-          // C2 — biaya marketing (iklan di luar AdSpend, konten, event, cetak, tools). Hanya SALES/Finance/Admin/Owner; server menegakkan ulang.
-          { to: "/marketing/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["MARKETING"] },
-          { to: "/marketing/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE"], bolehDivisi: ["MARKETING"] },
           { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
           // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
           // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
@@ -154,21 +150,9 @@ const DIVISIONS = {
         section: "ANALITIK",
         adminOnly: true,
         items: [
-          // Sales Performance Intelligence (28 Agustus 2026) — dijadikan HUB
-          // utama & item PERTAMA menu Analitik: agregasi Quality Scorer +
-          // Sales Risk Engine + SLA per sales dalam 1 baris ringkas, dengan
-          // drill-down ke 2 halaman detail di bawah (yang TIDAK dihapus,
-          // cuma bukan lagi entry point utama — route-nya tetap ada di
-          // App.jsx, diakses via link dari dalam hub).
-          { to: "/sales-intelligence", label: "Sales Performance Intelligence", Icon: Award },
+          // Sales Performance Intelligence, Tanya Sano & Otomasi dipindah ke
+          // workspace AI Agents tersendiri (12 Nov 2026) — route tetap ada di App.jsx.
           { to: "/laporan", label: "Laporan", Icon: BarChart3 },
-        ],
-      },
-      {
-        section: "AI & OTOMASI",
-        items: [
-          { to: "/copilot",    label: "Tanya Sano", Icon: Sparkles },
-          { to: "/automation", label: "Otomasi",    Icon: Zap, adminOnly: true },
         ],
       },
       // Dipindah DARI /pengaturan (Main Hub) — 26 Agustus 2026, permintaan
@@ -1261,7 +1245,6 @@ export default function Layout({ user, onLogout }) {
             divisi Growth. Disembunyikan saat sidebar menyempit: kartunya butuh
             lebar penuh untuk terbaca, dan memaksanya masuk 72px cuma jadi
             kotak tanpa arti. */}
-        {!onHub && divisionKey === "growth" && !collapsed && <SidebarPromo />}
 
         {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
             onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil
