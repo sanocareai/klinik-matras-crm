@@ -8,8 +8,11 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
+        "EAS_PROJECT_ID": "5125e6f9-9d1c-41e7-825c-106418d00967",
         "APP_VARIANT": "development",
         "EXPO_PUBLIC_APP_ENV": "development",
         "EXPO_PUBLIC_API_URL": "http://10.0.2.2:4000/api"
@@ -19,8 +22,11 @@
       "distribution": "internal",
       "channel": "preview",
       "autoIncrement": true,
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
+        "EAS_PROJECT_ID": "5125e6f9-9d1c-41e7-825c-106418d00967",
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_APP_ENV": "preview",
         "EXPO_PUBLIC_API_URL": "https://app.sanomatrassehat.com/api",
@@ -30,8 +36,11 @@
     "production": {
       "channel": "production",
       "autoIncrement": true,
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
+        "EAS_PROJECT_ID": "5125e6f9-9d1c-41e7-825c-106418d00967",
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://app.sanomatrassehat.com/api",
@@ -39,5 +48,7 @@
       }
     }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": {}
+  }
 }
