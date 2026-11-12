@@ -968,7 +968,8 @@ export default function Layout({ user, onLogout }) {
   const isAdmin = isAdminUser(user);
   // Kerangka bersama Sales CRM (tema .crm-skin, ikon SVG, kolom pencarian, tab): divisi growth dan Finance (Fase Ringkasan Finance, 31 Okt 2026).
   // Gelombang 1 redesain Apple (Nov 2026): Main Hub, Delivery (armada), dan All Teams (kendali) ikut kerangka baru; `apSkin` = tipografi Apple/Inter (styles/sanss-apple.css).
-  const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali" || divisionKey === "b2b") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF; // pekerja lapangan (driver/helper) tetap pada tampilan ringkas mereka
+  // + AI Studio (Nov 2026): workspace baru langsung memakai kerangka Apple yang sama (bukan gaya sendiri).
+  const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali" || divisionKey === "b2b" || divisionKey === "aistudio") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF; // pekerja lapangan (driver/helper) tetap pada tampilan ringkas mereka
   const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse" || apSkin) && !IS_DRIVER_APP && !CRM_SKIN_OFF;
   // Halaman yang memakai komponen bersama bergaya Apple (PageHeader/WorkspaceHero): kerangka Apple + papan Komplain (kerangka Sales tetap).
   const gayaApple = apSkin || (!driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF && location.pathname.startsWith("/komplain"));

@@ -25,7 +25,7 @@ test("Ikon: setiap menu Sales CRM punya ikon SVG di peta; pemetaan hanya untuk d
   for (const r of rute) assert.ok(ikon.includes(`"${r}":`), `ikon untuk ${r}`);
   assert.ok(layout.includes("const sectionsVisible = crmShell ? (divisionKey === \"warehouse\" ? denganIkonGudang(sectionsBase) : denganIkonSales(sectionsBase)) : sectionsBase;"));
   // Gelombang 1-2 redesain Apple (Nov 2026): Main Hub, Delivery (armada), All Teams (kendali), dan B2B ikut kerangka baru lewat `apSkin` (bukan driver-only / APK driver).
-  assert.ok(layout.includes('const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali" || divisionKey === "b2b") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
+  assert.ok(layout.includes('const apSkin = (onHub || divisionKey === "armada" || divisionKey === "kendali" || divisionKey === "b2b" || divisionKey === "aistudio") && !driverOnly && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
   assert.ok(layout.includes('const crmShell = (divisionKey === "growth" || divisionKey === "finance" || divisionKey === "bengkel" || divisionKey === "warehouse" || apSkin) && !IS_DRIVER_APP && !CRM_SKIN_OFF;'));
   assert.ok(layout.includes('crmShell && "crm-skin"'));
 });

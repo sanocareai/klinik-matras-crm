@@ -1,31 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  MessageSquare, PenLine, ClipboardCheck, FlaskConical, Sparkles, ThumbsUp, ThumbsDown,
-  ArrowUp, Plus, Loader2, Check, AlertTriangle, LayoutGrid, Users,
+  PenLine, FlaskConical, Sparkles, ThumbsUp, ThumbsDown, ArrowUp, Plus, Loader2, Check, AlertTriangle,
+  LayoutGrid, Users, Wallet, ListChecks, Database, Route, Gauge, ShieldCheck, ClipboardCheck,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api.js";
 import { rolesOf } from "@/lib/roles.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { Button } from "@/components/ui/button.jsx";
+import { KartuWidget, InfoI, Ubin } from "@/components/apple/Apple.jsx";
+import "@/styles/sanss-ai-studio.css";
 
 // ─── AI STUDIO — MVP 1 (November 2026) ──────────────────────────────────────
-// Workspace TERPISAH dari Sales CRM (keputusan Owner). Tiga layar:
+// Workspace TERPISAH dari Sales CRM (keputusan Owner). Tiga layar (dipilih dari sidebar):
 //   • Playground  — sales berperan sebagai customer, AI (Mattress Consultant)
 //                   menjawab; setiap balasan bisa dinilai & dikoreksi.
 //   • Tinjauan    — Owner/Admin menerima/menolak koreksi → jadi test case.
 //   • Test Case   — kumpulan kasus dari koreksi yang diterima (dipakai MVP 2).
 // Belum ada balasan ke customer sungguhan.
-// Gaya: token SANSS (kartu tanpa border, bayangan lembut) + ubin ikon
-// bergradien ala iOS (mockup "Sano AI Studio", 12 Nov 2026).
-
-const TILE = {
-  blue: "linear-gradient(160deg,#6AB7FF,#1E6BFF)",
-  orange: "linear-gradient(160deg,#FFC15A,#FF7A1A)",
-  purple: "linear-gradient(160deg,#C48BFF,#8A3FFC)",
-  green: "linear-gradient(160deg,#5EE07D,#1FA84A)",
-  indigo: "linear-gradient(160deg,#8C9BFF,#4B47E0)",
-};
+// Gaya: bahasa visual Apple bersama (styles/sanss-apple.css: kartu widget, ubin squircle, panel, tombol capsule)
+// seperti Delivery/All Teams/B2B/Main Hub, + pelengkap halaman di styles/sanss-ai-studio.css (kelas `as-`).
 
 const ALASAN = [
   ["LUPA_KIRIM_KATALOG", "Lupa kirim katalog"],
@@ -53,20 +46,9 @@ const LABEL_DATA = [
   ["ukuran", "Ukuran"], ["beratBadan", "Berat badan"], ["keluhan", "Keluhan"], ["kondisiKasur", "Kondisi kasur"],
   ["umurKasur", "Umur kasur"], ["posisiTidur", "Posisi tidur"], ["riwayatKesehatan", "Riwayat kesehatan"], ["domisili", "Domisili"],
 ];
+const JUDUL = { playground: "Playground", tinjauan: "Tinjauan Koreksi", "test-case": "Test Case" };
 
-const card = { background: "var(--bg-surface)", boxShadow: "var(--shadow-card)", borderRadius: 20 };
-const pill = (aktif) => ({
-  border: "none", borderRadius: 999, padding: "7px 12px", fontSize: 12.5, fontWeight: aktif ? 700 : 600, cursor: "pointer",
-  background: aktif ? "var(--accent-bg)" : "var(--bg-inset)", color: aktif ? "var(--accent)" : "var(--text-secondary)",
-});
-
-function Tile({ grad, Icon, size = 36 }) {
-  return (
-    <span style={{ width: size, height: size, borderRadius: size * 0.27, background: grad, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35)" }}>
-      <Icon size={size * 0.5} color="#fff" strokeWidth={2.2} aria-hidden="true" />
-    </span>
-  );
-}
+const namaModel = (m) => (m || "—").replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-/g, " ");
 
 function fmtData(v) {
   if (v == null || v === "" || (Array.isArray(v) && !v.length)) return null;
@@ -74,55 +56,40 @@ function fmtData(v) {
   return String(v);
 }
 
-// ── Navigasi tab di dalam workspace (sidebar tetap milik Layout) ────────────
-function StudioTabs({ tab, onTab, menunggu, bisaTinjau }) {
-  const items = [
-    ["playground", "Playground", MessageSquare, TILE.blue],
-    ...(bisaTinjau ? [["tinjauan", "Tinjauan", ClipboardCheck, TILE.purple]] : []),
-    ["test-case", "Test Case", FlaskConical, TILE.green],
-  ];
+// ── Widget ringkasan (kartu berwarna, sama dengan Delivery/Main Hub) ────────
+function Widgets({ summary, biaya, bisaTinjau, onBuka }) {
   return (
-    <nav aria-label="Menu AI Studio" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      {items.map(([key, label, Icon, grad]) => (
-        <button key={key} type="button" onClick={() => onTab(key)} aria-current={tab === key ? "page" : undefined}
-          style={{ display: "flex", alignItems: "center", gap: 10, border: "none", cursor: "pointer", borderRadius: 14, padding: "8px 14px 8px 8px",
-            background: tab === key ? "var(--bg-surface)" : "transparent", boxShadow: tab === key ? "var(--shadow-card)" : "none", color: "var(--text-primary)", fontWeight: tab === key ? 800 : 600, fontSize: 14 }}>
-          <Tile grad={grad} Icon={Icon} size={30} />
-          {label}
-          {key === "tinjauan" && menunggu > 0 && (
-            <span style={{ background: "#FF3B30", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "1px 7px" }}>{menunggu}</span>
-          )}
-        </button>
-      ))}
-    </nav>
-  );
-}
-
-// ── Widget ringkasan ────────────────────────────────────────────────────────
-function Widgets({ summary, biaya }) {
-  const w = [
-    [TILE.orange, PenLine, summary?.koreksiMingguIni ?? "—", "Koreksi minggu ini"],
-    [TILE.blue, Check, summary?.persenBagus != null ? `${summary.persenBagus}%` : "—", "Balasan dinilai bagus"],
-    [TILE.green, FlaskConical, summary?.testCaseAktif ?? "—", "Test case aktif"],
-    [TILE.purple, Users, summary?.pelatihAktif ?? "—", "Sales ikut melatih"],
-    [TILE.indigo, LayoutGrid, biaya ? `$${biaya.terpakai.toFixed(2)}` : "—", biaya ? `Biaya bulan ini / $${biaya.batas}` : "Biaya bulan ini"],
-  ];
-  return (
-    <section aria-label="Ringkasan" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-      {w.map(([grad, Icon, angka, label]) => (
-        <div key={label} style={{ ...card, borderRadius: 18, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
-          <Tile grad={grad} Icon={Icon} size={44} />
-          <span style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.4 }}>{angka}</span>
-            <span style={{ fontSize: 12.5, color: "var(--text-secondary)", fontWeight: 600 }}>{label}</span>
-          </span>
-        </div>
-      ))}
+    <section aria-label="Ringkasan" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5 sm:gap-4">
+      <KartuWidget nada="jingga" Glif={PenLine} judul="Koreksi" className="ap-w-ringkas" testid="as-k-koreksi"
+        info="Balasan AI yang dinilai atau dikoreksi sales dalam 7 hari terakhir (termasuk yang dinilai bagus)." onBuka={bisaTinjau ? () => onBuka("tinjauan") : undefined}>
+        <div className="ap-w-angka">{summary?.koreksiMingguIni ?? "—"}</div>
+        <p className="ap-w-label">{summary?.menungguTinjauan ? `7 hari · ${summary.menungguTinjauan} menunggu` : "7 hari terakhir"}</p>
+      </KartuWidget>
+      <KartuWidget nada="biru" Glif={ThumbsUp} judul="Dinilai bagus" className="ap-w-ringkas" testid="as-k-bagus"
+        info="Persentase balasan yang dinilai bagus dari semua penilaian 7 hari terakhir.">
+        <div className="ap-w-angka">{summary?.persenBagus != null ? `${summary.persenBagus}%` : "—"}</div>
+        <p className="ap-w-label">7 hari terakhir</p>
+      </KartuWidget>
+      <KartuWidget nada="hijau" Glif={FlaskConical} judul="Test case" className="ap-w-ringkas" testid="as-k-test"
+        info="Koreksi yang diterima Owner/Admin dan disimpan sebagai kasus uji." onBuka={() => onBuka("test-case")}>
+        <div className="ap-w-angka">{summary?.testCaseAktif ?? "—"}</div>
+        <p className="ap-w-label">aktif</p>
+      </KartuWidget>
+      <KartuWidget nada="ungu" Glif={Users} judul="Pelatih" className="ap-w-ringkas" testid="as-k-pelatih"
+        info="Orang yang menilai atau mengoreksi balasan AI dalam 7 hari terakhir.">
+        <div className="ap-w-angka">{summary?.pelatihAktif ?? "—"}</div>
+        <p className="ap-w-label">sales · 7 hari</p>
+      </KartuWidget>
+      <KartuWidget nada="indigo" Glif={Wallet} judul="Biaya AI" className="ap-w-ringkas col-span-2 sm:col-span-1" testid="as-k-biaya"
+        info="Biaya pemakaian model AI bulan ini (USD). Pengiriman pesan ditolak bila batas tercapai.">
+        <div className="ap-w-angka">{biaya ? `$${biaya.terpakai.toFixed(2)}` : "—"}</div>
+        <p className="ap-w-label">{biaya ? `bulan ini · batas $${biaya.batas}` : "bulan ini"}</p>
+      </KartuWidget>
     </section>
   );
 }
 
-// ── Form koreksi di bawah satu balasan AI ───────────────────────────────────
+// ── Form nilai/koreksi di bawah satu balasan AI ─────────────────────────────
 function KoreksiForm({ message, onDone }) {
   const [rating, setRating] = useState(null);
   const [ideal, setIdeal] = useState((message.content?.bubbles || []).join("\n"));
@@ -145,41 +112,39 @@ function KoreksiForm({ message, onDone }) {
   };
 
   return (
-    <div style={{ ...card, borderRadius: 16, padding: 14, display: "flex", flexDirection: "column", gap: 10, boxShadow: "var(--shadow-popover)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: 14 }}><Tile grad={TILE.orange} Icon={PenLine} size={26} />Nilai balasan ini</span>
+    <div className="as-koreksi">
+      <div className="as-koreksi-kepala">
+        <span><Ubin nada="oranye" ukuran={28}><PenLine size={15} strokeWidth={1.9} /></Ubin>Nilai balasan ini</span>
         <span style={{ display: "flex", gap: 6 }}>
-          <button type="button" aria-label="Balasan bagus" disabled={saving} onClick={() => kirim("GOOD")}
-            style={{ width: 36, height: 36, border: "none", borderRadius: 10, cursor: "pointer", background: "var(--green-bg)", color: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button type="button" className="as-jempol as-jempol-bagus" aria-label="Balasan bagus" disabled={saving} onClick={() => kirim("GOOD")}>
             <ThumbsUp size={17} aria-hidden="true" />
           </button>
-          <button type="button" aria-label="Balasan kurang tepat" aria-pressed={rating === "BAD"} onClick={() => setRating("BAD")}
-            style={{ width: 36, height: 36, border: "none", borderRadius: 10, cursor: "pointer", background: rating === "BAD" ? "var(--red-bg)" : "var(--bg-inset)", color: rating === "BAD" ? "var(--red)" : "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button type="button" className="as-jempol" aria-label="Balasan kurang tepat" aria-pressed={rating === "BAD"} onClick={() => setRating("BAD")}>
             <ThumbsDown size={17} aria-hidden="true" />
           </button>
         </span>
       </div>
       {rating === "BAD" && (
         <>
-          <label htmlFor={`ideal-${message.id}`} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)" }}>Balasan yang seharusnya</label>
-          <textarea id={`ideal-${message.id}`} rows={4} value={ideal} onChange={(e) => setIdeal(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", border: "none", background: "var(--bg-inset)", borderRadius: 12, padding: 12, fontFamily: "inherit", fontSize: 14, lineHeight: 1.45, color: "var(--text-primary)", resize: "vertical" }} />
-          <div role="group" aria-label="Alasan koreksi" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <label htmlFor={`ideal-${message.id}`} className="as-label">Balasan yang seharusnya</label>
+          <textarea id={`ideal-${message.id}`} rows={4} className="as-isian" value={ideal} onChange={(e) => setIdeal(e.target.value)} />
+          <div role="group" aria-label="Alasan koreksi" className="as-baris-chip">
             {ALASAN.map(([k, label]) => (
-              <button key={k} type="button" aria-pressed={alasan.includes(k)} style={pill(alasan.includes(k))}
+              <button key={k} type="button" className="as-chip" aria-pressed={alasan.includes(k)}
                 onClick={() => setAlasan((a) => (a.includes(k) ? a.filter((x) => x !== k) : [...a, k]))}>{label}</button>
             ))}
           </div>
-          <label htmlFor={`note-${message.id}`} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)" }}>Catatan untuk tim (opsional)</label>
-          <input id={`note-${message.id}`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Mis. customer seperti ini biasanya…"
-            style={{ border: "none", background: "var(--bg-inset)", borderRadius: 10, padding: "10px 12px", fontFamily: "inherit", fontSize: 13.5, color: "var(--text-primary)" }} />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Button variant="ghost" onClick={() => setRating(null)}>Batal</Button>
-            <Button onClick={() => kirim("BAD")} disabled={saving || !ideal.trim()}>{saving ? <Loader2 size={15} className="animate-spin" /> : null} Kirim koreksi</Button>
+          <label htmlFor={`note-${message.id}`} className="as-label">Catatan untuk tim (opsional)</label>
+          <input id={`note-${message.id}`} className="as-isian" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Mis. customer seperti ini biasanya…" />
+          <div className="as-aksi">
+            <button type="button" className="ap-tombol ap-tombol-abu" onClick={() => setRating(null)}>Batal</button>
+            <button type="button" className="ap-tombol ap-tombol-utama" onClick={() => kirim("BAD")} disabled={saving || !ideal.trim()}>
+              {saving && <Loader2 size={15} className="animate-spin" />} Kirim koreksi
+            </button>
           </div>
         </>
       )}
-      {err && <span style={{ color: "var(--red)", fontSize: 12.5 }}>{err}</span>}
+      {err && <span role="alert" style={{ color: "var(--red)", fontSize: 13 }}>{err}</span>}
     </div>
   );
 }
@@ -189,26 +154,20 @@ function AgentTurn({ m, onSelect, selected, onFeedbackDone }) {
   const c = m.content || {};
   const sudah = (m.feedback || [])[0];
   return (
-    <div style={{ alignSelf: "flex-end", maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+    <div className="as-giliran">
       {(c.bubbles || []).map((b, i) => (
-        <button key={i} type="button" onClick={() => onSelect(m.id)} aria-label="Lihat alasan balasan ini"
-          style={{ textAlign: "left", border: "none", cursor: "pointer", background: "var(--accent)", color: "#fff", borderRadius: "18px 18px 6px 18px", padding: "11px 14px", fontSize: 14.5, lineHeight: 1.45, whiteSpace: "pre-wrap", outline: selected ? "3px solid var(--accent-bg)" : "none", outlineOffset: 2 }}>
-          {b}
-        </button>
+        <button key={i} type="button" className="as-bubble as-bubble-ai" data-terpilih={selected} onClick={() => onSelect(m.id)} aria-label="Lihat alasan balasan ini">{b}</button>
       ))}
       {(c.kirimKatalog || []).map((k) => (
-        <span key={k} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-surface)", boxShadow: "0 1px 2px rgba(0,0,0,.06)", borderRadius: 14, padding: "8px 12px 8px 8px" }}>
-          <Tile grad={TILE.blue} Icon={LayoutGrid} size={34} />
-          <span style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>{k}</span>
-            <span style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>Kartu katalog</span>
-          </span>
+        <span key={k} className="as-katalog">
+          <Ubin nada="biru" ukuran={34}><LayoutGrid size={18} strokeWidth={1.9} /></Ubin>
+          <span><b>{k}</b><small>Kartu katalog</small></span>
         </span>
       ))}
-      <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+      <span className="as-meta-giliran">
         AI · {c.tahap || "—"}{c.handover?.perlu ? " · serahkan ke sales" : ""}{sudah ? ` · ${sudah.rating === "GOOD" ? "dinilai bagus" : "sudah dikoreksi"}` : ""}
       </span>
-      {!sudah && selected && <div style={{ width: "min(560px, 100%)" }}><KoreksiForm message={m} onDone={onFeedbackDone} /></div>}
+      {!sudah && selected && <KoreksiForm message={m} onDone={onFeedbackDone} />}
     </div>
   );
 }
@@ -216,7 +175,12 @@ function AgentTurn({ m, onSelect, selected, onFeedbackDone }) {
 // ── Panel "kenapa AI menjawab begini" ───────────────────────────────────────
 function PanelAlasan({ m }) {
   if (!m) {
-    return <section style={{ ...card, padding: 18, fontSize: 13.5, color: "var(--text-secondary)" }}>Klik balasan AI untuk melihat alasannya di sini.</section>;
+    return (
+      <section className="ap-panel">
+        <h2 className="ap-judul-kecil"><Ubin nada="indigo" ukuran={30}><Sparkles size={16} strokeWidth={1.9} /></Ubin> Alasan balasan</h2>
+        <p className="as-petunjuk" style={{ margin: 0 }}>Ketuk balasan AI untuk melihat tahap, data terkumpul, dan hasil cek keras di sini.</p>
+      </section>
+    );
   }
   const c = m.content || {};
   const idx = TAHAP.indexOf(c.tahap);
@@ -224,69 +188,70 @@ function PanelAlasan({ m }) {
   const terisi = LABEL_DATA.filter(([k]) => fmtData(data[k])).length;
   const checks = c.checks || [];
   const lulus = checks.filter((x) => x.lulus).length;
+  const semua = lulus === checks.length;
   return (
     <>
-      <section style={{ ...card, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Tahap percakapan</h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <section className="ap-panel" aria-label="Tahap percakapan">
+        <div className="as-panel-judul"><h2 className="ap-judul-kecil"><Ubin nada="biru" ukuran={30}><Route size={16} strokeWidth={1.9} /></Ubin> Tahap percakapan</h2></div>
+        <div className="as-tahap">
           {TAHAP.slice(0, 7).map((t, i) => (
-            <span key={t} style={{ borderRadius: 999, padding: "6px 11px", fontSize: 12, fontWeight: 700,
-              background: i === idx ? "var(--accent)" : i < idx ? "var(--green-bg)" : "var(--bg-inset)",
-              color: i === idx ? "#fff" : i < idx ? "var(--green)" : "var(--text-secondary)" }}>{i < idx ? "✓ " : ""}{t[0] + t.slice(1).toLowerCase()}</span>
+            <span key={t} className={i === idx ? "as-kini" : i < idx ? "as-lewat" : undefined}>
+              {i < idx && <Check size={12} strokeWidth={2.4} aria-hidden="true" />}{t[0] + t.slice(1).toLowerCase()}
+            </span>
           ))}
-          {c.tahap === "HANDOVER" && <span style={{ borderRadius: 999, padding: "6px 11px", fontSize: 12, fontWeight: 700, background: "var(--orange-bg)", color: "var(--orange)" }}>Handover</span>}
+          {c.tahap === "HANDOVER" && <span className="as-handover">Handover</span>}
         </div>
-        {c.catatanInternal && <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>{c.catatanInternal}</span>}
+        {c.catatanInternal && <p className="as-catatan">{c.catatanInternal}</p>}
       </section>
 
-      <section style={{ ...card, padding: 18, display: "flex", flexDirection: "column", gap: 2 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Data terkumpul</h2>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue-ink)", background: "var(--blue-50)", borderRadius: 999, padding: "4px 9px" }}>{terisi} dari {LABEL_DATA.length}</span>
+      <section className="ap-panel" aria-label="Data terkumpul">
+        <div className="as-panel-judul">
+          <h2 className="ap-judul-kecil"><Ubin nada="teal" ukuran={30}><Database size={16} strokeWidth={1.9} /></Ubin> Data terkumpul</h2>
+          <span className="as-pil-status">{terisi} dari {LABEL_DATA.length}</span>
         </div>
-        {LABEL_DATA.map(([k, label], i) => (
-          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", fontSize: 13.5, boxShadow: i < LABEL_DATA.length - 1 ? "inset 0 -1px 0 var(--hairline)" : "none" }}>
-            <span style={{ color: "var(--text-secondary)" }}>{label}</span>
-            <span style={{ fontWeight: fmtData(data[k]) ? 700 : 600, color: fmtData(data[k]) ? "var(--text-primary)" : "var(--text-tertiary)", textAlign: "right" }}>{fmtData(data[k]) || "Belum"}</span>
+        {LABEL_DATA.map(([k, label]) => (
+          <div key={k} className="as-baris">
+            <span>{label}</span>
+            <span className={fmtData(data[k]) ? undefined : "as-belum"}>{fmtData(data[k]) || "Belum"}</span>
           </div>
         ))}
       </section>
 
       {(c.rekomendasi?.utama || c.rekomendasi?.alternatif) && (
-        <section style={{ ...card, padding: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Arah rekomendasi</h2>
-          {c.rekomendasi.utama && <span style={{ fontSize: 13.5, fontWeight: 700 }}>{c.rekomendasi.utama}</span>}
-          {c.rekomendasi.alternatif && <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>Alternatif: {c.rekomendasi.alternatif}</span>}
+        <section className="ap-panel" aria-label="Arah rekomendasi">
+          <div className="as-panel-judul"><h2 className="ap-judul-kecil"><Ubin nada="ungu" ukuran={30}><ListChecks size={16} strokeWidth={1.9} /></Ubin> Arah rekomendasi</h2></div>
+          {c.rekomendasi.utama && <p style={{ margin: 0, fontSize: 14.5, fontWeight: 500 }}>{c.rekomendasi.utama}</p>}
+          {c.rekomendasi.alternatif && <p className="as-catatan">Alternatif: {c.rekomendasi.alternatif}</p>}
         </section>
       )}
 
-      <section style={{ ...card, padding: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Cek keras</h2>
-          <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 9px", background: lulus === checks.length ? "var(--green-bg)" : "var(--orange-bg)", color: lulus === checks.length ? "var(--green)" : "var(--orange)" }}>{lulus}/{checks.length} lulus</span>
+      <section className="ap-panel" aria-label="Cek keras">
+        <div className="as-panel-judul">
+          <h2 className="ap-judul-kecil"><Ubin nada={semua ? "hijau" : "oranye"} ukuran={30}><ShieldCheck size={16} strokeWidth={1.9} /></Ubin> Cek keras</h2>
+          <span className={`as-pil-status ${semua ? "as-ok" : "as-awas"}`}>{lulus}/{checks.length} lulus</span>
         </div>
         {checks.map((x) => (
-          <span key={x.kode} style={{ fontSize: 13.5, display: "flex", gap: 8, alignItems: "flex-start" }}>
-            {x.lulus ? <Check size={16} color="var(--green)" aria-label="Lulus" /> : <AlertTriangle size={16} color="var(--orange)" aria-label="Perlu dicek" />}
-            {x.pesan}
-          </span>
+          <div key={x.kode} className="as-cek">
+            {x.lulus ? <Check size={16} className="as-ok" aria-label="Lulus" /> : <AlertTriangle size={16} className="as-awas" aria-label="Perlu dicek" />}
+            <span>{x.pesan}</span>
+          </div>
         ))}
       </section>
 
-      <section style={{ ...card, padding: "16px 18px", display: "flex", justifyContent: "space-between", gap: 10 }}>
-        {[["Model", (m.model || "—").replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-/g, " ")], ["Token", (m.inputTokens + m.outputTokens + m.cacheReadTokens).toLocaleString("id-ID")], ["Biaya", `$${(m.costUsd || 0).toFixed(4)}`], ["Cache", m.cacheReadTokens ? `${Math.round((m.cacheReadTokens / (m.inputTokens + m.cacheReadTokens)) * 100)}%` : "0%"]].map(([l, v]) => (
-          <span key={l} style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 11.5, color: "var(--text-secondary)", fontWeight: 600 }}>{l}</span>
-            <span style={{ fontSize: 14, fontWeight: 800, textTransform: l === "Model" ? "capitalize" : "none" }}>{v}</span>
-          </span>
-        ))}
+      <section className="ap-panel" aria-label="Pemakaian model">
+        <div className="as-panel-judul"><h2 className="ap-judul-kecil"><Ubin nada="abu" ukuran={30}><Gauge size={16} strokeWidth={1.9} /></Ubin> Pemakaian</h2></div>
+        <div className="as-meta">
+          {[["Model", namaModel(m.model)], ["Token", (m.inputTokens + m.outputTokens + m.cacheReadTokens).toLocaleString("id-ID")], ["Biaya", `$${(m.costUsd || 0).toFixed(4)}`], ["Cache", m.cacheReadTokens ? `${Math.round((m.cacheReadTokens / (m.inputTokens + m.cacheReadTokens)) * 100)}%` : "0%"]].map(([l, v]) => (
+            <span key={l}><small>{l}</small><b style={l === "Model" ? { textTransform: "capitalize" } : undefined}>{v}</b></span>
+          ))}
+        </div>
       </section>
     </>
   );
 }
 
 // ── PLAYGROUND ──────────────────────────────────────────────────────────────
-function Playground({ meta, onChanged }) {
+function Playground({ meta, onChanged, sesiBaruRef }) {
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -311,7 +276,8 @@ function Playground({ meta, onChanged }) {
   useEffect(() => {
     muatDaftar().then((list) => { if (list[0]) buka(list[0].id); }).catch((e) => setErr(e.message));
   }, [muatDaftar, buka]);
-  useEffect(() => { bawah.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [session?.messages?.length]);
+  // Gulir HANYA ruang chat ke pesan terbaru (scrollIntoView ikut menggulung halaman sehingga judul & ringkasan hilang dari layar).
+  useEffect(() => { const el = bawah.current; if (el) el.scrollTop = el.scrollHeight; }, [session?.id, session?.messages?.length, sending]);
 
   const baru = async (judul) => {
     setErr("");
@@ -320,6 +286,7 @@ function Playground({ meta, onChanged }) {
     setSession({ ...r.session, messages: [] });
     setSelectedId(null);
   };
+  if (sesiBaruRef) sesiBaruRef.current = () => baru().catch((e) => setErr(e.message));
 
   const kirim = async (isi) => {
     const t = (isi ?? text).trim();
@@ -349,68 +316,57 @@ function Playground({ meta, onChanged }) {
   const terpilih = useMemo(() => session?.messages?.find((x) => x.id === selectedId), [session, selectedId]);
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
-      <section aria-label="Simulasi chat" style={{ ...card, borderRadius: 22, flex: "999 1 520px", minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "14px 18px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, boxShadow: "inset 0 -1px 0 var(--hairline)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <label htmlFor="sesi" style={{ fontSize: 12.5, color: "var(--text-secondary)", fontWeight: 600 }}>Sesi</label>
-            <select id="sesi" value={session?.id || ""} onChange={(e) => e.target.value && buka(e.target.value)}
-              style={{ border: "none", background: "var(--bg-inset)", borderRadius: 10, padding: "8px 10px", fontFamily: "inherit", fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", maxWidth: 280 }}>
-              {!session && <option value="">Belum ada sesi</option>}
-              {sessions.map((s) => <option key={s.id} value={s.id}>{s.title} ({s._count?.messages || 0})</option>)}
-            </select>
-            <Button size="sm" variant="ghost" onClick={() => baru()}><Plus size={15} /> Baru</Button>
-          </div>
-          <div role="group" aria-label="Model" style={{ display: "flex", background: "var(--bg-inset)", borderRadius: 11, padding: 3 }}>
+    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <section aria-label="Simulasi chat" className="ap-panel as-chat">
+        <div className="as-chat-kepala">
+          <label htmlFor="sesi" className="sr-only">Sesi</label>
+          <select id="sesi" value={session?.id || ""} onChange={(e) => e.target.value && buka(e.target.value)}>
+            {!session && <option value="">Belum ada sesi</option>}
+            {sessions.map((s) => <option key={s.id} value={s.id}>{s.title} ({s._count?.messages || 0})</option>)}
+          </select>
+          <div role="group" aria-label="Model" className="as-segmen">
             {(meta?.models || ["claude-haiku-5-5", "claude-sonnet-5-5"]).filter((x) => !x.includes("opus")).map((x) => (
-              <button key={x} type="button" aria-pressed={model === x} onClick={() => setModel(x)}
-                style={{ border: "none", cursor: "pointer", borderRadius: 9, padding: "7px 12px", fontSize: 12.5, fontWeight: model === x ? 700 : 600,
-                  background: model === x ? "var(--bg-surface)" : "transparent", boxShadow: model === x ? "0 1px 3px rgba(0,0,0,.12)" : "none", color: "var(--text-primary)", textTransform: "capitalize" }}>
-                {x.replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2")}
-              </button>
+              <button key={x} type="button" aria-pressed={model === x} onClick={() => setModel(x)} style={{ textTransform: "capitalize" }}>{namaModel(x)}</button>
             ))}
           </div>
         </div>
 
-        <div style={{ padding: "10px 18px", display: "flex", flexWrap: "wrap", gap: 6, boxShadow: "inset 0 -1px 0 var(--hairline)" }}>
-          <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 700, alignSelf: "center" }}>Skenario cepat:</span>
+        <div className="as-skenario as-baris-chip">
+          <span className="as-skenario-label">Skenario cepat</span>
           {SKENARIO.map(([label, isi]) => (
-            <button key={label} type="button" style={pill(false)} onClick={() => setText(isi)}>{label}</button>
+            <button key={label} type="button" className="as-chip" onClick={() => setText(isi)}>{label}</button>
           ))}
         </div>
 
-        <div style={{ padding: "20px 18px 10px", display: "flex", flexDirection: "column", gap: 12, background: "var(--bg-inset)", minHeight: 360, maxHeight: "62vh", overflowY: "auto" }}>
+        <div className="as-pesan" ref={bawah}>
           {!session?.messages?.length && (
-            <div style={{ margin: "auto", textAlign: "center", color: "var(--text-secondary)", fontSize: 14, maxWidth: 360, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <Tile grad={TILE.blue} Icon={Sparkles} size={52} />
+            <div className="as-kosong">
+              <Ubin nada="biru" ukuran={52}><Sparkles size={28} strokeWidth={1.9} /></Ubin>
               Berperan sebagai customer: ketik pesan pertama atau pilih skenario cepat di atas.
             </div>
           )}
           {(session?.messages || []).map((m) =>
             m.role === "CUSTOMER" ? (
-              <div key={m.id} style={{ alignSelf: "flex-start", maxWidth: "78%", background: "var(--bg-surface)", boxShadow: "0 1px 2px rgba(0,0,0,.06)", borderRadius: "18px 18px 18px 6px", padding: "11px 14px", fontSize: 14.5, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{m.content?.text}</div>
+              <div key={m.id} className="as-bubble as-bubble-customer">{m.content?.text}</div>
             ) : (
               <AgentTurn key={m.id} m={m} selected={m.id === selectedId} onSelect={setSelectedId}
                 onFeedbackDone={() => { buka(session.id); onChanged?.(); }} />
             )
           )}
-          {sending && <span style={{ alignSelf: "flex-end", fontSize: 12.5, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={14} className="animate-spin" /> AI sedang menyusun balasan…</span>}
-          <div ref={bawah} />
+          {sending && <span className="as-menyusun"><Loader2 size={14} className="animate-spin" /> AI sedang menyusun balasan…</span>}
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); kirim(); }} style={{ padding: "12px 14px", display: "flex", gap: 10, alignItems: "center", boxShadow: "inset 0 1px 0 var(--hairline)" }}>
-          <label htmlFor="pesan-customer" className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Ketik sebagai customer</label>
-          <input id="pesan-customer" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ketik sebagai customer…" maxLength={2000}
-            style={{ flex: 1, minWidth: 0, border: "none", background: "var(--bg-inset)", borderRadius: 999, padding: "12px 16px", fontFamily: "inherit", fontSize: 14, color: "var(--text-primary)" }} />
-          <button type="submit" aria-label="Kirim" disabled={sending || !text.trim()}
-            style={{ width: 44, height: 44, border: "none", borderRadius: 999, background: "var(--accent)", opacity: sending || !text.trim() ? 0.5 : 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ArrowUp size={18} color="#fff" aria-hidden="true" />
+        <form className="as-tulis" onSubmit={(e) => { e.preventDefault(); kirim(); }}>
+          <label htmlFor="pesan-customer" className="sr-only">Ketik sebagai customer</label>
+          <input id="pesan-customer" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ketik sebagai customer…" maxLength={2000} />
+          <button type="submit" className="as-kirim" aria-label="Kirim" disabled={sending || !text.trim()}>
+            <ArrowUp size={18} aria-hidden="true" />
           </button>
         </form>
-        {err && <div role="alert" style={{ padding: "0 16px 12px", color: "var(--red)", fontSize: 13 }}>{err}</div>}
+        {err && <div role="alert" className="as-galat">{err}</div>}
       </section>
 
-      <aside aria-label="Penjelasan balasan AI" style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+      <aside aria-label="Penjelasan balasan AI" className="as-samping">
         <PanelAlasan m={terpilih} />
       </aside>
     </div>
@@ -418,7 +374,7 @@ function Playground({ meta, onChanged }) {
 }
 
 // ── TINJAUAN (Owner/Admin) ──────────────────────────────────────────────────
-function Tinjauan({ onChanged }) {
+function Tinjauan({ onChanged, menunggu }) {
   const [status, setStatus] = useState("NEW");
   const [items, setItems] = useState(null);
   const [err, setErr] = useState("");
@@ -439,41 +395,44 @@ function Tinjauan({ onChanged }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div role="group" aria-label="Status" style={{ display: "flex", gap: 6 }}>
+    <div className="as-daftar">
+      <div role="group" aria-label="Status koreksi" className="as-segmen" style={{ alignSelf: "flex-start" }}>
         {[["NEW", "Menunggu"], ["ACCEPTED", "Diterima"], ["REJECTED", "Ditolak"]].map(([k, l]) => (
-          <button key={k} type="button" aria-pressed={status === k} style={pill(status === k)} onClick={() => setStatus(k)}>{l}</button>
+          <button key={k} type="button" aria-pressed={status === k} onClick={() => setStatus(k)}>
+            {l}{k === "NEW" && menunggu > 0 && <span className="as-jumlah">{menunggu}</span>}
+          </button>
         ))}
       </div>
       {err && <div role="alert" style={{ color: "var(--red)", fontSize: 13 }}>{err}</div>}
       {items === null && <Loader2 className="animate-spin" />}
-      {items?.length === 0 && <div style={{ ...card, padding: 24, color: "var(--text-secondary)", fontSize: 14 }}>Tidak ada koreksi di sini.</div>}
+      {items?.length === 0 && (
+        <section className="ap-panel">
+          <h2 className="ap-judul-kecil"><Ubin nada="ungu" ukuran={30}><ClipboardCheck size={16} strokeWidth={1.9} /></Ubin> Tidak ada koreksi di sini</h2>
+          <p className="as-petunjuk" style={{ margin: 0 }}>Koreksi dari sales di Playground akan muncul di daftar Menunggu.</p>
+        </section>
+      )}
       {items?.map((f) => (
-        <article key={f.id} style={{ ...card, padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 12.5, color: "var(--text-secondary)" }}>
-            <span><b style={{ color: "var(--text-primary)" }}>{f.createdByName}</b> · {f.message?.session?.title}</span>
+        <article key={f.id} className="ap-panel as-kartu">
+          <div className="as-kartu-kepala">
+            <span><b>{f.createdByName}</b> · {f.message?.session?.title}</span>
             <span>{new Date(f.createdAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
-            <div style={{ background: "var(--bg-inset)", borderRadius: 14, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 6 }}>Balasan AI</div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{(f.message?.content?.bubbles || []).join("\n\n")}</div>
-            </div>
-            <div style={{ background: f.rating === "GOOD" ? "var(--green-bg)" : "var(--accent-bg)", borderRadius: 14, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: f.rating === "GOOD" ? "var(--green)" : "var(--accent)", marginBottom: 6 }}>{f.rating === "GOOD" ? "Dinilai bagus" : "Balasan yang seharusnya"}</div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{f.idealReply || "—"}</div>
+          <div className="as-banding">
+            <div className="as-kotak"><small>Balasan AI</small>{(f.message?.content?.bubbles || []).join("\n\n")}</div>
+            <div className={`as-kotak ${f.rating === "GOOD" ? "as-kotak-hijau" : "as-kotak-biru"}`}>
+              <small>{f.rating === "GOOD" ? "Dinilai bagus" : "Balasan yang seharusnya"}</small>{f.idealReply || (f.rating === "GOOD" ? "Sales menilai balasan ini sudah tepat — bisa dijadikan contoh balasan yang baik." : "—")}
             </div>
           </div>
           {(f.reasons?.length > 0 || f.note) && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-              {f.reasons.map((r) => <span key={r} style={pill(true)}>{LABEL_ALASAN[r] || r}</span>)}
-              {f.note && <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>“{f.note}”</span>}
+            <div className="as-baris-chip">
+              {f.reasons.map((r) => <span key={r} className="as-chip as-chip-tint">{LABEL_ALASAN[r] || r}</span>)}
+              {f.note && <span className="as-petunjuk">“{f.note}”</span>}
             </div>
           )}
           {f.status === "NEW" && (
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Button variant="ghost" onClick={() => putuskan(f.id, "REJECT")}>Tolak</Button>
-              <Button onClick={() => putuskan(f.id, "ACCEPT")}>{f.rating === "BAD" ? "Terima → jadi test case" : "Terima"}</Button>
+            <div className="as-aksi">
+              <button type="button" className="ap-tombol ap-tombol-abu" onClick={() => putuskan(f.id, "REJECT")}>Tolak</button>
+              <button type="button" className="ap-tombol ap-tombol-utama" onClick={() => putuskan(f.id, "ACCEPT")}>{f.rating === "BAD" ? "Terima → jadi test case" : "Terima"}</button>
             </div>
           )}
         </article>
@@ -487,19 +446,26 @@ function TestCases() {
   const [items, setItems] = useState(null);
   useEffect(() => { api.studioTestCases().then((r) => setItems(r.items || [])).catch(() => setItems([])); }, []);
   if (items === null) return <Loader2 className="animate-spin" />;
-  if (!items.length) return <div style={{ ...card, padding: 24, color: "var(--text-secondary)", fontSize: 14 }}>Belum ada test case. Koreksi yang diterima di Tinjauan otomatis masuk ke sini.</div>;
+  if (!items.length) {
+    return (
+      <section className="ap-panel">
+        <h2 className="ap-judul-kecil"><Ubin nada="hijau" ukuran={30}><FlaskConical size={16} strokeWidth={1.9} /></Ubin> Belum ada test case</h2>
+        <p className="as-petunjuk" style={{ margin: 0 }}>Koreksi yang diterima di Tinjauan otomatis masuk ke sini.</p>
+      </section>
+    );
+  }
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+    <div className="as-kisi-kasus">
       {items.map((t) => (
-        <article key={t.id} style={{ ...card, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: 14 }}><Tile grad={TILE.green} Icon={FlaskConical} size={30} />{t.title}</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5 }}>
+        <article key={t.id} className="ap-panel as-kartu">
+          <h2 className="ap-judul-kecil" style={{ margin: 0 }}><Ubin nada="hijau" ukuran={30}><FlaskConical size={16} strokeWidth={1.9} /></Ubin> {t.title}</h2>
+          <div className="as-riwayat">
             {(t.history || []).slice(-4).map((h, i) => (
-              <span key={i} style={{ color: h.role === "customer" ? "var(--text-primary)" : "var(--text-secondary)" }}><b>{h.role === "customer" ? "Customer" : "AI"}:</b> {h.text}</span>
+              <span key={i}><b>{h.role === "customer" ? "Customer" : "AI"}:</b> {h.text}</span>
             ))}
           </div>
-          <div style={{ background: "var(--accent-bg)", borderRadius: 12, padding: 10, fontSize: 13, lineHeight: 1.45 }}><b>Ideal:</b> {t.idealReply}</div>
-          {t.mustRules?.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{t.mustRules.map((r) => <span key={r} style={pill(false)}>{LABEL_ALASAN[r] || r}</span>)}</div>}
+          <div className="as-kotak as-kotak-biru"><small>Balasan ideal</small>{t.idealReply}</div>
+          {t.mustRules?.length > 0 && <div className="as-baris-chip">{t.mustRules.map((r) => <span key={r} className="as-chip as-chip-tint">{LABEL_ALASAN[r] || r}</span>)}</div>}
         </article>
       ))}
     </div>
@@ -509,7 +475,7 @@ function TestCases() {
 // ── HALAMAN ─────────────────────────────────────────────────────────────────
 export default function AiStudio({ tab = "playground" }) {
   const navigate = useNavigate();
-  // Tinjauan koreksi khusus ADMIN/OWNER (server menegakkan ulang) — SALES tidak melihat tab/menunya.
+  // Tinjauan koreksi khusus ADMIN/OWNER (server menegakkan ulang) — SALES tidak melihat menunya.
   const bisaTinjau = useMemo(() => {
     try { return rolesOf(JSON.parse(localStorage.getItem("user") || "null")).some((r) => r === "ADMIN" || r === "OWNER"); } catch { return false; }
   }, []);
@@ -517,6 +483,7 @@ export default function AiStudio({ tab = "playground" }) {
   const [meta, setMeta] = useState(null);
   const [summary, setSummary] = useState(null);
   const [err, setErr] = useState("");
+  const sesiBaru = useRef(null);
 
   const muatMeta = useCallback(() => {
     api.studioAgents().then(setMeta).catch((e) => setErr(e.message));
@@ -524,31 +491,32 @@ export default function AiStudio({ tab = "playground" }) {
   }, []);
   useEffect(muatMeta, [muatMeta]);
 
-  // Lewat router (bukan history.replaceState) supaya menu aktif di sidebar ikut berpindah.
-  const gantiTab = (k) => navigate(k === "playground" ? "/ai-studio" : `/ai-studio/${k}`);
+  // Navigasi antarlayar lewat sidebar; kartu widget juga membuka layar terkait (lewat router agar menu aktif ikut).
+  const bukaLayar = (k) => navigate(k === "playground" ? "/ai-studio" : `/ai-studio/${k}`);
   const agent = meta?.agents?.[0];
   const live = agent?.versions?.find((v) => v.status === "LIVE");
 
   return (
-    <PageContainer>
+    <PageContainer fluid className="as-halaman">
       <PageHeader
-        title="AI Studio"
-        subtitle={agent ? `${agent.name} · latih, uji, dan sempurnakan bersama tim sales` : "Latih, uji, dan sempurnakan agent AI bersama tim sales"}
-        actions={live ? (
-          <span style={{ display: "flex", alignItems: "center", gap: 8, ...card, borderRadius: 12, padding: "9px 14px", fontSize: 13, fontWeight: 700 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--green)" }} />Versi {live.versionNumber} · Live
-          </span>
-        ) : null}
+        title={JUDUL[aktif]}
+        subtitle={`${agent?.name || "Mattress Consultant"} · latih, uji, dan sempurnakan bersama tim sales`}
+        actions={(
+          <>
+            {live && <span className="ap-pil"><span className="ap-titik ap-titik-hijau" aria-hidden="true" />Versi {live.versionNumber} · Live</span>}
+            <InfoI label="Tentang AI Studio">AI hanya menjawab di Playground ini — belum ada balasan ke customer sungguhan. Koreksi sales ditinjau Owner/Admin lalu menjadi test case.</InfoI>
+            {aktif === "playground" && (
+              <button type="button" className="ap-tombol ap-tombol-utama" onClick={() => sesiBaru.current?.()}><Plus size={15} /> Sesi baru</button>
+            )}
+          </>
+        )}
       />
       <PageBody>
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {err && <div role="alert" style={{ ...card, padding: 14, color: "var(--red)", fontSize: 13.5 }}>{err}</div>}
-          <Widgets summary={summary} biaya={meta ? { terpakai: meta.biayaBulanIni || 0, batas: meta.batasBiaya } : null} />
-          <StudioTabs tab={aktif} onTab={gantiTab} menunggu={summary?.menungguTinjauan || 0} bisaTinjau={bisaTinjau} />
-          {aktif === "playground" && <Playground meta={meta} onChanged={muatMeta} />}
-          {aktif === "tinjauan" && <Tinjauan onChanged={muatMeta} />}
-          {aktif === "test-case" && <TestCases />}
-        </div>
+        {err && <div role="alert" className="ap-panel" style={{ color: "var(--red)", fontSize: 13.5 }}>{err}</div>}
+        <Widgets summary={summary} biaya={meta ? { terpakai: meta.biayaBulanIni || 0, batas: meta.batasBiaya } : null} bisaTinjau={bisaTinjau} onBuka={bukaLayar} />
+        {aktif === "playground" && <Playground meta={meta} onChanged={muatMeta} sesiBaruRef={sesiBaru} />}
+        {aktif === "tinjauan" && <Tinjauan onChanged={muatMeta} menunggu={summary?.menungguTinjauan || 0} />}
+        {aktif === "test-case" && <TestCases />}
       </PageBody>
     </PageContainer>
   );
