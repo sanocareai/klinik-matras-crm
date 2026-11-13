@@ -84,6 +84,7 @@ model StudioCopilotDraft {
   cacheReadTokens Int @default(0)
   costUsd         Float @default(0)
   latencyMs       Int @default(0)
+  outcomeAt       DateTime? // kapan sales memutuskan (dipakai/diedit/diabaikan)
   createdAt       DateTime @default(now())
   @@index([salesUserId, createdAt])
   @@index([conversationId, createdAt])
@@ -96,7 +97,7 @@ Akses pilot (tanpa kolom baru): boleh bila user ber-role ADMIN/OWNER **atau** id
 `StudioAgent.config.copilotUsers` (field `config` sudah ada). Tahap A daftar ini kosong; Tahap B diisi
 Novi, Fadlan, Kiki lewat halaman Copilot.
 
-**Dari draft ke latihan:** draft `USED_EDITED` dengan perubahan besar, atau `IGNORED`, otomatis masuk antrian
+**Dari draft ke latihan (setelah pilot Tahap A, belum dibangun di langkah 3):** draft `USED_EDITED` dengan perubahan besar, atau `IGNORED`, otomatis masuk antrian
 **Tinjauan Koreksi** yang sudah ada (sebagai feedback dengan `idealReply` = `sentText`). Owner/Admin tetap
 yang menyetujui → jadi test case. Tidak ada yang masuk skill tanpa persetujuan.
 
@@ -108,8 +109,9 @@ yang menyetujui → jadi test case. Tidak ada yang masuk skill tanpa persetujuan
 | POST | `/api/studio/copilot/drafts/:id/outcome` | pemilik draft | `{ outcome, ignoreReason?, sentText? }` |
 | POST | `/api/studio/copilot/drafts/:id/crm` | pemilik draft | Simpan field terpilih ke Customer — hanya kota, tag keluhan (append), catatan; field lain ditolak |
 | GET/PUT | `/api/studio/copilot/contoh-gaya` | Owner/Admin | Lihat kandidat gold standard & atur daftar kutipan terkurasi |
-| GET | `/api/studio/copilot/stats` | Owner/Admin | Pemakaian, tingkat dipakai, biaya, per sales |
-| PUT | `/api/studio/copilot/users` | Owner/Admin | Atur daftar pilot |
+| GET | `/api/studio/copilot/stats?hari=14` | Owner/Admin | Pemakaian, tingkat dipakai, biaya, per sales, 30 draft terbaru |
+| GET/PUT | `/api/studio/copilot/users` | Owner/Admin | Lihat/atur daftar pilot (`{ userIds }`) |
+| GET | `/api/studio/copilot/akses` | semua user Studio | `{ boleh }` — frontend memakai ini untuk menampilkan tombol ✨ Saran AI |
 
 Pengaman:
 - Rate limit per user (mis. 30 draft/jam) dan plafon biaya harian (env `STUDIO_COPILOT_DAILY_USD`, default $3).

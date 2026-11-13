@@ -13,7 +13,9 @@ import { rolesOf } from "../middleware/authorize.js";
 import { chat as anthropicChat } from "../services/providers/anthropicProvider.js";
 import { getAnthropicKey } from "../services/replyAssistant/providers/keyStore.js";
 import { readSkillFolder, skillBerubah, dariFolderBawaan, SINKRON_PREFIX } from "../services/agentStudio/skillLoader.js";
-import { runTurn, MODELS } from "../services/agentStudio/runtime.js";
+import { runTurn, runCopilotDraft, MODELS } from "../services/agentStudio/runtime.js";
+import { rakitKonteksCopilot, muatDataCopilot } from "../services/agentStudio/copilotContext.js";
+import { bolehCopilot, alasanPercakapanDitolak, validasiOutcome, validasiCrm, ringkasStats, BATAS_DRAFT_PER_JAM, BATAS_HARIAN_USD } from "../services/agentStudio/copilotPolicy.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = path.join(__dirname, "../services/agentStudio/skill-bawaan");
@@ -343,6 +345,231 @@ studioRouter.get("/test-cases", async (req, res) => {
   try {
     const items = await prisma.studioTestCase.findMany({ where: { active: true }, orderBy: { createdAt: "desc" }, take: 200 });
     res.json({ items });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══ COPILOT INBOX (MVP 2) ═════════════════════════════════════════════════
+// Draft untuk sales di Inbox. Copilot TIDAK PERNAH mengirim pesan / memanggil
+// WAHA — sales yang mengirim lewat alur Inbox yang sudah ada.
+// Lihat docs/AI-STUDIO-MVP2-COPILOT.md §7.
+
+async function aksesCopilot(req) {
+  const agent = await pastikanAgentBawaan(req.user.id);
+  return { agent, boleh: bolehCopilot(rolesOf(req.user), req.user.id, agent.config || {}) };
+}
+
+async function simpanConfigAgent(agent, patch) {
+  return prisma.studioAgent.update({ where: { id: agent.id }, data: { config: { ...(agent.config || {}), ...patch } } });
+}
+
+function awalHariIni() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// ── GET /copilot/akses — apakah tombol ✨ Saran AI ditampilkan untuk user ini ─
+studioRouter.get("/copilot/akses", async (req, res) => {
+  try {
+    const { boleh } = await aksesCopilot(req);
+    res.json({ boleh });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /copilot/:conversationId/draft — klik "Saran AI" ───────────────────
+studioRouter.post("/copilot/:conversationId/draft", async (req, res) => {
+  try {
+    const { agent, boleh } = await aksesCopilot(req);
+    if (!boleh) return res.status(403).json({ error: "Copilot belum diaktifkan untuk akun Anda" });
+
+    const data = await muatDataCopilot(prisma, req.params.conversationId, { contohIds: agent.config?.contohGaya || [] });
+    const ditolak = alasanPercakapanDitolak(data?.conversation);
+    if (ditolak) return res.status(data ? 400 : 404).json({ error: ditolak });
+
+    const sejamLalu = new Date(Date.now() - 3600_000);
+    const [draftSejam, biayaHariIni] = await Promise.all([
+      prisma.studioCopilotDraft.count({ where: { salesUserId: req.user.id, createdAt: { gte: sejamLalu } } }),
+      prisma.studioCopilotDraft.aggregate({ _sum: { costUsd: true }, where: { createdAt: { gte: awalHariIni() } } }),
+    ]);
+    if (draftSejam >= BATAS_DRAFT_PER_JAM) return res.status(429).json({ error: `Batas ${BATAS_DRAFT_PER_JAM} saran AI per jam tercapai — coba lagi nanti` });
+    if ((biayaHariIni._sum.costUsd || 0) >= BATAS_HARIAN_USD()) return res.status(429).json({ error: `Plafon biaya Copilot hari ini ($${BATAS_HARIAN_USD()}) sudah tercapai` });
+
+    const apiKey = kunciAnthropic();
+    if (!apiKey) return res.status(503).json({ error: "Kunci API Anthropic belum diatur" });
+
+    const konteks = rakitKonteksCopilot(data);
+    if (!konteks.riwayat.length) return res.status(400).json({ error: "Percakapan belum punya pesan" });
+
+    const [live, products] = await Promise.all([
+      prisma.studioSkillVersion.findFirst({ where: { agentId: agent.id, status: "LIVE" }, orderBy: { versionNumber: "desc" } }),
+      prisma.product.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
+    ]);
+    if (!live) return res.status(409).json({ error: "Agent belum punya versi live" });
+
+    const model = agent.defaultModel || "claude-haiku-5-5";
+    const mulai = Date.now();
+    const hasil = await runCopilotDraft({
+      skillFiles: live.files,
+      products,
+      konteks,
+      model,
+      callModel: ({ model: m, systemPrompt, messages, maxTokens }) => anthropicChat({ apiKey, model: m, systemPrompt, messages, maxTokens }),
+    });
+    const draft = await prisma.studioCopilotDraft.create({
+      data: {
+        conversationId: data.conversation.id,
+        customerId: data.conversation.customerId,
+        salesUserId: req.user.id,
+        skillVersionId: live.id,
+        model,
+        contextMessageId: data.messages.find((m) => m.direction === "INBOUND")?.id || null, // messages urut terbaru dulu
+        output: hasil.output,
+        inputTokens: hasil.usage.inputTokens || 0,
+        outputTokens: hasil.usage.outputTokens || 0,
+        cacheReadTokens: hasil.usage.cacheReadTokens || 0,
+        costUsd: hasil.costUsd,
+        latencyMs: Date.now() - mulai,
+      },
+    });
+    res.status(201).json({ draft: { id: draft.id, output: draft.output, model, costUsd: draft.costUsd, latencyMs: draft.latencyMs, versi: live.versionNumber } });
+  } catch (err) {
+    // Jangan log isi chat / data customer — cukup pesan error.
+    console.error("[copilot] gagal membuat draft:", err.message);
+    res.status(502).json({ error: `Gagal membuat saran AI: ${err.message}` });
+  }
+});
+
+// Draft hanya boleh diubah oleh sales yang membuatnya. null = respons error sudah dikirim.
+async function draftMilikSendiri(req, res) {
+  const draft = await prisma.studioCopilotDraft.findUnique({ where: { id: req.params.id } });
+  if (!draft) {
+    res.status(404).json({ error: "Draft tidak ditemukan" });
+    return null;
+  }
+  if (draft.salesUserId !== req.user.id) {
+    res.status(403).json({ error: "Bukan draft Anda" });
+    return null;
+  }
+  return draft;
+}
+
+// ── POST /copilot/drafts/:id/outcome — dipakai / diedit / diabaikan ─────────
+studioRouter.post("/copilot/drafts/:id/outcome", async (req, res) => {
+  try {
+    const draft = await draftMilikSendiri(req, res);
+    if (!draft) return;
+    if (draft.outcome !== "SHOWN") return res.status(409).json({ error: "Nasib draft ini sudah dicatat" });
+    const v = validasiOutcome(req.body);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const updated = await prisma.studioCopilotDraft.update({ where: { id: draft.id }, data: v.data, select: { id: true, outcome: true, ignoreReason: true, outcomeAt: true } });
+    res.json({ draft: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /copilot/drafts/:id/crm — simpan chip (kota, tag keluhan, catatan) ─
+studioRouter.post("/copilot/drafts/:id/crm", async (req, res) => {
+  try {
+    const draft = await draftMilikSendiri(req, res);
+    if (!draft) return;
+    if (!draft.customerId) return res.status(400).json({ error: "Percakapan ini belum terhubung ke customer" });
+    const customer = await prisma.customer.findUnique({ where: { id: draft.customerId }, select: { id: true, tags: true } });
+    if (!customer) return res.status(404).json({ error: "Customer tidak ditemukan" });
+    const v = validasiCrm(req.body, customer.tags || []);
+    if (v.error) return res.status(400).json({ error: v.error });
+
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(v.data.customer).length) await tx.customer.update({ where: { id: customer.id }, data: v.data.customer });
+      if (v.data.note) await tx.note.create({ data: { customerId: customer.id, authorId: req.user.id, content: v.data.note } });
+      await tx.studioCopilotDraft.update({ where: { id: draft.id }, data: { crmSaved: { ...(draft.crmSaved || {}), ...v.data.disimpan } } });
+    });
+    res.json({ disimpan: v.data.disimpan });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /copilot/stats — pemakaian pilot (Admin/Owner) ──────────────────────
+studioRouter.get("/copilot/stats", boleh(PERAN_PENINJAU), async (req, res) => {
+  try {
+    const hari = Math.min(Math.max(Number(req.query.hari) || 14, 1), 90);
+    const sejak = new Date(Date.now() - hari * 24 * 3600_000);
+    const [drafts, terbaru, biayaHariIni] = await Promise.all([
+      prisma.studioCopilotDraft.findMany({ where: { createdAt: { gte: sejak } }, select: { salesUserId: true, outcome: true, costUsd: true } }),
+      prisma.studioCopilotDraft.findMany({
+        where: { createdAt: { gte: sejak } },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        select: { id: true, conversationId: true, salesUserId: true, output: true, outcome: true, ignoreReason: true, sentText: true, crmSaved: true, costUsd: true, latencyMs: true, createdAt: true },
+      }),
+      prisma.studioCopilotDraft.aggregate({ _sum: { costUsd: true }, where: { createdAt: { gte: awalHariIni() } } }),
+    ]);
+    const ids = [...new Set(drafts.map((d) => d.salesUserId))];
+    const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    const nama = Object.fromEntries(users.map((u) => [u.id, u.name]));
+    res.json({
+      hari,
+      ...ringkasStats(drafts, nama),
+      terbaru: terbaru.map((d) => ({ ...d, salesNama: nama[d.salesUserId] || "—" })),
+      biayaHariIni: biayaHariIni._sum.costUsd || 0,
+      plafonHarian: BATAS_HARIAN_USD(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET/PUT /copilot/users — daftar pilot Tahap B (Admin/Owner) ─────────────
+studioRouter.get("/copilot/users", boleh(PERAN_PENINJAU), async (req, res) => {
+  try {
+    const agent = await pastikanAgentBawaan(req.user.id);
+    const users = await prisma.user.findMany({ where: { active: true }, select: { id: true, name: true, role: true }, orderBy: { name: "asc" } });
+    res.json({ users, copilotUsers: agent.config?.copilotUsers || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+studioRouter.put("/copilot/users", boleh(PERAN_PENINJAU), async (req, res) => {
+  try {
+    const ids = [...new Set((Array.isArray(req.body?.userIds) ? req.body.userIds : []).filter((x) => typeof x === "string"))];
+    const ada = await prisma.user.findMany({ where: { id: { in: ids }, active: true }, select: { id: true } });
+    const agent = await pastikanAgentBawaan(req.user.id);
+    const updated = await simpanConfigAgent(agent, { copilotUsers: ada.map((u) => u.id) });
+    res.json({ copilotUsers: updated.config.copilotUsers });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET/PUT /copilot/contoh-gaya — kurasi gold standard (Admin/Owner) ───────
+studioRouter.get("/copilot/contoh-gaya", boleh(PERAN_PENINJAU), async (req, res) => {
+  try {
+    const agent = await pastikanAgentBawaan(req.user.id);
+    const kandidat = await prisma.goldStandardExample.findMany({
+      orderBy: [{ category: "asc" }, { relatedScore: "desc" }],
+      take: 300,
+      select: { id: true, category: true, quote: true, salesName: true, relatedScore: true, sampledFor: true },
+    });
+    res.json({ kandidat, terpilih: agent.config?.contohGaya || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+studioRouter.put("/copilot/contoh-gaya", boleh(PERAN_PENINJAU), async (req, res) => {
+  try {
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).filter((x) => typeof x === "string"))];
+    if (ids.length > 40) return res.status(400).json({ error: "Maksimal 40 contoh gaya" });
+    const ada = await prisma.goldStandardExample.findMany({ where: { id: { in: ids } }, select: { id: true } });
+    const agent = await pastikanAgentBawaan(req.user.id);
+    const updated = await simpanConfigAgent(agent, { contohGaya: ada.map((e) => e.id) });
+    res.json({ terpilih: updated.config.contohGaya });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

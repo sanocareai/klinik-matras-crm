@@ -134,7 +134,7 @@ export function rakitKonteksCopilot({ messages = [], customer = null, orders = [
 export async function muatDataCopilot(prisma, conversationId, { contohIds = [] } = {}) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { id: true, type: true, customerId: true, customer: { select: { id: true, name: true, city: true, tags: true, pipelineStage: true } } },
+    select: { id: true, type: true, customerId: true, customer: { select: { id: true, name: true, city: true, tags: true, pipelineStage: true, isInternalStaff: true } } },
   });
   if (!conv) return null;
   const [messages, orders, complaints, examples] = await Promise.all([
@@ -142,7 +142,7 @@ export async function muatDataCopilot(prisma, conversationId, { contohIds = [] }
       where: { conversationId, isRevoked: false },
       orderBy: { createdAt: "desc" },
       take: MAKS_PESAN + 10, // cadangan untuk pesan kosong yang dibuang
-      select: { direction: true, content: true, mediaType: true, rawType: true, isRevoked: true, createdAt: true },
+      select: { id: true, direction: true, content: true, mediaType: true, rawType: true, isRevoked: true, createdAt: true },
     }),
     conv.customerId
       ? prisma.order.findMany({

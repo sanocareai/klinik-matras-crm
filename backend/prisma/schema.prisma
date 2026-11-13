@@ -12346,3 +12346,43 @@ model StudioTestCase {
   @@index([agentId, active])
   @@map("studio_test_cases")
 }
+
+// ─── AI STUDIO MVP 2 — COPILOT INBOX (Nov 2026) ─────────────────────────────
+// Satu baris per klik "Saran AI" di Inbox: draft yang ditampilkan ke sales +
+// nasibnya (dipakai / diedit / diabaikan). ADDITIVE; relasi string biasa (tanpa
+// FK) seperti tabel studio_* lain. Lihat docs/AI-STUDIO-MVP2-COPILOT.md §6.
+// Rollback: DROP TABLE "studio_copilot_drafts"; DROP TYPE "StudioDraftOutcome";
+enum StudioDraftOutcome {
+  SHOWN
+  USED_AS_IS
+  USED_EDITED
+  IGNORED
+}
+
+model StudioCopilotDraft {
+  id               String             @id @default(cuid())
+  conversationId   String
+  customerId       String?
+  salesUserId      String
+  skillVersionId   String
+  model            String
+  contextMessageId String? // pesan inbound terakhir saat draft dibuat
+  output           Json // { bubbles, kirimKatalog, tahap, dataTerkumpul, handover, catatanInternal, checks }
+  outcome          StudioDraftOutcome @default(SHOWN)
+  ignoreReason     String?
+  sentText         String? // teks yang akhirnya dikirim sales
+  crmSaved         Json? // { city?, tag?, note? } yang disimpan sales dari chip
+  inputTokens      Int                @default(0)
+  outputTokens     Int                @default(0)
+  cacheReadTokens  Int                @default(0)
+  costUsd          Float              @default(0)
+  latencyMs        Int                @default(0)
+  outcomeAt        DateTime?
+  createdAt        DateTime           @default(now())
+
+  @@index([salesUserId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([outcome, createdAt])
+  @@index([createdAt])
+  @@map("studio_copilot_drafts")
+}
