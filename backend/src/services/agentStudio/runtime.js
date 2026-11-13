@@ -78,17 +78,18 @@ export function toModelMessages(history = []) {
  * @param model        id model
  * @param callModel    async ({ model, systemPrompt, messages, maxTokens }) → { reply, usage }
  */
-export async function runTurn({ skillFiles, products = [], history = [], customerText, model = "claude-haiku-5-5", callModel }) {
+export async function runTurn({ skillFiles, products = [], history = [], customerText, model = "claude-haiku-5-5", callModel, mode = "playground" }) {
   if (!customerText?.trim()) throw new Error("Pesan customer kosong");
   if (typeof callModel !== "function") throw new Error("callModel wajib diisi");
 
-  const systemPrompt = buildSystemPrompt(skillFiles, products);
+  const systemPrompt = buildSystemPrompt(skillFiles, products, { mode });
   const messages = [...toModelMessages(history), { role: "user", content: customerText.trim() }];
   const { reply, usage = {} } = await callModel({ model, systemPrompt, messages, maxTokens: 4000 });
 
   const parsed = parseAgentJson(reply);
   const output = normalizeOutput(parsed);
-  const parseOk = !!parsed && output.bubbles.length > 0;
+  // Bubble kosong sah hanya bila agent menyerahkan ke sales (mode copilot: sales menjawab sendiri).
+  const parseOk = !!parsed && (output.bubbles.length > 0 || output.handover.perlu);
   if (!parseOk) {
     // Model tidak mengembalikan JSON → tampilkan apa adanya supaya sales bisa mengoreksi.
     output.bubbles = [String(reply || "").trim() || "(balasan kosong)"];
@@ -96,7 +97,7 @@ export async function runTurn({ skillFiles, products = [], history = [], custome
   }
 
   const customerTexts = [...history.filter((m) => m.role === "CUSTOMER").map((m) => m.content?.text), customerText];
-  const checks = runChecks(output, { products, customerText, priceAsks: countPriceAsks(customerTexts) });
+  const checks = runChecks(output, { products, customerText, priceAsks: countPriceAsks(customerTexts), mode });
   if (!parseOk) checks.unshift({ kode: "FORMAT_JSON", lulus: false, pesan: "Model tidak mengikuti format JSON" });
 
   return { output: { ...output, checks }, usage, costUsd: estimateCost(model, usage), model };

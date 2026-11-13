@@ -11,6 +11,10 @@ const RE_TIDAK_DIJUAL = /\b(full upgrade|per sano|potong ukuran|tambah ukuran)\b
 const RE_KOMPLAIN = /\b(kecewa|komplain|refund|marah|tidak puas|parah banget|rusak lagi)\b/i;
 const RE_NEGO = /\b(diskon|nego|kurangin|potongan|harga khusus|bisa kurang)\b/i;
 const RE_EMOJI = /\p{Extended_Pictographic}/gu;
+// Kalimat yang membuat balasan terdengar bot (lihat references/52-gaya-wa-dan-mode-copilot.md §1).
+const RE_KALIMAT_BOT = /(terima ?kasih (telah|sudah) menghubungi|terima ?kasih (atas )?info(nya|rmasinya)?|ada yang bisa (kami|saya) bantu lagi|mohon maaf atas ketidaknyamanan|kami informasikan bahwa|silakan memilih opsi|apakah ada pertanyaan lain)/i;
+// Mode copilot: draft dikirim sales manusia → tidak boleh mengaku AI / menyambungkan ke "konsultan senior".
+const RE_MENGAKU_AI = /\b(asisten (ai|virtual)|saya (adalah )?(ai|bot|robot)|chatbot|sambungkan (dengan|ke) konsultan senior)\b/i;
 
 // Ambil semua angka "Rp…" dari teks → array angka.
 export function extractPrices(text = "") {
@@ -34,7 +38,7 @@ export function validPriceSet(products = []) {
  *                   priceAsks = berapa kali customer sudah menanyakan harga (termasuk pesan ini)
  * @returns [{ kode, lulus, pesan }]
  */
-export function runChecks(out = {}, { products = [], customerText = "", priceAsks = 0 } = {}) {
+export function runChecks(out = {}, { products = [], customerText = "", priceAsks = 0, mode = "playground" } = {}) {
   const bubbles = Array.isArray(out.bubbles) ? out.bubbles : [];
   const teks = bubbles.join("\n");
   const harga = extractPrices(teks);
@@ -70,6 +74,17 @@ export function runChecks(out = {}, { products = [], customerText = "", priceAsk
   const wajibHandover = RE_KOMPLAIN.test(customerText) || RE_NEGO.test(customerText);
   const handover = !!out.handover?.perlu;
   hasil.push({ kode: "HANDOVER_TEPAT", lulus: !wajibHandover || handover, pesan: wajibHandover ? (handover ? "Komplain/nego → diserahkan ke sales" : "Komplain/nego terdeteksi tapi TIDAK diserahkan ke sales") : (handover ? "Diserahkan ke sales" : "Tidak perlu handover") });
+
+  // 8. Gaya natural: tanpa kalimat bot & tanpa baris kosong di dalam satu bubble
+  const bot = bubbles.map((b) => String(b).match(RE_KALIMAT_BOT)?.[0]).find(Boolean);
+  const barisKosong = bubbles.some((b) => /\n\s*\n/.test(String(b)));
+  hasil.push({ kode: "GAYA_NATURAL", lulus: !bot && !barisKosong, pesan: bot ? `Kalimat terdengar bot: "${bot}"` : barisKosong ? "Ada baris kosong di dalam bubble — pecah jadi bubble terpisah" : "Gaya WA natural" });
+
+  // 9. Mode copilot: draft tidak boleh mengaku AI / menyambungkan ke konsultan senior
+  if (mode === "copilot") {
+    const ngaku = RE_MENGAKU_AI.test(teks);
+    hasil.push({ kode: "COPILOT_SUARA_SALES", lulus: !ngaku, pesan: ngaku ? "Draft mengaku AI atau menyambungkan ke konsultan senior — padahal dikirim sales" : "Draft memakai suara sales" });
+  }
 
   return hasil;
 }

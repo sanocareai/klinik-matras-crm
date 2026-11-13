@@ -12,7 +12,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
 import { chat as anthropicChat } from "../services/providers/anthropicProvider.js";
 import { getAnthropicKey } from "../services/replyAssistant/providers/keyStore.js";
-import { readSkillFolder } from "../services/agentStudio/skillLoader.js";
+import { readSkillFolder, skillBerubah, dariFolderBawaan, SINKRON_PREFIX } from "../services/agentStudio/skillLoader.js";
 import { runTurn, MODELS } from "../services/agentStudio/runtime.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,9 +44,39 @@ const AGENT_BAWAAN = {
   folder: "sano-mattress-consultant",
 };
 
+// Skill bawaan ikut kode (folder skill-bawaan). Saat rilis membawa isi folder
+// baru, versi live di DB ikut diperbarui SEKALI per proses: versi baru LIVE
+// (N+1), versi lama ARCHIVED. Hanya bila versi live memang berasal dari
+// folder (bukan suntingan manual — editor skill baru ada di MVP 3).
+let sinkronSelesai = false;
+async function sinkronSkillBawaan(agent, userId) {
+  if (sinkronSelesai) return;
+  sinkronSelesai = true;
+  const live = await prisma.studioSkillVersion.findFirst({ where: { agentId: agent.id, status: "LIVE" }, orderBy: { versionNumber: "desc" } });
+  if (!live || !dariFolderBawaan(live.changeNote)) return;
+  const files = readSkillFolder(path.join(SKILL_ROOT, AGENT_BAWAAN.folder));
+  if (!skillBerubah(files, live.files)) return;
+  const terakhir = await prisma.studioSkillVersion.findFirst({ where: { agentId: agent.id }, orderBy: { versionNumber: "desc" }, select: { versionNumber: true } });
+  try {
+    await prisma.$transaction([
+      prisma.studioSkillVersion.updateMany({ where: { agentId: agent.id, status: "LIVE" }, data: { status: "ARCHIVED" } }),
+      prisma.studioSkillVersion.create({
+        data: { agentId: agent.id, versionNumber: terakhir.versionNumber + 1, status: "LIVE", changeNote: `${SINKRON_PREFIX} (${new Date().toISOString().slice(0, 10)})`, files, createdById: userId },
+      }),
+    ]);
+  } catch (err) {
+    // P2002 = proses lain sudah membuat versi yang sama. Error lain: jangan gagalkan
+    // permintaan — playground tetap jalan dengan versi live lama.
+    if (err?.code !== "P2002") console.error("[studio] sinkron skill bawaan gagal:", err?.message);
+  }
+}
+
 async function pastikanAgentBawaan(userId) {
   const ada = await prisma.studioAgent.findUnique({ where: { slug: AGENT_BAWAAN.slug } });
-  if (ada) return ada;
+  if (ada) {
+    await sinkronSkillBawaan(ada, userId);
+    return ada;
+  }
   const files = readSkillFolder(path.join(SKILL_ROOT, AGENT_BAWAAN.folder));
   return prisma.studioAgent.create({
     data: {

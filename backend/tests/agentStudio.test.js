@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { buildSystemPrompt, readSkillFolder, formatCatalog } from "../src/services/agentStudio/skillLoader.js";
+import { buildSystemPrompt, readSkillFolder, formatCatalog, PROMPT_FILES, skillBerubah, dariFolderBawaan } from "../src/services/agentStudio/skillLoader.js";
 import { runChecks, extractPrices, countPriceAsks } from "../src/services/agentStudio/checks.js";
 import { runTurn, parseAgentJson, estimateCost, toModelMessages } from "../src/services/agentStudio/runtime.js";
 
@@ -108,4 +108,44 @@ test("runTurn: jawaban bukan JSON tetap ditampilkan dan ditandai gagal format", 
   assert.equal(r.output.bubbles[0], "Halo Kak, ada yang bisa dibantu?");
   assert.equal(r.output.checks[0].kode, "FORMAT_JSON");
   assert.equal(r.output.checks[0].lulus, false);
+});
+
+test("MVP 2: gaya WA & mode copilot ikut ke prompt; semua PROMPT_FILES ada di folder bawaan", () => {
+  const files = readSkillFolder(SKILL_DIR);
+  for (const f of PROMPT_FILES) assert.ok(files[f], `${f} ada di skill bawaan`);
+  const prompt = buildSystemPrompt(files, PRODUCTS);
+  assert.match(prompt, /MODE: COPILOT/);
+  assert.match(prompt, /Ikuti register customer/);
+});
+
+test("MVP 2: sinkron skill bawaan — deteksi perubahan & asal versi", () => {
+  assert.equal(skillBerubah({ "SKILL.md": "a\nb" }, { "SKILL.md": "a\r\nb" }), false, "akhir baris diabaikan");
+  assert.equal(skillBerubah({ "SKILL.md": "a", "references/x.md": "b" }, { "SKILL.md": "a" }), true, "file baru");
+  assert.equal(skillBerubah({ "SKILL.md": "a" }, { "SKILL.md": "a", "references/x.md": "b" }), true, "file dihapus");
+  assert.equal(skillBerubah({ "SKILL.md": "a" }, { "SKILL.md": "b" }), true, "isi berubah");
+  assert.equal(dariFolderBawaan("Versi awal dari skill sano-mattress-consultant (Nov 2026)"), true);
+  assert.equal(dariFolderBawaan("Sinkron skill bawaan (2026-11-13)"), true);
+  assert.equal(dariFolderBawaan("Suntingan Owner: harga baru"), false);
+  assert.equal(dariFolderBawaan(null), false);
+});
+
+test("MVP 2: bubble kosong sah hanya bila handover", async () => {
+  const kosong = (handover) => async () => ({ reply: JSON.stringify({ bubbles: [], tahap: "HANDOVER", handover }), usage: {} });
+  const a = await runTurn({ skillFiles: { "SKILL.md": "x" }, customerText: "ini bot ya?", callModel: kosong({ perlu: true, alasan: "tanya bot" }) });
+  assert.deepEqual(a.output.bubbles, []);
+  assert.ok(!a.output.checks.some((c) => c.kode === "FORMAT_JSON"));
+  const b = await runTurn({ skillFiles: { "SKILL.md": "x" }, customerText: "halo", callModel: kosong({ perlu: false }) });
+  assert.ok(b.output.checks.some((c) => c.kode === "FORMAT_JSON" && !c.lulus));
+});
+
+test("MVP 2: cek GAYA_NATURAL & COPILOT_SUARA_SALES", () => {
+  const cek = (bubbles, mode) => Object.fromEntries(runChecks({ bubbles }, { products: PRODUCTS, mode }).map((c) => [c.kode, c.lulus]));
+  assert.equal(cek(["Terima kasih infonya Kak. Kasurnya sudah berapa lama?"]).GAYA_NATURAL, false);
+  assert.equal(cek(["Terima kasih telah menghubungi Klinik Matras"]).GAYA_NATURAL, false);
+  assert.equal(cek(["Oke Kak.\n\nBoleh tau ukurannya?"]).GAYA_NATURAL, false, "baris kosong dalam bubble");
+  assert.equal(cek(["Cekung di tengah memang sering bikin pinggang pegal Kak.", "Ukurannya berapa?"]).GAYA_NATURAL, true);
+  assert.equal(cek(["Betul Kak, saya asisten AI dari tim Klinik Matras"], "copilot").COPILOT_SUARA_SALES, false);
+  assert.equal(cek(["Saya sambungkan dengan konsultan senior kami ya"], "copilot").COPILOT_SUARA_SALES, false);
+  assert.equal(cek(["Ukurannya berapa Kak?"], "copilot").COPILOT_SUARA_SALES, true);
+  assert.equal(cek(["Saya sambungkan dengan konsultan senior kami ya"]).COPILOT_SUARA_SALES, undefined, "hanya di mode copilot");
 });

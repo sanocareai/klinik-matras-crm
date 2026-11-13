@@ -19,6 +19,7 @@ export const PROMPT_FILES = [
   "references/30-katalog-crm.md",
   "references/40-faq-operasional.md",
   "references/50-persona-dan-playbook-sales-v2.md",
+  "references/52-gaya-wa-dan-mode-copilot.md",
   "references/55-skenario-keberatan.md",
   "references/10-konsep-matras-sehat.md",
   "references/sales-framework/00-index.md",
@@ -31,7 +32,7 @@ export const OUTPUT_CONTRACT = `
 # FORMAT JAWABAN (WAJIB)
 Kamu sedang membalas chat WhatsApp customer. Balas HANYA dengan satu objek JSON valid (tanpa teks lain, tanpa \`\`\`), bentuknya:
 {
-  "bubbles": ["pesan WA 1", "pesan WA 2"],          // 1–3 bubble, masing-masing 1–3 kalimat, maks 1 emoji per bubble
+  "bubbles": ["pesan WA 1", "pesan WA 2"],          // 1–3 bubble, masing-masing 1–3 kalimat, maks 1 emoji per bubble ([] hanya di MODE: COPILOT bila handover.perlu)
   "kirimKatalog": ["NAMA KARTU PERSIS"],            // 0–3 kartu dari katalog CRM; [] bila tidak perlu
   "tahap": "${TAHAP.join("|")}",
   "dataTerkumpul": { "ukuran": null, "beratBadan": [], "keluhan": null, "kondisiKasur": null, "umurKasur": null, "posisiTidur": null, "riwayatKesehatan": null, "domisili": null },
@@ -56,6 +57,22 @@ export function readSkillFolder(dir) {
   return files;
 }
 
+// Penanda changeNote versi yang berasal dari folder skill bawaan (bukan suntingan manual).
+// Versi 1 (MVP 1) memakai "Versi awal dari skill …"; versi hasil sinkron memakai SINKRON_PREFIX.
+export const SINKRON_PREFIX = "Sinkron skill bawaan";
+export function dariFolderBawaan(changeNote = "") {
+  return /^(Versi awal dari skill|Sinkron skill bawaan)/.test(changeNote || "");
+}
+
+// true bila isi folder bawaan berbeda dari file versi live (akhir baris diabaikan).
+export function skillBerubah(folderFiles = {}, liveFiles = {}) {
+  const norm = (s) => String(s ?? "").replace(/\r\n/g, "\n");
+  const a = Object.keys(folderFiles).sort();
+  const b = Object.keys(liveFiles || {}).sort();
+  if (a.length !== b.length || a.some((k, i) => k !== b[i])) return true;
+  return a.some((k) => norm(folderFiles[k]) !== norm(liveFiles[k]));
+}
+
 // Katalog live dari tabel Product → teks ringkas untuk prompt.
 export function formatCatalog(products = []) {
   const rows = products
@@ -69,7 +86,17 @@ export function formatCatalog(products = []) {
 
 // Rakit system prompt. Bagian skill di depan (stabil → cache), katalog &
 // kontrak di belakang.
-export function buildSystemPrompt(files = {}, products = []) {
+// Mode copilot: draft dikirim oleh sales manusia. Blok ini sengaja di DEPAN
+// skill dan menang atas aturan handover/"tanya bot" di SKILL.md (uji 13 Nov:
+// diletakkan di belakang, model tetap menulis "saya asisten AI").
+export const MODE_COPILOT = `# MODE: COPILOT (MENANG ATAS ATURAN LAIN YANG BERTENTANGAN)
+Balasanmu adalah DRAFT yang akan diedit lalu dikirim oleh sales MANUSIA dari nomor WA Klinik Matras. Customer membaca pesan itu sebagai pesan dari sales tersebut. Maka:
+- JANGAN PERNAH menulis bahwa kamu AI/bot/asisten virtual, dan jangan menulis "saya sambungkan dengan konsultan senior" — sales-nya sudah manusia.
+- Situasi "wajib handover" di SKILL.md (komplain, nego/diskon, status order, pembayaran, minta ditelepon) dan customer bertanya "ini bot?" → "bubbles": [], "handover.perlu": true, alasan singkat, dan "catatanInternal" berisi saran apa yang sebaiknya sales lakukan.
+- Lanjutkan suara sales di riwayat; jangan memperkenalkan diri atau menyapa ulang.
+Detail: references/52-gaya-wa-dan-mode-copilot.md bagian 3.`;
+
+export function buildSystemPrompt(files = {}, products = [], { mode = "playground" } = {}) {
   const parts = [];
   for (const p of PROMPT_FILES) {
     if (files[p]) parts.push(`<file path="${p}">\n${files[p].trim()}\n</file>`);
@@ -77,6 +104,7 @@ export function buildSystemPrompt(files = {}, products = []) {
   if (!parts.length) throw new Error("Skill kosong — SKILL.md tidak ditemukan di versi ini");
   return [
     "Kamu adalah agent AI Klinik Matras by SANO Care. Ikuti skill berikut dengan ketat. Jika antar file bertentangan, SKILL.md, SOP-SALES-SANO-v2.md, dan 21-harga.md yang menang.",
+    ...(mode === "copilot" ? [MODE_COPILOT] : []),
     parts.join("\n\n"),
     `# KATALOG CRM SAAT INI (nama kartu persis | kategori | harga). Harga resmi = angka di sini.\n${formatCatalog(products)}`,
     OUTPUT_CONTRACT,
