@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useTabVisibility } from "@/lib/TabsContext.jsx";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, Clock, Package, PackageCheck, PackageX, RefreshCw, Truck, Undo2 } from "lucide-react";
 import { api } from "@/api.js";
@@ -61,6 +62,7 @@ function ReturnCard({ r, busy, onReceive }) {
 }
 
 export default function WarehouseProductionQueue() {
+  const tabAktif = useTabVisibility();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -73,11 +75,12 @@ export default function WarehouseProductionQueue() {
     return api.getProductionV2WarehouseQueue().then((d) => { setData(d); setError(""); }).catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
   }, []);
   useEffect(() => {
+    if (!tabAktif) return; // tab dalam-app di background: jeda polling (optimasi 13 Nov 2026); aktif kembali = muat ulang
     load();
     const tick = () => { if (document.visibilityState === "visible") load(); };
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, tabAktif]);
 
   async function resolve(s) {
     setBusy(s.id); setError("");

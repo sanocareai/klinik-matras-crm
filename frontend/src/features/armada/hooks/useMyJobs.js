@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api.js";
+import { useTabVisibility, useSaatTabAktifKembali } from "@/lib/TabsContext.jsx";
 
 // TanStack Query untuk GET /armada/my-jobs (8 September 2026, lihat catatan
 // panjang di useArmadaTracking.js soal alasan migrasi ini). Dipakai HANYA
@@ -24,9 +25,13 @@ import { api } from "@/api.js";
 // web PWA driver sama-sama tidak pernah "menempel" job yang sudah
 // tuntas dari sisi lain.
 export function useMyJobs() {
-  return useQuery({
+  // Polling DIJEDA saat tab dalam-app ini di background (keep-alive) — optimasi 13 Nov 2026.
+  const aktif = useTabVisibility();
+  const query = useQuery({
     queryKey: ["armada", "my-jobs"],
     queryFn: async () => (await api.getMyJobs()).jobs,
-    refetchInterval: 30_000,
+    refetchInterval: aktif ? 30_000 : false,
   });
+  useSaatTabAktifKembali(aktif, () => { if (query.isStale) query.refetch(); });
+  return query;
 }

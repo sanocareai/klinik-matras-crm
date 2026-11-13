@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTabVisibility } from "@/lib/TabsContext.jsx";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api.js";
 import { CaptureSheet, useDraftManager } from "@/features/production/DocumentationDraftUi.jsx";
@@ -19,6 +20,7 @@ const POLL_MS = 60_000;
 function storedUser() { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } }
 
 export default function ProductionDocumentation({ user: userProp = null, onLogout = null }) {
+  const tabAktif = useTabVisibility();
   const user = userProp || storedUser();
   const roles = rolesOf(user);
   const navigate = useNavigate();
@@ -57,11 +59,12 @@ export default function ProductionDocumentation({ user: userProp = null, onLogou
   }, [filter, qDebounced]);
   useEffect(() => { setLoading(true); load(); }, [load]);
   useEffect(() => {
+    if (!tabAktif) return; // tab dalam-app di background: jeda polling (optimasi 13 Nov 2026)
     const tick = () => { if (document.visibilityState === "visible" && !runId) load(); };
     const id = setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
-  }, [load, runId]);
+  }, [load, runId, tabAktif]);
   // Pengiriman latar belakang selesai -> segarkan antrean + pemberitahuan terkirim.
   useEffect(() => { if (drafts.lastSent) load(); }, [drafts.lastSent, load]);
   useEffect(() => { window.scrollTo(0, 0); }, [runId, tab]);

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useTabVisibility } from "@/lib/TabsContext.jsx";
 import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users, MessageSquare, X, ExternalLink, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
@@ -104,6 +105,7 @@ const GAYA_INPUT_KONTRAS = `
 `;
 
 export default function Broadcast() {
+  const tabAktif = useTabVisibility();
   const [campaigns, setCampaigns] = useState([]);
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [step, setStep] = useState(1);
@@ -139,10 +141,10 @@ export default function Broadcast() {
   // Campaign berjalan bergerak pelan (dibatasi kuota harian), tapi progres
   // tetap perlu terlihat bergerak tanpa harus refresh manual.
   useEffect(() => {
-    if (!campaigns.some((c) => c.status === "BERJALAN")) return;
+    if (!tabAktif || !campaigns.some((c) => c.status === "BERJALAN")) return; // tab dalam-app di background: jeda polling (optimasi 13 Nov 2026)
     const t = setInterval(() => { if (!document.hidden) muatCampaigns(); }, 20_000); // tab background: lewati
     return () => clearInterval(t);
-  }, [campaigns, muatCampaigns]);
+  }, [campaigns, muatCampaigns, tabAktif]);
 
   useEffect(() => {
     if (step !== 2) return;

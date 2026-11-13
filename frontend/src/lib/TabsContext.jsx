@@ -231,7 +231,22 @@ export function TabIdProvider({ id, children }) {
 // aktif) — aman, cuma berarti tidak ada penghematan, bukan salah fungsi.
 export function useTabVisibility() {
   const myId = useContext(TabIdCtx);
-  const { activeTabId } = useTabs();
+  // useContext langsung (bukan useTabs) supaya halaman standalone / APK Driver
+  // di luar <TabsProvider> tidak melempar galat — di sana selalu dianggap aktif.
+  const activeTabId = useContext(TabsCtx)?.activeTabId;
   if (myId == null) return true;
   return myId === activeTabId;
+}
+
+// Pasangan useTabVisibility untuk polling yang DIJEDA di tab background
+// (optimasi 13 Nov 2026): panggil `segarkan` sekali saat tab dalam-app ini
+// kembali aktif, supaya data tidak menunggu satu interval penuh untuk segar.
+export function useSaatTabAktifKembali(aktif, segarkan) {
+  const sebelumnya = useRef(aktif);
+  const terbaru = useRef(segarkan);
+  terbaru.current = segarkan;
+  useEffect(() => {
+    if (aktif && !sebelumnya.current) terbaru.current?.();
+    sebelumnya.current = aktif;
+  }, [aktif]);
 }

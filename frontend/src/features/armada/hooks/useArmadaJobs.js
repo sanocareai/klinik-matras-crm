@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api.js";
+import { useTabVisibility, useSaatTabAktifKembali } from "@/lib/TabsContext.jsx";
 import { ACTIVE_STATUSES } from "@/features/armada/jobStatus.js";
 
 // TanStack Query untuk GET /armada/jobs (Jadwal & Penugasan) — 8 September
@@ -15,7 +16,9 @@ import { ACTIVE_STATUSES } from "@/features/armada/jobStatus.js";
 // kebenaran), bukan disalin ulang di sini.
 
 export function useArmadaJobs({ enabled = true, debounced, range, fStatus, fOrderStatus, fDriver, tab, toApiParams, fHasConfirmedDate, sortBy }) {
-  return useQuery({
+  // Polling DIJEDA saat tab dalam-app ini di background (keep-alive) — optimasi 13 Nov 2026.
+  const aktif = useTabVisibility();
+  const query = useQuery({
     queryKey: ["armada", "jobs", { debounced, range, fStatus, fOrderStatus, fDriver, tab, fHasConfirmedDate, sortBy }],
     queryFn: async () => {
       const params = {
@@ -45,6 +48,8 @@ export function useArmadaJobs({ enabled = true, debounced, range, fStatus, fOrde
     // (itu di Route Planner/useArmadaRoutesBoard.js, dijaga terpisah
     // karena poll di tengah drag bisa mengacaukan state-nya) — aman
     // polling tanpa syarat tambahan.
-    refetchInterval: 30_000,
+    refetchInterval: aktif ? 30_000 : false,
   });
+  useSaatTabAktifKembali(aktif, () => { if (enabled && query.isStale) query.refetch(); });
+  return query;
 }

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useTabVisibility } from "@/lib/TabsContext.jsx";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, Clock, CalendarClock, Truck as TruckIcon, CheckCircle2, Wrench,
@@ -77,6 +78,7 @@ function Tile({ icon: Icon, tone, label, value, hint }) {
 }
 
 export default function ArmadaRingkasan() {
+  const tabAktif = useTabVisibility();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -121,10 +123,11 @@ export default function ArmadaRingkasan() {
   }, []);
 
   useEffect(() => {
+    if (!tabAktif) return; // tab dalam-app di background: jeda polling (optimasi 13 Nov 2026); aktif kembali = muat ulang
     load();
     const t = setInterval(() => { if (!document.hidden) load(); }, POLL_MS); // tab background: lewati
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, tabAktif]);
 
   const overdueJobs = useMemo(() => {
     if (!data) return [];

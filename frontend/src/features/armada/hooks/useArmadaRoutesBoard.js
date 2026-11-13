@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api.js";
+import { useTabVisibility, useSaatTabAktifKembali } from "@/lib/TabsContext.jsx";
 
 // TanStack Query untuk seluruh papan Route Planner (8 September 2026, lihat
 // catatan panjang di useArmadaTracking.js soal alasan migrasi). ArmadaRoutes
@@ -23,7 +24,9 @@ import { api } from "@/api.js";
 // job yang sedang di-drag, bikin drop target kacau. `pausePolling`
 // dikontrol pemanggil (true selama draggingJobId != null).
 export function useArmadaRoutesBoard(range, toApiParams, { pausePolling = false } = {}) {
-  return useQuery({
+  // Polling DIJEDA saat tab dalam-app ini di background (keep-alive) — optimasi 13 Nov 2026.
+  const aktif = useTabVisibility();
+  const query = useQuery({
     queryKey: ["armada", "routes-board", toApiParams(range)],
     queryFn: async () => {
       const rangeParams = toApiParams(range);
@@ -44,6 +47,8 @@ export function useArmadaRoutesBoard(range, toApiParams, { pausePolling = false 
         helpers: helpersRes || [],
       };
     },
-    refetchInterval: pausePolling ? false : 30_000,
+    refetchInterval: pausePolling || !aktif ? false : 30_000,
   });
+  useSaatTabAktifKembali(aktif, () => { if (query.isStale) query.refetch(); });
+  return query;
 }
