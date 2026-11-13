@@ -19,12 +19,12 @@ export default function UnitOrderFallback({ data, error, loading, roles = [], on
       {v2View ? (
         <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="unit-v2-not-owned-notice">
           <p className="m-0 font-semibold">Unit ini belum punya rencana di papan produksi.</p>
-          <p className="m-0 mt-0.5">Status kerja, target, dan rencana bahan tetap bisa diatur dari panel Order Produksi, dan pekerjaan bisa dikerjakan dari bagian Pekerjaan di bawah. Diagnosis, Meja/Corner, dan QC tersedia setelah unit masuk rencana produksi.</p>
+          <p className="m-0 mt-0.5">Status kerja, target, dan bahan diatur di Ringkasan dan Bahan profil unit ini. Diagnosis, Meja/Corner, dan QC tersedia setelah unit masuk rencana produksi.</p>
         </div>
       ) : (
       <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="unit-v2-notice">
         <p className="m-0 font-semibold">Unit ini belum punya rencana di papan produksi.</p>
-        <p className="m-0 mt-0.5">Berikut data order dan unit. Status kerja, target, dan rencana bahan tetap bisa diatur dari panel Order Produksi, dan pekerjaan bisa dikerjakan dari bagian Pekerjaan. Bagian berikut tersedia setelah unit masuk rencana produksi:</p>
+        <p className="m-0 mt-0.5">Berikut data order dan unit. Status kerja, target, dan bahan diatur di Ringkasan dan Bahan profil unit ini. Bagian berikut tersedia setelah unit masuk rencana produksi:</p>
         <ul className="m-0 mt-1 list-disc pl-5">{V2_SECTIONS_UNAVAILABLE.map(([k, d]) => <li key={k}><b>{k}</b> — {d}</li>)}</ul>
       </div>
       )}

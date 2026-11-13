@@ -14,7 +14,7 @@ test("papan Corner: data dari server (corner-board), empat kelompok dari server,
   assert.match(v, /\(data\?\.groups \|\| \[\]\)\.map/);
   assert.doesNotMatch(v, /next\.actor|\.next\b|cornerStatusOf|deriveNextAction/, "klien tidak menebak dari next.actor");
   for (const id of ["corner-view", "corner-card", "corner-pic", "corner-qc", "corner-request", "corner-blockers", "corner-needs-action"]) assert.ok(v.includes(`data-testid="${id}"`) || v.includes("data-testid={`" + id), id);
-  assert.match(v, /aria-label=\{`Buka Unit 360 \$\{item\.unit\.unitCode\}`\}/, "klik kartu membuka Unit 360 (drawer yang sama)");
+  assert.match(v, /aria-label=\{`Buka profil unit \$\{item\.unit\.unitCode\}`\}/, "klik kartu membuka profil unit (yang sama di seluruh workspace Produksi)");
 });
 
 test("tanpa drag, kapasitas, target, atau urutan Corner dan tanpa tombol eksekusi tahap", () => {

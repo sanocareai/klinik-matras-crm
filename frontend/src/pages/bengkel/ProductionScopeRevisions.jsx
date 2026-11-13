@@ -258,7 +258,7 @@ export default function ProductionScopeRevisions() {
               type="button" onClick={() => navigate(unitDetailPath(selected.unitId))}
               className="text-[11.5px] font-semibold text-accent hover:underline"
             >
-              Buka Unit 360 →
+              Buka profil unit →
             </button>
           </div>
         )}

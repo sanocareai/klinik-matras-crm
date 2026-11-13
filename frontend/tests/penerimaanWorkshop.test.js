@@ -41,13 +41,15 @@ test("kartu backlog → view jadwal membawa bukti terima (untuk teks dampak akti
   assert.ok(m.includes("diterimaWorkshop: c.receivedBasis ? { basis: c.receivedBasis, label: c.receivedBasisLabel ?? null } : null"));
 });
 
-test("pengawatan: panel memakai status order Sales sebenarnya, tombol penerimaan + Ubah ke Diproses dengan catatan wajib; Gudang punya antrean; API memakai kunci idempotensi", () => {
-  const panel = src("features", "production", "OrderProduksiPanel.jsx");
-  assert.match(panel, /ad\.orderSales \?\? statusOf/, "status order Sales sebenarnya didahulukan");
-  assert.match(panel, /case "CONFIRM_ARRIVAL": tombol = izin\.catatPenerimaan/); assert.match(panel, /PenerimaanWorkshopModal/);
-  assert.match(panel, /case "UBAH_ORDER_DIPROSES": tombol = izin\.statusOrder/);
-  assert.match(panel, /status: "PROCESSING", statusOverrideNote: catatanOrder\.trim\(\)/); assert.match(panel, /catatanOrder\.trim\(\)\.length < 3/, "catatan wajib");
-  assert.match(panel, /hanya order ini/); assert.match(panel, /tindakan-penghalang/);
+test("pengawatan: profil unit memakai status order Sales sebenarnya; tandai tiba satu ketukan (tutup pickup) + formulir lengkap tetap ada; Ubah ke Diproses satu ketukan; Gudang punya antrean; API memakai kunci idempotensi", () => {
+  // Profil unit (13 Nov 2026): satu ketukan + konfirmasi singkat, jalur API SAMA dengan Rencana Produksi (keputusan Owner: Produksi tidak menunggu tim lain).
+  const model = src("features", "production", "workspace", "profilModel.js"); const langkah = src("features", "production", "workspace", "LangkahBerikutnya.jsx");
+  assert.ok(model.includes("const order = ruang?.order?.statusOrder || ad.orderSales || null;"), "status order Sales sebenarnya didahulukan");
+  assert.ok(model.includes('case "CONFIRM_ARRIVAL": return izin.catatPenerimaan && aktif ?') && model.includes('case "UBAH_ORDER_DIPROSES": return izin.statusOrder && aktif ?'));
+  assert.ok(langkah.includes("api.catatPenerimaanWorkshop(u.id, { fisikDiterima: true, tutupPickup: true })"));
+  assert.ok(langkah.includes("<PenerimaanWorkshopModal ") && langkah.includes("Pilih lokasi / catatan…"), "lokasi/catatan khusus tetap lewat formulir resmi");
+  assert.ok(langkah.includes('status: "PROCESSING", statusOverrideNote: "Unit sudah diterima di workshop — diubah dari profil unit Produksi."'), "catatan perubahan otomatis (tercatat atas nama pelaku)");
+  assert.match(langkah, /tindakan-penghalang/);
   const modal = src("features", "production", "PenerimaanWorkshopModal.jsx");
   assert.match(modal, /kunciRef\.current \?\?= kunciIdempoten\("penerimaan"\)/, "satu niat = satu kunci"); assert.match(modal, /fisikDiterima: true/); assert.match(modal, /DAMPAK_PENERIMAAN/);
   const api = src("api.js");
@@ -84,8 +86,9 @@ test("koreksi: pengawatan modal + kartu penerimaan di panel; tanpa istilah Run/c
   const modal = src("features", "production", "KoreksiPenerimaanModal.jsx");
   assert.match(modal, /kunciRef\.current \?\?= kunciIdempoten\("koreksi-terima"\)/); assert.match(modal, /expectedRevisi: pra\.revisi/); assert.match(modal, /Catatan asli tidak dihapus/);
   assert.match(modal, /pra\?\.izin\?\.\[k\] && !!pra\?\.boleh\?\.\[k\]/, "jenis ditawarkan hanya bila izin DAN dampak mengizinkan");
-  const panel = src("features", "production", "OrderProduksiPanel.jsx");
-  assert.match(panel, /KartuPenerimaan/); assert.match(panel, /data-testid="koreksi-buka"/); assert.match(panel, /Belum ada penerimaan yang berlaku/);
+  const ring = src("features", "production", "workspace", "RingkasanUnit.jsx");
+  assert.ok(ring.includes("<KoreksiPenerimaanModal ") && ring.includes("onClick={boleh ? () => setBuka(true) : undefined}"), "koreksi hanya bila diizinkan");
+  assert.match(ring, /Belum ada penerimaan yang berlaku/);
   const api = src("api.js"); assert.match(api, /penerimaan-workshop\/koreksi/); assert.match(api, /getPratinjauKoreksiPenerimaan/);
   const teks = [modal, src("features", "production", "PenerimaanWorkshopModal.jsx"), src("features", "warehouse", "MenungguPenerimaanSection.jsx")].join("\n").replace(/\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
   const layar = [...teks.matchAll(/>([^<>{}]{6,})</g)].map((m) => m[1]).concat([...teks.matchAll(/"([^"\n]{12,})"/g)].map((m) => m[1])).join(" ");

@@ -68,7 +68,7 @@ function CornerCard({ item, operators, canAssign, onOpen, onAssigned, onError })
   const req = item.request;
   return (
     <article data-testid="corner-card" data-unit-code={item.unit.unitCode} data-group={item.group} className="relative min-w-0 overflow-hidden rounded-card bg-surface shadow-sm">
-      <button type="button" onClick={() => onOpen(item.unit.id)} aria-label={`Buka Unit 360 ${item.unit.unitCode}`} className="flex w-full min-w-0 items-start gap-3 py-3 pl-4 pr-3 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      <button type="button" onClick={() => onOpen(item.unit.id)} aria-label={`Buka profil unit ${item.unit.unitCode}`} className="flex w-full min-w-0 items-start gap-3 py-3 pl-4 pr-3 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
         <UnitPhoto photoUrl={item.unit.photoUrl} variant="plan" />
         <span className="min-w-0 flex-1 space-y-1.5">
           <span className="block break-words text-[15px] font-bold leading-tight text-ink [overflow-wrap:anywhere]">{item.customer.name || "Pelanggan belum dicatat"}</span>

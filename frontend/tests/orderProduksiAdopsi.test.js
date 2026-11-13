@@ -88,7 +88,11 @@ test("parameter daftar = parameter ekspor (SATU fungsi): status kerja berformat 
 
 // ───────────────────────────── pengawatan komponen ─────────────────────────────
 const WO = strip(src("pages", "bengkel", "ProductionWorkOrders.jsx"));
-const PANEL = strip(src("features", "production", "OrderProduksiPanel.jsx"));
+// Panel Order Produksi lama digantikan PROFIL UNIT yang sama di seluruh workspace Produksi (13 Nov 2026).
+const WS = strip(src("features", "production", "workspace", "UnitWorkspace.jsx"));
+const RING = strip(src("features", "production", "workspace", "RingkasanUnit.jsx"));
+const LANGKAH = strip(src("features", "production", "workspace", "LangkahBerikutnya.jsx"));
+const MODEL = strip(src("features", "production", "workspace", "profilModel.js"));
 const EDITOR = strip(src("features", "production", "MaterialPlanEditor.jsx"));
 const API = src("api.js");
 
@@ -106,31 +110,30 @@ test("daftar: kolom Pelanggan & unit · Posisi unit · Pekerjaan · Target & PIC
   assert.doesNotMatch(WO, /transition-all|animate-bounce/); assert.match(WO, /motion-reduce:/);
 });
 
-test("panel: urutan ringkasan+tindakan → status&target → pemakaian aktual → rencana bahan (opsional, terlipat) → riwayat → lanjutan; tiga status berlabel; Rencana vs Aktual dibedakan tegas", () => {
-  // Ruang kerja = ringkasan + "Berikutnya" di atas → tiga tab (Pekerjaan · Bahan · Riwayat). Tab Bahan: pemakaian aktual dulu, rencana (opsional, terlipat) di bawahnya.
-  const order = ["panel-ringkasan", "panel-lompat"].map((k) => PANEL.indexOf(k));
-  assert.ok(order.every((x) => x > 0) && order[1] > order[0], `urutan bagian: ${order}`);
-  const tabs = ['key: "pekerjaan"', 'key: "bahan"', 'key: "riwayat"'].map((k) => PANEL.indexOf(k)); assert.ok(tabs.every((x) => x > 0) && tabs[1] > tabs[0] && tabs[2] > tabs[1], "tab: Pekerjaan, Bahan, Riwayat");
-  for (const k of ['id="sec-status"', 'id="sec-rencana-wrap"', 'id="sec-riwayat"', "panel-lanjutan"]) assert.ok(PANEL.includes(k), k);
+test("profil: Berikutnya di atas → Pekerjaan (status kerja · jadwal · target · PIC · status order · penerimaan) → Bahan & Foto → Order; tab Ringkasan · Bahan · Foto · Riwayat (+ Meja & QC); Rencana vs Aktual dibedakan tegas", () => {
+  // Pekerjaan diubah langsung di Ringkasan (tanpa tab Pekerjaan). Tab Bahan: pemakaian aktual dulu, rencana (opsional, terlipat) di bawahnya.
+  const urut = ["<LangkahBerikutnya", "<BarisKerja", "<BarisTarget", "<BarisStatusOrder", "<BarisPenerimaan", 'testid="cuplikan-buka-bahan"', "<GrupOrder"].map((k) => RING.lastIndexOf(k));
+  assert.ok(urut.every((x) => x > 0) && urut.every((x, i) => i === 0 || x > urut[i - 1]), `urutan bagian: ${urut}`);
+  const tabs = ['key: "ringkasan"', 'key: "bahan"', 'key: "dokumentasi", label: "Foto"', 'key: "riwayat"'].map((k) => MODEL.indexOf(k)); assert.ok(tabs.every((x) => x > 0) && tabs.every((x, i) => i === 0 || x > tabs[i - 1]), "tab: Ringkasan, Bahan, Foto, Riwayat");
+  assert.ok(MODEL.includes('export const TAB_MEJA = Object.freeze({ key: "meja", label: "Meja & QC" });') && WS.includes("<Unit360Isi unitId={unitId} tertanam"), "data Meja/QC (Unit 360) tetap terjangkau di tab Meja & QC");
   assert.ok(src("features", "production", "bahan", "PemakaianAktualBagian.jsx").includes('id="sec-aktual"'), "pemakaian aktual");
-  for (const t of ["Status order", "Posisi unit", "Status kerja"]) assert.match(PANEL, new RegExp(t));
+  for (const t of ['label="Status kerja"', 'label="Status order"', 'label="Posisi"']) assert.ok(RING.includes(t), t);
   assert.match(EDITOR, /Rencana · tidak mengurangi stok/);
   // dampak stok dijelaskan PER SUMBER di komponen bersama (bukan satu lencana "mengurangi stok" untuk semuanya)
   const BAGIAN = strip(src("features", "production", "bahan", "PemakaianAktualBagian.jsx")); const BARU = strip(src("features", "production", "bahan", "CatatBahanBaru.jsx"));
   assert.match(BAGIAN, /KARTU_SUMBER\.gudang/); assert.match(BARU, /<b>Mengurangi stok<\/b> saat dikonfirmasi/); assert.match(BARU, /Konfirmasi & kurangi stok/);
-  assert.match(PANEL, /Buka Unit 360/, "akses data lama & Unit 360 dipertahankan");
-  assert.match(PANEL, /Dicatat manual oleh \{r\.by/, "jejak 'Dicatat manual oleh [nama], [waktu]'");
+  assert.ok(RING.includes("Terakhir dicatat {terakhir.by"), "jejak 'Terakhir dicatat [nama], [waktu]'");
 });
 
-test("panel: status order lewat api.updateOrder (jalur Sales yang sama) dengan konfirmasi; catat manual memakai expectedLatestId; pemakaian aktual membawa Idempotency-Key per niat", () => {
-  assert.match(PANEL, /api\.updateOrder\(u\.order\.id, \{ status: "READY"/); assert.match(PANEL, /api\.updateOrder\(u\.order\.id, \{ status: orderPilih/);
-  assert.match(PANEL, /Ubah status order .* menjadi Siap Kirim\?/); assert.match(PANEL, /Sales dan Delivery akan melihat status yang sama/);
-  assert.match(PANEL, /api\.postStatusKerjaManual\(u\.id, \{ status: kerja, note: catatan\.trim\(\) \|\| undefined, expectedLatestId: km\.terakhirId \}\)/);
+test("profil: status order lewat api.updateOrder (jalur Sales yang sama) dengan konfirmasi; catat manual memakai expectedLatestId; pemakaian aktual membawa Idempotency-Key per niat", () => {
+  assert.ok(LANGKAH.includes('api.updateOrder(u.order.id, { status: "READY"') && RING.includes("api.updateOrder(u.order.id, { status: pilihan"));
+  assert.ok(MODEL.includes("Tandai order ${orderNumber || \"\"} Siap Kirim?") && MODEL.includes("Sales dan Delivery melihat status yang sama"));
+  assert.ok(RING.includes("api.postStatusKerjaManual(u.id, { status: key, note: note?.trim() || undefined, expectedLatestId: km?.terakhirId ?? null })"));
   const BARU2 = strip(src("features", "production", "bahan", "CatatBahanBaru.jsx"));
   assert.match(BARU2, /kunciIdempoten\("pakai"\)/); assert.match(BARU2, /api\.addUnitMaterial\(unitId, \{ materialId: b\.materialId, qty: v, note: catatan\.trim\(\) \|\| undefined, \.\.\.\(aturanBaris\(b\) \? \{ satuan: satuanIsianBaris\(b\) \} : \{\}\) \}, kunciUntuk\(b\)\)/);
   assert.match(BARU2, /cur\.sig !== sig/, "isian berubah = kunci baru; isian sama (retry) = kunci sama");
-  assert.match(PANEL, /disabled=\{!izin\.statusOrder \|\| !aktif/, "akun hanya-lihat: kontrol mati"); assert.match(strip(src("features", "production", "bahan", "PemakaianAktualBagian.jsx")), /Akun Anda hanya bisa melihat/);
-  assert.match(PANEL, /Menunggu kain dari supplier|Mis\. menunggu kain dari supplier/);
+  assert.ok(RING.includes("const bisa = !!izin.statusOrder && aktif;") && RING.includes("onClick={bisa ?"), "akun hanya-lihat: baris tidak bisa diketuk"); assert.match(strip(src("features", "production", "bahan", "PemakaianAktualBagian.jsx")), /Akun Anda hanya bisa melihat/);
+  assert.match(RING, /Mis\. menunggu kain dari supplier/);
 });
 
 test("editor rencana: pilih per kelompok ATAU cari seluruh katalog; ringkasan menetap; konflik revisi → muat versi terbaru; simpan memakai revisi yang dilihat; target sentuh ≥ 40px", () => {

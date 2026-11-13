@@ -49,7 +49,7 @@ test("tanpa data: tidak ada baris; tidak ada pemakaian lain yang dikarang", () =
 });
 
 test("pengawatan: tabel terpadu di atas; Edit per baris memakai formulir yang ada; Riwayat/rencana/detail teknis TERTUTUP; sumber kosong tidak dirender; peran tabel + kartu di HP", () => {
-  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const t = src("features", "production", "bahan", "TabelPemakaian.jsx"); const o = src("features", "production", "OrderProduksiPanel.jsx");
+  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const t = src("features", "production", "bahan", "TabelPemakaian.jsx"); const o = src("features", "production", "workspace", "UnitWorkspace.jsx"); const bt = src("features", "production", "bahan", "BahanTab.jsx");
   assert.ok(b.indexOf("<TabelPemakaian") > b.indexOf('data-testid="tambah-pemakaian"') && b.indexOf("<TabelPemakaian") < b.indexOf('data-testid="riwayat-pemakaian"'), "urutan: Tambah pemakaian → tabel → riwayat tertutup");
   assert.match(b, /<details className="prod-lipat" data-testid="riwayat-pemakaian">/); assert.doesNotMatch(b.split('data-testid="riwayat-pemakaian"')[0].split("<details").pop(), /\sopen[\s=>]/, "Riwayat pemakaian tertutup bawaan");
   assert.match(b, /\{adaRiwayat && \(/); for (const k of ["adaBaru &&", "adaSementara &&", "adaLama &&"]) assert.ok(b.includes(`{${k}`), `bagian sumber hanya tampil bila ada isinya: ${k}`);
@@ -58,6 +58,6 @@ test("pengawatan: tabel terpadu di atas; Edit per baris memakai formulir yang ad
   assert.match(t, /role="table"/); assert.match(t, /role="row"/); assert.match(t, /role="cell"/); assert.match(t, /role="columnheader"/); assert.match(t, /max-sm:hidden/, "kepala kolom disembunyikan di HP; baris menjadi kartu"); assert.match(t, /min-h-\[44px\]/);
   for (const id of ["edit-bahan", "edit-sementara", "edit-komponen"]) assert.ok(t.includes(`"${id}"`), id);
   for (const k of ["<EditPemakaianForm", "<BarisSementara", "<KomponenLamaDaftar"]) assert.ok(t.includes(k), `Edit memakai formulir yang ada: ${k}`);
-  assert.match(o, /id="sec-riwayat" data-testid="sec-riwayat-lipat"/); assert.ok(o.indexOf('id="sec-riwayat"') > o.indexOf('tab === "riwayat"'), "Riwayat drawer kini tab sendiri: hanya tampil bila tab Riwayat dipilih"); assert.match(o, /id="sec-rencana-wrap"/);
-  assert.doesNotMatch(o.split('id="sec-rencana-wrap"')[0].split("<details").pop(), /\sopen[\s=>]/, "Rencana bahan tertutup bawaan");
+  assert.ok(o.includes('{bagian === "riwayat" && <div className="flex flex-col gap-4"><RingkasanPemakaian data={data} />'), "Riwayat = tab sendiri di profil unit: hanya tampil bila tab Riwayat dipilih");
+  assert.ok(bt.includes("const [rencanaBuka, setRencanaBuka] = useState(false);") && bt.includes("{rencanaBuka && ("), "Rencana bahan tertutup bawaan");
 });

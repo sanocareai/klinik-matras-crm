@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { KERJA_PERLU_KONFIRMASI, konfirmasiKerja, labelCatatKerja, sumberKerjaPendek } from "../src/features/production/orderProduksiModel.js";
 import { bagianUntukAksi } from "../src/features/production/workspace/workListModel.js";
+import { aksiLangkah, teksKonfirmasi } from "../src/features/production/workspace/profilModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const baca = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8").split("\r\n").join("\n");
@@ -28,7 +29,7 @@ test("teks konfirmasi 'Sudah dikerjakan': menyatakan pekerjaan memang sudah dila
 test("label tombol manual menyebut pernyataannya; tidak ada status antara 'Sedang dikerjakan' di mana pun di UI Produksi", () => {
   assert.equal(labelCatatKerja("DIKERJAKAN"), "Tandai sudah dikerjakan"); assert.equal(labelCatatKerja("SELESAI"), "Catat pekerjaan selesai");
   assert.equal(labelCatatKerja("TERTUNDA"), "Catat status kerja"); assert.equal(labelCatatKerja("DIJADWALKAN"), "Catat status kerja");
-  for (const f of [["features", "production", "OrderProduksiPanel.jsx"], ["features", "production", "orderProduksiModel.js"], ["features", "production", "workspace", "RingkasanUnit.jsx"], ["features", "production", "workspace", "StatusWorkList.jsx"]]) {
+  for (const f of [["features", "production", "workspace", "LangkahBerikutnya.jsx"], ["features", "production", "workspace", "profilModel.js"], ["features", "production", "orderProduksiModel.js"], ["features", "production", "workspace", "RingkasanUnit.jsx"], ["features", "production", "workspace", "StatusWorkList.jsx"]]) {
     assert.ok(!/Sedang dikerjakan/i.test(baca(...f)), f.join("/"));
   }
 });
@@ -42,38 +43,35 @@ test("sumber status kerja = kosakata server (sama dengan Excel); jadwal biasa da
   assert.equal(sumberKerjaPendek(null), null);
 });
 
-test("OPEN_WORK membuka bagian Pekerjaan; START_WORK (yang dulu langsung mencatat) tidak ada lagi", () => {
-  assert.equal(bagianUntukAksi("OPEN_WORK"), "pekerjaan"); assert.equal(bagianUntukAksi("START_WORK"), "ringkasan");
-  const panel = baca("features", "production", "OrderProduksiPanel.jsx");
-  assert.ok(!panel.includes('case "START_WORK"'), "tombol 'Mulai pekerjaan' yang langsung mencatat sudah dihapus");
-  const buka = panel.slice(panel.indexOf('case "OPEN_WORK"'), panel.indexOf('case "FINISH_WORK"'));
-  assert.ok(buka.includes('onBagian("pekerjaan")') && buka.includes('ke("sec-status")'), "membuka bagian Pekerjaan (atau menggulir ke Status & target)");
-  assert.ok(!/catat\(|postStatusKerjaManual/.test(buka), "membuka halaman tidak memanggil API tulis");
-  assert.ok(baca("features", "production", "workspace", "RingkasanUnit.jsx").includes("onBukaUnit360={() => {}} onBagian={onBagian}"), "Ringkasan meneruskan navigasi bagian");
+test("OPEN_WORK membuka status kerja di Ringkasan (profil unit); START_WORK (yang dulu langsung mencatat) tidak ada lagi", () => {
+  assert.equal(bagianUntukAksi("OPEN_WORK"), "ringkasan"); assert.equal(bagianUntukAksi("START_WORK"), "ringkasan");
+  // tombol OPEN_WORK hanya MEMFOKUSKAN segmen status kerja; tampil juga untuk akun hanya-lihat (membuka bukan menulis)
+  assert.deepEqual(aksiLangkah({ aksi: "OPEN_WORK", label: "Buka pekerjaan" }, { izin: {} }), { jenis: "fokus", target: "pf-kerja", label: "Buka pekerjaan", sekunder: true });
+  assert.equal(aksiLangkah({ aksi: "START_WORK" }, { izin: { statusKerja: true } }), null, "tombol 'Mulai pekerjaan' yang langsung mencatat sudah dihapus");
+  const langkah = baca("features", "production", "workspace", "LangkahBerikutnya.jsx");
+  assert.ok(langkah.includes('if (aksi.jenis === "fokus") return onFokus(aksi.target);'), "fokus tidak memanggil API tulis");
+  assert.ok(baca("features", "production", "workspace", "RingkasanUnit.jsx").includes('<LangkahBerikutnya data={data} aktif={aktif} adaMeja={adaMeja} onDone={onDone} onBagian={onBagian} onFokus={fokus}'), "Ringkasan meneruskan navigasi bagian + fokus");
   assert.ok(baca("features", "production", "workspace", "StatusWorkList.jsx").includes('tindakan.aksi === "OPEN_WORK" ? "Buka pekerjaan"'), "tombol daftar berlabel 'Buka pekerjaan'");
 });
 
 test("jalur tulis status kerja manual SELALU lewat konfirmasi dan dijaga klik ganda; tombol tidak langsung menyimpan 'Sudah dikerjakan'/'Selesai'", () => {
-  const panel = baca("features", "production", "OrderProduksiPanel.jsx");
-  // tombol 'Catat pekerjaan selesai' (tindakan utama) hanya membuka konfirmasi
-  assert.ok(panel.includes('{ label: "Catat pekerjaan selesai", onClick: () => setKonfKerja("SELESAI") }'));
-  assert.ok(panel.includes("onYa={() => catat(konfKerja)}"), "catat() hanya dipanggil dari tombol 'Ya' konfirmasi");
-  // bagian Pekerjaan: pilihan Sudah dikerjakan/Selesai → konfirmasi; lainnya langsung
-  assert.ok(panel.includes("onClick={() => (perluKonf ? setKonf(true) : simpanKerja())}"));
-  assert.ok(panel.includes("onYa={simpanKerja}"));
-  assert.ok(panel.includes("const perluKonf = KERJA_PERLU_KONFIRMASI.includes(kerja);"));
+  const langkah = baca("features", "production", "workspace", "LangkahBerikutnya.jsx"); const ring = baca("features", "production", "workspace", "RingkasanUnit.jsx");
+  // tombol 'Catat pekerjaan selesai' (Berikutnya) hanya membuka konfirmasi; menyimpan hanya dari tombol Ya
+  assert.equal(aksiLangkah({ aksi: "FINISH_WORK" }, { izin: { statusKerja: true }, aktif: true, km: { dikunciAplikasi: false } }).jenis, "selesai");
+  assert.ok(langkah.includes("setGalat(null); setKonf({ jenis: aksi.jenis, anchor: e.currentTarget });") && langkah.includes("onYa={() => jalankan(konf.jenis)}"));
+  assert.deepEqual(teksKonfirmasi("selesai", { unitCode: "U-1" }), konfirmasiKerja("SELESAI", "U-1"), "teks resmi yang sama");
+  // segmen status kerja: Sudah dikerjakan/Selesai → konfirmasi (teks resmi); Tertunda → catatan wajib; lainnya langsung
+  assert.ok(ring.includes(`if (KERJA_PERLU_KONFIRMASI.includes(key) || KERJA_WAJIB_CATATAN.includes(key)) { setCatatan(""); setKonf({ key, anchor: el }); return; }`));
+  assert.ok(ring.includes("const teksResmi = konf ? konfirmasiKerja(konf.key, u.unitCode) : null;") && ring.includes("onYa={() => simpan(konf.key, catatan)}"));
+  assert.ok(ring.includes("yaNonaktif={wajibCatatan && catatan.trim().length < 3}"), "Tertunda: Ya mati sampai catatan diisi");
   // klik ganda: satu permintaan pada satu waktu + tombol dinonaktifkan saat sibuk
-  assert.ok(panel.includes("if (catatRef.current) return; catatRef.current = true;"));
-  assert.ok(panel.includes("if (simpanRef.current) return; simpanRef.current = true;"));
-  assert.ok(panel.includes('disabled={sibuk}') && panel.includes("disabled={sibuk || konf ||"));
-  // HP: konfirmasi digulirkan ke tengah layar agar tidak tertutup banner/toolbar bawah
-  assert.ok(panel.includes("el.scrollIntoView({ block: \"center\"") && panel.includes("scroll-mb-24"));
-  // hanya dua tempat yang memanggil API tulis status kerja
-  assert.equal((panel.match(/postStatusKerjaManual\(/g) || []).length, 2);
-  // pernyataan eksplisit di bagian Pekerjaan
-  assert.ok(panel.includes("Pilih “Sudah dikerjakan” hanya bila pekerjaannya memang sudah dilakukan (boleh tanpa bahan baru)"));
-  // tindakan OPEN_WORK terlihat juga oleh akun hanya-lihat (membuka bukan menulis)
-  assert.ok(!/case "OPEN_WORK": tombol = izin\./.test(panel));
+  assert.ok(langkah.includes("if (kunci.current) return; kunci.current = true;") && ring.includes("if (kunci.current) return; kunci.current = true;"));
+  assert.ok(langkah.includes("disabled={sibuk}") && ring.includes("sibuk={sibuk}"));
+  // hanya dua tempat yang memanggil API tulis status kerja (tombol Berikutnya + segmen), keduanya membawa expectedLatestId
+  assert.equal(langkah.split("postStatusKerjaManual(").length - 1 + ring.split("postStatusKerjaManual(").length - 1, 2);
+  assert.ok(langkah.includes("expectedLatestId: km?.terakhirId ?? null") && ring.includes("expectedLatestId: km?.terakhirId ?? null"));
+  // unit yang dikerjakan lewat aplikasi Meja: hanya-baca
+  assert.ok(ring.includes('if (km?.dikunciAplikasi) return <Baris id="pf-kerja" testid="status-kerja-form" label="Status kerja" sub="Mengikuti aplikasi Meja"'));
 });
 
 test("daftar kerja menampilkan sumber status kerja secara terlihat per unit (bukan hanya tooltip)", () => {
@@ -85,6 +83,8 @@ test("label 'selesai' tidak terkesan menyelesaikan QC/serah Gudang: 'Catat peker
   assert.equal(labelCatatKerja("SELESAI"), "Catat pekerjaan selesai");
   const k = konfirmasiKerja("SELESAI", "U-9");
   assert.match(k.isi, /catatan administratif/); assert.match(k.isi, /bukan hasil QC/); assert.match(k.isi, /bukan serah ke Gudang/); assert.match(k.isi, /bukan Siap Kirim/);
-  const panel = baca("features", "production", "OrderProduksiPanel.jsx");
-  assert.ok(!panel.includes('"Tandai selesai"') && !panel.includes("Tandai pekerjaan Selesai"), "label lama tidak tersisa");
+  assert.equal(aksiLangkah({ aksi: "FINISH_WORK" }, { izin: { statusKerja: true }, aktif: true, km: {} }).label, "Catat pekerjaan selesai");
+  for (const f of [["features", "production", "workspace", "LangkahBerikutnya.jsx"], ["features", "production", "workspace", "profilModel.js"], ["features", "production", "workspace", "RingkasanUnit.jsx"]]) {
+    const t = baca(...f); assert.ok(!t.includes('"Tandai selesai"') && !t.includes("Tandai pekerjaan Selesai"), "label lama tidak tersisa: " + f.join("/"));
+  }
 });

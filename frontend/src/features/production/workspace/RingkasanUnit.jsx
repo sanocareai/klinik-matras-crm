@@ -1,148 +1,244 @@
-import React, { useEffect, useState } from "react";
-import { AlertTriangle, ChevronRight, ExternalLink, HeartPulse, Info } from "lucide-react";
-import { Link } from "react-router-dom";
+import React, { useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { ChevronRight, HeartPulse } from "lucide-react";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
-import { cn } from "@/lib/utils.js";
-import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
-import { KartuPenerimaan, TindakanUtama } from "@/features/production/OrderProduksiPanel.jsx";
-import { badgeTarget, teksTahapMeja } from "@/features/production/workspace/workListModel.js";
-import { formatJumlah, nadaBadge, waktuWib } from "@/features/production/orderProduksiModel.js";
-import { ringkasBahan, ringkasDokumentasi, ringkasPekerjaan } from "@/features/production/bahan/bahanModel.js";
-import "@/features/production/bahan/bahan.css";
+import KonfirmasiCepat from "@/features/production/rencana/KonfirmasiCepat.jsx";
+import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
+import KelengkapanBagian from "@/features/production/KelengkapanBagian.jsx";
+import { CatatanRingkas } from "@/features/production/bahan/CatatanHistorisBagian.jsx";
+import { Hasil } from "@/features/production/workspace/Hasil.jsx";
+import LangkahBerikutnya from "@/features/production/workspace/LangkahBerikutnya.jsx";
+import { badgeTarget } from "@/features/production/workspace/workListModel.js";
+import { ringkasPekerjaan } from "@/features/production/bahan/bahanModel.js";
+import { KERJA_PERLU_KONFIRMASI, konfirmasiKerja, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { KERJA_WAJIB_CATATAN, barisBahan, barisFoto, isoTarget, penjelasanTertahan, segmenKerja, tanggalWib } from "@/features/production/workspace/profilModel.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+import "@/features/production/bahan/bahan.css";
 
-// RINGKASAN UNIT — yang perlu dilihat Admin dulu: tindakan berikutnya, pekerjaan (status kerja, jadwal, target, PIC), detail order (kondisi pelanggan, keluhan, catatan produksi, komplain),
-// cuplikan Bahan (dua sumber TERPISAH) dan Dokumentasi. Tiap cuplikan membuka bagian detailnya. Data kosong = satu kalimat langkah berikutnya, bukan kartu kosong besar.
-// Di HP: tindakan → pekerjaan → detail order → bahan → dokumentasi (satu kolom). Di desktop: kolom kiri tindakan/pekerjaan/bahan/dokumentasi, kolom kanan detail order.
+// RINGKASAN PROFIL UNIT — satu layar yang menjawab "apa berikutnya" lalu fakta yang bisa langsung diubah di tempat (tanpa tab Pekerjaan terpisah):
+//   Berikutnya (satu tombol) · Pekerjaan: status kerja (segmen), jadwal, target (ketuk), PIC/meja, status order (ketuk), penerimaan (koreksi) · Bahan & Foto (satu baris, ketuk = buka tab)
+//   · Order: layanan, kasur, kondisi pelanggan, janji, catatan Sales, komplain · Lainnya (dilipat). Tidak ada kode status mentah; kartu kosong diganti satu baris.
+export { penjelasanTertahan };
 
-function Kartu({ judul, aksi, children, testid, className }) {
+const IK = { strokeWidth: 1.75 };
+
+function Grup({ judul, children, testid }) {
   return (
-    <section className={cn("prod-kartu", className)} data-testid={testid} aria-label={judul}>
-      <div className="prod-kartu-kepala"><h3 className="m-0">{judul}</h3>{aksi}</div>
-      {children}
+    <section className="pf-grup-wadah" data-testid={testid} aria-label={judul}>
+      {judul && <h3 className="pf-grup-judul">{judul}</h3>}
+      <div className="pf-grup">{children}</div>
     </section>
   );
 }
-const Buka = ({ onClick, testid, children }) => <button type="button" onClick={onClick} data-testid={testid} className="prod-buka">{children} <ChevronRight size={14} aria-hidden /></button>;
-function Fakta({ label, children }) { return <div className="min-w-0"><dt className="prod-fakta-label m-0">{label}</dt><dd className="prod-fakta-isi m-0">{children}</dd></div>; }
-
-export function penjelasanTertahan(data) {
-  const t = data?.adopsi?.tindakan; if (!t) return null;
-  if (t.aksi === "WAIT") return { teks: `Menunggu ${t.aktor && t.aktor !== "—" ? t.aktor : "pihak lain"}${t.detail ? ` — ${t.detail}` : ""}. Tidak ada yang perlu dikerjakan Admin sekarang.`, jalur: null };
-  return null;
-}
-
-function CuplikanBahan({ data, izin, aktif, onBagian }) {
-  const r = ringkasBahan(data); const bisaCatat = !!izin.pemakaianAktual && aktif;
-  return (
-    <Kartu judul="Bahan" testid="cuplikan-bahan" aksi={<Buka onClick={() => onBagian("bahan")} testid="cuplikan-buka-bahan">{bisaCatat ? "Buka & catat" : "Buka Bahan"}</Buka>}>
-      {r.kosong ? (
-        <p className="m-0 text-[13px] text-ink2" data-testid="cuplikan-bahan-kosong">Belum ada rencana maupun pemakaian bahan. {bisaCatat ? "Catat pemakaian aktual langsung di tab Bahan — rencana tidak wajib." : ""}</p>
-      ) : (
-        <ul className="m-0 list-none space-y-1.5 p-0 text-[13px] text-ink2">
-          <li data-testid="cuplikan-rencana">Rencana: {r.rencana ? <b className="text-ink">{r.rencana.jumlahItem} bahan · revisi {r.rencana.revisi}</b> : <span className="text-ink3">belum ada (opsional)</span>}</li>
-          <li data-testid="cuplikan-baru"><span className="font-medium text-ink">Bahan baru dari Gudang</span> <Badge variant="orange" className="bh-b-orange">mengurangi stok</Badge><br />
-            {r.baru.jumlahCatatan ? <span>{r.baru.jumlahCatatan} catatan · terakhir {formatJumlah(r.baru.terakhir.qty)} {r.baru.terakhir.satuan} {r.baru.terakhir.nama}, {r.baru.terakhir.pelaku || "—"}, {waktuWib(r.baru.terakhir.at)}</span> : <span className="text-ink3">belum ada pemakaian</span>}</li>
-          <li data-testid="cuplikan-lama"><span className="font-medium text-ink">Komponen lama dari unit ini</span> <Badge variant="accent" className="bh-b-accent">bukan stok</Badge><br />
-            {r.lama.pemakaianKembali + r.lama.dilepas > 0 ? <span>{r.lama.pemakaianKembali} dipakai kembali · {r.lama.dilepas} dilepas tanpa dipakai{r.lama.terakhirAt ? ` · terakhir ${waktuWib(r.lama.terakhirAt)}` : ""}</span> : <span className="text-ink3">belum ada</span>}</li>
-        </ul>
-      )}
-      {r.peringatan.length > 0 && (
-        <ul className="m-0 mt-2 list-none space-y-1 p-0" data-testid="cuplikan-bahan-peringatan">
-          {r.peringatan.map((p) => <li key={p.key} className="flex items-start gap-1.5 rounded-btn bg-orangebg px-2.5 py-1.5 text-[12.5px] text-ink"><AlertTriangle size={13} className="bh-warn mt-0.5 shrink-0" aria-hidden />{p.teks}</li>)}
-        </ul>
-      )}
-    </Kartu>
+function Baris({ label, sub, nilai, kuat = false, onClick, id, testid, nilaiTestid, tanpaChevron = false }) {
+  const isi = (
+    <>
+      <span className="pf-label">{label}{sub && <small>{sub}</small>}</span>
+      {nilai != null && <span className={`pf-nilai${kuat ? " kuat" : ""}`} data-testid={nilaiTestid}>{nilai}</span>}
+      {onClick && !tanpaChevron && <ChevronRight {...IK} size={16} className="pf-chevron" aria-hidden />}
+    </>
   );
+  return onClick
+    ? <button type="button" id={id} className="pf-baris" onClick={onClick} data-testid={testid}>{isi}</button>
+    : <div id={id} className="pf-baris" data-testid={testid}>{isi}</div>;
 }
 
-function CuplikanDokumentasi({ ruang, onBagian }) {
-  const dok = ruang?.dokumentasi; const runId = dok?.runId; const [detail, setDetail] = useState(null); const [galat, setGalat] = useState(false);
-  useEffect(() => {
-    if (!dok?.tersedia || !runId) { setDetail(null); return undefined; }
-    let batal = false; setGalat(false);
-    api.getProductionV2DocDetail(runId).then((d) => { if (!batal) setDetail(d); }).catch(() => { if (!batal) setGalat(true); });
-    return () => { batal = true; };
-  }, [dok?.tersedia, runId]);
-  const r = ringkasDokumentasi(dok, detail);
+// ── Status kerja: kontrol segmen. "Sudah dikerjakan"/"Selesai" dikonfirmasi dulu; "Tertunda" wajib catatan. Unit yang dikerjakan lewat aplikasi Meja = hanya-baca.
+function BarisKerja({ data, aktif, onDone, onPesan }) {
+  const { adopsi: ad, izin = {}, unit: u, kerjaManual: km } = data;
+  const pk = ringkasPekerjaan(data);
+  const [konf, setKonf] = useState(null); const [catatan, setCatatan] = useState(""); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null);
+  const kunci = useRef(false);
+  if (km?.dikunciAplikasi) return <Baris id="pf-kerja" testid="status-kerja-form" label="Status kerja" sub="Mengikuti aplikasi Meja" nilai={ad.kerja?.label || "—"} kuat />;
+  const bisa = !!izin.statusKerja && aktif; const sekarang = ad.kerja?.key;
+  async function simpan(key, note) {
+    if (kunci.current) return; kunci.current = true; setSibuk(true); setGalat(null);
+    try {
+      const r = await api.postStatusKerjaManual(u.id, { status: key, note: note?.trim() || undefined, expectedLatestId: km?.terakhirId ?? null });
+      setKonf(null); setCatatan(""); onPesan?.(r?.dicatat === false ? "Sudah sama dengan catatan terakhir." : konfirmasiKerja(key, u.unitCode)?.sukses ?? `Status kerja ${u.unitCode}: ${km.nilaiBoleh.find((n) => n.key === key)?.label || key}.`); await onDone();
+    } catch (e) { setKonf(null); setGalat(e); } finally { setSibuk(false); kunci.current = false; }
+  }
+  function pilih(key, el) {
+    if (!bisa || key === sekarang || sibuk) return;
+    if (KERJA_PERLU_KONFIRMASI.includes(key) || KERJA_WAJIB_CATATAN.includes(key)) { setCatatan(""); setKonf({ key, anchor: el }); return; }
+    simpan(key);
+  }
+  const wajibCatatan = konf && KERJA_WAJIB_CATATAN.includes(konf.key); const labelKonf = konf ? km.nilaiBoleh.find((n) => n.key === konf.key)?.label : "";
+  // Sudah dikerjakan / Selesai memakai teks konfirmasi resmi dari orderProduksiModel.js (sama dengan pencatatan manual sebelumnya)
+  const teksResmi = konf ? konfirmasiKerja(konf.key, u.unitCode) : null;
+  const terakhir = km?.riwayat?.length ? km.riwayat[km.riwayat.length - 1] : null;
   return (
-    <Kartu judul="Dokumentasi" testid="cuplikan-dokumentasi" aksi={<Buka onClick={() => onBagian("dokumentasi")} testid="cuplikan-buka-dokumentasi">{r.bolehUnggah ? "Buka & unggah" : "Buka Dokumentasi"}</Buka>}>
-      {!r.tersedia ? <p className="m-0 flex items-start gap-1.5 text-[13px] text-ink2" data-testid="cuplikan-dok-tidak"><Info size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden />{r.alasan}</p>
-        : galat ? <p className="m-0 text-[13px] text-ink3">Ringkasan dokumentasi belum bisa dimuat. Buka bagian Dokumentasi.</p>
-        : r.memuat ? <div className="h-10 animate-pulse rounded bg-inset motion-reduce:animate-none" aria-label="Memuat ringkasan dokumentasi" />
-        : (
-          <div className="space-y-1.5 text-[13px] text-ink2" data-testid="cuplikan-dok-isi">
-            {r.jumlahFoto === 0 ? <p className="m-0" data-testid="cuplikan-dok-kosong">Belum ada foto dokumentasi. {r.bolehUnggah ? "Unggah dari bagian Dokumentasi." : ""}</p>
-              : <p className="m-0"><b className="text-ink">{r.jumlahFoto} foto</b> · kategori: {r.kategoriTerisi.join(", ")}{r.terbaru ? ` · terbaru ${r.terbaru.kategori}, ${r.terbaru.oleh || "—"}, ${waktuWib(r.terbaru.at)}` : ""}</p>}
-            <p className="m-0" data-testid="cuplikan-dok-wajib">Bukti yang sudah waktunya (alur aktif): <b className="text-ink">{r.wajib.terpenuhi} dari {r.wajib.perlu}</b>{r.wajib.kurang.length > 0 && <span className="text-orange"> · kurang: {r.wajib.kurang.slice(0, 3).map((k) => `${k.label} (${k.kurang})`).join(", ")}</span>}</p>
-            <p className="m-0 text-[11.5px] text-ink3">{r.catatan}</p>
-          </div>
-        )}
-    </Kartu>
-  );
-}
-
-function DetailOrder({ data, ruang }) {
-  const { unit: u } = data; const d = ruang?.order?.detail; const k = d?.kondisiPelanggan;
-  return (
-    <Kartu judul="Detail order" testid="ringkasan-order">
-      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3">
-        <Fakta label="Layanan Sales">{ruang?.order?.layanan?.join(" + ") || "belum tercatat"}</Fakta>
-        <Fakta label="Kasur">{[u.merk, u.ukuran].filter(Boolean).join(" · ") || "—"}{u.order?.jumlahUnit > 1 ? ` · order ${u.order.jumlahUnit} unit` : ""}</Fakta>
-        <Fakta label="Kondisi pelanggan"><span data-testid="kondisi-pelanggan" className="inline-flex flex-wrap items-center gap-1.5">{k?.sakit === true ? <Badge variant="red" className="bh-b-red"><HeartPulse size={11} className="mr-1" aria-hidden />{k.label}</Badge> : k?.sakit === false ? <Badge variant="neutral">{k.label}</Badge> : <span className="text-ink3">{k?.label || "—"}</span>}</span></Fakta>
-        <Fakta label="Janji ke pelanggan">{d?.janjiPelanggan ? formatTanggal(d.janjiPelanggan) : <span className="text-ink3">belum ada</span>}</Fakta>
-      </dl>
-      {k?.sakit === true && k.keluhan.length > 0 && <p className="m-0 mt-3 text-[13px] text-ink" data-testid="keluhan-pelanggan"><span className="text-[11px] font-medium uppercase tracking-[0.05em] text-ink3">Keluhan </span>{k.keluhan.join(", ")}</p>}
-      {d?.catatanProduksi && <p className="m-0 mt-3 rounded-btn bg-inset px-3 py-2 text-[13px] text-ink" data-testid="catatan-produksi"><span className="block text-[11px] font-medium uppercase tracking-[0.05em] text-ink3">Catatan Sales untuk Produksi</span>{d.catatanProduksi}</p>}
-      {d?.komplain && <p className="m-0 mt-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red" data-testid="komplain-order"><span className="block text-[11px] font-semibold uppercase tracking-[0.05em]">Komplain {d.komplain.selesai ? "(sudah selesai)" : "(belum selesai)"}{d.komplain.tanggal ? ` · ${formatTanggal(d.komplain.tanggal)}` : ""}</span>{d.komplain.rincian || "Tanpa rincian."}</p>}
-      <details className="group mt-3 rounded-btn border border-line px-3 py-2" data-testid="detail-lanjutan">
-        <summary className="flex min-h-[40px] cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40">Detail lanjutan: Sales, waktu, dan data lain</summary>
-        <dl className="m-0 mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
-          <Fakta label="Status order (Sales)">{ruang?.order?.statusOrder?.label}{ruang?.order?.statusOrder?.terkunci ? " · dikunci manual" : ""}</Fakta>
-          <Fakta label="Kode status tersimpan">{ruang?.order?.statusOrder?.mentah} / {u.status}</Fakta>
-          <Fakta label="Pelanggan">{u.order?.customer?.name || "—"}</Fakta>
-          <Fakta label="Order">{u.order?.orderNumber} · {u.order?.jumlahUnit} unit</Fakta>
-          <Fakta label="Target di unit">{u.productionDueAt ? formatTanggal(u.productionDueAt) : "belum diisi"}</Fakta>
-          <Fakta label="Terakhir diubah">{waktuWib(u.updatedAt)}</Fakta>
-          <Fakta label="Prioritas">{u.priority || "—"}</Fakta>
-          <Fakta label="Posisi (detail)">{data.adopsi.posisi?.detail || data.receivedBasisLabel || "—"}</Fakta>
-        </dl>
-        {u.order?.unitLain?.length > 0 && <p className="m-0 mt-3 text-[12.5px] text-ink3">Unit lain di order ini: {u.order.unitLain.map((x) => x.unitCode).join(", ")}.</p>}
-        <p className="m-0 mt-3"><Link to={unitDetailPath(u.id)} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent underline">Buka Unit 360 (tahap, QC, biaya) <ExternalLink size={12} aria-hidden /></Link></p>
-      </details>
-    </Kartu>
-  );
-}
-
-export default function RingkasanUnit({ data, ruang, aktif, onDone, onBagian }) {
-  const { adopsi: ad } = data; const izin = data.izin || {}; const meja = teksTahapMeja(ruang?.alurMeja); const target = badgeTarget(ad.targetSelesai?.at); const tahan = penjelasanTertahan(data);
-  const layanan = ruang?.order?.layanan || []; const pk = ringkasPekerjaan(data);
-  return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start" data-testid="bagian-ringkasan">
-      <div className="space-y-4 lg:col-start-1" data-testid="ringkasan-kiri-atas">
-        <div className="space-y-3" data-testid="ringkasan-tindakan">
-          <TindakanUtama data={data} aktif={aktif} onDone={onDone} onBukaUnit360={() => {}} onBagian={onBagian} />
-          <KartuPenerimaan data={data} aktif={aktif} onDone={onDone} />
-          {tahan && <p role="note" data-testid="tindakan-tertahan" className="m-0 flex items-start gap-2 rounded-btn bg-inset px-4 py-3 text-[13px] text-ink2"><Info size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden /><span>{tahan.teks}</span></p>}
-        </div>
-        <Kartu judul="Pekerjaan" testid="ringkasan-pekerjaan" aksi={<Buka onClick={() => onBagian("pekerjaan")} testid="cuplikan-buka-pekerjaan">Ubah status & target</Buka>}>
-          <p className="m-0 text-[14px] font-medium text-ink" data-testid="pekerjaan-layanan">{layanan.length ? layanan.join(" + ") : "Pekerjaan belum tercatat dari Sales"}</p>
-          <dl className="m-0 mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3" data-testid="pekerjaan-fakta">
-            <Fakta label="Status kerja (administratif)"><Badge variant={nadaBadge(ad.kerja?.tone)} className={ad.kerja?.tone === "accent" ? "bh-b-accent" : ""} data-testid="pekerjaan-status">{ad.kerja?.label || "—"}</Badge>{pk.sumber && <span className="mt-0.5 block text-[11.5px] text-ink2" data-testid="pekerjaan-sumber">{pk.sumber}</span>}{pk.faktaJadwal && <span className="mt-0.5 block text-[12px] font-medium text-ink" data-testid="fakta-tanpa-jadwal">{pk.faktaJadwal}</span>}</Fakta>
-            <Fakta label="Jadwal produksi"><span data-testid="pekerjaan-jadwal">{pk.jadwal}</span></Fakta>
-            <Fakta label="Pemakaian bahan"><span data-testid="pekerjaan-pemakaian">{pk.pemakaian}</span></Fakta>
-            <Fakta label="Target selesai"><Badge variant={target.nada}>{target.teks}</Badge></Fakta>
-            <Fakta label="PIC · meja">{ad.pic?.nama || "Belum ada"}{ad.meja ? ` · ${String(ad.meja).replace("TABLE_", "Meja ")}` : ""}</Fakta>
-            <Fakta label="Tahap Meja · QC"><span data-testid="pekerjaan-qc">{meja.teks} · {pk.qc}</span></Fakta>
-          </dl>
-          <p className="m-0 mt-2 text-[11.5px] text-ink2" data-testid="pekerjaan-catatan-bukan-qc">“Sudah dikerjakan” bukan hasil QC, bukan siap serah Gudang, dan bukan siap kirim. Jadwal, pemakaian bahan, dan QC dicatat terpisah.</p>
-        </Kartu>
+    <div className="pf-blok" id="pf-kerja" data-testid="status-kerja-form">
+      <div className="mb-2 flex items-baseline justify-between gap-3"><span className="text-[15px]">Status kerja</span>{pk.sumber && <span className="pf-kecil" data-testid="pekerjaan-sumber">{pk.sumber}</span>}</div>
+      <div className="pf-segmen kecil" role="group" aria-label="Status kerja" data-testid="kerja-segmen">
+        {segmenKerja(km).map((s) => (
+          <button key={s.key} type="button" className="pf-segmen-btn" aria-pressed={sekarang === s.key} title={s.judul} disabled={!bisa && sekarang !== s.key} data-testid={`kerja-${s.key}`} onClick={(e) => pilih(s.key, e.currentTarget)}>
+            {sekarang === s.key && <motion.span layoutId={`pf-kerja-pil-${u.id}`} className="pf-segmen-pil" transition={{ type: "spring", stiffness: 420, damping: 34 }} />}
+            {s.label}
+          </button>
+        ))}
       </div>
-      <div className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1" data-testid="ringkasan-kanan"><DetailOrder data={data} ruang={ruang} /></div>
-      <div className="space-y-4 lg:col-start-1" data-testid="ringkasan-kiri-bawah">
-        <CuplikanBahan data={data} izin={izin} aktif={aktif} onBagian={onBagian} />
-        <CuplikanDokumentasi ruang={ruang} onBagian={onBagian} />
+      {!bisa && <p className="pf-kecil mt-2">{!aktif ? "Unit sudah selesai/dibatalkan." : "Akun Anda hanya bisa melihat."}</p>}
+      {terakhir && <p className="pf-kecil mt-2" data-testid="kerja-riwayat">Terakhir dicatat {terakhir.by || "—"}, {waktuWib(terakhir.at)}{terakhir.note ? ` — “${terakhir.note}”` : ""}</p>}
+      <Hasil hasil={{ galat, ok: "" }} onMuat={onDone} />
+      {konf && (
+        <KonfirmasiCepat anchor={konf.anchor} testid="konfirmasi-kerja" lebar={teksResmi ? 340 : 300} judul={teksResmi?.judul ?? `Catat ${u.unitCode} “${labelKonf}”?`} labelYa={teksResmi?.ya ?? "Catat"} sibuk={sibuk}
+          isi={teksResmi?.isi ?? "Tulis alasan singkat supaya tim lain tahu."}
+          yaNonaktif={wajibCatatan && catatan.trim().length < 3} onYa={() => simpan(konf.key, catatan)} onClose={() => !sibuk && setKonf(null)}>
+          {wajibCatatan ? <input className="pf-input" value={catatan} maxLength={500} onChange={(e) => setCatatan(e.target.value)} placeholder="Mis. menunggu kain dari supplier" data-testid="kerja-catatan" /> : null}
+        </KonfirmasiCepat>
+      )}
+    </div>
+  );
+}
+
+// ── Target selesai: ketuk → pilih tanggal (atau kosongkan).
+function BarisTarget({ data, aktif, onDone, onPesan }) {
+  const { adopsi: ad, izin = {}, unit: u } = data;
+  const t = badgeTarget(ad.targetSelesai?.at);
+  const [konf, setKonf] = useState(null); const [tgl, setTgl] = useState(""); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null);
+  const bisa = !!izin.target && aktif;
+  async function simpan(nilai) {
+    setSibuk(true); setGalat(null);
+    try { await api.updateUnitProduction(u.id, { productionDueAt: isoTarget(nilai), expected: { productionDueAt: u.productionDueAt ?? null } }); setKonf(null); onPesan?.(nilai ? `Target ${u.unitCode}: ${formatTanggal(isoTarget(nilai))}.` : `Target ${u.unitCode} dikosongkan.`); await onDone(); }
+    catch (e) { setKonf(null); setGalat(e.code === "UNIT_CONFLICT" || e.status === 409 ? Object.assign(e, { code: "RIWAYAT_BERUBAH" }) : e); } finally { setSibuk(false); }
+  }
+  const sumber = ad.targetSelesai ? (ad.targetSelesai.sumber === "UNIT" ? null : "Dari Rencana Produksi") : null;
+  return (
+    <>
+      <Baris id="pf-target" testid="target-pic-form" label="Target selesai" sub={sumber} kuat={t.ada}
+        nilai={t.ada ? <span className={t.nada === "red" ? "text-red" : t.nada === "orange" ? "text-orange" : ""}>{t.teks}</span> : "Belum ada"}
+        onClick={bisa ? (e) => { setTgl(tanggalWib(u.productionDueAt || ad.targetSelesai?.at)); setKonf({ anchor: e.currentTarget }); } : undefined} />
+      {galat && <div className="px-4 pb-3"><Hasil hasil={{ galat, ok: "" }} onMuat={onDone} /></div>}
+      {konf && (
+        <KonfirmasiCepat anchor={konf.anchor} testid="konfirmasi-target" judul="Target selesai" labelYa="Simpan" sibuk={sibuk} yaNonaktif={!tgl} onYa={() => simpan(tgl)} onClose={() => !sibuk && setKonf(null)}>
+          <input type="date" className="pf-input" value={tgl} onChange={(e) => setTgl(e.target.value)} data-testid="target-tanggal" aria-label="Tanggal target selesai" />
+          {(u.productionDueAt || ad.targetSelesai) && <button type="button" className="pf-tautan mt-1" onClick={() => simpan("")} disabled={sibuk} data-testid="target-kosongkan">Kosongkan target</button>}
+        </KonfirmasiCepat>
+      )}
+    </>
+  );
+}
+
+// ── Status order (sama dengan yang dilihat Sales & Delivery): ketuk → pilih Diproses / Siap Kirim.
+const OPSI_ORDER = [{ key: "PROCESSING", label: "Diproses" }, { key: "READY", label: "Siap Kirim" }];
+function BarisStatusOrder({ data, ruang, aktif, onDone, onPesan }) {
+  const { adopsi: ad, izin = {}, unit: u } = data;
+  const so = ruang?.order?.statusOrder || ad.orderSales;
+  const [konf, setKonf] = useState(null); const [pilihan, setPilihan] = useState("PROCESSING"); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null);
+  const bisa = !!izin.statusOrder && aktif;
+  async function simpan() {
+    setSibuk(true); setGalat(null);
+    try { await api.updateOrder(u.order.id, { status: pilihan, statusOverrideNote: "Diubah dari profil unit Produksi" }); setKonf(null); onPesan?.(`Order ${u.order.orderNumber} kini ${OPSI_ORDER.find((o) => o.key === pilihan)?.label}. Sales dan Delivery melihat status yang sama.`); await onDone(); }
+    catch (e) { setKonf(null); setGalat(e); } finally { setSibuk(false); }
+  }
+  return (
+    <>
+      <Baris testid="status-order-form" label="Status order" sub={so?.terkunci ? "Dikunci manual" : "Dilihat Sales & Delivery"} nilai={so?.label || "—"} kuat nilaiTestid="order-saat-ini"
+        onClick={bisa ? (e) => { setPilihan(so?.mentah === "PROCESSING" || so?.key === "DIPROSES" ? "READY" : "PROCESSING"); setKonf({ anchor: e.currentTarget }); } : undefined} />
+      {galat && <div className="px-4 pb-3"><Hasil hasil={{ galat, ok: "" }} onMuat={onDone} /></div>}
+      {konf && (
+        <KonfirmasiCepat anchor={konf.anchor} testid="konfirmasi-order" judul={`Ubah status order ${u.order.orderNumber}?`} isi={`Berlaku di semua workspace.${u.order.jumlahUnit > 1 ? ` Order ini punya ${u.order.jumlahUnit} unit.` : ""}`} labelYa="Ubah" sibuk={sibuk} onYa={simpan} onClose={() => !sibuk && setKonf(null)}>
+          <div className="pf-segmen" role="radiogroup" aria-label="Status order baru">
+            {OPSI_ORDER.map((o) => (
+              <button key={o.key} type="button" role="radio" aria-checked={pilihan === o.key} aria-pressed={pilihan === o.key} className="pf-segmen-btn" onClick={() => setPilihan(o.key)} data-testid={`order-${o.key}`}>
+                {pilihan === o.key && <motion.span layoutId="pf-order-pil" className="pf-segmen-pil" transition={{ type: "spring", stiffness: 420, damping: 34 }} />}{o.label}
+              </button>
+            ))}
+          </div>
+        </KonfirmasiCepat>
+      )}
+    </>
+  );
+}
+
+// ── Penerimaan di workshop (catatan asli tidak pernah dihapus; koreksi lewat modal resmi).
+function BarisPenerimaan({ data, aktif, onDone, onPesan }) {
+  const { penerimaan: p, riwayatPenerimaan: riwayat = [], izin = {}, unit: u } = data;
+  const [buka, setBuka] = useState(false);
+  const batal = riwayat.filter((r) => !r.aktif).length;
+  if (!p) return batal ? <Baris testid="penerimaan-dibatalkan" label="Penerimaan di workshop" sub="Belum ada penerimaan yang berlaku — penerimaan sebelumnya dinyatakan belum diterima fisik" nilai="Dibatalkan" /> : null;
+  const boleh = aktif && (izin.koreksiLokasiPenerimaan || izin.koreksiBelumDiterima);
+  const sub = [`${p.receivedBy?.name || "petugas"} · ${waktuWib(p.receivedAt)}`, p.koreksi?.length ? `dikoreksi ${p.koreksi.length}×` : null, batal ? `${batal} catatan lama dibatalkan` : null].filter(Boolean).join(" · ");
+  return (
+    <>
+      <Baris testid="kartu-penerimaan" label="Diterima di workshop" sub={<span data-testid="penerimaan-ringkas">{sub}{p.note ? ` — “${p.note}”` : ""}</span>} nilai={p.location?.code} onClick={boleh ? () => setBuka(true) : undefined} />
+      {p.koreksi?.length > 0 && <ul className="m-0 list-none px-4 pb-3 pl-4 text-[12px] text-ink3" data-testid="penerimaan-koreksi">{p.koreksi.map((k) => <li key={k.id}>{teksKoreksi(k)}</li>)}</ul>}
+      {buka && <KoreksiPenerimaanModal unit={{ unitId: u.id, unitCode: u.unitCode }} onClose={() => setBuka(false)} onDone={async (pesan) => { setBuka(false); onPesan?.(pesan); await onDone(); }} />}
+    </>
+  );
+}
+
+function GrupOrder({ data, ruang }) {
+  const { unit: u } = data; const d = ruang?.order?.detail; const k = d?.kondisiPelanggan;
+  const layanan = ruang?.order?.layanan?.join(" + ");
+  return (
+    <Grup judul="Order" testid="ringkasan-order">
+      <Baris label="Layanan" nilai={layanan || "Belum tercatat"} kuat={!!layanan} testid="pekerjaan-layanan" />
+      <Baris label="Kasur" nilai={[u.merk, u.ukuran].filter(Boolean).join(" · ") || "—"} kuat />
+      <Baris label="Kondisi pelanggan" sub={k?.sakit === true && k.keluhan?.length ? <span data-testid="keluhan-pelanggan">Keluhan: {k.keluhan.join(", ")}</span> : null}
+        nilai={<span data-testid="kondisi-pelanggan">{k?.sakit === true ? <Badge variant="red" className="bh-b-red"><HeartPulse size={11} className="mr-1" aria-hidden />{k.label}</Badge> : k?.label || "—"}</span>} />
+      <Baris label="Janji ke pelanggan" nilai={d?.janjiPelanggan ? formatTanggal(d.janjiPelanggan) : "Belum ada"} kuat={!!d?.janjiPelanggan} />
+      {d?.catatanProduksi && <div className="pf-blok"><p className="pf-catatan" data-testid="catatan-produksi"><span className="pf-catatan-cap">Catatan Sales untuk Produksi</span>{d.catatanProduksi}</p></div>}
+      {d?.komplain && <div className="pf-blok"><p className="pf-catatan merah" data-testid="komplain-order"><span className="pf-catatan-cap">Komplain {d.komplain.selesai ? "· sudah selesai" : "· belum selesai"}{d.komplain.tanggal ? ` · ${formatTanggal(d.komplain.tanggal)}` : ""}</span>{d.komplain.rincian || "Tanpa rincian."}</p></div>}
+    </Grup>
+  );
+}
+
+function GrupLainnya({ data, ruang }) {
+  const { unit: u, adopsi: ad } = data;
+  return (
+    <section className="pf-grup" data-testid="detail-lanjutan">
+      <details className="pf-lipat">
+        <summary>Info lainnya<ChevronRight {...IK} size={16} className="pf-chevron" aria-hidden /></summary>
+        <div>
+          <Baris label="Pelanggan" nilai={u.order?.customer?.name || "—"} />
+          <Baris label="Order" nilai={`${u.order?.orderNumber || "—"} · ${u.order?.jumlahUnit ?? 1} unit`} />
+          {u.order?.unitLain?.length > 0 && <Baris label="Unit lain di order ini" nilai={u.order.unitLain.map((x) => x.unitCode).join(", ")} />}
+          <Baris label="Prioritas" nilai={u.priority === "URGENT" ? "Mendesak" : u.priority === "HIGH" ? "Tinggi" : "Normal"} />
+          <Baris label="Posisi" sub={ad.posisi?.detail || data.receivedBasisLabel || null} nilai={ad.posisi?.label || "—"} />
+          <Baris label="Terakhir diubah" nilai={waktuWib(u.updatedAt)} />
+          {ruang?.order?.statusOrder?.terkunci && <Baris label="Status order" nilai="Dikunci manual" />}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+export default function RingkasanUnit({ data, ruang, aktif, onDone, onBagian, onPesan, adaMeja = false, fokusKelengkapan = false }) {
+  const { adopsi: ad } = data; const pk = ringkasPekerjaan(data);
+  const fokus = (id) => { const el = document.getElementById(id); if (!el) return; el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); (el.matches("button") ? el : el.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true }); };
+  const kel = ad.kelengkapan;
+  const tampilKelengkapan = fokusKelengkapan || !!kel?.keys?.length || !!kel?.pernyataan || (kel?.dataOrder && kel.dataOrder.status !== "BELUM_DINILAI");
+  const adaCatatanHistoris = (data.catatanHistoris?.ringkas?.total ?? 0) > 0 || !!data.hppBahan;
+  return (
+    <div className="pf-ringkasan" data-testid="bagian-ringkasan">
+      <div className="pf-kolom" data-testid="ringkasan-kiri-atas">
+        <LangkahBerikutnya data={data} aktif={aktif} adaMeja={adaMeja} onDone={onDone} onBagian={onBagian} onFokus={fokus} onPesan={onPesan} />
+        <Grup judul="Pekerjaan" testid="ringkasan-pekerjaan">
+          <BarisKerja data={data} aktif={aktif} onDone={onDone} onPesan={onPesan} />
+          <Baris label="Jadwal produksi" nilai={<span data-testid="pekerjaan-jadwal">{pk.faktaJadwal || pk.jadwal}</span>} kuat={!!ad.jadwal} />
+          <BarisTarget data={data} aktif={aktif} onDone={onDone} onPesan={onPesan} />
+          <Baris label="PIC" sub={ad.pic ? (ad.pic.sumber === "TAHAP" ? "Penugasan tahap" : "Dari Rencana Produksi") : "Diatur di Rencana Produksi"} nilai={[ad.pic?.nama || "Belum ada", ad.meja ? String(ad.meja).replace("TABLE_", "Meja ") : null].filter(Boolean).join(" · ")} kuat={!!ad.pic} testid="pic-teks" />
+          <BarisStatusOrder data={data} ruang={ruang} aktif={aktif} onDone={onDone} onPesan={onPesan} />
+          <BarisPenerimaan data={data} aktif={aktif} onDone={onDone} onPesan={onPesan} />
+        </Grup>
+        <Grup testid="ringkasan-kiri-bawah">
+          <Baris label="Bahan" nilai={barisBahan(data)} onClick={() => onBagian("bahan")} testid="cuplikan-buka-bahan" />
+          <Baris label="Foto" nilai={barisFoto(ruang)} onClick={() => onBagian("dokumentasi")} testid="cuplikan-buka-dokumentasi" />
+          {adaMeja && <Baris label="Meja & QC" sub="Tahap, diagnosis, QC & serah ke Gudang" nilai={ruang?.alurMeja?.tahap || null} onClick={() => onBagian("meja")} testid="buka-meja" />}
+        </Grup>
+      </div>
+      <div className="pf-kolom" data-testid="ringkasan-kanan">
+        <GrupOrder data={data} ruang={ruang} />
+        {(tampilKelengkapan || adaCatatanHistoris) && (
+          <Grup judul={tampilKelengkapan ? "Kelengkapan" : "Biaya bahan"} testid="ringkasan-kelengkapan">
+            {tampilKelengkapan && <div className="pf-blok" id="sec-kelengkapan"><KelengkapanBagian data={data} aktif={aktif} onDone={onDone} ringkas terbukaAwal={fokusKelengkapan} /></div>}
+            {adaCatatanHistoris && <div className="pf-blok"><CatatanRingkas data={data} /></div>}
+          </Grup>
+        )}
+        <GrupLainnya data={data} ruang={ruang} />
       </div>
     </div>
   );

@@ -86,7 +86,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
       {showHandle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
       {complete && <span data-testid="locked-mark" title="Unit 12/12 — terkunci" className="absolute right-3 top-3 z-10 text-ink3"><Lock size={18} aria-hidden /></span>}
 
-      <button type="button" onClick={open} aria-label={`Buka Unit 360 ${view.unit.unitCode}`} className="block w-full min-w-0 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      <button type="button" onClick={open} aria-label={`Buka profil unit ${view.unit.unitCode}`} className="block w-full min-w-0 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
         {/* Header */}
         <div className="flex min-w-0 items-start gap-3 py-3 pl-5 pr-14">
           <UnitPhoto photoUrl={view.unit.photoUrl} variant="plan" />

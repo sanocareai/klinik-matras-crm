@@ -99,11 +99,12 @@ test("Rencana Produksi: planner harian — backlog 'Belum Dijadwalkan', Meja 1�
   assert.match(RENCANA, /Kelola Rencana/, "BOM/reservasi P3 tetap dijangkau lewat Unit 360");
 });
 
-test("Kartu unit SAMA dipakai Status, Rencana, dan QC; klik membuka Unit 360", () => {
+test("Kartu unit SAMA dipakai Status, Rencana, dan QC; klik membuka profil unit (QC langsung di tab Meja & QC)", () => {
   for (const [name, src] of [["status", STATUS], ["rencana", RENCANA], ["qc", QC]]) assert.match(src, /UnitCard/, name);
-  assert.match(QC, /UnitOverviewDrawer/);
-  assert.match(QC, /manageLabel="Putusan QC"/);
-  assert.match(CARD, /Buka Unit 360/);
+  assert.match(QC, /<PanelUnit buka=\{overviewUnitId \? \{ unitId: overviewUnitId, bagian: bagianProfil \} : null\}/);
+  assert.match(QC, /bagian: "meja" \}\); \/\/ tab profil unit/, "QC membuka profil di tab Meja & QC");
+  assert.match(QC, /aksiHalaman=\{\{ label: "Putusan QC"/);
+  assert.match(CARD, /Buka profil unit/);
 });
 
 test("QC hub (P12B.2): tab 'Inspeksi QC (lama)' DIHAPUS dari UI — satu pengalaman QC untuk semua peran", () => {

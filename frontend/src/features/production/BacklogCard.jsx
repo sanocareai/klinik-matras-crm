@@ -35,7 +35,7 @@ export default function BacklogCard({ item, onOpen, onSchedule = null, handle = 
       className={`relative w-full min-w-0 shrink-0 overflow-hidden rounded-card bg-surface shadow-sm ${dragging ? "opacity-40" : ""}`}>
       <span aria-hidden className={`absolute inset-y-0 left-0 ${meta.stripeClass}`} />
       {draggable && handle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
-      <button type="button" onClick={() => onOpen?.(c.unit.id)} aria-label={`Buka Unit 360 ${c.unit.unitCode}`} className={`block w-full min-w-0 py-2.5 pl-4 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${draggable && handle ? "pr-14" : "pr-3"}`}>
+      <button type="button" onClick={() => onOpen?.(c.unit.id)} aria-label={`Buka profil unit ${c.unit.unitCode}`} className={`block w-full min-w-0 py-2.5 pl-4 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${draggable && handle ? "pr-14" : "pr-3"}`}>
         <span className="flex min-w-0 items-start gap-2.5">
           <UnitPhoto photoUrl={c.unit.photoUrl} variant="plan" />
           <span className="min-w-0 flex-1">

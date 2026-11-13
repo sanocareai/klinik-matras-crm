@@ -25,8 +25,10 @@ test("keadaan layar dan URL: nilai bawaan tidak ditulis; nilai tak dikenal jatuh
 test("jalur ruang kerja unit: rute tersendiri (Back browser bekerja); bagian valid saja", () => {
   assert.equal(jalurUnit("u1"), `${LIST_PATH}/unit/u1`);
   assert.equal(jalurUnit("u1", "bahan"), `${LIST_PATH}/unit/u1?bagian=bahan`);
-  assert.deepEqual(BAGIAN_KEYS, ["ringkasan", "pekerjaan", "bahan", "dokumentasi", "riwayat"]);
-  assert.equal(bagianUntukAksi("SET_TARGET"), "pekerjaan"); assert.equal(bagianUntukAksi("PLAN_MATERIAL"), "bahan"); assert.equal(bagianUntukAksi("RECORD_MATERIAL"), "bahan");
+  // Profil unit (13 Nov 2026): tab Pekerjaan dilebur ke Ringkasan; "Meja & QC" (isi Unit 360) ditambahkan. URL lama ?bagian=pekerjaan mendarat di Ringkasan.
+  assert.deepEqual(BAGIAN_KEYS, ["ringkasan", "bahan", "dokumentasi", "riwayat", "meja"]);
+  assert.equal(bacaKeadaan(new URLSearchParams("unit=u1&bagian=pekerjaan")).bagian, "ringkasan");
+  assert.equal(bagianUntukAksi("SET_TARGET"), "ringkasan"); assert.equal(bagianUntukAksi("PLAN_MATERIAL"), "bahan"); assert.equal(bagianUntukAksi("RECORD_MATERIAL"), "bahan");
   assert.equal(bagianUntukAksi("CONFIRM_ARRIVAL"), "ringkasan"); assert.equal(bagianUntukAksi("NONE"), "ringkasan");
 });
 
@@ -79,11 +81,11 @@ test("pengawatan: rute daftar + ruang kerja unit; deep link lama dialihkan; URL 
   for (const k of ["replaceActivePath", 'sp.get("unit")', "openInActiveTab(jalurUnit", "simpanGulir", "pulihkan"]) assert.ok(hal.includes(k), k);
   const daftar = src("features", "production", "workspace", "StatusWorkList.jsx");
   for (const k of ["aria-expanded={terbuka}", "aria-controls={idPanel}", "motion-reduce:", "motion-safe:animate", "getProductionWorkList", 'role="tablist" aria-label="Antrean"', "pintasan-${bagian}"]) assert.ok(daftar.includes(k), k);
-  for (const k of ["pekerjaan", "bahan", "dokumentasi", "riwayat"]) assert.ok(daftar.includes(`bagian: "${k}"`), k);
-  const ruang = [src("features", "production", "workspace", "UnitWorkspace.jsx"), src("features", "production", "workspace", "RingkasanUnit.jsx")].join("\n");
+  for (const k of ["ringkasan", "bahan", "dokumentasi", "riwayat"]) assert.ok(daftar.includes(`bagian: "${k}"`), k);
+  const ruang = [src("features", "production", "workspace", "UnitWorkspace.jsx"), src("features", "production", "workspace", "RingkasanUnit.jsx"), src("features", "production", "workspace", "LangkahBerikutnya.jsx")].join("\n");
   const bahanUi = ["BahanTab", "CatatBahanBaru", "FormKomponenLama", "KomponenLamaDaftar", "RiwayatBahanBaru", "PemilihBahanKatalog"].map((n) => src("features", "production", "bahan", `${n}.jsx`)).join("\n");
-  for (const k of ["prod-ruang-header", 'role="tablist"', "ArrowRight", "judulRef.current.focus", "KartuPenerimaan", "TindakanUtama", "penjelasanTertahan"]) assert.ok(ruang.includes(k), k);
-  assert.ok(!ruang.includes("confirmProductionV2UnitArrival"), "penerimaan lewat satu jalur resmi (modal penerimaan), bukan tombol Terima Unit terpisah");
+  for (const k of ["pf-kepala", 'role="tablist"', "ArrowRight", "judulRef.current.focus", "BarisPenerimaan", "LangkahBerikutnya", "penjelasanTertahan"]) assert.ok(ruang.includes(k), k);
+  assert.ok(!ruang.includes("confirmProductionV2UnitArrival"), "penerimaan lewat satu jalur resmi (catatPenerimaanWorkshop / modal penerimaan), bukan tombol Terima Unit terpisah");
   const dok = src("features", "production", "workspace", "DokumentasiSection.jsx");
   assert.ok(dok.includes("submitProductionV2Documentation")); assert.ok(dok.includes("Tidak menyelesaikan tahap, tidak meluluskan QC, dan tidak membuat bukti serah ke Gudang")); assert.ok(dok.includes("kirimRef.current"));
   const marker = src("features", "production", "workspace", "StatusMarkers.jsx");

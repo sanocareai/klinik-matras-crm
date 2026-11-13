@@ -44,12 +44,13 @@ test("loading, kosong, dan galat tampil langsung pada daftar", () => {
   assert.match(WO, /catch \(e\) \{ if \(id === reqRef\.current\) setError\(e\.message\); \}/);
 });
 
-test("klik baris/kartu membuka Unit 360 (drawer kanonis), bukan halaman lama; unit non-V2 mendapat fallback data order asli", () => {
+test("klik baris/kartu membuka PROFIL UNIT yang sama dengan halaman Produksi lain (menempel di layar lebar, panel geser di layar sempit); isi Unit 360 + fallback non-Meja di tab Meja & QC", () => {
   assert.equal((WO.match(/data-testid="order-row"/g) || []).length, 2, "baris desktop dan kartu HP");
   assert.equal((WO.match(/const buka = \(e\) => onBuka\(u, e\.currentTarget\);/g) || []).length, 2, "keduanya membuka panel dan menyimpan pemicu untuk mengembalikan fokus");
   assert.match(WO, /onBuka={bukaBaris}/);
-  assert.match(WO, /<OrderProduksiPanel unitId=\{openUnitId\} fokus=\{fokusPanel\} dock=\{dock\} onClose=\{\(\) => \{ setFokusPanel\(null\); setDetailUnit\(null\); \}\} onChanged=\{reload\} onBukaUnit360=/, "klik baris membuka panel fokus Order Produksi");
-  assert.match(WO, /<UnitOverviewDrawer unitId=\{unit360Id\} onClose=\{\(\) => setUnit360Id\(null\)\} onChanged=\{reload\} \/>/, "Unit 360 lengkap tetap dapat dibuka dari panel (Lanjutan)");
+  assert.ok(WO.includes("<UnitWorkspace unitId={openUnitId} bagian={bagianPanel} onBagian={setBagianPanel} onKembali={tutupPanel}"), "layar lebar: profil menempel di kanan daftar");
+  assert.ok(WO.includes("<PanelUnit buka={openUnitId ? { unitId: openUnitId, bagian: bagianPanel } : null}"), "layar sempit: panel geser yang sama dengan Rencana Produksi");
+  assert.doesNotMatch(WO, /OrderProduksiPanel|UnitOverviewDrawer/, "tidak ada panel/drawer detail kedua");
   assert.doesNotMatch(WO, /<Modal\b|navigate\(|useNavigate/, "tanpa modal ringkas terpisah dan tanpa navigasi ke halaman/tab lain");
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(drawer, /import \{ isOutsideV2 \} from "@\/features\/production\/unit360Availability\.js"/);

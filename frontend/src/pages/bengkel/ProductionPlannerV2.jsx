@@ -17,7 +17,7 @@ import {
 } from "@/features/production/experience.js";
 import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import MorningPriorityApprovalPanel from "@/features/production/MorningPriorityApprovalPanel.jsx";
-import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import PanelUnit from "@/features/production/rencana/PanelUnit.jsx";
 import { UnitCard, UpcomingCard, PicChips } from "@/features/production/UnitCard.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
@@ -72,7 +72,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
           {item.bucket === "DALAM_PERJALANAN" && onConfirmArrival && <Button size="sm" data-mutates onClick={() => onConfirmArrival(item)}><Truck size={14} aria-hidden /> Terima Unit di Workshop</Button>}
           <Button size="sm" data-mutates onClick={() => onSchedule(item)}><CalendarDays size={14} aria-hidden /> {item.plan?.stationCode ? "Pindah / Ubah Jadwal" : "Jadwalkan"}</Button>
           {item.plan && <Button size="sm" variant="secondary" asChild><Link to={`/bengkel/production-v2/laporan/${item.runId}`}><FileText size={14} aria-hidden /> Laporan</Link></Button>}
-          <Button size="sm" variant="neutral" asChild><Link to={unitDetailPath(item.unit.id)}>Buka Unit 360</Link></Button>
+          <Button size="sm" variant="neutral" asChild><Link to={unitDetailPath(item.unit.id)}>Buka profil unit</Link></Button>
         </div>
       </div>
     </Modal>
@@ -135,6 +135,8 @@ export default function ProductionPlannerV2() {
   // Unit 360 = aksi utama klik kartu; deep-link ?unit=<id> dibuang saat ditutup (pola sama Orders.jsx).
   const [searchParams, setSearchParams] = useSearchParams();
   const [overviewUnitId, setOverviewUnitId] = useState(() => searchParams.get("unit") || null);
+  const [tabProfil, setTabProfil] = useState({ unitId: null, bagian: "ringkasan" }); // tab profil unit; unit lain = mulai dari "ringkasan"
+  const bagianProfil = tabProfil.unitId === overviewUnitId ? tabProfil.bagian : "ringkasan";
   const openOverview = useCallback((unitId) => {
     setOverviewUnitId(unitId);
     setSearchParams((prev) => { const next = new URLSearchParams(prev); next.set("unit", unitId); return next; }, { replace: false });
@@ -282,9 +284,9 @@ export default function ProductionPlannerV2() {
       </PageBody>
 
       {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onConfirmArrival={(i) => { setDrawer(null); setArrival(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}
-      {overviewUnitId && (
-        <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={reloadV1} manageLabel="Kelola Jadwal"
-          onManage={() => { const item = allItems.find((i) => i.unit.id === overviewUnitId && i.runId); closeOverview(); if (item) setDrawer(item); }} />
+      {(
+        <PanelUnit buka={overviewUnitId ? { unitId: overviewUnitId, bagian: bagianProfil } : null} onBagian={(b) => setTabProfil({ unitId: overviewUnitId, bagian: b })} onClose={closeOverview} onChanged={reloadV1}
+          aksiHalaman={{ label: "Kelola Jadwal", onClick: () => { const item = allItems.find((i) => i.unit.id === overviewUnitId && i.runId); closeOverview(); if (item) setDrawer(item); } }} />
       )}
       {schedule && board && (
         <ScheduleModal target={schedule} board={board} date={today} refs={refs} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />

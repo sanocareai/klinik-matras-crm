@@ -31,7 +31,6 @@ export function tindakanBaris(unit, adopsi, { bisaCatat = false } = {}) {
 
 /** Tab pembuka panel menurut fokus dari daftar: bahan → tab Bahan; selain itu → tab Pekerjaan. */
 export const TAB_PANEL = Object.freeze(["pekerjaan", "bahan", "riwayat"]);
-export const tabAwalPanel = (fokus) => (fokus === "bahan" ? "bahan" : "pekerjaan");
 
 /** Ringkasan jumlah termuat vs hasil: kontrak server (total = seluruh hasil filter; hasMore = masih ada halaman). */
 export function teksJumlah({ dimuat, total, hasMore }) {

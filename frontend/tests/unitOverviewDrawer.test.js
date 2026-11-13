@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRAWER = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "UnitOverviewDrawer.jsx"), "utf8");
 const STATUS_PRODUKSI = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "bengkel", "ProductionPlannerV2.jsx"), "utf8");
 const RENCANA_PRODUKSI = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "bengkel", "ProductionRencanaWorkspace.jsx"), "utf8");
+const PROFIL = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "workspace", "UnitWorkspace.jsx"), "utf8");
 
 test("Unit 360: 6 bagian wajib (Ringkasan, Pekerjaan, Bahan, Dokumentasi, QC & Serah ke Gudang, Aktivitas) — tab 'Kerja V1' dihapus (Slice 1)", () => {
   assert.ok(!DRAWER.includes("Kerja V1"), "tab Kerja V1 hilang");
@@ -55,9 +56,10 @@ test("Unit 360: multi-unit — pesan eksplisit saat job pickup punya >1 unit (ti
   assert.match(DRAWER, /tidak diatribusikan otomatis ke unit manapun/);
 });
 
-test("Status Produksi & Rencana Produksi: keduanya membuka UnitOverviewDrawer yang SAMA (bukan komponen detail terpisah)", () => {
-  assert.match(STATUS_PRODUKSI, /import\s*\{\s*UnitOverviewDrawer\s*\}\s*from\s*"@\/features\/production\/UnitOverviewDrawer\.jsx"/);
-  assert.match(RENCANA_PRODUKSI, /import\s*\{\s*UnitOverviewDrawer\s*\}\s*from\s*"@\/features\/production\/UnitOverviewDrawer\.jsx"/);
+test("Planner & Papan Meja: keduanya membuka PROFIL UNIT yang SAMA (PanelUnit), isi Unit 360 tetap ada di tab Meja & QC", () => {
+  for (const s of [STATUS_PRODUKSI, RENCANA_PRODUKSI]) assert.match(s, /import PanelUnit from "@\/features\/production\/rencana\/PanelUnit\.jsx"/);
+  assert.match(PROFIL, /<Unit360Isi unitId=\{unitId\} tertanam/);
+  assert.match(DRAWER, /export function Unit360Isi\(/); assert.match(DRAWER, /export function UnitOverviewDrawer\(/, "drawer tetap ada untuk halaman di luar Produksi (Order Sales)");
 });
 
 test("Status Produksi & Rencana Produksi: deep-link via ?unit= disinkronkan lewat useSearchParams (bisa dibagikan & kembali ke tab asal)", () => {
@@ -69,11 +71,10 @@ test("Status Produksi & Rencana Produksi: deep-link via ?unit= disinkronkan lewa
   }
 });
 
-test("Status Produksi & Rencana Produksi: aksi tulis lama (Jadwalkan, Kelola Rencana) TETAP ada, dijangkau dari dalam Unit 360 (bukan dihapus)", () => {
-  assert.match(STATUS_PRODUKSI, /manageLabel="Kelola Jadwal"/);
-  assert.match(STATUS_PRODUKSI, /onManage=\{\(\) => \{ const item = allItems\.find/);
-  assert.match(RENCANA_PRODUKSI, /manageLabel="Kelola Rencana"/);
-  assert.match(RENCANA_PRODUKSI, /onManage=\{\(\) => openManageFor\(overviewUnitId\)\}/);
+test("Planner & Papan Meja: aksi tulis lama (Kelola Jadwal, Kelola Rencana) TETAP ada, sebagai tombol di kepala profil unit (bukan dihapus)", () => {
+  assert.ok(STATUS_PRODUKSI.includes('aksiHalaman={{ label: "Kelola Jadwal", onClick: () => { const item = allItems.find'));
+  assert.ok(RENCANA_PRODUKSI.includes('aksiHalaman={{ label: "Kelola Rencana", onClick: () => openManageFor(overviewUnitId) }}'));
+  assert.ok(PROFIL.includes('data-testid="aksi-halaman">{aksiHalaman.label}'));
 });
 
 // Regresi P9C §6: <section> yang jadi grid item langsung (anak dari `grid md:grid-cols-*`) punya

@@ -23,7 +23,8 @@
 .rc-konfirmasi-btn:active { transform: scale(.97); }
 .rc-konfirmasi-btn.netral { background: rgba(120, 120, 128, .16); color: inherit; }
 .rc-konfirmasi-btn.utama { background: var(--crm-primary, #2563eb); color: #fff; }
-.rc-konfirmasi-btn:hover { filter: brightness(1.05); }
+.rc-konfirmasi-btn:hover:not(:disabled) { filter: brightness(1.05); }
+.rc-konfirmasi-btn:disabled { opacity: .45; cursor: default; }
 .rc-chip-tiba.mencatat { cursor: default; gap: 6px; }
 .rc-chip-tiba.mencatat:hover { filter: none; box-shadow: none; }
 .rc-tiba-baru { animation: rc-tiba-kilau 1.2s ease-out; }

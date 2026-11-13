@@ -70,9 +70,10 @@ test("PemakaianAktualBagian: TIGA sumber = pilihan segmen di dialog form (Bahan 
   assert.ok(!b.includes("addUnitMaterial") && !b.includes("api.catatPemakaianSementara") && !b.includes("api.ajukanBahanBaru"), "komponen ini hanya merakit; jalur API ada di formulir masing-masing");
 });
 
-test("PemakaianAktualBagian dipakai drawer Order Produksi DAN tab Bahan (tidak ada salinan lama tanpa 'Bahan belum ada'); stok belum diketahui → jalur resmi dijelaskan", () => {
-  const p = src("features", "production", "OrderProduksiPanel.jsx"); const t = src("features", "production", "bahan", "BahanTab.jsx"); const c = src("features", "production", "bahan", "CatatBahanBaru.jsx");
-  assert.ok(p.includes("<PemakaianAktualBagian") && t.includes("<PemakaianAktualBagian")); assert.ok(!p.includes("PemilihBahanKatalog") && !p.includes("aktual-form"), "salinan lama di drawer sudah dibuang");
+test("PemakaianAktualBagian = SATU-SATUNYA formulir pemakaian di profil unit (tab Bahan; tidak ada salinan lama tanpa 'Bahan belum ada'); stok belum diketahui → jalur resmi dijelaskan", () => {
+  const t = src("features", "production", "bahan", "BahanTab.jsx"); const c = src("features", "production", "bahan", "CatatBahanBaru.jsx"); const ws = src("features", "production", "workspace", "UnitWorkspace.jsx");
+  assert.ok(t.includes("<PemakaianAktualBagian") && ws.includes("<BahanTab "), "profil unit (semua halaman Produksi) memakai tab Bahan yang sama");
+  for (const f of [["workspace", "UnitWorkspace.jsx"], ["workspace", "RingkasanUnit.jsx"], ["workspace", "LangkahBerikutnya.jsx"]]) { const x = src("features", "production", ...f); assert.ok(!x.includes("PemilihBahanKatalog") && !x.includes("aktual-form"), "tanpa salinan formulir bahan: " + f.join("/")); }
   for (const k of ["aktual-ganti", "Ganti bahan", "aktual-dampak-stok", "Dampak stok", "aktual-ke-sementara", "Yang saya pakai bukan bahan ini", "onPakaiSementara", "ketersediaanText"]) assert.ok(c.includes(k), k);
 });
 
@@ -131,26 +132,21 @@ test("koreksi & pembatalan beralasan: kunci idempoten per niat, alasan wajib, la
   assert.ok(!d.includes("addUnitMaterial"), "koreksi bukan jalur stok");
 });
 
-test("panel Order Produksi: Pemakaian aktual DI ATAS Rencana; rencana terlipat bawaan dan dibuka oleh tindakan 'Susun rencana bahan'; pemakaian sementara tampil; pemilih bahan = pemilih bersama", () => {
-  const p = src("features", "production", "OrderProduksiPanel.jsx"); const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
-  assert.ok(b.indexOf("<TabelPemakaian") > 0 && b.indexOf("{slotRencana}") > b.indexOf("<TabelPemakaian"), "aktual sebelum rencana (rencana dititipkan lewat slotRencana, di bawah pemakaian)");
-  assert.match(p, /<details className="prod-lipat" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(p.indexOf('id="sec-rencana-wrap"') - 80, p.indexOf('id="sec-rencana-wrap"') + 120)), "tertutup bawaan");
-  assert.match(p, /if \(el\.tagName === "DETAILS"\) el\.open = true;/);
-  assert.ok(p.includes('"sec-rencana-wrap": "bahan"') && p.includes('case "PLAN_MATERIAL": tombol = izin.rencanaBahan ? { label: "Susun rencana bahan", onClick: () => ke("sec-rencana-wrap") }'), "tindakan 'Susun rencana bahan' membuka rencana");
-  for (const k of ["PemakaianAktualBagian", "tanpaJudul", "slotRencana"]) assert.ok(p.includes(k), k);
+test("tab Bahan profil unit: Pemakaian aktual DI ATAS Rencana; rencana terlipat bawaan; tindakan 'Susun rencana bahan' membuka tab Bahan; pemakaian sementara tampil; pemilih bahan = pemilih bersama", () => {
+  const t = src("features", "production", "bahan", "BahanTab.jsx"); const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const model = src("features", "production", "workspace", "profilModel.js");
+  assert.ok(t.indexOf("<PemakaianAktualBagian") > 0 && t.indexOf('data-testid="sec-rencana"') > t.indexOf("<PemakaianAktualBagian"), "aktual sebelum rencana");
+  assert.ok(t.includes("const [rencanaBuka, setRencanaBuka] = useState(false);") && t.includes("{rencanaBuka && ("), "rencana tertutup bawaan");
+  assert.ok(model.includes('case "PLAN_MATERIAL": return izin.rencanaBahan ? { jenis: "bagian", bagian: "bahan", label: "Susun rencana bahan" } : null;'), "tindakan 'Susun rencana bahan' membuka tab Bahan");
   for (const k of ["PemakaianSementaraDaftar", "CatatBahanBaru", "BahanBelumAda", "FormKomponenLama"]) assert.ok(b.includes(k), k);
 });
 
-test("panel Order Produksi: FOKUS BAHAN — masuk untuk mencatat bahan langsung ke tab Bahan (tanpa melewati Pekerjaan); tab Pekerjaan/Riwayat tetap terjangkau; tanpa fokus = tab Pekerjaan", () => {
-  const p = src("features", "production", "OrderProduksiPanel.jsx"); const w = src("pages", "bengkel", "ProductionWorkOrders.jsx"); const mo = src("features", "production", "orderListModel.js");
-  // Redesain Order Produksi: rincian unit = ruang kerja dengan tiga TAB (Pekerjaan · Bahan · Riwayat); fokus bahan membuka tab Bahan, selain itu tab Pekerjaan.
-  for (const k of ["fokus = null", 'data-testid="panel-lompat"', 'data-testid={`lompat-${t.key === "pekerjaan" ? "status" : t.key}`}', "tabAwalPanel(fokus)", 'const ID_KE_TAB', "fokusSudahRef", 'scrollIntoView({ behavior: "auto", block: "start" })']) assert.ok(p.includes(k), k);
-  assert.ok(mo.includes('export const tabAwalPanel = (fokus) => (fokus === "bahan" ? "bahan" : "pekerjaan");'), "fokus bahan -> tab Bahan, selain itu Pekerjaan");
-  assert.ok(p.indexOf("<PemakaianAktual data={data}") > p.indexOf('tab === "bahan"'), "Pemakaian aktual ada di tab Bahan");
-  assert.ok(p.indexOf("<TabPekerjaan") > p.indexOf('tab === "pekerjaan"'), "Status & target ada di tab Pekerjaan");
-  assert.ok(p.includes('"sec-aktual": "bahan"') && p.includes('"sec-status": "pekerjaan"') && p.includes('"sec-riwayat": "riwayat"'), "tujuan lama dipetakan ke tab");
-  assert.ok(p.includes('if (el.tagName === "DETAILS") el.open = true;'), "tujuan di bagian terlipat membuka bagiannya");
-  // daftar: klik baris/kartu membuka panel (pemicu disimpan untuk mengembalikan fokus); fokus bahan hanya lewat tab="bahan"
-  for (const k of ['setFokusPanel(tab === "bahan" ? "bahan"', "const bukaPanel", "pemicuRef", "unitAktif"]) assert.ok(w.includes(k), k);
+test("Order Produksi: FOKUS BAHAN — masuk untuk mencatat bahan langsung ke tab Bahan profil unit; tab lain tetap terjangkau; tanpa fokus = Ringkasan", () => {
+  const w = src("pages", "bengkel", "ProductionWorkOrders.jsx");
+  // Order Produksi membuka PROFIL UNIT yang sama dengan halaman Produksi lain (menempel di layar lebar, panel geser di layar sempit).
+  assert.ok(w.includes('setBagianPanel(tab === "bahan" ? "bahan" : "ringkasan");'), "fokus bahan -> tab Bahan, selain itu Ringkasan");
+  assert.ok(w.includes("<UnitWorkspace unitId={openUnitId} bagian={bagianPanel} onBagian={setBagianPanel}") && w.includes("<PanelUnit buka={openUnitId ? { unitId: openUnitId, bagian: bagianPanel } : null} onBagian={setBagianPanel}"), "tab bisa dipindah bebas (Ringkasan · Bahan · Foto · Riwayat)");
+  assert.ok(w.includes('fokusKelengkapan={fokusPanel === "kelengkapan"}'), "fokus kelengkapan membuka rincian kelengkapan di Ringkasan");
+  // daftar: klik baris/kartu membuka profil (pemicu disimpan untuk mengembalikan fokus); fokus bahan hanya lewat tab="bahan"
+  for (const k of ["const bukaPanel", "pemicuRef", "unitAktif", "const tutupPanel"]) assert.ok(w.includes(k), k);
   assert.ok(!w.includes("catat-bahan-baris"), "tidak ada tombol Catat bahan per baris");
 });

@@ -14,8 +14,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
-import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
-import OrderProduksiPanel from "@/features/production/OrderProduksiPanel.jsx";
+import UnitWorkspace from "@/features/production/workspace/UnitWorkspace.jsx";
+import PanelUnit from "@/features/production/rencana/PanelUnit.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
 import { KELENGKAPAN_BUKAN, KERJA_FILTER, bacaHitungKelengkapan, chipFilterAktif, jumlahFilterLainnya, parameterDaftar, ringkasAdopsi, sumberKerjaText, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu, PERIODE_BAWAAN } from "@/features/production/orderProduksiModel.js";
@@ -58,7 +58,6 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [error, setError] = useState("");
   const reqRef = useRef(0);
   const [localUnitId, setLocalUnitId] = useState(null);
-  const [unit360Id, setUnit360Id] = useState(null);
   const openUnitId = onUnitChange ? (unitIdProp || null) : localUnitId;
   const [lainnyaBuka, setLainnyaBuka] = useState(false); const pemicuRef = useRef(null); const tombolFilterRef = useRef(null);
   // HP (<= 640px): filter tambahan memakai lembar samping (layar penuh); lebih lebar = panel inline di bawah toolbar.
@@ -72,10 +71,11 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   // Layar lebar (>= 1200px): panel unit menempel di kanan daftar (daftar tetap terlihat dan bisa dipakai); di bawah itu panel menjadi lembar samping / layar penuh.
   const [dock, setDock] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(min-width: 1200px)").matches : false));
   useEffect(() => { if (!window.matchMedia) return undefined; const m = window.matchMedia("(min-width: 1200px)"); const f = () => setDock(m.matches); m.addEventListener?.("change", f); return () => m.removeEventListener?.("change", f); }, []);
-  const [fokusPanel, setFokusPanel] = useState(null); // "bahan" = masuk untuk mencatat bahan: panel langsung ke Pemakaian aktual (tanpa melewati Status & target)
+  const [fokusPanel, setFokusPanel] = useState(null); // "kelengkapan" = profil dibuka dengan rincian kelengkapan terbuka
+  const [bagianPanel, setBagianPanel] = useState("ringkasan"); // tab profil unit; "bahan" = masuk untuk mencatat bahan
   const setDetailUnit = (u) => (onUnitChange ? onUnitChange(u?.id || null) : setLocalUnitId(u?.id || null));
   // Membuka panel unit tidak menulis apa pun. `el` = pemicu (baris/tombol) untuk mengembalikan fokus saat panel ditutup; `tab` = "bahan" | "pekerjaan" (selain itu tab bawaan).
-  const bukaPanel = (u, el, tab) => { pemicuRef.current = el || document.activeElement; setFokusPanel(tab === "bahan" ? "bahan" : tab === "pekerjaan" ? "pekerjaan" : tab === "kelengkapan" ? "kelengkapan" : null); setDetailUnit(u); };
+  const bukaPanel = (u, el, tab) => { pemicuRef.current = el || document.activeElement; setFokusPanel(tab === "kelengkapan" ? "kelengkapan" : null); setBagianPanel(tab === "bahan" ? "bahan" : "ringkasan"); setDetailUnit(u); };
   const unitAktif = (u) => !["CANCELLED", "DELIVERED"].includes(u.status);
   // Daftar tidak punya tombol "Catat bahan": mencatat hanya dari panel, dan tombol di sana mengikuti izin server (izin.pemakaianAktual) — akun hanya-lihat tidak melihatnya.
   const [ekspor, setEkspor] = useState({ sibuk: false, ok: "", galat: "" });
@@ -314,9 +314,12 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     </PanelSamping>
   );
 
-  const panel = (
-    <OrderProduksiPanel unitId={openUnitId} fokus={fokusPanel} dock={dock} onClose={() => { setFokusPanel(null); setDetailUnit(null); }} onChanged={reload} onBukaUnit360={(id) => { setDetailUnit(null); setUnit360Id(id); }} onKembaliFokus={() => { const el = pemicuRef.current; if (el && document.contains(el)) el.focus({ preventScroll: true }); }} />
-  );
+  // PROFIL UNIT yang SAMA dengan Rencana/Status Produksi/Papan Meja/QC: layar lebar = menempel di kanan daftar; lebih sempit = panel geser.
+  const tutupPanel = () => { setFokusPanel(null); setDetailUnit(null); setTimeout(() => { const el = pemicuRef.current; if (el && document.contains(el)) el.focus({ preventScroll: true }); }, 0); };
+  const panel = dock
+    ? (openUnitId && <div className="pf-dock" data-testid="order-produksi-panel" onKeyDown={(e) => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("[role=dialog][data-state=open], .prod-pop")) { e.stopPropagation(); tutupPanel(); } }}>
+        <UnitWorkspace unitId={openUnitId} bagian={bagianPanel} onBagian={setBagianPanel} onKembali={tutupPanel} labelKembali="Daftar" onChanged={reload} fokusKelengkapan={fokusPanel === "kelengkapan"} /></div>)
+    : <PanelUnit buka={openUnitId ? { unitId: openUnitId, bagian: bagianPanel } : null} onBagian={setBagianPanel} onClose={tutupPanel} onChanged={reload} fokusKelengkapan={fokusPanel === "kelengkapan"} />;
 
   return (
     <PageContainer fluid className="prod-halaman">
@@ -326,7 +329,6 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
       </div>
       {!dock && panel}
       {lembarFilter}
-      <UnitOverviewDrawer unitId={unit360Id} onClose={() => setUnit360Id(null)} onChanged={reload} />
     </PageContainer>
   );
 }

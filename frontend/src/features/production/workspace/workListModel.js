@@ -2,18 +2,14 @@
 //
 // Empat makna status yang TIDAK dicampur dan TIDAK diturunkan satu dari yang lain (kontrak server: productionWorkList.js):
 //   Order Sales · Posisi fisik · Status kerja · Tahap Produksi (Meja). Tahap Meja hanya ada bila unit punya pekerjaan di alur Meja; selain itu "Belum di alur Meja" — tidak pernah ditebak.
+import { TAB_DASAR, TAB_MEJA } from "./profilModel.js";
 
 export const LIST_PATH = "/bengkel/production-v2";
 /** Jalur Ruang Kerja Unit (rute tersendiri: pindah rute = Back browser bekerja; bagian di query). */
 export const jalurUnit = (unitId, bagian = "ringkasan") => `${LIST_PATH}/unit/${unitId}${bagian && bagian !== "ringkasan" ? `?bagian=${bagian}` : ""}`;
 
-export const BAGIAN = Object.freeze([
-  { key: "ringkasan", label: "Ringkasan" },
-  { key: "pekerjaan", label: "Pekerjaan" },
-  { key: "bahan", label: "Bahan" },
-  { key: "dokumentasi", label: "Dokumentasi" },
-  { key: "riwayat", label: "Riwayat" },
-]);
+// Tab profil unit (sumber: profilModel.js). "pekerjaan" (tab lama) dilebur ke Ringkasan — URL lama ?bagian=pekerjaan mendarat di Ringkasan.
+export const BAGIAN = Object.freeze([...TAB_DASAR, TAB_MEJA]);
 export const BAGIAN_KEYS = Object.freeze(BAGIAN.map((b) => b.key));
 
 export const FILTERS = Object.freeze([
@@ -58,7 +54,7 @@ export function tulisKeadaan(state) {
 /** Aksi "tindakan berikutnya" server → bagian ruang kerja unit yang menanganinya. */
 export function bagianUntukAksi(aksi) {
   switch (aksi) {
-    case "SET_TARGET": case "OPEN_PLAN": case "OPEN_WORK": case "FINISH_WORK": case "MARK_READY": case "RESOLVE_DELAY": return "pekerjaan";
+    case "SET_TARGET": case "OPEN_PLAN": case "OPEN_WORK": case "FINISH_WORK": case "MARK_READY": case "RESOLVE_DELAY": return "ringkasan"; // pekerjaan kini diubah langsung di Ringkasan
     case "PLAN_MATERIAL": case "RECORD_MATERIAL": return "bahan";
     default: return "ringkasan";
   }

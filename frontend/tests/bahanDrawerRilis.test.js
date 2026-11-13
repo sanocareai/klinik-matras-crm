@@ -22,8 +22,8 @@ test("daftar Order Produksi: akun hanya-lihat melihat 'Lihat bahan', bukan 'Cata
   const w = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   // Redesain daftar (mockup): baris hanya chevron; tidak ada tombol 'Catat bahan' yang dipatok untuk semua akun. Mencatat dari panel; tombolnya mengikuti izin server.
   assert.ok(!/>Catat bahan<\/Button>/.test(w) && !w.includes("catat-bahan-baris"), "tidak ada label 'Catat bahan' di daftar");
-  const panel = src("features", "production", "OrderProduksiPanel.jsx");
-  assert.ok(panel.includes('case "RECORD_MATERIAL": tombol = izin.pemakaianAktual ? { label: "Catat pemakaian bahan"'), "akun hanya-lihat tidak mendapat tombol catat di panel");
+  const model = src("features", "production", "workspace", "profilModel.js");
+  assert.ok(model.includes('case "RECORD_MATERIAL": return izin.pemakaianAktual ? { jenis: "bagian", bagian: "bahan", label: "Catat pemakaian bahan" } : null;'), "akun hanya-lihat tidak mendapat tombol catat di profil unit");
 });
 
 test("susunCatatanRekon: bahan ADA di katalog → alasan + kode katalog; alasan lain wajib teks; belum ada → alasan katalog; deterministik; maks 500", () => {

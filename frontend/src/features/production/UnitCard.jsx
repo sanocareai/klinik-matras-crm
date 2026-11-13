@@ -166,7 +166,7 @@ export function UnitCard({
     <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined}
       className={`relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${className}`}>
       <CardStripes priority={rank} gantiKain={gantiKain} />
-      <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka Unit 360 ${view.unit.unitCode}`}>
+      <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka profil unit ${view.unit.unitCode}`}>
         {variant === "compact" ? (
           <>
             <div className="flex gap-3 p-3 pl-5">
@@ -201,7 +201,7 @@ export function UpcomingCard({ item, onOpen, footer = null, badgeLabel = "Akan M
   return (
     <article data-testid="unit-card" data-unit-code={item.unit.unitCode} data-ganti-kain={isGantiKain(item) ? "true" : undefined} className="relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm">
       <CardStripes priority={0} gantiKain={isGantiKain(item)} />
-      <button type="button" onClick={() => onOpen?.(item.unit.id)} className="block w-full text-left hover:bg-hovertint" aria-label={`Buka Unit 360 ${item.unit.unitCode}`}>
+      <button type="button" onClick={() => onOpen?.(item.unit.id)} className="block w-full text-left hover:bg-hovertint" aria-label={`Buka profil unit ${item.unit.unitCode}`}>
         <UnitPhoto photoUrl={item.unit.photoUrl} variant="photo" />
         <div className="space-y-1.5 p-3 pl-5">
           <p data-testid="customer-name" className="m-0 line-clamp-2 break-words text-[16px] font-bold leading-tight text-ink [overflow-wrap:anywhere]" title={c.name || ""}>{c.name || "Pelanggan belum dicatat"}</p>

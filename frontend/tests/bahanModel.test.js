@@ -101,7 +101,8 @@ test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat,
   assert.ok(ubahModel.includes("Ajukan perubahan") && ubahModel.includes("menunggu persetujuan"), "jalur persetujuan berlabel jelas dan berstatus menunggu");
   const api = src("api.js"); for (const k of ["getKomponenLama", "catatKomponenLama", "koreksiKomponenLama", "batalKomponenLama", "unggahFotoKomponenLama", "/komponen-lama"]) assert.ok(api.includes(k), k);
   const ring = src("features", "production", "workspace", "RingkasanUnit.jsx");
-  for (const k of ["cuplikan-bahan", "cuplikan-dokumentasi", "kondisi-pelanggan", "catatan-produksi", "komplain-order", "onBagian(\"bahan\")", "onBagian(\"dokumentasi\")", "getProductionV2DocDetail", "lg:row-span-2"]) assert.ok(ring.includes(k), k);
+  // Profil unit (13 Nov 2026): Bahan & Foto = satu baris ketuk di Ringkasan (bukan kartu cuplikan besar); detail order tetap lengkap.
+  for (const k of ["cuplikan-buka-bahan", "cuplikan-buka-dokumentasi", "kondisi-pelanggan", "catatan-produksi", "komplain-order", "onBagian(\"bahan\")", "onBagian(\"dokumentasi\")", "barisBahan(data)", "barisFoto(ruang)"]) assert.ok(ring.includes(k), k);
   const ws = src("features", "production", "workspace", "UnitWorkspace.jsx"); for (const k of ["RingkasanUnit", "BahanTab", "riwayat-dua-sumber"]) assert.ok(ws.includes(k), k);
 });
 
@@ -111,5 +112,5 @@ test("Ringkasan Pekerjaan: empat fakta TERPISAH (status kerja administratif + su
   assert.equal(r.sumber, "Otomatis dari pemakaian bahan"); assert.equal(r.faktaJadwal, "Dikerjakan tanpa jadwal"); assert.equal(r.jadwal, "Belum dijadwalkan"); assert.equal(r.pemakaian, "2 catatan bahan baru · 1 komponen lama dipakai kembali"); assert.equal(r.qc, "QC: belum ada hasil");
   const k = ringkasPekerjaan({ adopsi: { kerja: { key: "MENUNGGU_QC", source: "APLIKASI" }, jadwal: { tanggal: "2026-10-24", meja: "TABLE_2", sumber: "ADMIN" }, pemakaianBahan: {} } });
   assert.equal(k.pemakaian, "Belum ada pemakaian tercatat"); assert.equal(k.jadwal, "24/10 · Meja 2 (Rencana Admin)"); assert.equal(k.qc, "QC: menunggu keputusan"); assert.equal(k.faktaJadwal, null);
-  const ring = src("features", "production", "workspace", "RingkasanUnit.jsx"); for (const x of ["pekerjaan-fakta", "fakta-tanpa-jadwal", "pekerjaan-catatan-bukan-qc", "Status kerja (administratif)", "bukan hasil QC, bukan siap serah Gudang, dan bukan siap kirim"]) assert.ok(ring.includes(x), x);
+  const ring = src("features", "production", "workspace", "RingkasanUnit.jsx"); for (const x of ["pekerjaan-jadwal", "pk.faktaJadwal", "pekerjaan-sumber", "kerja-segmen", "konfirmasiKerja(konf.key, u.unitCode)"]) assert.ok(ring.includes(x), x); // fakta tetap terpisah; penjelasan bukan-QC kini di konfirmasi resmi status kerja (konfirmasiKerja)
 });

@@ -511,7 +511,7 @@
 :root[data-theme="dark"] .app-shell.crm-skin.prod-skin .rc-sek { color: var(--crm-primary-ink) !important; }
 
 /* ── 18. STATUS PRODUKSI (daftar kerja per order, pipeline) + tab/pilihan generik ──────────── */
-:root .app-shell.crm-skin.prod-skin [role="tab"][aria-selected="true"]:not(.prod-pil):not(.prod-tab):not(.prod-rc-tab-item):not(.prod-ol-scope-item):not(.prod-pn-tab-item) { background: var(--crm-panel); color: var(--crm-primary-ink); box-shadow: var(--crm-shadow); }
+:root .app-shell.crm-skin.prod-skin [role="tab"][aria-selected="true"]:not(.prod-pil):not(.prod-tab):not(.prod-rc-tab-item):not(.prod-ol-scope-item):not(.prod-pn-tab-item):not(.pf-segmen-btn) { background: var(--crm-panel); color: var(--crm-primary-ink); box-shadow: var(--crm-shadow); }
 :root .app-shell.crm-skin.prod-skin [role="tablist"] > [role="tab"] { min-height: 44px; padding-inline: 16px; border-radius: 14px; font-size: 14px; font-weight: 500; }
 :root .app-shell.crm-skin.prod-skin [data-testid="daftar-kerja"] { display: flex; flex-direction: column; gap: 16px; padding: 0; }
 :root .app-shell.crm-skin.prod-skin [data-testid="arti-status"] { padding: 4px 18px; border-radius: 18px; background: var(--crm-panel); box-shadow: var(--crm-shadow); }

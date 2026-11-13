@@ -14,7 +14,7 @@ import {
 } from "@/features/production/qcHandoff.js";
 import { STAGE_STATUS_LABEL } from "@/features/production/workshopExecution.js";
 import { UnitCard } from "@/features/production/UnitCard.jsx";
-import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import PanelUnit from "@/features/production/rencana/PanelUnit.jsx";
 import { mergeQcWithViews } from "@/features/production/unitCardModel.js";
 import { wibDate } from "@/features/production/experience.js";
 
@@ -453,6 +453,8 @@ export default function ProductionQc() {
   const [selectedRunId, setSelectedRunId] = useState(null);
   const [cc, setCc] = useState(null);
   const [overviewUnitId, setOverviewUnitId] = useState(null);
+  const [tabProfil, setTabProfil] = useState({ unitId: null, bagian: "meja" }); // tab profil unit; unit lain = mulai dari "meja"
+  const bagianProfil = tabProfil.unitId === overviewUnitId ? tabProfil.bagian : "meja";
   const [sweeping, setSweeping] = useState(false);
   const sweepKey = useRef(null);
 
@@ -533,9 +535,9 @@ export default function ProductionQc() {
         )}
       </PageBody>
 
-      {overviewUnitId && (
-        <UnitOverviewDrawer unitId={overviewUnitId} onClose={() => setOverviewUnitId(null)} manageLabel="Putusan QC"
-          onManage={() => { const m = merged.find((x) => x.view?.unit?.id === overviewUnitId); setOverviewUnitId(null); if (m) setSelectedRunId(m.queue.runId); }} />
+      {(
+        <PanelUnit buka={overviewUnitId ? { unitId: overviewUnitId, bagian: bagianProfil } : null} onBagian={(b) => setTabProfil({ unitId: overviewUnitId, bagian: b })} onClose={() => setOverviewUnitId(null)}
+          aksiHalaman={{ label: "Putusan QC", onClick: () => { const m = merged.find((x) => x.view?.unit?.id === overviewUnitId); setOverviewUnitId(null); if (m) setSelectedRunId(m.queue.runId); } }} />
       )}
       {selectedRunId && <RunDetailModal runId={selectedRunId} onClose={() => { setSelectedRunId(null); load(); }} onChanged={load} />}
     </PageContainer>

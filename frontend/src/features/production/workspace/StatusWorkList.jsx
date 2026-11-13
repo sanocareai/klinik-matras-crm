@@ -17,8 +17,8 @@ import { FILTERS, SORTS, badgeTarget, bagianUntukAksi, nadaPerhatian, ringkasanK
 
 const GRID = "lg:grid lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1.5fr)_minmax(0,1.7fr)_minmax(0,1.5fr)_88px_minmax(0,1fr)_minmax(0,1.9fr)_24px] lg:items-center lg:gap-x-4";
 const PINTASAN = [
-  { bagian: "pekerjaan", label: "Target & PIC", Ikon: Target }, { bagian: "bahan", label: "Bahan", Ikon: Package },
-  { bagian: "dokumentasi", label: "Dokumentasi", Ikon: Camera }, { bagian: "riwayat", label: "Riwayat", Ikon: BookOpenText },
+  { bagian: "ringkasan", label: "Target & PIC", Ikon: Target }, { bagian: "bahan", label: "Bahan", Ikon: Package },
+  { bagian: "dokumentasi", label: "Foto", Ikon: Camera }, { bagian: "riwayat", label: "Riwayat", Ikon: BookOpenText },
 ];
 
 function Perhatian({ p, kecil = false }) {

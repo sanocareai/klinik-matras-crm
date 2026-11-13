@@ -88,7 +88,7 @@ test("halaman daftar: filter tidak diduplikasi di klien (server menyaring), Rese
 test("Pekerjaan: layanan dan ukuran dipisah; layanan lengkap tetap di rincian", () => {
   const p = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   assert.ok(p.includes('className="prod-ol-layanan-nama"') && p.includes('className="prod-ol-ukuran"'), "dua elemen terpisah");
-  assert.ok(src("features", "production", "OrderProduksiPanel.jsx").includes("layanan"), "rincian memuat layanan");
+  assert.ok(src("features", "production", "workspace", "RingkasanUnit.jsx").includes('<Baris label="Layanan" nilai={layanan || "Belum tercatat"}'), "rincian (profil unit) memuat layanan lengkap");
 });
 
 test("PilihanUrutan: pilihan tunggal tanpa baris kosong; tiap opsi satu kali (sumber duplikat 'Terbaru dulu' = placeholder FilterDropdown)", () => {

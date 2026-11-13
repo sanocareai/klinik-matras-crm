@@ -105,7 +105,7 @@ test("pengawatan baris: label pendek + ikon info + SATU tombol Lengkapi; tidak m
 });
 
 test("pengawatan drawer: Kelengkapan memakai klasifikasi server; pernyataan eksplisit (alasan + konfirmasi + kunci idempoten); izin; HPP terpisah dari biaya Finance", () => {
-  const k = src("features", "production", "KelengkapanBagian.jsx"); const panel = src("features", "production", "OrderProduksiPanel.jsx");
+  const k = src("features", "production", "KelengkapanBagian.jsx"); const ring = src("features", "production", "workspace", "RingkasanUnit.jsx");
   assert.ok(k.includes("data?.adopsi?.kelengkapan") && !/kerjaKey|klasifikasiKelengkapan|bahanLayakDinilai/.test(k), "klien tidak menurunkan klasifikasi sendiri");
   assert.ok(k.includes("izin.pernyataanTanpaBahan") && k.includes('data-testid="pernyataan-tanpa-izin"'), "izin dipakai; akun tanpa izin diberi penjelasan");
   assert.ok(k.includes('data-testid="pernyataan-konfirmasi"') && k.includes("alasan.trim().length < 5"), "konfirmasi + alasan minimal");
@@ -113,7 +113,7 @@ test("pengawatan drawer: Kelengkapan memakai klasifikasi server; pernyataan eksp
   assert.ok(/Bukan nilai persediaan dan bukan biaya\/jurnal Finance/.test(k) && k.includes("HPP operasional"), "HPP operasional dibedakan dari Finance");
   assert.ok(k.includes("KELENGKAPAN_BUKAN"), "opsional tidak dihitung kekurangan");
   assert.ok(k.includes('to="/warehouse/inventory"'), "arah perbaikan HPP ke Stok & Lokasi (Harga Berlaku)");
-  assert.ok(panel.includes('<KelengkapanBagian data={data} aktif={aktif} onDone={sesudahUbah} ringkas terbukaAwal={fokus === "kelengkapan"} />') && panel.includes('fokus !== "kelengkapan"'), "terpasang di drawer + fokus kelengkapan");
+  assert.ok(ring.includes('<KelengkapanBagian data={data} aktif={aktif} onDone={onDone} ringkas terbukaAwal={fokusKelengkapan} />') && ring.includes("const tampilKelengkapan = fokusKelengkapan ||"), "terpasang di Ringkasan profil unit + fokus kelengkapan (tampil bila ada kekurangan/pernyataan/penilaian)");
   assert.ok(k.includes("terbukaAwal") && k.includes('data-testid="kel-detail-toggle"'), "ringkas di panel; 'Lihat detail' membuka rincian (tanpa menulis)");
 });
 

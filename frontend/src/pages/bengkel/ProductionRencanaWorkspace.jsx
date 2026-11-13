@@ -17,7 +17,7 @@ import { bomLineAvailability } from "@/features/production/planning.js";
 import MaterialRowsEditor from "@/features/production/components/MaterialRowsEditor.jsx";
 import { fromRecord, rowsPayload, sameAsSaved, validateMaterialRows } from "@/features/production/materialRows.js";
 import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
-import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import PanelUnit from "@/features/production/rencana/PanelUnit.jsx";
 import { UpcomingCard } from "@/features/production/UnitCard.jsx";
 import { DragHandle, PlanCard } from "@/features/production/PlanCard.jsx";
 import { decideDrop, describeTarget, insertIndexAt, isPlanComplete, listWithInserted, planDisplayOrder, priorityInsertIndex, priorityInversion } from "@/features/production/planDnd.js";
@@ -439,6 +439,8 @@ export default function ProductionRencanaWorkspace() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [overviewUnitId, setOverviewUnitId] = useState(() => searchParams.get("unit") || null);
+  const [tabProfil, setTabProfil] = useState({ unitId: null, bagian: "ringkasan" }); // tab profil unit; unit lain = mulai dari "ringkasan"
+  const bagianProfil = tabProfil.unitId === overviewUnitId ? tabProfil.bagian : "ringkasan";
   // Dua tampilan utama: Meja (bawaan; backlog, Meja 1–4, drag) dan Corner (papan baca + penetapan PIC). Dipertahankan di URL (?tampilan=corner) supaya reload tidak berpindah.
   // State lokal (halaman ini dirender di dalam tab workspace yang tidak selalu re-render saat URL berubah — pola yang sama dengan overviewUnitId); URL hanya penanda untuk reload/tautan.
   const [tampilan, setTampilanState] = useState(() => (searchParams.get("tampilan") === "corner" ? "corner" : "meja"));
@@ -782,7 +784,7 @@ export default function ProductionRencanaWorkspace() {
         </div>, document.body)}
       {activationOpen && <RencanaActivationModal onClose={() => setActivationOpen(false)} />}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
-      {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={() => { load(); setCornerReload((n) => n + 1); }} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
+      <PanelUnit buka={overviewUnitId ? { unitId: overviewUnitId, bagian: bagianProfil } : null} onBagian={(b) => setTabProfil({ unitId: overviewUnitId, bagian: b })} onClose={closeOverview} onChanged={() => { load(); setCornerReload((n) => n + 1); }} aksiHalaman={{ label: "Kelola Rencana", onClick: () => openManageFor(overviewUnitId) }} />
       {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services, problems: refs.problems, candidates: refs.candidates, canRegisterOperator: refs.canRegisterOperator, defaultWorkCenterId: refs.defaultWorkCenterId, loaded: refs.loaded }} onRefsChanged={loadRefs} onStale={load} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
     </PageContainer>
   );
