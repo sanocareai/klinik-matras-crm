@@ -7,6 +7,7 @@ import { generateInsight } from "./insight.js";
 import { ENGINE_VERSION, THRESHOLDS as T } from "./weights.js";
 
 import { PILIH_KREDIT } from "../orderNilaiBersih.js";
+import { lampirkanPesanTerakhir } from "../../utils/pesanTerakhir.js";
 // ═══ SANO INTELLIGENCE ENGINE — orchestrator + data loaders ═══════════════════
 // buildCustomerIntelligence = PURE (dari ctx). load* = SATU-SATUNYA akses prisma.
 
@@ -43,14 +44,23 @@ const CUSTOMER_SELECT = {
     where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
     select: {
       id: true, channel: true, sessionId: true, lastMessageAt: true,
-      messages: { orderBy: { createdAt: "desc" }, take: 20, select: { direction: true, content: true, createdAt: true } },
+      // messages (20 terbaru) dilampirkan lewat denganPesan() — include {take:20}
+      // Prisma memuat SEMUA pesan tanpa LIMIT (audit 13 Nov 2026, utils/pesanTerakhir.js).
     },
   },
 };
 
+async function denganPesan(prisma, customers) {
+  await lampirkanPesanTerakhir(prisma, customers.flatMap((c) => c.conversations), {
+    jumlah: 20, select: { direction: true, content: true, createdAt: true },
+  });
+  return customers;
+}
+
 export async function loadCustomerContext(prisma, customerId) {
   const customer = await prisma.customer.findUnique({ where: { id: customerId }, select: CUSTOMER_SELECT });
   if (!customer) return null;
+  await denganPesan(prisma, [customer]);
   return { customer, conversations: customer.conversations };
 }
 
@@ -77,7 +87,7 @@ async function loadCandidates(prisma, scope, kind) {
         { pipelineStage: "PROSPECT" },
       ] }] };
 
-  return prisma.customer.findMany({ where, select: CUSTOMER_SELECT, take: 80 });
+  return denganPesan(prisma, await prisma.customer.findMany({ where, select: CUSTOMER_SELECT, take: 80 }));
 }
 
 export async function buildPriorityList(prisma, scope) {
@@ -115,7 +125,7 @@ export async function loadAllPriorityCandidates(prisma, { limit } = {}) {
     { orders: { some: { hasComplaint: true } } },
     { pipelineStage: "PROSPECT" },
   ] }] };
-  return prisma.customer.findMany({ where, select: CUSTOMER_SELECT, ...(limit ? { take: limit } : {}) });
+  return denganPesan(prisma, await prisma.customer.findMany({ where, select: CUSTOMER_SELECT, ...(limit ? { take: limit } : {}) }));
 }
 
 export async function buildOpportunityList(prisma, scope) {

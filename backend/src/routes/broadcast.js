@@ -37,6 +37,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { buatKolase, jalurKolase, hapusKolase } from "../services/kolaseGambar.js";
 import { prisma } from "../db.js";
+import { lampirkanPesanTerakhir } from "../utils/pesanTerakhir.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendText, sendMedia } from "../services/wahaClient.js";
 
@@ -611,14 +612,17 @@ async function ambilKandidat(filters = {}) {
           lastMessageAt: true,
           // Nomor CS mana yang selama ini dipakai bicara dengan orang ini.
           sessionId: true,
-          // Arah pesan TERAKHIR — dasar saringan "belum dibalas".
-          messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true } },
+          id: true,
         },
         orderBy: { lastMessageAt: "desc" },
         take: 1,
       },
     },
   });
+  // Arah pesan TERAKHIR — dasar saringan "belum dibalas". BUKAN include
+  // messages {take:1}: Prisma memuat SEMUA pesan semua percakapan audiens
+  // (tanpa LIMIT) — lihat utils/pesanTerakhir.js.
+  await lampirkanPesanTerakhir(prisma, customers.flatMap((c) => c.conversations), { select: { direction: true } });
 
   const kandidat = customers
     .map((c) => ({

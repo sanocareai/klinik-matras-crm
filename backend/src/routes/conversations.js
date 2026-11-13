@@ -19,6 +19,7 @@ import { rencanaForward } from "../utils/forwardPlan.js";
 import { simpanPesanGaleri } from "../utils/simpanPesanGaleri.js";
 import { klaimJikaBelumDimiliki, ambilAlihPercakapan, transferPercakapan, PerpindahanError } from "../utils/perpindahanPercakapan.js";
 import { orderTerdampak } from "../utils/kreditOrderPerpindahan.js";
+import { lampirkanPesanTerakhir } from "../utils/pesanTerakhir.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -601,7 +602,8 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
     ],
     include: {
       customer: true,
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      // `messages` (pesan terakhir) dilampirkan di bawah lewat lampirkanPesanTerakhir —
+      // include { take: 1 } Prisma menarik SEMUA pesan tanpa LIMIT (audit 13 Nov 2026).
       assignedTo: { select: { id: true, name: true, avatarUrl: true } },
       // Sales yang PERTAMA kirim balasan — badge terpisah dari assignedTo
       // (yang SEDANG menangani), lihat catatan panjang di schema.prisma.
@@ -613,6 +615,7 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
 
   const hasMore = conversations.length > limit;
   const page    = hasMore ? conversations.slice(0, limit) : conversations;
+  await lampirkanPesanTerakhir(prisma, page);
 
   // BUG YANG DIPERBAIKI (26 Agustus 2026): daftar percakapan SELALU
   // menampilkan pesan TERAKHIR sebagai potongan preview, walau kecocokan
@@ -678,12 +681,12 @@ conversationRouter.get("/:id", canReadConversation, async (req, res) => {
     where: { id: req.params.id },
     include: {
       customer: true,
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
       assignedTo: { select: { id: true, name: true, avatarUrl: true } },
       firstResponder: { select: { id: true, name: true } },
     },
   });
   if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  await lampirkanPesanTerakhir(prisma, [conv]);
 
   const { messages, ...rest } = conv;
   const lastMsg = messages[0] || null;

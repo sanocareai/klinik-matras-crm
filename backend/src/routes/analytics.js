@@ -38,6 +38,7 @@ import { atribusiOrderWhere } from "../services/salesOwner.js";
 // pakai aggregateBersih/groupByBersih/NILAI_BERSIH_SQL/nilaiBersih (services/orderNilaiBersih.js). Dijaga tes nilaiBersihRegistry.test.js.
 import { aggregateBersih, groupByBersih, NILAI_BERSIH_SQL, PILIH_KREDIT, nilaiBersih } from "../services/orderNilaiBersih.js";
 import { cacheSingkat } from "../middleware/cacheSingkat.js";
+import { lampirkanPesanTerakhir } from "../utils/pesanTerakhir.js";
 
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
@@ -2907,11 +2908,12 @@ analyticsRouter.get("/follow-ups", async (req, res) => {
         id: true, customerId: true, assignedToId: true, lastMessageAt: true, sessionId: true,
         customer: { select: { name: true } },
         assignedTo: { select: { name: true } },
-        messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true, content: true } },
       },
       orderBy: { lastMessageAt: "asc" },
       take: 100,
     });
+    // Pesan terakhir: BUKAN include {take:1} (Prisma memuat semua pesan) — utils/pesanTerakhir.js
+    await lampirkanPesanTerakhir(prisma, convos, { select: { direction: true, content: true } });
 
     // ── VERIFIKASI LOGIKA FOLLOW-UP (refinement Wave 2B) ──────────────────────
     // "Menunggu balasan kita" HANYA bila pesan TERAKHIR di percakapan itu dari
@@ -3025,12 +3027,13 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
             // jadi kartu "Lead Panas" hanya bisa mengarah ke /pipeline umum,
             // sales harus cari sendiri percakapannya secara manual.
             id: true, lastMessageAt: true, sessionId: true,
-            messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true, content: true } },
           },
         },
       },
       take: 80,
     });
+    // Pesan terakhir: BUKAN include {take:1} (Prisma memuat semua pesan) — utils/pesanTerakhir.js
+    await lampirkanPesanTerakhir(prisma, customers.flatMap((c) => c.conversations), { select: { direction: true, content: true } });
 
     const now = Date.now();
     const items = customers.map((c) => {
@@ -3113,9 +3116,9 @@ analyticsRouter.get("/recommendations", async (req, res) => {
     const [openConvos, unassignedCount, readyOrders, complaintCount] = await Promise.all([
       prisma.conversation.findMany({
         where: { status: "OPEN", type: "INDIVIDUAL", ...convScope },
-        select: { lastMessageAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true } } },
+        select: { id: true, lastMessageAt: true },
         take: 300,
-      }),
+      }).then((cs) => lampirkanPesanTerakhir(prisma, cs, { select: { direction: true } })), // bukan include {take:1} — utils/pesanTerakhir.js
       prisma.conversation.count({ where: { status: "OPEN", type: "INDIVIDUAL", assignedToId: null } }),
       prisma.order.findMany({ where: tanpaOrderSpam({ status: "READY", ...custScopeRel }), select: { value: true, ...PILIH_KREDIT } }),
       prisma.order.count({ where: tanpaOrderSpam({ hasComplaint: true, ...custScopeRel }) }),

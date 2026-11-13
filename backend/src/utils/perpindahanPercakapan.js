@@ -9,6 +9,7 @@
 //  • Tiga tulisan terpisah tanpa transaksi → bila salah satu gagal, percakapan terlanjur pindah tapi riwayat/label tidak.
 import { rolesOf } from "../middleware/authorize.js";
 import { statusBelumDibalas } from "./belumDibalas.js";
+import { lampirkanPesanTerakhir } from "./pesanTerakhir.js";
 import { orderTerdampak, siapkanDaftar, terapkanKeputusanKredit } from "./kreditOrderPerpindahan.js";
 
 export const AMBANG_AMBIL_ALIH_MENIT = 60;
@@ -54,9 +55,10 @@ export async function klaimJikaBelumDimiliki(prisma, { conversation, user, messa
 export async function ambilAlihPercakapan(prisma, { conversationId, user, sekarang = Date.now() }) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    include: { customer: true, messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: { customer: true },
   });
   if (!conv) throw new PerpindahanError("Percakapan tidak ditemukan", 404);
+  await lampirkanPesanTerakhir(prisma, [conv]); // bukan include {take:1} — lihat utils/pesanTerakhir.js
   if (conv.type === "GROUP" || !conv.customerId) throw new PerpindahanError("Percakapan grup tidak bisa diambil alih", 400);
   if (conv.assignedToId === user.id) throw new PerpindahanError("Percakapan ini sudah jadi lead kamu", 400);
 

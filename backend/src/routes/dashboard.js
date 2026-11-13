@@ -1,5 +1,6 @@
 import express from "express";
 import { prisma } from "../db.js";
+import { lampirkanPesanTerakhir } from "../utils/pesanTerakhir.js";
 import { requireAuth } from "../middleware/auth.js";
 import { KNOWN_SESSIONS } from "../services/wahaClient.js";
 // Batas hari WIB — WAJIB, jangan `setHours(0,0,0,0)` polos (lihat catatan
@@ -13,12 +14,11 @@ dashboardRouter.use(requireAuth);
 dashboardRouter.get("/recent-conversations", async (req, res) => {
   const conversations = await prisma.conversation.findMany({
     orderBy: { lastMessageAt: "desc" },
-    include: {
-      customer: true,
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
+    include: { customer: true },
     take: 5,
   });
+  // include messages {take:1} Prisma memuat SEMUA pesan — lihat utils/pesanTerakhir.js
+  await lampirkanPesanTerakhir(prisma, conversations);
   res.json(conversations);
 });
 
