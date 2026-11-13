@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { wadahPortal } from "@/features/production/rencana/rencanaModel.js";
 
 // Konfirmasi SATU ketukan (pola lembar aksi): judul, penjelasan dampak, tombol utama + Batal. Layar sempit = lembar bawah; Esc/klik di luar menutup.
 // Dipakai untuk "Tandai tiba" dan "Ubah ke Diproses" di Rencana Produksi — tindakan kecil yang tidak butuh formulir.
@@ -28,5 +29,5 @@ export default function KonfirmasiCepat({ anchor, judul, isi, labelYa, onYa, onC
         <button type="button" className="rc-konfirmasi-btn netral" onClick={onClose}>Batal</button>
         <button type="button" data-ya className="rc-konfirmasi-btn utama" data-testid={`${testid}-ya`} onClick={onYa}>{labelYa}</button>
       </div>
-    </div>, document.body);
+    </div>, wadahPortal());
 }

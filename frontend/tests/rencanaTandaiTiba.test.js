@@ -57,3 +57,15 @@ test("pengawatan: chip Belum tiba memicu TERIMA, halaman mengirim tutupPickup le
   assert.match(halaman, /catatPenerimaanWorkshop\(it\.unitId, \{ fisikDiterima: true, tutupPickup: true \}\)/);
   assert.match(src("api.js"), /tutupPickup: tutupPickup === true \|\| undefined/);
 });
+
+test("pergantian tiba di tempat: Belum tiba -> Mencatat… -> Di workshop tanpa kartu meredup; gagal = chip kembali; tombol konfirmasi rata tengah", () => {
+  const halaman = src("pages", "bengkel", "ProductionRencanaMinggu.jsx");
+  const fn = halaman.slice(halaman.indexOf("async function tandaiTiba"), halaman.indexOf("async function ubahDiproses"));
+  assert.doesNotMatch(fn, /tandaiPending/, "tandai tiba tidak memakai status Menyimpan… seluruh kartu");
+  assert.match(fn, /aturTiba\(id, "mencatat"\)/); assert.match(fn, /aturTiba\(it\.unitId, "ok"\)/); assert.match(fn, /aturTiba\(it\.unitId, null\)/);
+  assert.match(halaman, /<TibaKonteks\.Provider value=\{tibaStatus\}>/);
+  const kartu = src("features", "production", "rencana", "KartuUnit.jsx");
+  assert.match(kartu, /const diterima = item\.diterima \|\| tiba === "ok"/);
+  assert.match(kartu, /diterima && f\.code === "BELUM_DITERIMA"/, "peringatan belum diterima hilang bersamaan");
+  assert.match(src("features", "production", "rencana", "rencana.css"), /\.rc-konfirmasi-btn \{[^}]*justify-content: center/);
+});

@@ -19,12 +19,16 @@
 .rc-konfirmasi.lembar { animation-name: rc-naik; }
 @keyframes rc-muncul { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
 @keyframes rc-naik { from { transform: translateY(100%); } }
-.rc-konfirmasi-btn { flex: 1; min-height: 44px; border-radius: 12px; border: 0; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
+.rc-konfirmasi-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; text-align: center; padding: 0 14px; min-height: 44px; border-radius: 12px; border: 0; font-size: 14px; font-weight: 600 !important; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
 .rc-konfirmasi-btn:active { transform: scale(.97); }
 .rc-konfirmasi-btn.netral { background: rgba(120, 120, 128, .16); color: inherit; }
 .rc-konfirmasi-btn.utama { background: var(--crm-primary, #2563eb); color: #fff; }
 .rc-konfirmasi-btn:hover { filter: brightness(1.05); }
-@media (prefers-reduced-motion: reduce) { .rc-chip-titik, .rc-konfirmasi { animation: none; } }
+.rc-chip-tiba.mencatat { cursor: default; gap: 6px; }
+.rc-chip-tiba.mencatat:hover { filter: none; box-shadow: none; }
+.rc-tiba-baru { animation: rc-tiba-kilau 1.2s ease-out; }
+@keyframes rc-tiba-kilau { 0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, .55); } 100% { box-shadow: 0 0 0 8px rgba(52, 199, 89, 0); } }
+@media (prefers-reduced-motion: reduce) { .rc-chip-titik, .rc-konfirmasi, .rc-tiba-baru { animation: none; } }
 
 /* Seret-lepas berbasis pointer (useSeretPointer.js): kartu terangkat, sasaran di bawah jari/kursor; area tempat kosong bertinggi tetap. */
 body.rc-sedang-seret, body.rc-sedang-seret * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }

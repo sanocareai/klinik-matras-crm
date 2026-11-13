@@ -22,6 +22,7 @@ import KonfirmasiCepat from "@/features/production/rencana/KonfirmasiCepat.jsx";
 import useSeretPointer from "@/features/production/rencana/useSeretPointer.js";
 import SalinanSeret from "@/features/production/rencana/SalinanSeret.jsx";
 import PanelUnit from "@/features/production/rencana/PanelUnit.jsx";
+import { TibaKonteks } from "@/features/production/rencana/KartuUnit.jsx";
 import RencanaCornerView from "@/features/production/RencanaCornerView.jsx";
 import { bacaUrl, keputusanLepas, keputusanLepasMeja, labelHari, labelMinggu, labelTanggal, mejaTeks, pesanGagalJadwal, pickupBelumDitutup, shiftKey, slotBawaan, teksHasilTiba, todayWib, tulisUrl } from "@/features/production/rencana/rencanaModel.js";
 
@@ -64,6 +65,8 @@ export default function ProductionRencanaMinggu() {
     pesanTimer.current = setTimeout(() => { setPesan(null); setUndo(null); }, tone === "ok" ? 15000 : 9000);
   }, []);
   useEffect(() => () => clearTimeout(pesanTimer.current), []);
+  const [tibaStatus, setTibaStatus] = useState(() => new Map()); // unitId -> "mencatat" | "ok" (kartu berganti di tempat, lihat KartuUnit)
+  const aturTiba = (id, st) => setTibaStatus((m) => { const n = new Map(m); if (st) n.set(id, st); else n.delete(id); return n; });
   const tandaiPending = (ids, on) => setPendingIds((p) => { const n = new Set(p); for (const id of ids) (on ? n.add(id) : n.delete(id)); return n; });
 
   const bukaPapan = () => openInActiveTab(`${PAPAN_V2}?date=${hari}`, { title: "Papan Meja" }); // papan lanjutan (BOM, reservasi, urutan manual)
@@ -88,22 +91,22 @@ export default function ProductionRencanaMinggu() {
     if (kind === "AKTIVASI") return setModal({ jenis: "aktivasi", item: it });
     if (kind === "PAPAN_V2") return openInActiveTab(`${PAPAN_V2}?date=${it.tanggal || hari}`, { title: "Papan Meja" });
     if (kind === "KELUARKAN") return keluarkan(it);
-    if (kind === "TERIMA") return setKonfirmasi({ jenis: "tiba", items: aktif(it).filter((x) => !x.diterima), anchor: el || null });
+    if (kind === "TERIMA") return setKonfirmasi({ jenis: "tiba", items: aktif(it).filter((x) => !x.diterima && !tibaStatus.has(x.unitId)), anchor: el || null });
     if (kind === "DIPROSES") return setKonfirmasi({ jenis: "diproses", items: [it], anchor: el || null });
     return undefined;
   }
   // TANDAI TIBA: penerimaan workshop resmi (pelaku, waktu, lokasi bawaan). Pickup yang belum ditutup driver ikut ditutup server — Produksi tidak menunggu Armada.
   async function tandaiTiba(items) {
     const ids = items.map((i) => i.unitId); setKonfirmasi(null);
-    tandaiPending(ids, true); tampilPesan(items.length === 1 ? `Mencatat ${items[0].unitCode} tiba…` : `Mencatat ${items.length} unit tiba…`, { tone: "busy" });
+    for (const id of ids) aturTiba(id, "mencatat"); tampilPesan(items.length === 1 ? `Mencatat ${items[0].unitCode} tiba…` : `Mencatat ${items.length} unit tiba…`, { tone: "busy" });
     const hasil = [];
     for (const it of items) { // berurutan: tiap unit punya kunci baris sendiri di server; satu gagal tidak membatalkan yang lain
-      try { const r = await api.catatPenerimaanWorkshop(it.unitId, { fisikDiterima: true, tutupPickup: true }); hasil.push({ ok: true, unitCode: it.unitCode, pickupDitutup: !!r.pickup?.ditutup }); }
-      catch (e) { hasil.push({ ok: false, unitCode: it.unitCode, pesan: friendlyError(e) }); }
+      try { const r = await api.catatPenerimaanWorkshop(it.unitId, { fisikDiterima: true, tutupPickup: true }); hasil.push({ ok: true, unitCode: it.unitCode, pickupDitutup: !!r.pickup?.ditutup }); aturTiba(it.unitId, "ok"); }
+      catch (e) { hasil.push({ ok: false, unitCode: it.unitCode, pesan: friendlyError(e) }); aturTiba(it.unitId, null); }
     }
     tampilPesan(teksHasilTiba(hasil), { tone: hasil.some((h) => !h.ok) ? "err" : "ok" });
     setSeleksi((m) => { const n = new Map(m); for (const id of ids) n.delete(id); return n; });
-    tandaiPending(ids, false); reloadAll();
+    reloadAll(); // "ok" tetap disimpan: data server berikutnya juga diterima=true, jadi tidak ada kedip balik ke "Belum tiba"
   }
   async function ubahDiproses(it) {
     setKonfirmasi(null); tandaiPending([it.unitId], true); tampilPesan(`Mengubah order ${it.orderNumber || it.unitCode} ke Diproses…`, { tone: "busy" });
@@ -175,13 +178,14 @@ export default function ProductionRencanaMinggu() {
   const toggle = (it) => setSeleksi((m) => { const n = new Map(m); if (n.has(it.unitId)) n.delete(it.unitId); else n.set(it.unitId, it); return n; });
   const pilihSemuaOrder = (it) => setSeleksi((m) => { const n = new Map(m); n.set(it.unitId, it); for (const u of it.saudaraSiap || []) n.set(u.unitId, { unitId: u.unitId, unitCode: u.unitCode, revisiJadwal: u.revisiJadwal, unitCas: u.unitCas, diterima: u.diterima, jadwal: null }); return n; });
 
-  const belumTibaDipilih = [...seleksi.values()].filter((x) => !x.diterima);
+  const belumTibaDipilih = [...seleksi.values()].filter((x) => !x.diterima && !tibaStatus.has(x.unitId));
   const kTiba = konfirmasi?.jenis === "tiba" ? konfirmasi.items : [];
   const kTutupPickup = kTiba.filter(pickupBelumDitutup).length;
   const visibleRunIds =(dayData?.stations || []).flatMap((s) => s.items).map((i) => i.v2?.runId).filter(Boolean);
   const visibleUnitIds = [...(antrean?.items || []).map((i) => i.unitId), ...(dayData?.stations || []).flatMap((s) => s.items).map((i) => i.unitId)];
 
   return (
+    <TibaKonteks.Provider value={tibaStatus}>
     <PageContainer fluid className={`prod-halaman${sempit ? " !p-3" : ""}`}>
       {sempit ? (
         <div data-testid="header-mobile">
@@ -284,5 +288,6 @@ export default function ProductionRencanaMinggu() {
       {modal?.jenis === "jadwal" &&<JadwalModal item={modal.item} minggu={minggu} awal={modal.awal} onClose={() => setModal(null)} onSaved={sesudahSimpan} onError={() => reloadAll()} />}
       {modal?.jenis === "aktivasi" && <AktivasiV2Modal item={modal.item} awal={modal.item.jadwal?.tanggal ? { date: modal.item.jadwal.tanggal, station: modal.item.jadwal.meja } : slotBawaan(minggu)} onClose={() => setModal(null)} onDone={({ item }) => { setModal(null); tampilPesan(`${item.unitCode} diaktifkan di Pelaksanaan Meja — Run dibuka dan jadwal Meja dibuat.`); reloadAll(); }} />}
     </PageContainer>
+    </TibaKonteks.Provider>
   );
 }

@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CalendarClock, Check, ChevronRight, GripVertical, Loader2, MoreHorizontal, Target, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -13,8 +13,12 @@ const mejaTeks = (m) => (m ? `Meja ${String(m).replace("TABLE_", "")}` : null);
 // Satu gaya ikon untuk seluruh halaman Rencana (garis tipis, ujung bulat) dan satu pegas animasi.
 export const IK = Object.freeze({ strokeWidth: 1.75, absoluteStrokeWidth: false });
 export const PEGAS = Object.freeze({ type: "spring", stiffness: 380, damping: 32, mass: 0.8 });
+// Status "tandai tiba" per unit (unitId -> "mencatat" | "ok"), disediakan halaman Rencana. "ok" = server sudah mencatat penerimaan;
+// kartu langsung berganti ke "Di workshop" tanpa menunggu muat ulang (muat ulang berikutnya membawa data yang sama dari server).
+export const TibaKonteks = createContext(new Map());
 
 function MenuLainnya({ item, izin, onMenu }) {
+  const tiba = useContext(TibaKonteks).get(item.unitId) || null;
   const [open, setOpen] = useState(false); const [pos, setPos] = useState(null); const ref = useRef(null); const listRef = useRef(null);
   const toggle = () => { if (!open && ref.current) { const r = ref.current.getBoundingClientRect(); setPos({ top: r.bottom + 4, left: Math.max(8, r.right - 200) }); } setOpen((v) => !v); };
   useEffect(() => {
@@ -27,7 +31,7 @@ function MenuLainnya({ item, izin, onMenu }) {
   }, [open]);
   const isi = [
     { k: "BUKA", t: "Buka ruang kerja unit" },
-    ...(izin.terima && !item.diterima ? [{ k: "TERIMA", t: "Tandai sudah tiba di workshop" }] : []),
+    ...(izin.terima && !item.diterima && !tiba ? [{ k: "TERIMA", t: "Tandai sudah tiba di workshop" }] : []),
     ...(izin.jadwalkan && item.sumber !== "V2" && item.jalur !== "V2" && !item.perluKeputusan ? [{ k: "ATUR", t: "Atur tanggal, target, prioritas…" }] : []),
     ...(item.sumber === "ADMIN" || item.jadwal?.sumber === "ADMIN" ? [{ k: "RIWAYAT", t: "Riwayat jadwal" }] : []),
     ...(izin.jadwalkan && (item.sumber === "ADMIN" || item.jadwal?.sumber === "ADMIN") ? [{ k: "KELUARKAN", t: "Keluarkan dari jadwal" }] : []),
@@ -47,11 +51,12 @@ function MenuLainnya({ item, izin, onMenu }) {
 
 export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, onBuka, draggable = false, onSeretMulai, diseret = false, dense = false, selectable = false, selected = false, onToggleSelect, onPilihSemuaOrder, pending = false }) {
   const aksi = aksiUtama(item, izin);
-  const bahan = badgeBahan(item.bahan); const posisi = badgePosisi(item.diterima, item.posisi?.label);
+  const tiba = useContext(TibaKonteks).get(item.unitId) || null; const diterima = item.diterima || tiba === "ok";
+  const bahan = badgeBahan(item.bahan); const posisi = badgePosisi(diterima, item.posisi?.label);
   const sumber = item.sumber || item.jadwal?.sumber || null;
   const jadwal = item.jadwal || (item.tanggal ? { sumber: item.sumber, tanggal: item.tanggal, meja: item.meja } : null);
   const meja = mejaTeks(jadwal?.meja || item.meja);
-  const perhatian = (item.perhatian || []).filter((f) => !String(f.code).startsWith("BAHAN")); // bahan sudah tampil sebagai badge berwarna
+  const perhatian = (item.perhatian || []).filter((f) => !String(f.code).startsWith("BAHAN") && !(diterima && f.code === "BELUM_DITERIMA")); // bahan sudah tampil sebagai badge berwarna
   const kartuRef = useRef(null);
   return (
     <motion.article ref={kartuRef} layout="position" initial={{ opacity: 0, y: 6 }} animate={{ opacity: diseret ? 0.35 : 1, y: 0, scale: diseret ? 0.98 : 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={PEGAS}
@@ -77,10 +82,19 @@ export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, o
           {mode !== "antrean" && meja && <Badge variant="neutral">{meja}</Badge>}
           {item.targetSelesai && <Badge variant="neutral" title="Target selesai"><Target {...IK} size={11} aria-hidden /> {labelHari(item.targetSelesai)}</Badge>}
           {item.pic && <Badge variant="neutral" title="PIC"><User {...IK} size={11} aria-hidden /> {item.pic}</Badge>}
-          {!item.diterima && izin.terima && !pending
-            ? <button type="button" className="rc-chip-tiba" data-testid="kartu-tandai-tiba" aria-label={`Tandai ${item.unitCode} sudah tiba di workshop`} title="Ketuk bila unit sudah ada di workshop" onClick={(e) => onAksi?.("TERIMA", item, e.currentTarget)}>
-                <span className="rc-chip-titik" aria-hidden />{posisi.text}<ChevronRight {...IK} size={12} aria-hidden /></button>
-            : <Badge variant={posisi.tone}>{item.diterima && <Check {...IK} size={11} aria-hidden />} {posisi.text}</Badge>}
+          {/* Satu slot status tiba: chip "Belum tiba" -> "Mencatat…" -> "Di workshop" berganti di tempat (crossfade + pop centang), tanpa kartu meredup. */}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {diterima
+              ? <motion.span key="tiba-ok" className="inline-flex" initial={tiba === "ok" ? { opacity: 0, scale: 0.8 } : false} animate={{ opacity: 1, scale: 1 }} transition={PEGAS} data-testid="kartu-status-tiba" data-status="ok">
+                  <Badge variant="green" className={tiba === "ok" ? "rc-tiba-baru" : ""}><Check {...IK} size={11} aria-hidden /> {posisi.text}</Badge></motion.span>
+              : tiba === "mencatat"
+                ? <motion.span key="tiba-catat" className="rc-chip-tiba mencatat" role="status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.15 }} data-testid="kartu-status-tiba" data-status="mencatat">
+                    <Loader2 {...IK} size={12} className="animate-spin" aria-hidden />Mencatat…</motion.span>
+                : izin.terima && !pending
+                  ? <motion.button key="tiba-chip" type="button" className="rc-chip-tiba" data-testid="kartu-tandai-tiba" aria-label={`Tandai ${item.unitCode} sudah tiba di workshop`} title="Ketuk bila unit sudah ada di workshop" onClick={(e) => onAksi?.("TERIMA", item, e.currentTarget)} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.15 }}>
+                      <span className="rc-chip-titik" aria-hidden />{posisi.text}<ChevronRight {...IK} size={12} aria-hidden /></motion.button>
+                  : <motion.span key="tiba-belum" className="inline-flex" exit={{ opacity: 0 }}><Badge variant={posisi.tone}>{posisi.text}</Badge></motion.span>}
+          </AnimatePresence>
           {bahan.tone !== "neutral" && <Badge variant={bahan.tone} className={bahan.tone === "red" ? "rc-b-red" : ""}>{bahan.text}</Badge>}{/* "Tanpa rencana bahan" bukan masalah (opsional) — tidak ditampilkan agar kartu tenang */}
           {item.prioritas?.key && item.prioritas.key !== "NORMAL" && <Badge variant="red" className="rc-b-red">{item.prioritas.label}</Badge>}
         </div>
