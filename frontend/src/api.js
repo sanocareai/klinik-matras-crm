@@ -2463,4 +2463,14 @@ export const api = {
   studioFeedbackQueue: (status = "NEW") => request(`/studio/feedback?status=${status}`),
   studioReview: (id, action) => request(`/studio/feedback/${id}`, { method: "PATCH", body: JSON.stringify({ action }) }),
   studioTestCases: () => request("/studio/test-cases"),
+  // AI Studio MVP 2 — Copilot Inbox (draft untuk sales; tidak pernah mengirim pesan sendiri)
+  studioCopilotAkses: () => request("/studio/copilot/akses"),
+  studioCopilotDraft: (conversationId) => request(`/studio/copilot/${conversationId}/draft`, { method: "POST" }),
+  studioCopilotOutcome: (draftId, data) => request(`/studio/copilot/drafts/${draftId}/outcome`, { method: "POST", body: JSON.stringify(data) }),
+  studioCopilotCrm: (draftId, data) => request(`/studio/copilot/drafts/${draftId}/crm`, { method: "POST", body: JSON.stringify(data) }),
+  studioCopilotStats: (hari = 14) => request(`/studio/copilot/stats?hari=${hari}`),
+  studioCopilotUsers: () => request("/studio/copilot/users"),
+  studioCopilotSetUsers: (userIds) => request("/studio/copilot/users", { method: "PUT", body: JSON.stringify({ userIds }) }),
+  studioCopilotContohGaya: () => request("/studio/copilot/contoh-gaya"),
+  studioCopilotSetContohGaya: (ids) => request("/studio/copilot/contoh-gaya", { method: "PUT", body: JSON.stringify({ ids }) }),
 };

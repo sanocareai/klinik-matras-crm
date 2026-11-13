@@ -4,6 +4,9 @@ import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
 // Lazy: OrderEditDrawer menarik OrderSection (±69 kB) — cuma dimuat saat "Buat Order" pertama kali dibuka.
 const OrderEditDrawer = lazy(() => import("../CustomerPanel/OrderEditDrawer.jsx"));
+// Lazy: panel Copilot (AI Studio MVP 2) hanya dimuat untuk user pilot saat dibuka.
+const CopilotPanel = lazy(() => import("./CopilotPanel.jsx"));
+import { nasibDraft, gabungBubble } from "./copilotLogic.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { useDraft, useReplyTarget, useEditingMessage, useComposerStore } from "../../stores/composerStore.js";
@@ -235,6 +238,14 @@ function EmojiMartPopup({ onSelect, onClose }) {
   );
 }
 
+// AI Studio MVP 2 — apakah user ini pilot Copilot. Ditanya SEKALI per muat
+// halaman (bukan per percakapan); gagal → dianggap bukan pilot (Saran AI lama).
+let aksesCopilotPromise = null;
+function cekAksesCopilot() {
+  aksesCopilotPromise ||= api.studioCopilotAkses().then((r) => !!r?.boleh).catch(() => false);
+  return aksesCopilotPromise;
+}
+
 // ── Composer utama (Fase D) ───────────────────────────────────────────────
 export default function Composer({ conversation, mediaUploaderRef }) {
   const conversationId = conversation.id;
@@ -256,6 +267,12 @@ export default function Composer({ conversation, mediaUploaderRef }) {
   // Wave 5 (redesign Inbox) — "Suggest Reply". Tidak relevan untuk grup
   // (endpoint butuh customerId tunggal, sama seperti Buat Order di atas).
   const [showSuggestReply, setShowSuggestReply] = useState(false);
+  // Copilot (AI Studio MVP 2): user pilot membuka panel Copilot dari menu "Saran AI" yang sama;
+  // user lain tetap mendapat Saran AI lama (SuggestReplyPopover).
+  const [copilotBoleh, setCopilotBoleh] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
+  // Draft yang dipakai lewat "Pakai" — nasibnya (apa adanya / diedit) dicatat saat sales menekan Kirim.
+  const copilotDipakai = useRef(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const textareaRef = useRef(null);
@@ -266,7 +283,16 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     setShowProductPicker(false);
     setShowCreateOrder(false);
     setShowSuggestReply(false);
+    setShowCopilot(false);
+    copilotDipakai.current = null;
   }, [conversationId]);
+
+  useEffect(() => {
+    if (isGroup) return;
+    let alive = true;
+    cekAksesCopilot().then((b) => { if (alive) setCopilotBoleh(b); });
+    return () => { alive = false; };
+  }, [isGroup]);
 
   useEffect(() => {
     if (!draft && textareaRef.current) textareaRef.current.style.height = "auto";
@@ -297,8 +323,28 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     if (!text) return;
     if (editingMessage) { handleSaveEdit(text); return; }
     sendMutation.mutate({ content: text, replyTo: replyTarget });
+    catatNasibCopilot(text);
     setDraft("");
     useComposerStore.getState().clearReply();
+  }
+
+  // Nasib draft Copilot yang dipakai lewat "Pakai": dicatat sekali, saat pesan pertama sesudahnya dikirim.
+  function catatNasibCopilot(teksDikirim) {
+    const d = copilotDipakai.current;
+    if (!d) return;
+    copilotDipakai.current = null;
+    api.studioCopilotOutcome(d.draftId, { outcome: nasibDraft(d.teksAsli, teksDikirim), sentText: teksDikirim }).catch(() => {});
+  }
+
+  // "Kirim semua bubble" dari panel Copilot — lewat jalur kirim yang SAMA (useSendMessage), berurutan.
+  async function kirimSemuaCopilot(bubbles, draftId, teksAsli) {
+    for (const [i, content] of bubbles.entries()) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 900)); // jeda kecil supaya terasa diketik, urutan terjaga
+      await sendMutation.mutateAsync({ content, replyTo: i === 0 ? replyTarget : null });
+    }
+    useComposerStore.getState().clearReply();
+    const sentText = gabungBubble(bubbles);
+    api.studioCopilotOutcome(draftId, { outcome: nasibDraft(teksAsli, sentText), sentText }).catch(() => {});
   }
 
   // Pola WhatsApp asli: cuma teks (media tidak bisa), 15 menit sejak
@@ -406,6 +452,22 @@ export default function Composer({ conversation, mediaUploaderRef }) {
         />
       )}
 
+      {showCopilot && (
+        <Suspense fallback={null}>
+          <CopilotPanel
+            conversation={conversation}
+            onPakai={(text, draftId, teksAsli) => {
+              setDraft(text);
+              copilotDipakai.current = { draftId, teksAsli };
+              setTimeout(() => { const el = textareaRef.current; if (el) { el.focus(); autoGrowTextarea(el); } }, 0);
+            }}
+            onKirimSemua={kirimSemuaCopilot}
+            onOpenProduct={() => setShowProductPicker(true)}
+            onClose={() => setShowCopilot(false)}
+          />
+        </Suspense>
+      )}
+
       {/* Wave 13 (redesign Inbox) — "Buat Order" dari menu lampiran. Instance
           drawer TERSENDIRI (bukan berbagi dengan CustomerPanel, yang berada
           di cabang komponen SIBLING, bukan leluhur/turunan Composer ini) —
@@ -460,7 +522,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
             extraItems={[
               { key: "template", label: "Template", Icon: LayoutTemplate, color: "#3965fa", onClick: () => setShowTemplates((v) => !v) },
               // Saran AI tidak relevan untuk grup (endpoint butuh 1 customer).
-              ...(!isGroup && conversation.customer?.id ? [{ key: "saran", label: "Saran AI", Icon: Sparkles, color: "#7c3aed", onClick: () => setShowSuggestReply((v) => !v) }] : []),
+              ...(!isGroup && conversation.customer?.id ? [{ key: "saran", label: "Saran AI", Icon: Sparkles, color: "#7c3aed", onClick: () => (copilotBoleh ? setShowCopilot((v) => !v) : setShowSuggestReply((v) => !v)) }] : []),
               { key: "emoji", label: "Emoji", Icon: Smile, color: "#ca8a04", onClick: () => setShowEmoji((v) => !v) },
             ]}
           />

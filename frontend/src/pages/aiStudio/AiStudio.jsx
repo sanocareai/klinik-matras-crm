@@ -9,6 +9,7 @@ import { rolesOf } from "@/lib/roles.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { KartuWidget, InfoI, Ubin } from "@/components/apple/Apple.jsx";
 import "@/styles/sanss-ai-studio.css";
+import CopilotStudio from "./CopilotStudio.jsx";
 
 // ─── AI STUDIO — MVP 1 (November 2026) ──────────────────────────────────────
 // Workspace TERPISAH dari Sales CRM (keputusan Owner). Tiga layar (dipilih dari sidebar):
@@ -46,7 +47,7 @@ const LABEL_DATA = [
   ["ukuran", "Ukuran"], ["beratBadan", "Berat badan"], ["keluhan", "Keluhan"], ["kondisiKasur", "Kondisi kasur"],
   ["umurKasur", "Umur kasur"], ["posisiTidur", "Posisi tidur"], ["riwayatKesehatan", "Riwayat kesehatan"], ["domisili", "Domisili"],
 ];
-const JUDUL = { playground: "Playground", tinjauan: "Tinjauan Koreksi", "test-case": "Test Case" };
+const JUDUL = { playground: "Playground", tinjauan: "Tinjauan Koreksi", "test-case": "Test Case", copilot: "Copilot Inbox" };
 
 const namaModel = (m) => (m || "—").replace("claude-", "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-/g, " ");
 
@@ -479,7 +480,7 @@ export default function AiStudio({ tab = "playground" }) {
   const bisaTinjau = useMemo(() => {
     try { return rolesOf(JSON.parse(localStorage.getItem("user") || "null")).some((r) => r === "ADMIN" || r === "OWNER"); } catch { return false; }
   }, []);
-  const aktif = tab === "tinjauan" && !bisaTinjau ? "playground" : tab;
+  const aktif = (tab === "tinjauan" || tab === "copilot") && !bisaTinjau ? "playground" : tab;
   const [meta, setMeta] = useState(null);
   const [summary, setSummary] = useState(null);
   const [err, setErr] = useState("");
@@ -513,10 +514,12 @@ export default function AiStudio({ tab = "playground" }) {
       />
       <PageBody>
         {err && <div role="alert" className="ap-panel" style={{ color: "var(--red)", fontSize: 13.5 }}>{err}</div>}
-        <Widgets summary={summary} biaya={meta ? { terpakai: meta.biayaBulanIni || 0, batas: meta.batasBiaya } : null} bisaTinjau={bisaTinjau} onBuka={bukaLayar} />
+        {/* Tab Copilot punya kartu ringkasan sendiri (CopilotStudio). */}
+        {aktif !== "copilot" && <Widgets summary={summary} biaya={meta ? { terpakai: meta.biayaBulanIni || 0, batas: meta.batasBiaya } : null} bisaTinjau={bisaTinjau} onBuka={bukaLayar} />}
         {aktif === "playground" && <Playground meta={meta} onChanged={muatMeta} sesiBaruRef={sesiBaru} />}
         {aktif === "tinjauan" && <Tinjauan onChanged={muatMeta} menunggu={summary?.menungguTinjauan || 0} />}
         {aktif === "test-case" && <TestCases />}
+        {aktif === "copilot" && <CopilotStudio />}
       </PageBody>
     </PageContainer>
   );

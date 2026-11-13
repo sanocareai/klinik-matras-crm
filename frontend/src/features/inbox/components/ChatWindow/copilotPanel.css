@@ -1,0 +1,45 @@
+/* Panel Copilot (AI Studio MVP 2) — menumpang .template-picker-popup (posisi & bingkai), hanya lebih tinggi. */
+.copilot-panel { max-height: min(70vh, 560px); }
+.copilot-judul { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.copilot-pil {
+  font-weight: 600; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-soft, rgba(124, 58, 237, 0.12)); color: var(--accent, #7c3aed);
+}
+.copilot-isi { overflow-y: auto; flex: 1; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.copilot-muted { font-size: 13px; color: var(--text-muted); margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.copilot-error { font-size: 13px; color: var(--color-danger); margin: 0; }
+.copilot-banner {
+  display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12); color: var(--text-main);
+}
+.copilot-banner svg { flex-shrink: 0; margin-top: 2px; color: #d97706; }
+.copilot-catatan {
+  font-size: 12.5px; padding: 8px 10px; border-radius: 10px; background: var(--bg-subtle); color: var(--text-secondary, var(--text-main));
+}
+.copilot-catatan small, .copilot-crm small {
+  display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px;
+}
+.copilot-warn { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--color-danger); }
+.copilot-warn li { display: flex; gap: 4px; align-items: center; }
+.copilot-bubble {
+  width: 100%; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.45;
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg-card, white); color: var(--text-main);
+}
+.copilot-bubble:focus { outline: none; border-color: var(--color-primary); }
+.copilot-katalog { font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.copilot-link { background: none; border: 0; padding: 0; color: var(--color-primary); font-size: 12.5px; cursor: pointer; text-decoration: underline; }
+.copilot-crm { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
+.copilot-chip { display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; color: var(--text-main); cursor: pointer; }
+.copilot-chip input { margin-top: 2px; }
+.copilot-crm .copilot-tombol { align-self: flex-start; margin-top: 2px; }
+.copilot-aksi { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; padding-top: 4px; }
+.copilot-tombol {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); cursor: pointer;
+}
+.copilot-tombol:disabled { opacity: 0.55; cursor: default; }
+.copilot-tombol-abu { background: var(--bg-subtle); color: var(--text-main); }
+.copilot-tombol-utama { background: var(--color-primary); border-color: var(--color-primary); color: white; }
+.copilot-kaki { font-size: 11px; color: var(--text-muted); margin: 0; text-align: right; }
+[data-theme="dark"] .copilot-bubble { background: var(--bg-inset, #1f1f22); }

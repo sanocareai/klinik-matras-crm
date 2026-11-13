@@ -16,6 +16,7 @@ import {
   Scissors, Tv, Truck,
   PackagePlus,
   FlaskConical,
+  Sparkles,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -530,6 +531,12 @@ const DIVISIONS = {
           { to: "/ai-studio", label: "Playground", Icon: MessageSquare },
           { to: "/ai-studio/tinjauan", label: "Tinjauan Koreksi", Icon: ClipboardCheck, bolehPeran: ["ADMIN", "OWNER"] },
           { to: "/ai-studio/test-case", label: "Test Case", Icon: FlaskConical },
+        ],
+      },
+      {
+        section: "PILOT",
+        items: [
+          { to: "/ai-studio/copilot", label: "Copilot Inbox", Icon: Sparkles, bolehPeran: ["ADMIN", "OWNER"] },
         ],
       },
     ],

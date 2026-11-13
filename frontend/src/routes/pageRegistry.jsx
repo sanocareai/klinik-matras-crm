@@ -268,6 +268,7 @@ const PAGES_DASAR = [
   { path: "/ai-studio",           render: () => <AiStudio tab="playground" /> },
   { path: "/ai-studio/tinjauan",  render: () => <AiStudio tab="tinjauan" /> },
   { path: "/ai-studio/test-case", render: () => <AiStudio tab="test-case" /> },
+  { path: "/ai-studio/copilot",   render: () => <AiStudio tab="copilot" /> },
   { path: "/komplain",    render: () => <ComplaintCases /> },
   { path: "/warehouse/dashboard/:jenis?/:id?", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/perlu-perhatian/:jenis?/:id?", render: () => <WarehousePerluPerhatian /> },

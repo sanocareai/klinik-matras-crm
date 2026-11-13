@@ -86,5 +86,7 @@ export function useSendMessage(conversationId) {
   return {
     ...mutation,
     mutate: (vars) => mutation.mutate({ ...vars, clientId: makeClientId() }),
+    // Copilot "Kirim semua bubble" mengirim berurutan (menunggu tiap pesan) — clientId sama polanya dengan mutate.
+    mutateAsync: (vars) => mutation.mutateAsync({ ...vars, clientId: makeClientId() }),
   };
 }
