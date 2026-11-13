@@ -53,6 +53,13 @@ enum Role {
   // P10B (Aplikasi Dokumentasi): petugas dokumentasi lantai produksi. Hanya UNIT_READ + PRODUCTION_DOCUMENTATION_WRITE
   // (tanpa UNIT_STAGE_WRITE/QC/harga/finance). Tidak ada pengguna yang diberi peran ini otomatis.
   PRODUCTION_DOCUMENTER
+  // Main Hub (Okt 2026, keputusan Owner): grant eksplisit akses Task &
+  // Meeting untuk leader, SATU permission saja (HUB_ACCESS, lihat
+  // permissions.js) — dipetakan ke peran HUB "MEMBER", bukan "ADMIN".
+  // Ditambahkan satu per satu lewat Pengguna & Peran; tidak ada pengguna
+  // yang diberi peran ini otomatis dari role operasional atau dari
+  // UserDivision.isLeader.
+  HUB_MEMBER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).
@@ -451,6 +458,7 @@ model User {
   invoicesCreated            Invoice[]                @relation("InvoiceCreator")
   pushTokens                 PushToken[]
   mobileSessions             MobileSession[]
+  hubHandoffs                HubHandoff[] // D-200 — SSO Task & Meeting
   mobileDeviceTokens         MobileDeviceToken[]
   mobileNotificationPref     MobileNotificationPref?
   sentMessages               Message[]                @relation("MessageSender")
@@ -8977,6 +8985,40 @@ model MobileSession {
   @@map("mobile_sessions")
 }
 
+// D-200 — SSO Task & Meeting (SANSS -> HUB). Satu baris = satu kode handoff
+// sekali-pakai. Catatan penting:
+//   • destination = jalur tujuan di HUB, HARUS lolos allow-list saat dibuat
+//     DAN saat ditukar — klien tidak pernah menentukan alamat redirect;
+//   • TIDAK ada FK ke database HUB dan tidak ada data HUB di sini: tabel ini
+//     hanya bukti "SANSS mengizinkan pengguna ini masuk, sekali".
+// Additive murni — tidak mengubah tabel lama.
+model HubHandoff {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  codeHash    String @unique @map("code_hash") // SHA-256 heksadesimal dari kode
+  destination String // jalur allow-list di HUB, mis. "/meetings"
+  /// SHA-256 heksadesimal dari `state` HUB (D-200 tahap 4, anti login-CSRF
+  /// lintas-browser/replay-di-luar-browser) — HUB membuat `state` acak
+  /// 256-bit, simpan HttpOnly, kirim HANYA hash-nya ke sini lewat POST
+  /// /handoff. Dikembalikan APA ADANYA (hash, bukan nilai asli) saat
+  /// /internal/exchange supaya HUB bisa membandingkannya dengan hash cookie
+  /// miliknya sendiri. WAJIB diisi (divalidasi di service, bukan di
+  /// database — kolom nullable supaya migrasi ini aman diterapkan pada
+  /// tabel yang mungkin sudah berisi baris in-flight dari tahap 3).
+  stateHash String? @map("state_hash")
+
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, usedAt, revokedAt]) // pencabutan kode belum-terpakai milik satu user
+  @@index([expiresAt]) // pembersihan baris kedaluwarsa
+  @@map("hub_handoffs")
+}
+
 // Token FCM per perangkat (satu baris per user+perangkat).
 model MobileDeviceToken {
   id     String @id @default(uuid()) @db.Uuid
@@ -8992,11 +9034,15 @@ model MobileDeviceToken {
   provider   String   @default("fcm")
   fcmToken   String   @unique @map("fcm_token")
   appVersion String?  @map("app_version")
+  // Aplikasi pemilik token (12 Nov 2026): "finance" (SANO Finance, nilai bawaan baris lama) | "production" (SANSS Produksi).
+  // Diisi server dari klaim `app` token akses — bukan dari body. Pengirim push memfilter per aplikasi.
+  app        String   @default("finance")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, deviceId])
   @@index([sessionId])
+  @@index([app, userId])
   @@map("mobile_device_tokens")
 }
 

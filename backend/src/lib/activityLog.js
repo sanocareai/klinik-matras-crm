@@ -100,6 +100,12 @@ export const ENTITY_TYPES = Object.freeze({
   INCENTIVE_PAYOUT: "incentive_payout",
   // Checklist Persiapan Perjalanan (7 Okt 2026) — entityId = Route.id.
   ROUTE_PREP_CHECKLIST: "route_prep_checklist",
+  // SSO Task & Meeting (D-200, 26 September 2026) — jejak audit handoff,
+  // pertukaran kode, introspeksi, dan pencabutan. entityId = id handoff bila
+  // ada; kalau tidak (kode tak dikenal, gagal autentikasi layanan) diisi
+  // penanda tetap atau 16 karakter pertama HASH kode — TIDAK PERNAH kode
+  // mentah atau token layanan (lihat services/hubSso.js).
+  HUB_SSO: "hub_sso",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -346,6 +352,34 @@ export const EVENT_TYPES = Object.freeze({
   CHECKLIST_ITEM_UPDATED: "CHECKLIST_ITEM_UPDATED",
   CHECKLIST_ITEM_ARCHIVED: "CHECKLIST_ITEM_ARCHIVED",
   CHECKLIST_GATE_OVERRIDDEN: "CHECKLIST_GATE_OVERRIDDEN",
+
+  // SSO Task & Meeting (D-200) — entityType HUB_SSO. metadata.reason selalu
+  // diisi pada penolakan (user_inactive, no_permission, destination_not_allowed,
+  // replay, expired, revoked, unknown_code, malformed, token_invalid, ...).
+  HUB_HANDOFF_ISSUED: "HUB_HANDOFF_ISSUED", // pengguna mendapat kode handoff
+  HUB_HANDOFF_DENIED: "HUB_HANDOFF_DENIED", // permintaan handoff ditolak
+  HUB_HANDOFF_EXCHANGED: "HUB_HANDOFF_EXCHANGED", // HUB menukar kode → identitas
+  HUB_HANDOFF_REJECTED: "HUB_HANDOFF_REJECTED", // pertukaran ditolak
+  HUB_INTROSPECTED: "HUB_INTROSPECTED", // introspeksi berhasil (disampling)
+  HUB_INTROSPECT_DENIED: "HUB_INTROSPECT_DENIED", // hasil: nonaktif/tanpa izin/tidak dikenal
+  HUB_HANDOFF_REVOKED: "HUB_HANDOFF_REVOKED", // kode belum-terpakai dicabut
+  HUB_SERVICE_DENIED: "HUB_SERVICE_DENIED", // autentikasi layanan gagal / bukan internal
+
+  // D-200 tahap 4 — SANSS memanggil KELUAR ke HUB (arah terbalik dari yang di
+  // atas): memberi tahu HUB untuk mencabut sesinya sendiri saat logout/
+  // nonaktif/role berubah/user dihapus di sisi SANSS (lihat
+  // services/hubSso.js#notifyHubRevoke). Dipanggil fire-and-forget,
+  // best-effort — panggilan ini TIDAK PERNAH menggagalkan aksi SANSS yang
+  // memicunya (lihat services/hubSso.js#notifyHubRevoke).
+  HUB_REVOKE_NOTIFIED: "HUB_REVOKE_NOTIFIED", // HUB mengonfirmasi pencabutan
+  HUB_REVOKE_NOTIFY_FAILED: "HUB_REVOKE_NOTIFY_FAILED", // HUB tidak terjangkau/menolak — fallback: introspeksi HUB (≤60 dtk)
+
+  // Main Hub: ringkasan Task & Meeting lintas leader (Okt 2026). SENGAJA
+  // diaudit terpisah dari HUB_HANDOFF_* — ini bukan "masuk ke HUB", tapi
+  // "lihat ringkasan data milik ORANG LAIN dari Main Hub", yang lebih sensitif
+  // dan layak jejak sendiri (siapa membuka Pantauan Leader, kapan, filter apa).
+  HUB_SUMMARY_LEADER_VIEWED: "HUB_SUMMARY_LEADER_VIEWED", // Pantauan Leader dibuka (berhasil)
+  HUB_SUMMARY_DENIED: "HUB_SUMMARY_DENIED", // ringkasan ditolak (tanpa izin/nonaktif/HUB tidak siap)
 });
 
 /**
@@ -792,6 +826,32 @@ export function formatActivitySentence(event) {
       return `Item checklist "${metadata.title || "—"}" dihapus dari daftar aktif`;
     case EVENT_TYPES.CHECKLIST_GATE_OVERRIDDEN:
       return `Checklist persiapan DILEWATI — rute tetap diberangkatkan walau ${metadata.missingCount ?? 0} item wajib belum terpenuhi (${(metadata.missingTitles || []).join(", ") || "—"}) — ${metadata.reason || "tanpa alasan"}`;
+    // SSO Task & Meeting (D-200). Kalimat sengaja tidak menyebut kode, token,
+    // atau isi yang dicoba — hanya alasan penolakan yang sudah dinormalkan.
+    case EVENT_TYPES.HUB_HANDOFF_ISSUED:
+      return `Akses Task & Meeting disiapkan${metadata.destination ? ` (tujuan ${metadata.destination})` : ""}`;
+    case EVENT_TYPES.HUB_HANDOFF_DENIED:
+      return `Akses Task & Meeting ditolak — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.HUB_HANDOFF_EXCHANGED:
+      return `Kode akses Task & Meeting ditukar${metadata.hubRole ? ` (peran ${metadata.hubRole})` : ""}`;
+    case EVENT_TYPES.HUB_HANDOFF_REJECTED:
+      return `Penukaran kode Task & Meeting ditolak — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.HUB_INTROSPECTED:
+      return `Status akses Task & Meeting diperiksa${metadata.hubRole ? ` (peran ${metadata.hubRole})` : ""}`;
+    case EVENT_TYPES.HUB_INTROSPECT_DENIED:
+      return `Pemeriksaan akses Task & Meeting: tidak berhak — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.HUB_HANDOFF_REVOKED:
+      return `Kode akses Task & Meeting dicabut (${metadata.revoked ?? 0} kode, alasan ${metadata.reason || "other"})`;
+    case EVENT_TYPES.HUB_SERVICE_DENIED:
+      return `Panggilan layanan Task & Meeting ditolak — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.HUB_REVOKE_NOTIFIED:
+      return `Task & Meeting dikonfirmasi mencabut sesi (${metadata.reason || "tanpa keterangan"})`;
+    case EVENT_TYPES.HUB_REVOKE_NOTIFY_FAILED:
+      return `Task & Meeting tidak terjangkau saat mencabut sesi (${metadata.reason || "tanpa keterangan"}) — menunggu introspeksi berikutnya`;
+    case EVENT_TYPES.HUB_SUMMARY_LEADER_VIEWED:
+      return `Pantauan Leader (Main Hub) dibuka — ${metadata.leaderCount ?? 0} leader${metadata.division ? `, divisi ${metadata.division}` : ""}`;
+    case EVENT_TYPES.HUB_SUMMARY_DENIED:
+      return `Ringkasan Task & Meeting (Main Hub) ditolak — ${metadata.reason || "tanpa keterangan"}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

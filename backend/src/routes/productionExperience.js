@@ -41,6 +41,7 @@ import { normalizeExportQuery } from "../lib/domain/productionRencanaExport.js";
 import { buildRencanaExport } from "../services/productionRencanaExportService.js";
 import { getCornerBoard, setCornerOperator } from "../services/productionCornerService.js";
 import { wajibUuid } from "../lib/uuidParam.js";
+import { denganNotifikasiPerpindahan, kabariUrutanBerubah } from "../services/productionNotifications.js";
 
 export const productionExperienceRouter = express.Router();
 productionExperienceRouter.use(requireAuth);
@@ -333,9 +334,11 @@ productionExperienceRouter.get("/plans/:id/schedule-history", requirePermission(
 // (drag-drop / tombol naik-turun). Daftar LENGKAP plan di slot; 409 STATION_ORDER_STALE bila isi meja berubah. Prioritas tidak disentuh.
 productionExperienceRouter.post("/stations/reorder", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
   try {
-    res.json(await reorderStationPlans(prisma, {
+    const hasil = await reorderStationPlans(prisma, {
       actorId: req.user.id, idempotencyKey: idem(req), productionDate: req.body?.productionDate, stationCode: req.body?.stationCode, orderedPlanIds: req.body?.orderedPlanIds,
-    }));
+    });
+    if (!hasil?.replayed) kabariUrutanBerubah({ productionDate: req.body?.productionDate, stationCode: req.body?.stationCode, actorId: req.user.id });
+    res.json(hasil);
   } catch (err) { handleErr(err, res); }
 });
 
@@ -351,11 +354,12 @@ productionExperienceRouter.post("/material-returns/:id/receive", requirePermissi
 // POST /api/production-v2/runs/:runId/steps/:stepNo { expectedRevision, workCenterId, payload, media }
 productionExperienceRouter.post("/runs/:runId/steps/:stepNo", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
-    res.json(await recordProductionStep(prisma, {
+    // Push SANSS Produksi (sakelar PRODUCTION_PUSH_ENABLED, mati = tanpa query tambahan): kabari tim berikutnya bila kartu berpindah tim.
+    res.json(await denganNotifikasiPerpindahan(req.params.runId, req.user.id, () => recordProductionStep(prisma, {
       runId: req.params.runId, stepNo: Number(req.params.stepNo), actorId: req.user.id, idempotencyKey: idem(req),
       expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, payload: req.body?.payload ?? {}, media: req.body?.media ?? [],
       pemakaianMenunggu: !adminBahan(req.user), pengaju: req.user, // aturan ADMIN: bahan di bukti non-ADMIN = pengajuan (tahap tetap selesai)
-    }));
+    })));
   } catch (err) { handleErr(err, res); }
 });
 

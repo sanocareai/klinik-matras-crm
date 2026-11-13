@@ -36,6 +36,8 @@ telepon) harus dibangun sendiri di Express. Sebagian sudah ada: `socket.js` +
 SSE untuk realtime, JWT + FCM untuk app mobile, multer untuk upload. Yang
 benar-benar baru: otorisasi per-baris (pengganti RLS) — lihat D-010.
 
+> **Diamandemen sempit oleh D-200** (26 Sep 2026): hanya untuk workspace Task & Meeting.
+
 ---
 
 ## D-002 — Unit adalah entitas inti, bukan Order
@@ -845,3 +847,50 @@ constraint & UNIQUE idempotency yang MUSTAHIL dibuktikan stub) SUDAH DITULIS
 tapi BELUM PERNAH DIJALANKAN — tidak ada Postgres/Docker di mesin tempat modul
 ini dibangun. **Jalankan `npm run test:integration` sebelum deploy** (lihat
 pelajaran `$1::uuid` di `services/inventoryLedger.js`).
+
+---
+
+## D-200 — Amandemen sempit D-001: workspace Task & Meeting sebagai service terpisah
+
+**Tanggal:** 26 September 2026. **Keputusan Owner.** **Mengamandemen (sempit):** D-001.
+
+**Amandemen.**
+
+> Workspace Task & Meeting boleh berjalan sebagai service Next.js dan database
+> terpisah. SANSS tetap pemilik identitas dan authorization. Integrasi hanya
+> lewat SSO/API; tidak boleh berbagi JWT secret, koneksi DB, atau membuat FK
+> lintas database. Pengecualian ini tidak berlaku untuk workspace operasional
+> lain dan harus dievaluasi ulang jika Task & Meeting membutuhkan relasi
+> transaksional langsung ke Order/Customer.
+
+**Konteks.** D-001 melarang Next.js dan database kedua. Aplikasi SANO-HUB
+(task & meeting; Next.js 15 + Prisma + Postgres sendiri, ~50 ribu baris
+TypeScript) sudah ada dan berdiri sendiri. Audit integrasi 26 Sep 2026
+membandingkan tiga opsi (memindahkan ke SANSS / aplikasi terpisah + SSO /
+bertahap); Owner memilih bertahap: aplikasi & database tetap terpisah, SANSS
+menjadi satu-satunya identity provider.
+
+**Kenapa alasan D-001 tidak lagi mengena untuk kasus ini.** Alasan 2 D-001
+("Unit perlu FK ke Order") tidak berlaku: task & meeting tidak punya FK ke
+Order/Customer, hanya menunjuk pengguna. Alasan 1 ("dua login") dijawab SSO:
+satu identitas, dimiliki SANSS. Alasan 3 (dirawat satu orang) TETAP berlaku dan
+jadi biaya yang diterima — karena itu cakupannya dibatasi keras di bawah.
+
+**Batas yang mengikat.**
+1. SANSS pemilik identitas, peran, dan status aktif. SANO-HUB tidak pernah
+   menentukan siapa boleh masuk; ia hanya mempercayai hasil pertukaran kode
+   SSO dan introspeksi ke SANSS.
+2. Tidak berbagi JWT secret, koneksi database, atau FK lintas database.
+   Autentikasi server-ke-server memakai token layanan sendiri (bukan
+   JWT_SECRET) — kontrak di `docs/HUB-SSO.md`.
+3. Hanya Task & Meeting. Workspace operasional lain (Growth, Bengkel, Gudang,
+   Armada, Kendali, Finance, B2B) tetap di stack D-001 dan TIDAK memakai
+   pengecualian ini.
+4. **Evaluasi ulang wajib** bila Task & Meeting membutuhkan relasi
+   transaksional langsung ke Order/Customer — saat itu pengecualian ini harus
+   dicabut atau diganti keputusan baru, bukan diregangkan.
+
+**Tahap pertama.** Fondasi SSO di sisi SANSS (permission `HUB_ACCESS`/`HUB_ADMIN`,
+tabel `hub_handoffs`, endpoint handoff/exchange/introspect/revoke), semuanya di
+balik `HUB_SSO_ENABLED=false`. Belum ada kartu portal, belum ada perubahan
+alur login.

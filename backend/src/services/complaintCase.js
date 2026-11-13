@@ -13,6 +13,7 @@ import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryComm
 import { generateComplaintCaseNumber } from "./orderNumberGenerator.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { notifyComplaintCaseOwnerChanged, notifyComplaintCaseHighSeverity } from "./pushNotifications.js";
+import { kabariKomplainProduksi } from "./productionNotifications.js";
 
 // Best-effort, TIDAK PERNAH menggagalkan aksi utama — pola SAMA dengan
 // notifyDriverGroup dkk di routes/armada.js. Dipanggil SETELAH transaksi
@@ -207,6 +208,8 @@ export async function createComplaintCase({
 
   const full = await prisma.complaintCase.findUnique({ where: { id: created.id }, include: complaintCaseInclude });
   beritahuBestEffort(notifyComplaintCaseHighSeverity, full);
+  // Aplikasi SANSS Produksi: unit yang sedang di workshop → Admin/Kepala Produksi dikabari (mati kecuali PRODUCTION_PUSH_ENABLED).
+  beritahuBestEffort(kabariKomplainProduksi, full);
   return full;
 }
 

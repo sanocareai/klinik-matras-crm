@@ -34,6 +34,8 @@ export const STATUS_UNIT = Object.freeze({
   KONFIRMASI_BASI: Object.freeze({ key: "KONFIRMASI_BASI", label: "Berubah sesudah konfirmasi", tone: "orange", lengkap: false, langkah: "Baris biaya berubah sesudah dikonfirmasi. Periksa ulang lalu konfirmasi lagi." }),
   LENGKAP: Object.freeze({ key: "LENGKAP", label: "HPP lengkap", tone: "green", lengkap: true, langkah: "" }),
   TANPA_BAHAN_BARU: Object.freeze({ key: "TANPA_BAHAN_BARU", label: "Tanpa bahan baru (pernyataan)", tone: "green", lengkap: true, langkah: "" }),
+  // Kasur SEWA = produk Sano yang sudah jadi, bukan pekerjaan Produksi (keputusan Owner 12 Nov 2026): tanpa pemakaian bahan dianggap selesai, HPP bahan Rp0.
+  BUKAN_PRODUKSI: Object.freeze({ key: "BUKAN_PRODUKSI", label: "Kasur sewa — bukan pekerjaan Produksi", tone: "green", lengkap: true, langkah: "" }),
 });
 export const STATUS_UNIT_KEYS = Object.freeze(Object.keys(STATUS_UNIT));
 
@@ -58,21 +60,22 @@ export function sidikBaris(baris) {
  * @param {boolean} [f.pernyataanTanpaBahan] pernyataan aktif "tanpa bahan baru"
  * @param {{sidik:string}|null} [f.konfirmasi] konfirmasi aktif
  */
-export function statusUnitHpp({ baris = [], catatanTertahan = 0, sementara = 0, biayaDiajukan = 0, pernyataanTanpaBahan = false, konfirmasi = null } = {}) {
+export function statusUnitHpp({ baris = [], catatanTertahan = 0, sementara = 0, biayaDiajukan = 0, pernyataanTanpaBahan = false, konfirmasi = null, bukanProduksi = false } = {}) {
   const tanpaNilai = baris.filter((b) => b.status !== "DIBEKUKAN").length;
   const sidik = sidikBaris(baris);
   const tertahan = (catatanTertahan || 0) + (sementara || 0);
   const nilaiDiketahui = r2(baris.filter((b) => b.status === "DIBEKUKAN").reduce((a, b) => a + Number(b.subtotal || 0), 0));
   const dasar = { sidik, barisBiaya: baris.length, barisTanpaNilai: tanpaNilai, tertahan, biayaDiajukan: biayaDiajukan || 0, nilaiDiketahui: baris.some((b) => b.status === "DIBEKUKAN") ? nilaiDiketahui : null };
   let st;
-  if (!baris.length && !tertahan && !biayaDiajukan) st = pernyataanTanpaBahan ? STATUS_UNIT.TANPA_BAHAN_BARU : STATUS_UNIT.BELUM_ADA_PEMAKAIAN;
+  // Unit sewa yang ternyata PUNYA baris biaya tetap dinilai seperti unit biasa (biaya tercatat tidak dihapus); hanya yang kosong dianggap selesai.
+  if (!baris.length && !tertahan && !biayaDiajukan) st = bukanProduksi ? STATUS_UNIT.BUKAN_PRODUKSI : pernyataanTanpaBahan ? STATUS_UNIT.TANPA_BAHAN_BARU : STATUS_UNIT.BELUM_ADA_PEMAKAIAN;
   else if (tanpaNilai > 0 || tertahan > 0) st = STATUS_UNIT.BELUM_LENGKAP;
   else if (biayaDiajukan > 0) st = STATUS_UNIT.MENUNGGU_PERSETUJUAN;
   else if (!konfirmasi) st = STATUS_UNIT.SIAP_DIKONFIRMASI;
   else if (konfirmasi.sidik !== sidik) st = STATUS_UNIT.KONFIRMASI_BASI;
   else st = STATUS_UNIT.LENGKAP;
   // Nilai HPP unit hanya disebut LENGKAP bila status lengkap; selain itu nilaiDiketahui adalah bagian yang DIKETAHUI saja (bukan total).
-  return { ...dasar, key: st.key, label: st.label, tone: st.tone, lengkap: st.lengkap, langkah: st.langkah, nilaiLengkap: st.lengkap ? (st.key === "TANPA_BAHAN_BARU" ? 0 : nilaiDiketahui) : null };
+  return { ...dasar, key: st.key, label: st.label, tone: st.tone, lengkap: st.lengkap, langkah: st.langkah, nilaiLengkap: st.lengkap ? (st.key === "TANPA_BAHAN_BARU" || st.key === "BUKAN_PRODUKSI" ? 0 : nilaiDiketahui) : null };
 }
 
 /** Status order = gabungan unit: LENGKAP bila semua unit lengkap; BELUM_DIKETAHUI bila tak satu pun bernilai; selain itu PARSIAL. */

@@ -1,0 +1,14 @@
+{
+  "name": "sso-stage5-rehearsal",
+  "private": true,
+  "type": "module",
+  "description": "Rehearsal staging SSO Task & Meeting (D-200, Tahap 5) — lihat README.md. Bukan bagian aplikasi SANSS; alat rehearsal berdiri sendiri.",
+  "scripts": {
+    "proxy:up": "node setup-proxy.mjs up",
+    "proxy:down": "node setup-proxy.mjs down",
+    "rehearsal": "node rehearsal.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

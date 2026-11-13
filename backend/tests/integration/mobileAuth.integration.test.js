@@ -11,6 +11,8 @@ import { createTestUser } from "./setup/fixtures.js";
 import { createLoginUser, makeRaw, DEVICE } from "./setup/authFixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { resetRateLimits } from "../../src/lib/rateLimit.js";
+import { dispatchFinanceNotification, setExpoFetchForTests } from "../../src/services/financeNotifications.js";
+import { dispatchProductionNotification, setProductionExpoFetchForTests } from "../../src/services/productionNotifications.js";
 
 let server;
 let raw;
@@ -65,6 +67,48 @@ test("Login mobile ditolak: password salah 401, bukan tim finance 403, tanpa dev
   const off = await createLoginUser({ roles: ["FINANCE"], active: false });
   const nonaktif = await raw("POST", "/api/mobile/auth/login", { body: { email: off.email, password: off.password, device: DEVICE() } });
   assert.equal(nonaktif.status, 403);
+});
+
+test("Login aplikasi Produksi (app=production): tim produksi masuk, token bertanda app & hanya jalur produksi", async () => {
+  const w = await createLoginUser({ roles: ["PRODUCTION_WORKER"] });
+  const login = (u, app) => raw("POST", "/api/mobile/auth/login", { body: { email: u.email, password: u.password, device: DEVICE(), ...(app !== undefined ? { app } : {}) } });
+
+  const ok = await login(w, "production");
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const claims = jwt.verify(ok.body.accessToken, process.env.JWT_SECRET);
+  assert.equal(claims.typ, "mobile");
+  assert.equal(claims.app, "production");
+  assert.equal(ok.body.capabilities.productionApp, true);
+  assert.equal(ok.body.capabilities.productionPreset, "MEJA");
+
+  // Tanpa `app` = Finance (perilaku lama): pekerja produksi ditolak sebagai bukan tim Finance.
+  const lama = await login(w);
+  assert.equal(lama.status, 403);
+  assert.equal(lama.body.code, "NOT_FINANCE_TEAM");
+
+  // Tim Finance ditolak di aplikasi Produksi; nilai app tak dikenal 400.
+  const fin = await createLoginUser({ roles: ["FINANCE"] });
+  const finProd = await login(fin, "production");
+  assert.equal(finProd.status, 403);
+  assert.equal(finProd.body.code, "NOT_PRODUCTION_TEAM");
+  const asing = await login(w, "lain");
+  assert.equal(asing.status, 400);
+  assert.equal(asing.body.code, "APP_UNKNOWN");
+
+  // Token Produksi: jalur Finance ditolak sebagai token mobile; jalur unit lolos gerbang jalur (bukan 403 "mobile").
+  const keFinance = await raw("GET", "/api/finance/dashboard", { token: ok.body.accessToken });
+  assert.equal(keFinance.status, 403);
+  assert.match(keFinance.body.error, /mobile/i);
+  const keUnit = await raw("GET", "/api/units/tidak-ada", { token: ok.body.accessToken });
+  assert.notEqual(keUnit.body?.error && /mobile/i.test(keUnit.body.error), true);
+  assert.equal((await raw("GET", "/api/auth/me", { token: ok.body.accessToken })).status, 200);
+
+  // Refresh dengan app=production mempertahankan klaim; nilai app salah tidak menghabiskan refresh token.
+  const salah = await raw("POST", "/api/mobile/auth/refresh", { body: { refreshToken: ok.body.refreshToken, app: "lain" } });
+  assert.equal(salah.status, 400);
+  const r1 = await raw("POST", "/api/mobile/auth/refresh", { body: { refreshToken: ok.body.refreshToken, app: "production" } });
+  assert.equal(r1.status, 200, JSON.stringify(r1.body));
+  assert.equal(jwt.verify(r1.body.accessToken, process.env.JWT_SECRET).app, "production");
 });
 
 test("Token mobile TIDAK diperpanjang otomatis (tanpa X-Refreshed-Token); token web tetap diperpanjang seperti dulu", async () => {
@@ -300,6 +344,37 @@ test("Token push perangkat: daftar (FCM & Expo), upsert per perangkat, deviceId 
   assert.equal(await testPrisma.mobileDeviceToken.count({ where: { userId: u.user.id } }), 0, "logout menghapus token push perangkat");
   rows = await testPrisma.mobileSession.findMany({ where: { userId: u.user.id } });
   assert.ok(rows.every((s) => s.revokedAt));
+});
+
+test("Token push ditandai per aplikasi (dari klaim token, bukan body); pengirim Finance & Produksi tidak saling menyentuh", async () => {
+  const u = await createLoginUser({ roles: ["ADMIN"] }); // Admin memegang Finance DAN Produksi
+  const fin = await loginMobile(u, DEVICE("dev-fin"));
+  const prodRes = await raw("POST", "/api/mobile/auth/login", { body: { email: u.email, password: u.password, device: DEVICE("dev-prod"), app: "production" } });
+  assert.equal(prodRes.status, 200, JSON.stringify(prodRes.body));
+  const TF = "ExponentPushToken[finance111]";
+  const TP = "ExponentPushToken[produksi222]";
+  assert.equal((await raw("POST", "/api/mobile/devices", { token: fin.accessToken, body: { deviceId: "dev-fin", token: TF, provider: "expo", app: "production" } })).status, 201);
+  assert.equal((await raw("POST", "/api/mobile/devices", { token: prodRes.body.accessToken, body: { deviceId: "dev-prod", token: TP, provider: "expo" } })).status, 201);
+  const rows = await testPrisma.mobileDeviceToken.findMany({ where: { userId: u.user.id }, orderBy: { deviceId: "asc" } });
+  assert.deepEqual(rows.map((r) => [r.deviceId, r.app]), [["dev-fin", "finance"], ["dev-prod", "production"]], "body.app diabaikan; aplikasi dari klaim token");
+
+  const terkirim = [];
+  const tangkap = async (_url, init) => { const msgs = JSON.parse(init.body); terkirim.push(...msgs.map((m) => m.to)); return { json: async () => ({ data: msgs.map(() => ({ status: "ok" })) }) }; };
+  setExpoFetchForTests(tangkap); setProductionExpoFetchForTests(tangkap);
+  const lamaF = process.env.FINANCE_PUSH_ENABLED; const lamaP = process.env.PRODUCTION_PUSH_ENABLED;
+  process.env.FINANCE_PUSH_ENABLED = "true"; process.env.PRODUCTION_PUSH_ENABLED = "true";
+  try {
+    await dispatchFinanceNotification({ title: "t", body: "b", userIds: [u.user.id], db: testPrisma });
+    assert.deepEqual(terkirim, [TF], "Finance hanya ke token Finance");
+    terkirim.length = 0;
+    const r = await dispatchProductionNotification({ userIds: [u.user.id], title: "Siap QC", body: "004-U1 siap Uji Berat Badan.", db: testPrisma });
+    assert.deepEqual(terkirim, [TP], "Produksi hanya ke token Produksi");
+    assert.equal(r.terkirim, 1);
+  } finally {
+    setExpoFetchForTests(null); setProductionExpoFetchForTests(null);
+    if (lamaF === undefined) delete process.env.FINANCE_PUSH_ENABLED; else process.env.FINANCE_PUSH_ENABLED = lamaF;
+    if (lamaP === undefined) delete process.env.PRODUCTION_PUSH_ENABLED; else process.env.PRODUCTION_PUSH_ENABLED = lamaP;
+  }
 });
 
 test("Token push yang sama dipindah ke pengguna lain → baris lama dihapus (satu token = satu pemilik)", async () => {

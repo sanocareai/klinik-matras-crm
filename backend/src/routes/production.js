@@ -40,6 +40,7 @@ import { pesanServerAman } from "../lib/galatServerAman.js";
 const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus (schema.prisma)
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { listWorkOrders } from "../services/productionOrderList.js";
+import { whereUnitProduksi } from "../lib/domain/unitBukanProduksi.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
 import { labelSatuanBaris } from "../services/transisiSatuanBahan.js";
 
@@ -113,7 +114,7 @@ productionRouter.get("/board", requirePermission(P.UNIT_READ), async (req, res) 
     const targetedUnitIds = targets.map((t) => t.unitId);
 
     const available = await prisma.unit.findMany({
-      where: { status: { in: IN_WORKSHOP }, id: { notIn: targetedUnitIds } },
+      where: { status: { in: IN_WORKSHOP }, id: { notIn: targetedUnitIds }, AND: [whereUnitProduksi()] }, // kasur SEWA bukan pekerjaan Produksi (lib/domain/unitBukanProduksi.js)
       include: {
         currentStage: true,
         service: true,
@@ -641,7 +642,7 @@ productionRouter.get("/command-center", requirePermission(P.UNIT_READ), async (r
     // overdue/at-risk dihitung atas populasi ini, BUKAN cuma yang sudah masuk
     // bengkel — lihat isProductionEligible() di lib/domain/productionExceptions.js.
     const units = await prisma.unit.findMany({
-      where: { status: { notIn: [...PRODUCTION_COMPLETE_UNIT_STATUSES, "CANCELLED"] } },
+      where: { status: { notIn: [...PRODUCTION_COMPLETE_UNIT_STATUSES, "CANCELLED"] }, AND: [whereUnitProduksi()] }, // kasur SEWA bukan pekerjaan Produksi
       select: {
         id: true, unitCode: true, status: true, priority: true, productionDueAt: true,
         serviceId: true, currentStageId: true, orderId: true,

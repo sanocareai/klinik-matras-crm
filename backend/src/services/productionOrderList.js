@@ -17,6 +17,7 @@ import { loadAppEvidence, loadLatestManual } from "./productionAdoptionService.j
 import { kelengkapanBaris, muatFaktaKelengkapan } from "./productionKelengkapan.js";
 import { hitungDataOrder, hitungKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
 import { endOfDayExclusiveWIB, startOfDayWIB } from "../utils/wib.js";
+import { denganUnitProduksi, whereUnitProduksi } from "../lib/domain/unitBukanProduksi.js";
 import { adaFilterBaris, fasetPic, lolosFilterBaris, parseFilterBaris, saringDanHalaman } from "../lib/domain/filterDaftarOrderProduksi.js";
 
 export const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus
@@ -42,7 +43,8 @@ export function buildWorkOrderWhere(query = {}) {
   const globalWhere = globalKeys.length && !status ? unitWhereForGlobalStatuses(globalKeys) : null;
   const statusIn = csv(query.statusIn).filter((k) => UNIT_STATUS_VALUES.includes(k));
   const { dari, sampai } = periodeDariQuery(query);
-  return {
+  // Kasur SEWA bukan pekerjaan Produksi (keputusan Owner 12 Nov 2026) — tidak pernah masuk daftar, hitungan, kelengkapan, maupun ekspor. Lihat lib/domain/unitBukanProduksi.js.
+  return denganUnitProduksi({
     ...((dari || sampai) && { createdAt: { ...(dari && { gte: startOfDayWIB(dari) }), ...(sampai && { lt: endOfDayExclusiveWIB(sampai) }) } }),
     ...(status && { status }),
     ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),
@@ -57,7 +59,7 @@ export function buildWorkOrderWhere(query = {}) {
         { order: { customer: { name: { contains: q.trim(), mode: "insensitive" } } } },
       ],
     }),
-  };
+  });
 }
 
 export const UNIT_INCLUDE = {
@@ -183,12 +185,12 @@ export async function listWorkOrders(prisma, query = {}, { semua = false } = {})
   let rows = await perkayaBarisUnit(prisma, units);
   let hasil = rows;
   if (penuh) { const s = saringDanHalaman(rows, { kerjaFilter, kelFilter, filterBaris, page, pageSize, semua }); hasil = s.rows; total = s.total; }
-  const statusCounts = await prisma.unit.groupBy({ by: ["status"], _count: { _all: true } });
+  const statusCounts = await prisma.unit.groupBy({ by: ["status"], where: whereUnitProduksi(), _count: { _all: true } });
   return {
     units: hasil,
     statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
     displayStatusCounts: displayStatusCountsOf(statusCounts.map((s) => ({ status: s.status, count: s._count._all }))),
-    globalStatusCounts: await countByGlobalStatus(prisma, {}),
+    globalStatusCounts: await countByGlobalStatus(prisma, whereUnitProduksi()),
     globalStatusFlow: GLOBAL_STATUS_FLOW,
     page, pageSize, total, hasMore: !semua && (page - 1) * pageSize + hasil.length < total,
     filterDipakai: { q: query.q?.trim() || null, displayStatus: csv(query.displayStatus), globalStatus: csv(query.globalStatus), statusKerja: kerjaFilter, kelengkapan: kelFilter, posisi: filterBaris.posisi, pic: filterBaris.pic, target: filterBaris.target, periode: periodeDariQuery(query), urut: urutTerlama ? "terlama" : "terbaru", dasarPeriode: DASAR_PERIODE, scope: query.scope || null },

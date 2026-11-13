@@ -2,7 +2,7 @@
 //
 // Di-mount di /api/mobile. Sesi web (/api/auth/login, JWT 7 hari) TIDAK
 // disentuh; aplikasi mobile memakai jalur ini:
-//   POST   /api/mobile/auth/login            email+password+perangkat → access(15 mnt)+refresh
+//   POST   /api/mobile/auth/login            email+password+perangkat(+app) → access(15 mnt)+refresh
 //   POST   /api/mobile/auth/refresh          rotasi refresh token
 //   POST   /api/mobile/auth/logout           cabut sesi (idempoten)
 //   GET    /api/mobile/auth/sessions         daftar sesi/perangkat milik sendiri
@@ -58,12 +58,12 @@ function userPayload(user, roles) {
   };
 }
 
-function tokenResponse({ user, roles, session, refreshToken }) {
+function tokenResponse({ user, roles, session, refreshToken, app = null }) {
   const caps = capabilitiesFor({ roles, role: user.role });
   const now = Date.now();
   return {
     tokenType: "Bearer",
-    accessToken: signAccessToken(user, roles, session.id),
+    accessToken: signAccessToken(user, roles, session.id, app),
     expiresIn: ACCESS_TTL_SECONDS,
     accessTokenExpiresAt: new Date(now + ACCESS_TTL_SECONDS * 1000).toISOString(),
     refreshToken,
@@ -74,11 +74,39 @@ function tokenResponse({ user, roles, session, refreshToken }) {
   };
 }
 
+// ─── GERBANG APLIKASI ─────────────────────────────────────────────────────
+// Satu jalur sesi mobile dipakai dua aplikasi Android. Klien mengirim `app` di body login & refresh:
+//   (kosong) / "finance" → SANO Finance (perilaku lama, TIDAK berubah)
+//   "production"         → SANSS Produksi (12 November 2026)
+// Gerbang ini hanya menolak akun yang jelas bukan timnya; setiap endpoint tetap dijaga requirePermission.
+const GERBANG_APP = {
+  finance: {
+    kunci: null,
+    boleh: (caps) => caps.financeApp,
+    login: ["Aplikasi ini untuk tim Finance. Akun Anda tidak punya akses Finance.", "NOT_FINANCE_TEAM"],
+    refresh: ["Akun Anda tidak lagi punya akses Finance.", "NOT_FINANCE_TEAM"],
+    alasanCabut: "tidak_lagi_tim_finance",
+  },
+  production: {
+    kunci: "production",
+    boleh: (caps) => caps.productionApp,
+    login: ["Aplikasi ini untuk tim Produksi. Akun Anda tidak punya akses Produksi.", "NOT_PRODUCTION_TEAM"],
+    refresh: ["Akun Anda tidak lagi punya akses Produksi.", "NOT_PRODUCTION_TEAM"],
+    alasanCabut: "tidak_lagi_tim_produksi",
+  },
+};
+export function gerbangApp(app) {
+  if (app === undefined || app === null || app === "") return GERBANG_APP.finance;
+  return Object.hasOwn(GERBANG_APP, app) ? GERBANG_APP[app] : null;
+}
+
 // ─── LOGIN ────────────────────────────────────────────────────────────────
 mobileRouter.post("/auth/login", async (req, res) => {
   try {
-    const { email, password, device } = req.body || {};
+    const { email, password, device, app } = req.body || {};
     if (!email || !password) return fail(res, 400, "Email dan password wajib diisi");
+    const gerbangAplikasi = gerbangApp(app);
+    if (!gerbangAplikasi) return fail(res, 400, "Aplikasi tidak dikenal", "APP_UNKNOWN");
 
     const gerbang = gerbangLogin(req, res, email);
     if (!gerbang) return;
@@ -91,8 +119,9 @@ mobileRouter.post("/auth/login", async (req, res) => {
 
     const roles = await loadRoles(user);
     const caps = capabilitiesFor({ roles, role: user.role });
-    if (!caps.financeApp) {
-      return fail(res, 403, "Aplikasi ini untuk tim Finance. Akun Anda tidak punya akses Finance.", "NOT_FINANCE_TEAM");
+    if (!gerbangAplikasi.boleh(caps)) {
+      const [msg, code] = gerbangAplikasi.login;
+      return fail(res, 403, msg, code);
     }
 
     const parsed = parseDevice(device);
@@ -100,7 +129,7 @@ mobileRouter.post("/auth/login", async (req, res) => {
 
     const { session, refreshToken } = await createSession(prisma, { user, roles, device });
     gerbang.berhasil();
-    res.json(tokenResponse({ user, roles, session, refreshToken }));
+    res.json(tokenResponse({ user, roles, session, refreshToken, app: gerbangAplikasi.kunci }));
   } catch (err) {
     if (err?.statusCode) return fail(res, err.statusCode, err.message);
     console.error("[mobileAuth] login:", err);
@@ -119,7 +148,10 @@ const PESAN_REFRESH = {
 
 mobileRouter.post("/auth/refresh", refreshLimiter, async (req, res) => {
   try {
-    const { refreshToken, device } = req.body || {};
+    const { refreshToken, device, app } = req.body || {};
+    // Divalidasi SEBELUM rotasi: nilai `app` yang salah tidak boleh menghabiskan refresh token.
+    const gerbangAplikasi = gerbangApp(app);
+    if (!gerbangAplikasi) return fail(res, 400, "Aplikasi tidak dikenal", "APP_UNKNOWN");
     const hasil = await rotateSession(prisma, refreshToken, { appVersion: device?.appVersion });
     if (!hasil.ok) {
       const [msg, code] = PESAN_REFRESH[hasil.reason] || PESAN_REFRESH.invalid;
@@ -129,12 +161,13 @@ mobileRouter.post("/auth/refresh", refreshLimiter, async (req, res) => {
     // paling lambat 15 menit (umur access token).
     const roles = await loadRoles(hasil.user);
     const caps = capabilitiesFor({ roles, role: hasil.user.role });
-    if (!caps.financeApp) {
-      await revokeSession(prisma, hasil.session.id, "tidak_lagi_tim_finance");
-      return fail(res, 403, "Akun Anda tidak lagi punya akses Finance.", "NOT_FINANCE_TEAM");
+    if (!gerbangAplikasi.boleh(caps)) {
+      await revokeSession(prisma, hasil.session.id, gerbangAplikasi.alasanCabut);
+      const [msg, code] = gerbangAplikasi.refresh;
+      return fail(res, 403, msg, code);
     }
     const sessionBaru = await prisma.mobileSession.findUnique({ where: { id: hasil.session.id } });
-    res.json(tokenResponse({ user: hasil.user, roles, session: sessionBaru, refreshToken: hasil.refreshToken }));
+    res.json(tokenResponse({ user: hasil.user, roles, session: sessionBaru, refreshToken: hasil.refreshToken, app: gerbangAplikasi.kunci }));
   } catch (err) {
     console.error("[mobileAuth] refresh:", err);
     fail(res, 500, "Terjadi kesalahan di server");
@@ -221,6 +254,8 @@ mobileRouter.post("/devices", requireAuth, async (req, res) => {
       return fail(res, 400, "Token push tidak valid");
     }
 
+    // Aplikasi pemilik token dari KLAIM token akses (diterbitkan server saat login), bukan dari body.
+    const app = req.user?.app === "production" ? "production" : "finance";
     const session = await prisma.mobileSession.findUnique({ where: { id: req.mobileSessionId }, select: { deviceId: true } });
     if (!session || session.deviceId !== String(deviceId)) {
       return fail(res, 400, "deviceId tidak sama dengan perangkat sesi ini");
@@ -235,11 +270,11 @@ mobileRouter.post("/devices", requireAuth, async (req, res) => {
         where: { userId_deviceId: { userId: req.user.id, deviceId: String(deviceId) } },
         create: {
           userId: req.user.id, sessionId: req.mobileSessionId, deviceId: String(deviceId),
-          platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr,
+          platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr, app,
           appVersion: appVersion ? String(appVersion).slice(0, 40) : null,
         },
         update: {
-          sessionId: req.mobileSessionId, platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr,
+          sessionId: req.mobileSessionId, platform: String(platform).slice(0, 20), provider, fcmToken: tokenStr, app,
           appVersion: appVersion ? String(appVersion).slice(0, 40) : null,
         },
       });

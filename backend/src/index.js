@@ -16,6 +16,7 @@ import { webhookRouter }    from "./routes/webhooks.js";
 import { productRouter }    from "./routes/products.js";
 import { promoRouter }      from "./routes/promos.js";
 import { authRouter }       from "./routes/auth.js";
+import { hubSsoRouter }     from "./routes/hubSso.js";
 import { conversationRouter } from "./routes/conversations.js";
 import { customerRouter }   from "./routes/customers.js";
 import { b2bRouter }        from "./routes/b2b.js";
@@ -230,6 +231,8 @@ app.use("/media/driver-app-bundles", express.static(driverAppBundlesDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);
+// SSO workspace Task & Meeting (D-200) — di balik HUB_SSO_ENABLED (default mati → semua 404). Lihat docs/HUB-SSO.md.
+app.use("/api/hub",          hubSsoRouter);
 app.use("/api/conversations", conversationRouter);
 app.use("/api/customers",    customerRouter);
 app.use("/api/b2b",          b2bRouter);
