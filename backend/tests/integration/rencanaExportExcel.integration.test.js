@@ -173,6 +173,17 @@ test("catatan panjang + karakter Indonesia/Unicode terbawa utuh; Ganti Kain dari
   assert.ok(!("serviceCode" in row) && !JSON.stringify(row).includes("serviceId"), "layanan teknis tidak ikut");
 });
 
+test("catatan form Sales (JSON) jadi teks rapi; berat per orang (OrderWeightEntry) untuk sheet Ringkas, berat lama sebagai cadangan", async () => {
+  const { w, A } = await fixture();
+  await testPrisma.order.update({ where: { id: A.order.id }, data: { notes: JSON.stringify({ merkKasur: "", ukuranKasur: "160x200 cm", keluhanCustomer: "Kasur amblas\nIngin lebih firm", jenisKasurLainnya: "" }) } });
+  await testPrisma.orderWeightEntry.createMany({ data: [{ orderId: A.order.id, label: "Suami", beratKg: 65, sortOrder: 0 }, { orderId: A.order.id, label: "Istri", beratKg: 55, sortOrder: 1 }] });
+  const r = await exp(w.lead, { from: DATE, to: DATE, includeUnscheduled: false });
+  const row = r.body.rows.find((x) => x.unitCode === A.unit.unitCode);
+  assert.equal(row.catatanSales, "Catatan: Kasur amblas\nIngin lebih firm"); assert.doesNotMatch(row.catatanSales, /[{}"]/);
+  assert.equal(row.beratRinci, "Suami: 65 kg, Istri: 55 kg");
+  assert.ok(r.body.rows.filter((x) => x.unitCode !== A.unit.unitCode).every((x) => x.beratRinci === "70 kg"), "order tanpa entri: berat lama");
+});
+
 test("lewat target: alasan dari server (hari + alasan jadwal ulang) dan catatan Kepala Produksi dari riwayat jadwal", async () => {
   const w = await world();
   const past = addDays(DATE, -3);

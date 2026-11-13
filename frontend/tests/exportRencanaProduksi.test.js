@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import * as D from "../../backend/src/lib/domain/productionRencanaExport.js";
-import { FIRST_DATA_ROW, HEADER_ROW, SHEET_NAME, TABLE_NAME, WARNA, buildRencanaWorkbook, cellValueOf, colLetter } from "../src/utils/exportRencanaProduksi.js";
+import { FIRST_DATA_ROW, HEADER_ROW, RINGKAS_SHEET, RINGKAS_TABLE, SHEET_NAME, TABLE_NAME, WARNA, buildRencanaWorkbook, cellValueOf, colLetter } from "../src/utils/exportRencanaProduksi.js";
 import { FORMAT_RUPIAH, FORMAT_TANGGAL, keTanggal } from "../src/utils/excelCommon.js";
 
 const NOW = new Date("2026-10-12T07:05:00.000Z"); // 14.05 WIB
@@ -38,7 +38,9 @@ async function roundTrip(data) {
   const zip = await JSZip.loadAsync(buf);
   const files = Object.keys(zip.files);
   const xml = async (re) => zip.file(files.find((f) => re.test(f))).async("string");
-  return { wb: read, buf, zip, files, xml };
+  // sheet Ringkas (pertama) juga punya tabel: pilih berkas tabel menurut NAMA tabel, bukan urutan berkas
+  const tabelXml = async (nama) => { for (const f of files.filter((x) => /xl\/tables\/table\d+\.xml$/.test(x))) { const t = await zip.file(f).async("string"); if (t.includes(`name="${nama}"`)) return t; } return ""; };
+  return { wb: read, buf, zip, files, xml, tabelXml };
 }
 
 test("nama berkas: Target-Produksi-DD-MMMM-YYYY.xlsx (bulan Indonesia); rentang memakai -sd-; waktu WIB", () => {
@@ -134,11 +136,11 @@ test("masukan: tanggal/rentang/Meja/id divalidasi; rentang >62 hari ditolak; id 
 });
 
 test("workbook: Excel Table dengan filter aktif, panel beku tepat di bawah header, header royal blue + teks putih, judul navy/off-white", async () => {
-  const { wb, xml, files } = await roundTrip(dataOf([row(1), row(2, { station: null }), row(3, { station: "TABLE_2" })]));
-  assert.deepEqual(wb.worksheets.map((w) => w.name), [SHEET_NAME, "Keterangan"]);
+  const { wb, xml, files, tabelXml } = await roundTrip(dataOf([row(1), row(2, { station: null }), row(3, { station: "TABLE_2" })]));
+  assert.deepEqual(wb.worksheets.map((w) => w.name), [RINGKAS_SHEET, SHEET_NAME, "Keterangan"]);
   const ws = wb.getWorksheet(SHEET_NAME);
   assert.equal(ws.views[0].state, "frozen"); assert.equal(ws.views[0].ySplit, HEADER_ROW); assert.equal(HEADER_ROW, 7);
-  const tableXml = await xml(/xl\/tables\/table\d+\.xml$/);
+  const tableXml = await tabelXml(TABLE_NAME);
   assert.match(tableXml, new RegExp(`name="${TABLE_NAME}"`)); assert.match(tableXml, /<autoFilter ref="A7:AC10"/); assert.match(tableXml, /headerRowCount="1"|<tableColumns count="26"/);
   assert.ok(files.some((f) => /xl\/tables\/table\d+\.xml$/.test(f)), "Excel Table (bukan sekadar autofilter)");
   const hdr = ws.getRow(HEADER_ROW).getCell(1);
@@ -174,7 +176,7 @@ test("workbook: Nilai Order numerik berformat Rupiah hanya bila disertakan", asy
 
 test("workbook: format bersyarat — Komplain/Tinggi/Normal, Lewat Target, Ganti Kain, PIC kosong/bahan tertahan, zebra", async () => {
   const { xml } = await roundTrip(dataOf([row(1), row(2, { priority: { key: "COMPLAINT", label: "Komplain", rank: 2 } })]));
-  const sheet = await xml(/xl\/worksheets\/sheet1\.xml$/); const styles = await xml(/xl\/styles\.xml$/);
+  const sheet = await xml(/xl\/worksheets\/sheet2\.xml$/); const styles = await xml(/xl\/styles\.xml$/);
   const cf = [...sheet.matchAll(/<conditionalFormatting sqref="([^"]+)">([\s\S]*?)<\/conditionalFormatting>/g)];
   assert.ok(cf.length >= 8, `aturan format bersyarat: ${cf.length}`);
   const all = sheet.match(/<conditionalFormatting[\s\S]*<\/conditionalFormatting>/)[0];
@@ -189,7 +191,7 @@ test("workbook: cetak landscape, pas 1 halaman lebar, header tabel berulang, foo
   const { wb, xml } = await roundTrip(dataOf([row(1, { request: panjang, complaints: ["Sakit pinggang", "Pegal-pegal"] })]));
   const ws = wb.getWorksheet(SHEET_NAME);
   assert.equal(ws.pageSetup.orientation, "landscape"); assert.equal(ws.pageSetup.fitToPage, true); assert.equal(ws.pageSetup.fitToWidth, 1); assert.equal(ws.pageSetup.fitToHeight, 0); assert.equal(ws.pageSetup.paperSize, 9);
-  const sheet = await xml(/xl\/worksheets\/sheet1\.xml$/); const book = await xml(/xl\/workbook\.xml$/);
+  const sheet = await xml(/xl\/worksheets\/sheet2\.xml$/); const book = await xml(/xl\/workbook\.xml$/);
   assert.match(sheet, /<pageSetup[^>]*orientation="landscape"/); assert.match(sheet, /<pageSetup[^>]*fitToWidth="1"/); assert.match(sheet, /fitToPage="1"/);
   assert.match(book, /_xlnm\.Print_Titles[^>]*>[^<]*\$7:\$7/); assert.match(sheet, /Halaman &amp;P dari &amp;N/);
   const idx = D.EXPORT_COLUMNS.findIndex((c) => c.key === "catatanSales") + 1;
@@ -204,11 +206,11 @@ test("workbook: cetak landscape, pas 1 halaman lebar, header tabel berulang, foo
 test("skala: >500 unit (1200) menghasilkan satu tabel utuh terurut dengan filter mencakup semua baris", async () => {
   const rows = []; for (let i = 1; i <= 1200; i += 1) rows.push(row(i, { late: i % 50 === 0, date: i % 50 === 0 ? "2026-10-09" : TODAY, operator: i % 97 === 0 ? null : { name: "Andi" } }));
   const data = dataOf(rows);
-  const t0 = Date.now(); const { wb, xml } = await roundTrip(data); const ms = Date.now() - t0;
+  const t0 = Date.now(); const { wb, xml, tabelXml } = await roundTrip(data); const ms = Date.now() - t0;
   const ws = wb.getWorksheet(SHEET_NAME);
   assert.equal(data.summary.total, 1200); assert.equal(ws.getCell("A5").value, 1200);
   assert.equal(ws.getCell(FIRST_DATA_ROW + 1199, 1).value, 1200); assert.equal(ws.getCell(FIRST_DATA_ROW + 1200, 1).value, null);
-  assert.match(await xml(/xl\/tables\/table\d+\.xml$/), /<autoFilter ref="A7:AC1207"/);
+  assert.match(await tabelXml(TABLE_NAME), /<autoFilter ref="A7:AC1207"/);
   assert.ok(ms < 30000, `waktu ${ms}ms`);
   // urutan terjaga: target naik, lalu Meja, lalu urutan
   const keys = []; for (let r = FIRST_DATA_ROW; r < FIRST_DATA_ROW + 1200; r += 1) keys.push([ws.getCell(r, 2).value?.toISOString().slice(0, 10), ws.getCell(r, 4).value, ws.getCell(r, 5).value ?? 99]);
@@ -252,4 +254,39 @@ test("pemasangan: tombol Export Excel di header Rencana Produksi memakai id kart
   // utilitas bersama dengan Export Order Sales (bukan implementasi paralel)
   assert.match(read("utils", "exportOrdersStyled.js"), /from "\.\/excelCommon\.js"/); assert.match(read("utils", "exportRencanaProduksi.js"), /from "\.\/excelCommon\.js"/);
   assert.doesNotMatch(read("utils", "exportOrdersStyled.js"), /^function keTanggal|^function aturCetak/m);
+});
+
+test("sheet DEPAN Ringkas: hanya kolom prioritas (ID Order, Pelanggan, Keluhan/Catatan …), tabel berfilter sendiri, semua KPI tampil; sheet lengkap tetap utuh", async () => {
+  const r = D.exportRowOf({ view: view(1, { request: JSON.stringify({ merkKasur: "", ukuranKasur: "Sofa 3 seater", keluhanCustomer: "Full servis", jenisKasurLainnya: "" }) }), todayKey: TODAY, includeValue: true, extras: { orderValue: 1_500_000, productLine: "KASUR", productType: "KASUR_SPRING", events: [] } });
+  const { wb, tabelXml } = await roundTrip(dataOf([r, row(2)], { includeValue: true }));
+  const ws = wb.getWorksheet(RINGKAS_SHEET);
+  const header = []; for (let c = 1; c <= ws.columnCount; c += 1) { const v = ws.getRow(HEADER_ROW).getCell(c).value; if (v) header.push(v); }
+  assert.deepEqual(header, ["No.", "Target", "Prioritas", "Meja", "ID Order", "Pelanggan", "Sales", "Produk", "Jenis Kasur", "Merek", "Ukuran", "Layanan", "Berat Badan", "Keluhan/Catatan", "Ganti Kain", "Nilai Order"]);
+  assert.match(await tabelXml(RINGKAS_TABLE), /<autoFilter ref="A7:P9"/);
+  assert.equal(ws.getCell(FIRST_DATA_ROW, 14).value, "Catatan: Full servis", "keluhan rapi, tanpa JSON");
+  assert.equal(ws.getCell("A4").value, "Total Unit"); assert.equal(ws.getCell("A5").value, 2);
+  const kpi = []; for (let c = 1; c <= 16; c += 1) { const v = ws.getCell(4, c).value; if (v) kpi.push(v); }
+  for (const k of ["Total Unit", "Belum Dijadwalkan", "Komplain", "Tinggi", "Lewat Target", "Tanpa PIC"]) assert.ok(kpi.includes(k), `KPI ${k} tampil di Ringkas`);
+  assert.equal(wb.getWorksheet(SHEET_NAME).getRow(HEADER_ROW).getCell(30).value, "Nilai Order", "sheet lengkap tetap 30 kolom");
+  const tanpaNilai = (await roundTrip(dataOf([row(1)]))).wb.getWorksheet(RINGKAS_SHEET);
+  assert.notEqual(tanpaNilai.getRow(HEADER_ROW).getCell(16).value, "Nilai Order", "Nilai Order hanya bila diminta");
+});
+
+test("catatan order rapi: blob JSON form Sales -> keluhan pelanggan per baris (+ jenis kasur lainnya); teks polos & JSON rusak apa adanya", () => {
+  assert.equal(D.catatanOrderBersih(JSON.stringify({ merkKasur: "", ukuranKasur: "120x200 cm", keluhanCustomer: "Kasur amblas\nSakit punggung\n\nBB 43", jenisKasurLainnya: "" })), "Kasur amblas\nSakit punggung\nBB 43");
+  assert.equal(D.catatanOrderBersih(JSON.stringify({ merkKasur: "Sano", keluhanCustomer: "Mau keras", jenisKasurLainnya: "Kasur lipat" })), "Mau keras\nJenis kasur: Kasur lipat");
+  assert.equal(D.catatanOrderBersih(JSON.stringify({ merkKasur: "Meja", ukuranKasur: "Meja", keluhanCustomer: "", jenisKasurLainnya: "" })), "", "tanpa keluhan = kosong (bukan JSON)");
+  assert.equal(D.catatanOrderBersih("Mohon ganti kain motif\nwarna abu"), "Mohon ganti kain motif\nwarna abu");
+  assert.equal(D.catatanOrderBersih("{bukan json"), "{bukan json"); assert.equal(D.catatanOrderBersih(null), "");
+  const r = D.exportRowOf({ view: view(1, { complaints: ["Sakit punggung", "Skoliosis"], request: JSON.stringify({ keluhanCustomer: "Kasur amblas\nPosisi tidur miring" }) }), todayKey: TODAY, extras: { events: [] } });
+  assert.equal(r.catatanSales, "Keluhan: Sakit punggung, Skoliosis\nCatatan: Kasur amblas\nPosisi tidur miring");
+  assert.doesNotMatch(r.catatanSales, /[{}"]|\\n/);
+  const u = D.exportRowOfUnit({ unit: { id: "u", unitCode: "U" }, extras: { request: JSON.stringify({ keluhanCustomer: "Cover berbulu " }) } });
+  assert.equal(u.catatanSales, "Catatan: Cover berbulu");
+});
+
+test("berat per orang untuk sheet Ringkas: entri form Sales -> 'Suami: 65 kg, Istri: 55 kg'; tanpa entri -> berat lama atau —", () => {
+  assert.equal(D.beratRinciOf([{ label: "Suami", beratKg: 65 }, { label: "Istri", beratKg: 55 }, { label: "Anak", beratKg: 12 }]), "Suami: 65 kg, Istri: 55 kg, Anak: 12 kg");
+  assert.equal(D.beratRinciOf([{ label: "1", beratKg: 70 }, { label: "2", beratKg: 80 }], 99), "1: 70 kg, 2: 80 kg", "entri baru didahulukan dari berat lama");
+  assert.equal(D.beratRinciOf([], 72.5), "72.5 kg"); assert.equal(D.beratRinciOf([], null), "—"); assert.equal(D.beratRinciOf(null, undefined), "—");
 });

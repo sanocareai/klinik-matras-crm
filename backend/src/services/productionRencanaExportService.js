@@ -3,7 +3,7 @@
 // ADMIN/OWNER DAN meminta (query terpisah; field tidak pernah di-select selain itu).
 import { BOARD_DEFAULTS, formatProductionDate, parseProductionDate, todayWib } from "../lib/domain/productionBoard.js";
 import { buildCornerRequest } from "../lib/domain/productionCorner.js";
-import { EXPORT_MAX_ROWS, columnsFor, exportRowOf, exportRowOfJadwalAdmin, exportRowOfUnit, periodLabel, sortExportRows, summaryOf, wibStamp, exportFileName } from "../lib/domain/productionRencanaExport.js";
+import { EXPORT_MAX_ROWS, beratRinciOf, columnsFor, exportRowOf, exportRowOfJadwalAdmin, exportRowOfUnit, periodLabel, sortExportRows, summaryOf, wibStamp, exportFileName } from "../lib/domain/productionRencanaExport.js";
 import { priorityDisplay, storedPriorityLevel } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { COMPLAINT_LABEL, loadRuns, viewsOf } from "./productionExperienceReadService.js";
@@ -127,6 +127,11 @@ export async function buildRencanaExport(prisma, { cohortUnitIds, query, canIncl
   for (const a of adminSchedules) {
     rows.push(exportRowOfJadwalAdmin({ unit: a.unit, jadwal: a, globalStatus: unitGlobals.get(a.unit.id) || null, includeValue, picNama: a.stationCode ? picBySlot.get(`${formatProductionDate(a.productionDate)}|${a.stationCode}`) ?? null : null, targetKey: a.unit.productionDueAt ? targetKeyOf(a.unit.productionDueAt) : null, extras: extrasUnit(a.unit) }));
   }
+  // 5) Berat per orang (OrderWeightEntry — form Sales sekarang: "Suami 65 kg, Istri 55 kg") untuk sheet Ringkas; order lama tanpa entri memakai Order.beratBadan.
+  const orderOfUnit = new Map([...views.map((v) => [v.unit?.id, runById.get(v.runId)?.unit?.orderId]), ...unitsTanpaRun.map((u) => [u.id, u.orderId])]);
+  const beratRows = orderIds.length ? await prisma.orderWeightEntry.findMany({ where: { orderId: { in: orderIds } }, orderBy: [{ orderId: "asc" }, { sortOrder: "asc" }], select: { orderId: true, label: true, beratKg: true } }) : [];
+  const beratByOrder = new Map(); for (const b of beratRows) { if (!beratByOrder.has(b.orderId)) beratByOrder.set(b.orderId, []); beratByOrder.get(b.orderId).push(b); }
+  for (const r of rows) r.beratRinci = beratRinciOf(beratByOrder.get(orderOfUnit.get(r.unitId)) || [], r.berat);
   const sorted = sortExportRows(rows);
   const stations = BOARD_DEFAULTS.stations;
   return {

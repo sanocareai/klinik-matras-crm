@@ -6,6 +6,17 @@ import { FORMAT_RUPIAH, FORMAT_TANGGAL, aturCetak, keTanggal, loadExcelJS, simpa
 
 export const SHEET_NAME = "Target Produksi Harian";
 export const TABLE_NAME = "TargetProduksi";
+// Sheet DEPAN "Ringkas": hanya kolom prioritas untuk dibaca tim produksi (permintaan Owner 13 Nov 2026). Sheet lengkap tetap ada sesudahnya. Kunci = kolom dari server; header boleh diganti.
+export const RINGKAS_SHEET = "Ringkas";
+export const RINGKAS_TABLE = "TargetRingkas";
+export const RINGKAS_KOLOM = Object.freeze([
+  ["no"], ["target"], ["prioritas"], ["meja"], ["resi", "ID Order"], ["customer", "Pelanggan"], ["sales"], ["jenisProduk", "Produk"], ["jenisKasur"], ["merek"], ["ukuran"],
+  ["layanan", "Layanan"], ["beratRinci", "Berat Badan", { type: "teks", width: 18, wrap: true }], ["catatanSales", "Keluhan/Catatan"], ["gantiKain"], ["nilaiOrder"],
+]);
+/** Kolom sheet Ringkas dari kolom server (yang tidak dikirim server — mis. Nilai Order tanpa izin — dilewati). Kolom khusus Ringkas (berat per orang) memakai definisi sendiri. */
+export function kolomRingkas(cols) {
+  return RINGKAS_KOLOM.map(([key, header, sendiri]) => { const c = cols.find((x) => x.key === key) || (sendiri ? { key, ...sendiri } : null); return c ? { ...c, ...(header ? { header } : {}) } : null; }).filter(Boolean);
+}
 export const SUMMARY_ROWS = 6; // baris 1-6: judul, periode, waktu data, label KPI, nilai KPI, spasi
 export const HEADER_ROW = SUMMARY_ROWS + 1; // baris judul tabel (beku tepat di bawahnya)
 export const FIRST_DATA_ROW = HEADER_ROW + 1;
@@ -71,15 +82,16 @@ function tulisRingkasan(ws, data, nCols) {
     ...summary.perStation.map((s) => [s.label, s.count]),
     ["Belum Dijadwalkan", summary.unscheduled], ["Komplain", summary.komplain], ["Tinggi", summary.tinggi], ["Lewat Target", summary.lewatTarget], ["Tanpa PIC", summary.tanpaPic],
   ];
+  const lebarUbin = nCols >= tiles.length * 2 ? 2 : 1; // sheet sempit (Ringkas): satu kolom per ubin supaya semua KPI tetap tampil
   tiles.forEach(([label, value], i) => {
-    const c1 = 1 + i * 2; const c2 = c1 + 1; if (c2 > nCols) return;
-    ws.mergeCells(4, c1, 4, c2); ws.mergeCells(5, c1, 5, c2);
+    const c1 = 1 + i * lebarUbin; const c2 = c1 + lebarUbin - 1; if (c2 > nCols) return;
+    if (lebarUbin > 1) { ws.mergeCells(4, c1, 4, c2); ws.mergeCells(5, c1, 5, c2); }
     const l = ws.getCell(4, c1); l.value = label; l.font = { name: FONT, size: 9, bold: true, color: { argb: WARNA.teksLembut } }; l.fill = fill(WARNA.offWhite); l.alignment = { vertical: "bottom", horizontal: "center", wrapText: true };
     const v = ws.getCell(5, c1); v.value = value; v.numFmt = "0"; v.font = { name: FONT, size: 16, bold: true, color: { argb: WARNA.navy } }; v.fill = fill(WARNA.offWhite); v.alignment = { vertical: "middle", horizontal: "center" };
     for (const r of [4, 5]) for (const c of [c1, c2]) ws.getCell(r, c).border = { left: c === c1 ? { style: "thin", color: { argb: WARNA.garis } } : undefined, right: c === c2 ? { style: "thin", color: { argb: WARNA.garis } } : undefined, top: r === 4 ? { style: "thin", color: { argb: WARNA.garis } } : undefined, bottom: r === 5 ? { style: "thin", color: { argb: WARNA.garis } } : undefined };
   });
   // sisa kolom ringkasan: warna latar rata
-  for (let c = tiles.length * 2 + 1; c <= nCols; c += 1) for (const r of [4, 5]) ws.getCell(r, c).fill = fill(WARNA.offWhite);
+  for (let c = tiles.length * lebarUbin + 1; c <= nCols; c += 1) for (const r of [4, 5]) ws.getCell(r, c).fill = fill(WARNA.offWhite);
   ws.getRow(4).height = 24; ws.getRow(5).height = 30; ws.getRow(6).height = 6;
 }
 
@@ -90,27 +102,32 @@ function formatBersyarat(ws, cols, n) {
   const cL = (key) => colLetter(idx(key));
   const tebal = (argb) => ({ bold: true, color: { argb } });
   const rules = [];
+  const ada = (key) => idx(key) > 0;
   const add = (ref, rule) => rules.push({ ref, rules: [rule] });
-  // Prioritas
+  // Prioritas (aturan untuk kolom yang tidak ada di sheet ini — sheet Ringkas — dilewati)
+  if (ada("prioritas")) {
   add(range("prioritas"), { type: "cellIs", operator: "equal", formulae: ['"Komplain"'], priority: 1, style: { font: tebal("FFFFFFFF"), fill: cfFill(WARNA.komplain) } });
   add(range("prioritas"), { type: "cellIs", operator: "equal", formulae: ['"Tinggi"'], priority: 2, style: { font: tebal("FFFFFFFF"), fill: cfFill(WARNA.tinggi) } });
   add(range("prioritas"), { type: "cellIs", operator: "equal", formulae: ['"Normal"'], priority: 3, style: { font: tebal(WARNA.normalTeks), fill: cfFill(WARNA.normalBg) } });
+  }
   // Lewat Target: sel Target + Alasan Lewat Target (merah muda) bila alasan diawali "Lewat target"
   const ref2 = `${range("target")} ${range("alasanLewat")}`;
-  add(ref2, { type: "expression", formulae: [`LEFT($${cL("alasanLewat")}${first},12)="Lewat target"`], priority: 4, style: { font: tebal(WARNA.lewatTeks), fill: cfFill(WARNA.lewatBg) } });
+  if (ada("target") && ada("alasanLewat")) add(ref2, { type: "expression", formulae: [`LEFT($${cL("alasanLewat")}${first},12)="Lewat target"`], priority: 4, style: { font: tebal(WARNA.lewatTeks), fill: cfFill(WARNA.lewatBg) } });
   // Ganti Kain
-  add(range("gantiKain"), { type: "cellIs", operator: "equal", formulae: ['"Ya"'], priority: 5, style: { font: tebal(WARNA.kainTeks), fill: cfFill(WARNA.kainBg) } });
+  if (ada("gantiKain")) add(range("gantiKain"), { type: "cellIs", operator: "equal", formulae: ['"Ya"'], priority: 5, style: { font: tebal(WARNA.kainTeks), fill: cfFill(WARNA.kainBg) } });
   // Belum punya PIC (PIC Meja..PIC Corner): teks diawali "Belum "
   const picRef = `${cL("picMeja")}${first}:${cL("picCorner")}${lastRow}`;
-  add(picRef, { type: "expression", formulae: [`LEFT(${cL("picMeja")}${first},6)="Belum "`], priority: 6, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
+  if (ada("picMeja") && ada("picCorner")) add(picRef, { type: "expression", formulae: [`LEFT(${cL("picMeja")}${first},6)="Belum "`], priority: 6, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
   // Bahan tertahan
-  add(range("statusBahan"), { type: "expression", formulae: [`LEFT(${cL("statusBahan")}${first},8)="Tertahan"`], priority: 7, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
+  if (ada("statusBahan")) add(range("statusBahan"), { type: "expression", formulae: [`LEFT(${cL("statusBahan")}${first},8)="Tertahan"`], priority: 7, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
   // Status Rencana: Rencana Admin (biru, hanya jadwal) · Pelaksanaan V2 (hijau, Run berjalan) · Belum dijadwalkan (abu)
+  if (ada("sumberJadwal")) {
   add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Rencana Admin"'], priority: 8, style: { font: tebal(WARNA.normalTeks), fill: cfFill(WARNA.normalBg) } });
   add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Pelaksanaan Meja"'], priority: 9, style: { font: tebal(WARNA.hijauTeks), fill: cfFill(WARNA.hijauBg) } });
   add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Belum dijadwalkan"'], priority: 10, style: { font: tebal(WARNA.abuTeks), fill: cfFill(WARNA.abuBg) } });
+  }
   // Tanggal Jadwal pada hari Minggu (libur) = kuning. WEEKDAY(...,2)=7 → Minggu.
-  add(range("tanggal"), { type: "expression", formulae: [`AND(${cL("tanggal")}${first}<>"",WEEKDAY(${cL("tanggal")}${first},2)=7)`], priority: 11, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
+  if (ada("tanggal")) add(range("tanggal"), { type: "expression", formulae: [`AND(${cL("tanggal")}${first}<>"",WEEKDAY(${cL("tanggal")}${first},2)=7)`], priority: 11, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
   // Zebra (prioritas terendah; ikut terurut/tersaring karena berbasis nomor baris tampil)
   add(`A${first}:${colLetter(cols.length)}${lastRow}`, { type: "expression", formulae: ["MOD(ROW(),2)=0"], priority: 50, style: { fill: cfFill(WARNA.zebra) } });
   for (const r of rules) ws.addConditionalFormatting(r);
@@ -165,7 +182,16 @@ export function buildRencanaWorkbook(ExcelJS, data) {
   if (!rows.length) throw new Error("Tidak ada unit untuk diexport");
   const wb = new ExcelJS.Workbook();
   wb.creator = "SANSS"; wb.title = "Target Produksi Harian"; wb.created = new Date(data.meta.generatedAt || Date.now());
-  const ws = wb.addWorksheet(SHEET_NAME, {
+  tulisSheetTabel(wb, { nama: RINGKAS_SHEET, tabel: RINGKAS_TABLE, cols: kolomRingkas(cols), data }); // sheet DEPAN: kolom prioritas saja
+  tulisSheetTabel(wb, { nama: SHEET_NAME, tabel: TABLE_NAME, cols, data }); // sheet lengkap (semua kolom, isi sama)
+  sheetKeterangan(wb, data);
+  return wb;
+}
+
+/** Satu sheet = ringkasan KPI + Excel Table berfilter + format; dipakai sheet Ringkas dan sheet lengkap (data baris sama, kolom berbeda). */
+function tulisSheetTabel(wb, { nama, tabel, cols, data }) {
+  const rows = data.rows;
+  const ws = wb.addWorksheet(nama, {
     views: [{ state: "frozen", xSplit: 0, ySplit: HEADER_ROW, zoomScale: 100, showGridLines: false }],
     properties: { tabColor: { argb: WARNA.royal } },
   });
@@ -174,7 +200,7 @@ export function buildRencanaWorkbook(ExcelJS, data) {
   tulisRingkasan(ws, data, cols.length);
 
   ws.addTable({
-    name: TABLE_NAME, ref: `A${HEADER_ROW}`, headerRow: true, totalsRow: false,
+    name: tabel, ref: `A${HEADER_ROW}`, headerRow: true, totalsRow: false,
     style: { theme: null, showRowStripes: false },
     columns: cols.map((c) => ({ name: c.header, filterButton: true })),
     rows: rows.map((r) => cols.map((c) => cellValueOf(c, r[c.key]))),
@@ -208,8 +234,6 @@ export function buildRencanaWorkbook(ExcelJS, data) {
   ws.pageSetup.margins = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 };
   ws.pageSetup.horizontalCentered = true;
   ws.headerFooter = { oddFooter: `&L&8${String(data.meta.generatedLabel).replace(/&/g, "&&")}&R&8Halaman &P dari &N` };
-  sheetKeterangan(wb, data);
-  return wb;
 }
 
 /** Mengunduh .xlsx. @returns nama berkas */

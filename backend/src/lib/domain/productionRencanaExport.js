@@ -109,6 +109,24 @@ export const columnsFor = ({ includeValue = false } = {}) => (includeValue ? [..
 
 // ---- Pembentuk baris -----------------------------------------------------------------------------------------------------------------------
 const clean = (v, max = 4000) => (v == null ? "" : String(v).replace(/\u0000/g, "").trim().slice(0, max));
+/** Berat per orang untuk dibaca: [{label:"Suami",beratKg:65},…] -> "Suami: 65 kg, Istri: 55 kg"; tanpa entri -> berat tunggal lama ("70 kg") atau "—". */
+export function beratRinciOf(entries = [], beratLama = null) {
+  const list = (entries || []).filter((e) => Number.isFinite(Number(e?.beratKg))).map((e) => (clean(e.label) ? `${clean(e.label)}: ${Number(e.beratKg)} kg` : `${Number(e.beratKg)} kg`));
+  if (list.length) return list.join(", ");
+  return beratLama != null && Number.isFinite(Number(beratLama)) ? `${Number(beratLama)} kg` : "—";
+}
+/**
+ * Catatan order untuk dibaca manusia. Order.notes form Sales disimpan sebagai blob JSON ({"merkKasur","ukuranKasur","keluhanCustomer","jenisKasurLainnya",…}) — dulu tercetak
+ * mentah di Excel. Yang diambil hanya keluhan pelanggan (+ jenis kasur "lainnya" bila diisi); merk/ukuran sudah punya kolom sendiri. Teks polos (order lama) dikembalikan apa adanya.
+ */
+export function catatanOrderBersih(notes) {
+  const teks = clean(notes); if (!teks) return "";
+  if (!teks.startsWith("{")) return teks;
+  let o; try { o = JSON.parse(teks); } catch { return teks; }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return teks;
+  const baris = (v) => clean(v).split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join("\n");
+  return [baris(o.keluhanCustomer), clean(o.jenisKasurLainnya) && `Jenis kasur: ${clean(o.jenisKasurLainnya)}`].filter(Boolean).join("\n");
+}
 const LINE_LABEL = Object.freeze({ KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" });
 const TYPE_LABEL = Object.freeze({
   KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", MULTIBED: "Multibed", KASUR_2IN1_ATAS: "Kasur 2in1 Atas", KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah", KASUR_SEHAT: "Kasur Sehat", KASUR_2IN1: "Kasur 2in1", KASUR_LAINNYA: "Lainnya",
@@ -153,7 +171,7 @@ export function exportRowOf({ view, extras = {}, todayKey, includeValue = false 
   const targetKey = plan ? effectiveTargetKey({ targetDate: plan.targetDate, productionDate: plan.productionDate }) : null;
   const { jenisProduk, jenisKasur } = productLabels(extras);
   const complaints = (view.customer?.complaints || []).join(", ");
-  const request = clean(view.customer?.request);
+  const request = catatanOrderBersih(view.customer?.request);
   const catatanSales = [complaints && `Keluhan: ${complaints}`, request && `Catatan: ${request}`].filter(Boolean).join("\n");
   const fabric = extras.gantiKain === true;
   const blockedMaterial = view.warnings?.some((w) => w.code === "BAHAN_BELUM" || w.code === "KEKURANGAN") || view.materialStatus?.key === "KEKURANGAN";
@@ -205,7 +223,7 @@ export function exportRowOfUnit({ unit, globalStatus = null, extras = {}, includ
     layanan: (extras.salesServices || []).filter(Boolean).join(", ") || "—",
     jenisProduk, jenisKasur, merek: clean(unit.merk) || "—", ukuran: clean(unit.ukuran) || "—",
     berat: extras.weightKg != null && Number.isFinite(Number(extras.weightKg)) ? Number(extras.weightKg) : null,
-    catatanSales: [extras.complaints?.length ? `Keluhan: ${extras.complaints.join(", ")}` : "", clean(extras.request) ? `Catatan: ${clean(extras.request)}` : ""].filter(Boolean).join("\n") || "—",
+    catatanSales: [extras.complaints?.length ? `Keluhan: ${extras.complaints.join(", ")}` : "", catatanOrderBersih(extras.request) ? `Catatan: ${catatanOrderBersih(extras.request)}` : ""].filter(Boolean).join("\n") || "—",
     gantiKain: fabric ? "Ya" : "Tidak", picMeja: "—", picBahan: "—", picQc: "—", picCorner: "—", statusBahan: "—", tahap: "—", alasanLewat: "", catatanLead: "—", createdAt: extras.createdAt ?? null, late: false,
   };
   if (includeValue) row.nilaiOrder = typeof extras.orderValue === "number" ? extras.orderValue : null;
