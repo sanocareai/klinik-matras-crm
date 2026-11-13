@@ -86,17 +86,35 @@ export async function runTurn({ skillFiles, products = [], history = [], custome
   const messages = [...toModelMessages(history), { role: "user", content: customerText.trim() }];
   const { reply, usage = {} } = await callModel({ model, systemPrompt, messages, maxTokens: 4000 });
 
+  const customerTexts = [...history.filter((m) => m.role === "CUSTOMER").map((m) => m.content?.text), customerText];
+  return prosesBalasan({ reply, usage, model, products, customerText, customerTexts, mode });
+}
+
+/**
+ * Draft copilot untuk satu percakapan Inbox. `konteks` = hasil rakitKonteksCopilot()
+ * (kartu customer + contoh gaya + riwayat sudah jadi satu pesan user).
+ */
+export async function runCopilotDraft({ skillFiles, products = [], konteks, model = "claude-haiku-5-5", callModel }) {
+  if (!konteks?.riwayat?.length) throw new Error("Percakapan belum punya pesan");
+  if (typeof callModel !== "function") throw new Error("callModel wajib diisi");
+
+  const systemPrompt = buildSystemPrompt(skillFiles, products, { mode: "copilot" });
+  const { reply, usage = {} } = await callModel({ model, systemPrompt, messages: [{ role: "user", content: konteks.pesan }], maxTokens: 4000 });
+  return prosesBalasan({ reply, usage, model, products, customerText: konteks.customerTerakhir, customerTexts: konteks.customerTexts, mode: "copilot" });
+}
+
+// Urai JSON → normalisasi → cek keras → biaya. Dipakai runTurn & runCopilotDraft.
+function prosesBalasan({ reply, usage, model, products, customerText, customerTexts, mode }) {
   const parsed = parseAgentJson(reply);
   const output = normalizeOutput(parsed);
-  // Bubble kosong sah hanya bila agent menyerahkan ke sales (mode copilot: sales menjawab sendiri).
-  const parseOk = !!parsed && (output.bubbles.length > 0 || output.handover.perlu);
+  // Bubble kosong sah bila agent menyerahkan ke sales, atau di mode copilot (mis. belum perlu follow-up).
+  const parseOk = !!parsed && (output.bubbles.length > 0 || output.handover.perlu || mode === "copilot");
   if (!parseOk) {
     // Model tidak mengembalikan JSON → tampilkan apa adanya supaya sales bisa mengoreksi.
     output.bubbles = [String(reply || "").trim() || "(balasan kosong)"];
     output.catatanInternal = "⚠ Model tidak mengikuti format JSON.";
   }
 
-  const customerTexts = [...history.filter((m) => m.role === "CUSTOMER").map((m) => m.content?.text), customerText];
   const checks = runChecks(output, { products, customerText, priceAsks: countPriceAsks(customerTexts), mode });
   if (!parseOk) checks.unshift({ kode: "FORMAT_JSON", lulus: false, pesan: "Model tidak mengikuti format JSON" });
 
