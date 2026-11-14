@@ -48,7 +48,8 @@ body.rc-sedang-seret, body.rc-sedang-seret * { cursor: grabbing !important; user
 
 /* Panel ruang kerja unit (PanelUnit.jsx): geser dari kanan di desktop, lembar dari bawah di HP. */
 body.rc-panel-terbuka { overflow: hidden; }
-.rc-panel-latar { position: fixed; inset: 0; z-index: 9000; background: rgba(15, 16, 35, .32); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+/* z 190: DI BAWAH dialog/laci aplikasi (Modal & PanelSamping z 200/201) — dulu 9000 sehingga formulir yang dibuka dari profil (Catat bahan, unggah foto, dll.) tertutup panel dan tampak macet. */
+.rc-panel-latar { position: fixed; inset: 0; z-index: 190; background: rgba(15, 16, 35, .32); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
 .rc-panel { position: absolute; top: 10px; right: 10px; bottom: 10px; width: min(760px, calc(100vw - 20px)); display: flex; flex-direction: column; border-radius: 24px; background: var(--bg-page, #f6f7fb); color: var(--text-primary); box-shadow: 0 30px 80px -20px rgba(15, 16, 35, .55); overflow: hidden; }
 .rc-panel.lembar { top: 6vh; left: 0; right: 0; bottom: 0; width: auto; border-radius: 24px 24px 0 0; }
 :root[data-theme="dark"] .rc-panel { background: #15162e; }

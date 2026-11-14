@@ -19,8 +19,9 @@ export default function PanelUnit({ buka, onBagian, onClose, onChanged, onBukaTa
     if (!buka) return undefined;
     pemicuRef.current = document.activeElement;
     const esc = (e) => { if (e.key === "Escape" && !document.querySelector("[role=dialog][data-state=open], .prod-pop")) onClose(); };
-    document.addEventListener("keydown", esc); document.body.classList.add("rc-panel-terbuka");
-    return () => { document.removeEventListener("keydown", esc); document.body.classList.remove("rc-panel-terbuka"); pemicuRef.current?.focus?.({ preventScroll: true }); };
+    // capture: dibaca SEBELUM Radix menutup dialog di atasnya — Esc pada formulir (Catat bahan, foto, dll.) hanya menutup formulir itu, bukan profil.
+    document.addEventListener("keydown", esc, true); document.body.classList.add("rc-panel-terbuka");
+    return () => { document.removeEventListener("keydown", esc, true); document.body.classList.remove("rc-panel-terbuka"); pemicuRef.current?.focus?.({ preventScroll: true }); };
   }, [!!buka, onClose]); // eslint-disable-line react-hooks/exhaustive-deps
   const sempit = typeof window !== "undefined" && window.innerWidth < 768;
   const bukaTab = (id, b) => { if (onBukaTab) { onBukaTab(id, b); return; } onClose(); openInActiveTab(jalurUnit(id, b), { title: "Profil Unit" }); };
