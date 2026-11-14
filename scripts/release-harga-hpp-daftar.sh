@@ -3,6 +3,7 @@
 # Backend: services/productionOrderList.js — tiap baris daftar membawa adopsi.nilai { jual (nilai order), unitDalamOrder, hpp { total, status, tanpaHarga } };
 #   HPP dihitung SEKALI per halaman lewat ringkasHppBanyak() (services/finance/hargaBerlaku.js) — angka & status SAMA dengan hppOperasionalUnit di profil (dikunci tes).
 #   Baca-saja: TANPA migrasi, TANPA schema, TANPA tulis data. Biaya perolehan Finance (PO/supplier) TETAP finance:read.
+# Web (perbaikan, laporan Owner 14 Nov): panel profil unit z 9000 -> 190 agar formulir dari profil (Catat bahan, dll.) tidak terbuka di BELAKANG panel; Esc profil fase capture.
 # Web: kolom "Harga & HPP" di daftar Order Produksi (desktop + kartu HP); tabel sempit (panel profil terbuka) → ditumpuk di bawah Target & PIC.
 # Image backend DIBANGUN ULANG; web dibangun di folder rilis. Di atas live 42a8cbb3 (rhh1). Kerangka = skrip rilis rhh1.
 #   ssh ubuntu@43.133.152.6 'bash /tmp/rhh1.sh <DEPLOY_SHA> <BASE_SHA> --preflight-only'   # baca-saja
@@ -16,7 +17,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 MODE=release; for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --build-only) MODE=buildonly;; --rollback) MODE=rollback;; esac; done
 CAND_BRANCH="${CAND_BRANCH:-feat/harga-hpp-daftar-on-42a8cbb3}"; CAND_REF="refs/remotes/origin/cand-rhh1"
 ALLOWED_RE='^(backend/src/services/productionOrderList\.js|backend/src/services/finance/hargaBerlaku\.js|backend/tests/integration/hppProfilUnit\.integration\.test\.js|frontend/src/.+|frontend/tests/.+|scripts/release-harga-hpp-daftar\.sh)$'
-DIFF_SHA='dc59c33739bcd9b36aa32586f188415e30b699fb05340b331efb9e6b14511d9a'
+DIFF_SHA='5a73f3f06978a4c48fd29fa1ca8cd313839905893f14676d298dc41c88d03a73'
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"; PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
 DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; RELEASES="$HOME/releases/klinik-matras"; PERSIST="$HOME/klinik-matras"; SRC="$HOME/release-src/klinik-matras.git"; NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 MIN_FREE_KB=$((5 * 1024 * 1024)); TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/harga-hpp-daftar-${DEPLOY_SHORT}-${TS}"
