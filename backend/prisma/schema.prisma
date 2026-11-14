@@ -1880,6 +1880,7 @@ model Unit {
   // P9B.1 — foto identitas unit (fallback manual saja; foto pickup driver DIBACA LANGSUNG dari Job.proofPhotoUrls
   // via storage_key, tidak pernah disalin ke sini — lihat UnitPhoto di bawah).
   photos UnitPhoto[]
+  dokumentasiTambahan UnitDocumentationPhoto[]
   // Adopsi Admin (Okt 2026): status kerja manual (append-only) dan rencana bahan per unit — tidak mengurangi stok, tidak membuat tahap/QC/foto palsu.
   workProgress ProductionUnitWorkProgress[]
   materialPlan ProductionUnitMaterialPlan?
@@ -12345,4 +12346,28 @@ model StudioTestCase {
 
   @@index([agentId, active])
   @@map("studio_test_cases")
+}
+
+// DOKUMENTASI TAMBAHAN UNIT (14 Nov 2026, permintaan Owner): foto dokumentasi untuk unit yang TIDAK bisa memakai Dokumentasi
+// Produksi V2 (unit tanpa pekerjaan V2, atau V2 belum dinyalakan untuknya) — terutama order yang SUDAH TERKIRIM. Kategori memakai
+// kunci yang SAMA dengan DOC_CATEGORIES (lib/domain/productionDocumentation.js). Informasi saja: tidak mengubah status produksi, QC,
+// stok, atau Finance. Berkas di data/unit-photos (sha1 isi), sama dengan foto tahap produksi lama, supaya ikut berkas dokumentasi
+// order dan bisa diteruskan Sales lewat alur yang sudah ada. Append-only: foto tidak dihapus/diubah lewat aplikasi.
+model UnitDocumentationPhoto {
+  id     String @id @default(uuid()) @db.Uuid
+  unitId String @map("unit_id") @db.Uuid
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  category   String
+  storageKey String @map("storage_key")
+  mimeType   String @map("mime_type")
+  sizeBytes  Int    @map("size_bytes")
+
+  uploadedById String   @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Berkas identik di kategori yang sama tidak pernah tercatat dua kali (unggah ulang/klik ganda aman).
+  @@unique([unitId, category, storageKey])
+  @@index([unitId, createdAt])
+  @@map("unit_documentation_photos")
 }

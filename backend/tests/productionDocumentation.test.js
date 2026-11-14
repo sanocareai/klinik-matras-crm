@@ -122,8 +122,10 @@ test("izin: PRODUCTION_DOCUMENTATION_WRITE hanya ADMIN, OWNER (keputusan owner 4
   // ADMIN/OWNER memegangnya BERSAMA UNIT_STAGE_WRITE & PRODUCTION_EXECUTE_ANY dari keputusan yang sama (bukan izin tersendiri yang bocor).
   for (const role of ["ADMIN", "OWNER"]) for (const perm of [P.UNIT_STAGE_WRITE, P.PRODUCTION_EXECUTE_ANY]) assert.ok(ROLE_PERMISSIONS[role].includes(perm), `${role} ${perm}`);
   // + P11: ringkasan kinerja milik sendiri (hanya angka pekerjaannya sendiri; bukan laporan Production).
-  // + P12B.2: Mode Latihan (PRODUCTION_DEMO_VIEW; data sintetis frontend, baca-saja, tanpa akses data nyata). Daftar TETAP tepat — tidak ada izin lain.
-  assert.deepEqual([...ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER].sort(), [P.PRODUCTION_DEMO_VIEW, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF, P.UNIT_READ].sort());
+  // + P12B.2: Mode Latihan (PRODUCTION_DEMO_VIEW; data sintetis frontend, baca-saja, tanpa akses data nyata).
+  // + 14 Nov 2026 (keputusan Owner): pendataan bahan dipegang tim QC & Dokumentasi → UNIT_MATERIAL_WRITE (non-ADMIN = pengajuan yang diverifikasi ADMIN).
+  // Daftar TETAP tepat — tidak ada izin lain.
+  assert.deepEqual([...ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER].sort(), [P.PRODUCTION_DEMO_VIEW, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF, P.UNIT_MATERIAL_WRITE, P.UNIT_READ].sort());
   for (const forbidden of [P.UNIT_STAGE_WRITE, P.QC_WRITE, P.ORDER_PRICE_READ, P.PAYMENT_READ, P.FINANCE_READ, P.CUSTOMER_PII_READ, P.INVENTORY_WRITE]) assert.equal(ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER.includes(forbidden), false, forbidden);
   assert.equal(ROLE_PERMISSIONS.PRODUCTION_WORKER.includes(P.PRODUCTION_DOCUMENTATION_WRITE), false);
   assert.ok(PORTALS.find((p) => p.key === "bengkel").roles.includes("PRODUCTION_DOCUMENTER"), "peran khusus bisa membuka workspace Production");
@@ -132,8 +134,15 @@ test("izin: PRODUCTION_DOCUMENTATION_WRITE hanya ADMIN, OWNER (keputusan owner 4
 });
 
 test("migration role P10B: additive murni (hanya ADD VALUE), tidak ada migration lain untuk dokumentasi (tabel bukti dipakai ulang)", () => {
-  const dirs = readdirSync(path.join(here, "..", "prisma", "migrations")).filter((d) => /production_documenter|dokumentasi|documentation/i.test(d));
+  // PENGECUALIAN TUNGGAL (14 Nov 2026, disetujui Owner): tabel "dokumentasi tambahan" untuk unit yang TIDAK bisa memakai Dokumentasi V2
+  // (unit tanpa pekerjaan V2 / V2 belum menyala, mis. order lama yang sudah terkirim). Tetap SATU tujuan unggah per unit — dikunci tes di bawah.
+  const TAMBAHAN = "20270102090000_unit_documentation_photos";
+  const dirs = readdirSync(path.join(here, "..", "prisma", "migrations")).filter((d) => /production_documenter|dokumentasi|documentation/i.test(d) && d !== TAMBAHAN);
   assert.deepEqual(dirs, ["20261013090000_role_production_documenter"]);
+  const sqlTambahan = read(`prisma/migrations/${TAMBAHAN}/migration.sql`).replace(/--.*$/gm, "");
+  assert.match(sqlTambahan, /CREATE TABLE "unit_documentation_photos"/);
+  assert.doesNotMatch(sqlTambahan, /(DROP|DELETE|TRUNCATE|UPDATE|INSERT)/i, "migrasi dokumentasi tambahan aditif murni");
+  assert.deepEqual([...sqlTambahan.matchAll(/CREATE TABLE "(\w+)"/g)].map((m) => m[1]), ["unit_documentation_photos"], "hanya satu tabel baru");
   const sql = read(`prisma/migrations/${dirs[0]}/migration.sql`).replace(/--.*$/gm, "");
   assert.match(sql, /ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'PRODUCTION_DOCUMENTER'/);
   assert.doesNotMatch(sql, /\b(DROP|DELETE|TRUNCATE|UPDATE|INSERT|CREATE TABLE|ALTER TABLE)\b/i);
@@ -150,7 +159,10 @@ test("pagar kode: route tulis butuh izin khusus; unggah memakai magic byte + pre
   assert.match(svc, /lockRowForUpdate\(tx, "production_runs_v2", runId\)[\s\S]{0,400}v2Command\.findUnique/, "run dikunci SEBELUM replay-check");
   assert.match(svc, /isProductionWriterEnabledFor/); assert.match(svc, /DOC_MEDIA_OTHER_UNIT/); assert.match(svc, /docStepCode\(category\)/);
   assert.doesNotMatch(svc, /revision:\s*\{?\s*increment|bumpRunRevisionInTx/, "dokumentasi tidak menaikkan revisi run");
-  assert.doesNotMatch(read("prisma/schema.prisma"), /model\s+\w*Documentation\w*\s*\{/, "tidak ada model dokumentasi paralel");
+  const modelDok = [...read("prisma/schema.prisma").matchAll(/model\s+(\w*Documentation\w*)\s*\{/g)].map((m) => m[1]);
+  assert.deepEqual(modelDok, ["UnitDocumentationPhoto"], "tidak ada model dokumentasi paralel selain dokumentasi tambahan unit (pengecualian 14 Nov 2026)");
+  // Dokumentasi tambahan tidak pernah aktif bila Dokumentasi V2 bisa menerima foto unit itu → foto tidak terpecah di dua tempat.
+  assert.match(read("src/services/unitDocumentationService.js"), /const v2BisaUnggah = !!run && !!bacaOn && !!tulisOn;\s*if \(v2BisaUnggah\) return \{ aktif: false/);
   const steps = read("src/services/productionStepCommandService.js");
   assert.match(steps, /const evidence = allEvidence\.filter\(\(e\) => !isDocumentationRow\(e\)\)/);
   assert.match(steps, /NOT: \{ stepCode: \{ startsWith: DOC_STEP_CODE_PREFIX \} \}/, "versi bukti tahap tidak dihitung dari baris dokumentasi");

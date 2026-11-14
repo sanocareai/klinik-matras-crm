@@ -43,6 +43,7 @@ import { listWorkOrders } from "../services/productionOrderList.js";
 import { whereUnitProduksi } from "../lib/domain/unitBukanProduksi.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
 import { labelSatuanBaris } from "../services/transisiSatuanBahan.js";
+import { entriBerkasOrder } from "../services/unitDocumentationService.js";
 
 export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
@@ -332,6 +333,10 @@ productionRouter.get("/orders/:orderId/documentation", requirePermission(P.UNIT_
           note: l.note,
           recordedAt: l.createdAt,
         })),
+
+      // 2b. DOKUMENTASI TAMBAHAN (14 Nov 2026) — foto yang ditambahkan tim QC & Dokumentasi untuk unit tanpa Dokumentasi V2
+      //     (mis. order yang sudah terkirim). Bentuk entri sama dengan tahap produksi, jadi ikut tampil & bisa dikirim ke pelanggan.
+      ...(await entriBerkasOrder(prisma, req.params.orderId)),
 
       // 3. PENGIRIMAN — bukti sudah sampai.
       ...jobs

@@ -3,6 +3,10 @@
 //   GET /units/:id/ruang-kerja      fakta header unit: order Sales, alur Meja (bila ada), ketersediaan Dokumentasi + alasan jujur bila tidak tersedia
 // Isi lengkap (status kerja, rencana bahan, pemakaian aktual, riwayat) tetap dari GET /units/:id/adopsi; dokumentasi dari /api/production-v2/documentation/*. Tidak ada jalur tulis baru di sini.
 import express from "express";
+import fs from "node:fs";
+import os from "node:os";
+import crypto from "node:crypto";
+import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
@@ -12,6 +16,7 @@ import { PHASE_LABEL, RUN_STATUS_LABEL, listWorkList } from "../services/product
 import { UNIT_INCLUDE, perkayaBarisUnit } from "../services/productionOrderList.js";
 import { perhatianUnit, tindakanTersedia } from "../lib/domain/productionWorkList.js";
 import { displayStatusOfOrder, displayStatusOfUnit } from "../lib/domain/productionDisplay.js";
+import { DOK_TAMBAHAN_MAKS_BYTES, DOK_TAMBAHAN_MAKS_FOTO, catatDokumentasiTambahan, daftarDokumentasiTambahan, putusanDokumentasiTambahan, statusDokumentasiTambahan } from "../services/unitDocumentationService.js";
 import { PRODUCTION_READER_MODE, isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState } from "../services/v2FeatureFlags.js";
 
 export const productionWorkspaceRouter = express.Router();
@@ -83,7 +88,43 @@ productionWorkspaceRouter.get("/units/:id/ruang-kerja", requirePermission(P.UNIT
       },
       alurMeja, tindakan, perhatian,
       dokumentasi,
+      // Dokumentasi tambahan (14 Nov 2026): aktif hanya bila Dokumentasi V2 di atas tidak bisa menerima foto untuk unit ini.
+      dokumentasiTambahan: putusanDokumentasiTambahan({ unitStatus: unit.status, run, bacaOn, tulisOn, izinTulis }),
       izin: { unggahDokumentasi: izinTulis, ubahStatusOrder: hasPermission(req.user, P.ORDER_WRITE), unggahFotoIdentitas: hasPermission(req.user, P.UNIT_ROUTING_WRITE) },
     });
   } catch (err) { handleErr(err, res); }
+});
+
+// ───────────────────────── Dokumentasi tambahan unit (14 Nov 2026) ─────────────────────────
+//   GET  /units/:id/dokumentasi-tambahan   status jalur + foto per kategori (UNIT_READ)
+//   POST /units/:id/dokumentasi-tambahan   multipart: category + files[] (≤ 6 foto JPG/PNG/WEBP, ≤ 15 MB) — PRODUCTION_DOCUMENTATION_WRITE
+// Hanya untuk unit yang TIDAK bisa memakai Dokumentasi V2 (lihat services/unitDocumentationService.js). Informasi saja.
+const unggahDok = multer({
+  storage: multer.diskStorage({ destination: os.tmpdir(), filename: (_req, _file, cb) => cb(null, `dok-${crypto.randomUUID()}.part`) }),
+  limits: { fileSize: DOK_TAMBAHAN_MAKS_BYTES, files: DOK_TAMBAHAN_MAKS_FOTO },
+  fileFilter: (_req, file, cb) => cb(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
+});
+const bersihkan = (req) => { for (const f of req.files || []) { try { if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch { /* abaikan */ } } };
+
+productionWorkspaceRouter.get("/units/:id/dokumentasi-tambahan", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {
+  try {
+    const st = await statusDokumentasiTambahan(prisma, req.params.id, { izinTulis: hasPermission(req.user, P.PRODUCTION_DOCUMENTATION_WRITE) });
+    if (!st) return res.status(404).json({ error: "Unit tidak ditemukan", code: "UNIT_TIDAK_ADA" });
+    res.set("Cache-Control", "no-store");
+    res.json({ ...st, ...(await daftarDokumentasiTambahan(prisma, req.params.id)) });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionWorkspaceRouter.post("/units/:id/dokumentasi-tambahan", requirePermission(P.PRODUCTION_DOCUMENTATION_WRITE), wajibUuid(), (req, res, next) => {
+  unggahDok.array("files", DOK_TAMBAHAN_MAKS_FOTO)(req, res, (err) => {
+    if (err?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "Foto terlalu besar (maksimal 15 MB)", code: "DOK_TERLALU_BESAR" });
+    if (err?.code === "LIMIT_FILE_COUNT") return res.status(400).json({ error: `Maksimal ${DOK_TAMBAHAN_MAKS_FOTO} foto sekali unggah`, code: "DOK_TERLALU_BANYAK" });
+    if (err) return next(err);
+    return next();
+  });
+}, async (req, res) => {
+  try {
+    const hasil = await catatDokumentasiTambahan(prisma, { unitId: req.params.id, category: String(req.body?.category || ""), files: req.files || [], actorId: req.user.id, izinTulis: true });
+    res.status(201).json({ ...hasil, ...(await daftarDokumentasiTambahan(prisma, req.params.id)) });
+  } catch (err) { handleErr(err, res); } finally { bersihkan(req); }
 });
