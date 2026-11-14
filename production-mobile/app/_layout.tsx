@@ -5,11 +5,11 @@ import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
-import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
-import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
-import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
-import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
-import { Inter_800ExtraBold } from "@expo-google-fonts/inter/800ExtraBold";
+import { PlusJakartaSans_400Regular } from "@expo-google-fonts/plus-jakarta-sans/400Regular";
+import { PlusJakartaSans_500Medium } from "@expo-google-fonts/plus-jakarta-sans/500Medium";
+import { PlusJakartaSans_600SemiBold } from "@expo-google-fonts/plus-jakarta-sans/600SemiBold";
+import { PlusJakartaSans_700Bold } from "@expo-google-fonts/plus-jakarta-sans/700Bold";
+import { PlusJakartaSans_800ExtraBold } from "@expo-google-fonts/plus-jakarta-sans/800ExtraBold";
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSession } from "@/auth/session";
@@ -45,7 +45,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold });
+  const [fontsLoaded] = useFonts({ PlusJakartaSans_400Regular, PlusJakartaSans_500Medium, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold });
   const status = useSession((s) => s.status);
   const keamananSiap = useKeamanan((s) => s.siap);
 
@@ -77,7 +77,8 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
+        {/* Transisi native ala iOS (react-native-screens, di thread UI): layar baru meluncur dari kanan, bisa digeser balik dari tepi kiri. */}
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: "ios_from_right", gestureEnabled: true, fullScreenGestureEnabled: true }}>
           <Stack.Protected guard={status === "signedIn"}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="unit/[runId]" />
@@ -94,6 +95,8 @@ export default function RootLayout() {
             <Stack.Screen name="atur-pengerjaan/[runId]" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="jadwal" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="pic-meja" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="bahan/[unitId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="aksi-cepat" options={{ presentation: "transparentModal", animation: "none", gestureEnabled: false, contentStyle: { backgroundColor: "transparent" } }} />
           </Stack.Protected>
           <Stack.Protected guard={status === "signedOut"}>
             <Stack.Screen name="login" />

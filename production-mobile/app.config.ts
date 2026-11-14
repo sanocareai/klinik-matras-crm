@@ -33,7 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: `SANSS Produksi${LABEL[VARIANT]}`,
   slug: "sanss-produksi",
   scheme: "sanssproduksi",
-  version: "0.1.0",
+  version: "0.2.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "light",
@@ -46,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(googleServices ? { googleServicesFile: googleServices } : {}),
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#4A62E8",
+      backgroundColor: "#036BDB",
     },
     blockedPermissions: [
       "android.permission.RECORD_AUDIO",
@@ -66,7 +66,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
     [
       "expo-splash-screen",
-      { image: "./assets/splash-icon.png", imageWidth: 160, resizeMode: "contain", backgroundColor: "#F2F2F7" },
+      { image: "./assets/splash-icon.png", imageWidth: 132, resizeMode: "contain", backgroundColor: "#0A55D1" },
     ],
     [
       "expo-image-picker",
@@ -81,7 +81,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-video",
     // Sidik jari / wajah / PIN HP untuk masuk cepat & kunci aplikasi (izin USE_BIOMETRIC ditambahkan modulnya).
     ["expo-local-authentication", { faceIDPermission: "SANSS Produksi memakai Face ID untuk masuk cepat dan membuka kunci aplikasi." }],
-    ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#4A62E8" }],
+    ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#007BFF" }],
     [
       "expo-build-properties",
       {

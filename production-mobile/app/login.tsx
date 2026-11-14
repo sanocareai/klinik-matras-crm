@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { Aurora } from "@/design/Aurora";
+import { useKurangiGerak } from "@/design/gerak";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Eye, EyeOff } from "lucide-react-native";
 import { useSession } from "@/auth/session";
@@ -77,27 +80,64 @@ export default function Login() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adaCepat, k.siap]);
 
-  const input = { height: 54, borderRadius: 14, backgroundColor: C.card, paddingHorizontal: 16, fontFamily: F.regular, fontSize: 17, color: C.ink } as const;
+  const input = { height: 54, borderRadius: 27, backgroundColor: C.card, paddingHorizontal: 20, fontFamily: F.medium, fontSize: 16.5, color: C.ink } as const;
+
+  // PEMBUKA IMMERSIVE: menyambung dari splash (biru pekat + logo di tengah) → logo naik dengan pegas, judul memudar masuk,
+  // kartu kaca meluncur naik; sesudahnya logo "melayang" pelan. Semua transform/opacity native driver; "Kurangi gerakan" → langsung tampil.
+  const kurangi = useKurangiGerak();
+  const [masuk] = useState(() => new Animated.Value(kurangi ? 1 : 0));
+  const [kartu] = useState(() => new Animated.Value(kurangi ? 1 : 0));
+  const [layang] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (kurangi) { masuk.setValue(1); kartu.setValue(1); return; }
+    Animated.sequence([
+      Animated.spring(masuk, { toValue: 1, damping: 14, stiffness: 120, mass: 1, useNativeDriver: true }),
+    ]).start();
+    Animated.spring(kartu, { toValue: 1, damping: 18, stiffness: 140, mass: 1, delay: 260, useNativeDriver: true }).start();
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(layang, { toValue: 1, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(layang, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+    ]));
+    const mulai = setTimeout(() => loop.start(), 900);
+    return () => { clearTimeout(mulai); loop.stop(); };
+  }, [kurangi, masuk, kartu, layang]);
+  const gayaLogo = {
+    transform: [
+      { translateY: Animated.add(masuk.interpolate({ inputRange: [0, 1], outputRange: [120, 0] }), layang.interpolate({ inputRange: [0, 1], outputRange: [0, -6] })) },
+      { scale: masuk.interpolate({ inputRange: [0, 1], outputRange: [1.25, 1] }) },
+    ],
+  };
+  const gayaJudul = { opacity: masuk, transform: [{ translateY: masuk.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }] };
+  const gayaKartu = { opacity: kartu, transform: [{ translateY: kartu.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] };
+  const PUTIH_LEMBUT = "#D6E6FF";
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: insets.top + 56, paddingBottom: insets.bottom + 32, paddingHorizontal: 24, gap: 20 }}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: "#0A55D1" }}>
+      <StatusBar style="light" />
+      <Aurora />
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingTop: insets.top + 32, paddingBottom: insets.bottom + 28, paddingHorizontal: 22, gap: 22 }}>
         <View style={{ alignItems: "center", gap: 14 }}>
-          <AppIcon size={96} />
-          <T.LargeTitle>SANSS Produksi</T.LargeTitle>
-          <T.Body style={{ textAlign: "center" }}>Masuk dengan akun SANSS kamu.</T.Body>
+          <Animated.View style={gayaLogo}>
+            <View style={{ position: "absolute", top: -18, left: -18, right: -18, bottom: -18, borderRadius: 60, backgroundColor: "rgba(140,200,255,0.18)" }} />
+            <AppIcon size={104} />
+          </Animated.View>
+          <Animated.View style={[{ alignItems: "center", gap: 4 }, gayaJudul]}>
+            <T.LargeTitle style={{ color: C.white }}>SANSS Produksi</T.LargeTitle>
+            <T.Body style={{ textAlign: "center", color: PUTIH_LEMBUT }}>Masuk dengan akun SANSS kamu.</T.Body>
+          </Animated.View>
         </View>
 
-        {banner ? <Card style={{ backgroundColor: TONE.orange.tint }}><T.Sub style={{ color: TONE.orange.text }}>{banner}</T.Sub></Card> : null}
+        <Animated.View style={[{ gap: 16, padding: 18, borderRadius: 32, backgroundColor: "rgba(255,255,255,0.13)", borderWidth: 1, borderColor: "rgba(255,255,255,0.32)" }, gayaKartu]}>
+        {banner ? <Card style={{ backgroundColor: TONE.orange.tint }} solid><T.Sub style={{ color: TONE.orange.text }}>{banner}</T.Sub></Card> : null}
 
         {adaCepat ? (
           <View style={{ gap: 8 }}>
-            <Button kind="primary" icon={<IkonMetode info={k.info} size={22} />} label={`Masuk dengan ${metode}`} onPress={() => void cepat()} busy={busy === "cepat"} disabled={!!busy} />
-            <T.Caption style={{ textAlign: "center" }}>{k.loginCepatEmail}</T.Caption>
+            <Button kind="tinted" icon={<IkonMetode info={k.info} size={22} />} label={`Masuk dengan ${metode}`} onPress={() => void cepat()} busy={busy === "cepat"} disabled={!!busy} />
+            <T.Caption style={{ textAlign: "center", color: PUTIH_LEMBUT }}>{k.loginCepatEmail}</T.Caption>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: C.barLine }} />
-              <T.Caption>atau ketik kata sandi</T.Caption>
-              <View style={{ flex: 1, height: 1, backgroundColor: C.barLine }} />
+              <View style={{ flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.25)" }} />
+              <T.Caption style={{ color: PUTIH_LEMBUT }}>atau ketik kata sandi</T.Caption>
+              <View style={{ flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.25)" }} />
             </View>
           </View>
         ) : null}
@@ -147,10 +187,11 @@ export default function Login() {
           ) : null}
         </View>
 
-        {info ? <Card style={{ backgroundColor: TONE.orange.tint }}><T.Sub style={{ color: TONE.orange.text }}>{info}</T.Sub></Card> : null}
-        {galat ? <T.Sub style={{ color: TONE.red.text, textAlign: "center" }}>{galat}</T.Sub> : null}
-        <Button kind={adaCepat ? "tinted" : "primary"} label="Masuk" onPress={() => void manual()} busy={busy === "manual"} disabled={!!busy} />
-        <T.Caption style={{ textAlign: "center" }}>Versi {ENV.version}{ENV.appEnv !== "production" ? ` · ${ENV.appEnv}` : ""}</T.Caption>
+        {info ? <Card style={{ backgroundColor: TONE.orange.tint }} solid><T.Sub style={{ color: TONE.orange.text }}>{info}</T.Sub></Card> : null}
+        {galat ? <Card style={{ backgroundColor: TONE.red.tint }} solid><T.Sub style={{ color: TONE.red.text, textAlign: "center" }}>{galat}</T.Sub></Card> : null}
+        <Button kind="tinted" label="Masuk" onPress={() => void manual()} busy={busy === "manual"} disabled={!!busy} />
+        </Animated.View>
+        <T.Caption style={{ textAlign: "center", color: PUTIH_LEMBUT }}>Versi {ENV.version}{ENV.appEnv !== "production" ? ` · ${ENV.appEnv}` : ""}</T.Caption>
       </ScrollView>
     </KeyboardAvoidingView>
   );

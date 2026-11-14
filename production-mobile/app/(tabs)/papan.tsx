@@ -8,6 +8,7 @@ import { formatMenit, ringkasPapan } from "@/features/model";
 import { perluPerhatian, ringkasMeja } from "@/features/papan";
 import { Card, Chip, Divider, Screen, Section, StateView, T } from "@/design/ui";
 import { C, TONE } from "@/design/tokens";
+import { Denyut } from "@/design/gerak";
 import { jamWib } from "@/lib/waktu";
 
 // PAPAN — live per meja hari ini (sumber sama dengan Andon TV: GET /production-v2/andon), diperbarui tiap 20 detik.
@@ -24,7 +25,7 @@ export default function Papan() {
     <Screen refreshing={q.isRefetching} onRefresh={() => void q.refetch()}>
       <View style={{ paddingHorizontal: 4 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: q.error ? TONE.red.fill : TONE.green.fill }} />
+          {q.error ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: TONE.red.fill }} /> : <Denyut warna={TONE.green.fill} />}
           <T.Caption style={{ color: q.error ? TONE.red.text : TONE.green.text }}>
             {q.error ? "TERPUTUS — menampilkan data terakhir" : `LIVE · diperbarui ${jamWib(b?.generatedAt)}`}
           </T.Caption>

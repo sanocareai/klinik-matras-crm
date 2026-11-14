@@ -1,35 +1,44 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import { Image as ImageIcon, LayoutGrid, Layers, ShieldCheck, Target, User } from "lucide-react-native";
+import { Image as ImageIcon, LayoutGrid, Layers, Package, ShieldCheck, Target, User } from "lucide-react-native";
 import { useLayout } from "@/api/production";
-import { C, F, TONE } from "@/design/tokens";
+import { useBahanBelumBulanIni } from "@/api/bahanQc";
+import { LiquidTabBar, type ItemTab } from "@/design/LiquidTabBar";
 
-// TAB BAR gaya iOS. Tab muncul sesuai capability server (bukan nama peran):
+// TAB BAR "Liquid Glass". Tab muncul sesuai capability server (bukan nama peran):
 //   Kerja  — pemegang antrean Meja/Corner (unit:stage:write)
 //   QC     — putusan Uji Berat Badan (qc:write)
+//   Bahan  — tim QC & Dokumentasi: pendataan bahan (keputusan Owner 14 Nov 2026); tombol catat tetap mengikuti izin server per unit
 //   Papan  — semua (live per meja); Target — Admin Produksi (production_assignment:write)
 //   Media  — semua; Akun — semua
 export default function TabsLayout() {
   const l = useLayout();
-  const ikon = (Icon: typeof Layers) => function IkonTab({ color }: { color: unknown }) { return <Icon color={String(color)} size={26} strokeWidth={2} />; };
+  const timBahan = l.qc || l.docs;
+  const bahan = useBahanBelumBulanIni(timBahan);
+  const items: ItemTab[] = [
+    ...(l.lane ? [{ name: "kerja", label: "Kerja", Icon: Layers }] : []),
+    ...(l.qc ? [{ name: "qc", label: "QC", Icon: ShieldCheck }] : []),
+    ...(timBahan ? [{ name: "bahan", label: "Bahan", Icon: Package, badge: bahan.perlu }] : []),
+    { name: "papan", label: "Papan", Icon: LayoutGrid },
+    ...(l.admin ? [{ name: "target", label: "Target", Icon: Target }] : []),
+    { name: "media", label: "Media", Icon: ImageIcon },
+    { name: "akun", label: "Akun", Icon: User },
+  ];
   return (
     <Tabs
-      initialRouteName={l.admin ? "papan" : l.qc ? "qc" : l.lane ? "kerja" : "papan"}
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: TONE.blue.text,
-        tabBarInactiveTintColor: C.ink3,
-        tabBarLabelStyle: { fontFamily: F.semibold, fontSize: 11 },
-        tabBarStyle: { backgroundColor: C.barBg, borderTopColor: C.barLine, height: 86, paddingTop: 6 },
-      }}
+      initialRouteName={l.admin ? "papan" : l.qc ? "qc" : l.lane ? "kerja" : timBahan ? "bahan" : "papan"}
+      tabBar={(props) => <LiquidTabBar state={props.state} navigation={props.navigation} items={items} />}
+      // Pindah tab: memudar singkat (seperti iOS), bukan potong mendadak. lazy: layar tab baru dibuat saat pertama dibuka (hemat memori HP menengah).
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: "transparent" }, animation: "fade", lazy: true, freezeOnBlur: true }}
     >
       <Tabs.Screen name="index" options={{ href: null }} />
-      <Tabs.Screen name="kerja" options={{ title: "Kerja", tabBarIcon: ikon(Layers), href: l.lane ? undefined : null }} />
-      <Tabs.Screen name="qc" options={{ title: "QC", tabBarIcon: ikon(ShieldCheck), href: l.qc ? undefined : null }} />
-      <Tabs.Screen name="papan" options={{ title: "Papan", tabBarIcon: ikon(LayoutGrid) }} />
-      <Tabs.Screen name="target" options={{ title: "Target", tabBarIcon: ikon(Target), href: l.admin ? undefined : null }} />
-      <Tabs.Screen name="media" options={{ title: "Media", tabBarIcon: ikon(ImageIcon) }} />
-      <Tabs.Screen name="akun" options={{ title: "Akun", tabBarIcon: ikon(User) }} />
+      <Tabs.Screen name="kerja" />
+      <Tabs.Screen name="qc" />
+      <Tabs.Screen name="bahan" />
+      <Tabs.Screen name="papan" />
+      <Tabs.Screen name="target" />
+      <Tabs.Screen name="media" />
+      <Tabs.Screen name="akun" />
     </Tabs>
   );
 }
