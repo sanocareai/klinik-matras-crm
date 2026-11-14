@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useIsFocused } from "expo-router";
 import Svg, { Circle } from "react-native-svg";
 import { Search } from "lucide-react-native";
+import { urlMedia } from "@/lib/env";
 import { Latar, type NadaLatar } from "./Latar";
 import { Denyut, Kilau, Muncul, PEGAS } from "./gerak";
 import { useGlassTier } from "./glass";
@@ -237,12 +238,10 @@ export function TombolBulat({ children, onPress, accessibilityLabel, size = 46 }
 }
 
 /** Kepala layar beranda (mockup): bulatan inisial kaca 46 + keterangan 13/600 + sapaan 21/800 + tombol/pil di kanan. */
-export function Kepala({ inisial, keterangan, judul, kanan }: { inisial: string; keterangan: string; judul: string; kanan?: React.ReactNode }) {
+export function Kepala({ inisial, keterangan, judul, kanan, foto }: { inisial: string; keterangan: string; judul: string; kanan?: React.ReactNode; foto?: string | null }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-      <View style={{ width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)", borderWidth: 1, borderColor: "rgba(255,255,255,0.55)" }}>
-        <Text maxFontSizeMultiplier={1.1} style={{ fontFamily: F.heavy, fontSize: 16, color: C.white }}>{inisial}</Text>
-      </View>
+      <FotoProfil inisial={inisial} url={foto} size={46} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ fontFamily: F.semibold, fontSize: 13, color: "#DCEBFF" }}>{keterangan}</Text>
         <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ fontFamily: F.heavy, fontSize: 21, letterSpacing: -0.4, color: C.white }}>{judul}</Text>
@@ -251,6 +250,24 @@ export function Kepala({ inisial, keterangan, judul, kanan }: { inisial: string;
     </View>
   );
 }
+/**
+ * Foto profil bulat (kaca di atas biru): foto dari SANSS (User.avatarUrl — sama dengan web) bila ada, selain itu inisial.
+ * Foto gagal dimuat (mis. sudah diganti di web) → kembali ke inisial, tidak pernah kotak kosong.
+ */
+export function FotoProfil({ inisial, url, size = 46, cincin = 1 }: { inisial: string; url?: string | null; size?: number; cincin?: number }) {
+  const [gagal, setGagal] = useState<string | null>(null);
+  const src = url && gagal !== url ? urlMedia(url) : null;
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)", borderWidth: cincin, borderColor: "rgba(255,255,255,0.6)" }}>
+      {src ? (
+        <Image source={{ uri: src }} contentFit="cover" transition={150} accessibilityLabel="Foto profil" onError={() => setGagal(url ?? null)} style={{ width: "100%", height: "100%" }} />
+      ) : (
+        <Text maxFontSizeMultiplier={1.1} style={{ fontFamily: F.heavy, fontSize: Math.round(size * 0.35), color: C.white }}>{inisial}</Text>
+      )}
+    </View>
+  );
+}
+
 /** Kepala layar tab biasa: keterangan kecil + judul besar 34/800 (mockup "layar bersama"), putih di atas biru. */
 export function KepalaJudul({ keterangan, judul, kanan }: { keterangan?: React.ReactNode; judul: string; kanan?: React.ReactNode }) {
   return (

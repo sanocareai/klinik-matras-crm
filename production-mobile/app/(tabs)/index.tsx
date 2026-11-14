@@ -42,7 +42,8 @@ export default function Beranda() {
     { key: "papan", label: "Papan", Icon: LayoutGrid, to: "/papan" },
     { key: "jadwal", label: "Jadwal", Icon: CalendarDays, to: "/jadwal" },
     ...(l.qc ? [{ key: "qc", label: "QC", Icon: ShieldCheck, to: "/qc", badge: antreQc.length }] : []),
-    ...(timQc ? [{ key: "bahan", label: "Bahan", Icon: Package, to: "/bahan", badge: bahan.perlu, oranye: bahan.perlu > 0 }] : []),
+    // Order (tab Order Produksi, 14 Nov 2026): semua order + profil (bahan, dokumentasi). Lencana = unit bulan ini yang bahannya belum dicatat.
+    { key: "order", label: "Order", Icon: Package, to: "/order", badge: timQc ? bahan.perlu : undefined, oranye: timQc && bahan.perlu > 0 },
     { key: "target", label: "Target", Icon: Target, to: "/target" },
     { key: "pic", label: "PIC Meja", Icon: UserCog, to: "/pic-meja" },
     { key: "media", label: "Media", Icon: ImageIcon, to: "/media" },
@@ -50,7 +51,7 @@ export default function Beranda() {
   ] : [
     ...(l.qc ? [{ key: "qc", label: "Uji Berat", Icon: ShieldCheck, to: "/qc", badge: antreQc.length }] : []),
     { key: "media", label: "Dokumentasi", Icon: Camera, to: "/media" },
-    { key: "bahan", label: "Bahan", Icon: Package, to: "/bahan", badge: bahan.perlu, oranye: bahan.perlu > 0 },
+    { key: "order", label: "Order", Icon: Package, to: "/order", badge: bahan.perlu, oranye: bahan.perlu > 0 },
     { key: "papan", label: "Papan", Icon: LayoutGrid, to: "/papan" },
     ...(l.lane ? [{ key: "kerja", label: "Kerja", Icon: Layers, to: "/kerja" }] : []),
   ];
@@ -60,7 +61,7 @@ export default function Beranda() {
 
   return (
     <Screen latar={admin ? "biru" : "navy"} refreshing={andon.isRefetching} onRefresh={muat}>
-      <Kepala
+      <Kepala foto={user?.avatarUrl}
         inisial={inisial}
         keterangan={admin ? "Kepala Produksi" : "QC & Dokumentasi"}
         judul={`Halo, ${nama}`}
@@ -133,7 +134,7 @@ export default function Beranda() {
 
       {timQc ? (
         <Section title="Bahan belum dicatat" right={<KeteranganPanel>{bulanWib(0).label}</KeteranganPanel>}>
-          <Baris onPress={ke("/bahan")} accessibilityLabel={`Bahan belum dicatat, ${bahan.perlu} order`}>
+          <Baris onPress={ke("/order?filter=bahan")} accessibilityLabel={`Bahan belum dicatat, ${bahan.perlu} order`}>
             <IconOrb size={38} nada={bahan.perlu ? "orbOranye" : "orb"}><Package color={C.white} size={18} strokeWidth={2.2} /></IconOrb>
             <TeksBaris judul={bahan.isLoading ? "Menghitung…" : bahan.perlu ? `${bahan.perlu} order perlu dicatat` : "Semua order sudah tercatat"} sub="Catat bahan yang dipakai tiap order" />
             <ChevronRight color={C.ink3} size={20} />

@@ -96,6 +96,7 @@ export default function RootLayout() {
             <Stack.Screen name="jadwal" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="pic-meja" options={{ animation: "slide_from_bottom" }} />
             <Stack.Screen name="bahan/[unitId]" options={{ animation: "slide_from_bottom" }} />
+            <Stack.Screen name="order/[unitId]" />
             <Stack.Screen name="aksi-cepat" options={{ presentation: "transparentModal", animation: "none", gestureEnabled: false, contentStyle: { backgroundColor: "transparent" } }} />
           </Stack.Protected>
           <Stack.Protected guard={status === "signedOut"}>

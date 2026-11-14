@@ -27,6 +27,8 @@ type SessionState = {
   login: (email: string, password: string) => Promise<void>;
   logout: (opsi?: { alasan?: string }) => Promise<void>;
   refreshMe: () => Promise<void>;
+  /** Foto profil baru (sesudah unggah berhasil) — disimpan ke sesi supaya semua layar langsung memakainya. */
+  setAvatar: (avatarUrl: string | null) => Promise<void>;
 };
 
 let tokens: Tokens | null = null;
@@ -98,6 +100,15 @@ export const useSession = create<SessionState>((set, get) => ({
       // 401 berkode ditangani ApiClient → onSessionLost. Galat jaringan: pakai capabilities tersimpan.
       if (!(e instanceof ApiError)) log.warn("refreshMe gagal");
     }
+  },
+
+  setAvatar: async (avatarUrl) => {
+    const u = get().user;
+    if (!u) return;
+    const user = { ...u, avatarUrl };
+    set({ user });
+    const caps = get().capabilities;
+    if (tokens && caps) await saveSession({ tokens, user, capabilities: caps });
   },
 
   logout: async (opsi) => {

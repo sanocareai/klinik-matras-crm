@@ -76,11 +76,15 @@ export function useAdopsiUnit(unitId: string | undefined) {
 
 export type AturanSatuan = { satuanStok: string; satuanPakai: string; faktor: number; teks: string } | null;
 export type BahanKatalogQc = {
-  materialId: string; kode: string; nama: string; satuan: string | null; kelompok: { label: string };
-  tersedia: number | null; saldoDiketahui: boolean; keadaanLabel: string | null; satuanPakai: AturanSatuan;
+  materialId: string; kode: string; nama: string; satuan: string | null; kelompok: { kode?: string; label: string };
+  tersedia: number | null; saldoDiketahui: boolean; keadaan?: string | null; keadaanLabel: string | null; satuanPakai: AturanSatuan;
+  /** Harga Berlaku Gudang: null = peran tanpa izin lihat harga; { harga: null } = belum ada harga. */
+  harga?: { harga: number | null } | null;
 };
-export function cariKatalogBahan(q: string) {
-  return api.get<{ rows: BahanKatalogQc[]; total: number }>("/production/material-catalog", { query: { q: q || undefined, limit: 40 } });
+export type KelompokBahan = { kode: string; label: string; jumlah: number };
+/** Katalog bahan Produksi: kata kunci dan kategori dikirim BERSAMA (server menghitung jumlah per kategori untuk kata kunci yang sama). */
+export function cariKatalogBahan(q: string, kelompok = "") {
+  return api.get<{ rows: BahanKatalogQc[]; total: number; kelompok?: KelompokBahan[] }>("/production/material-catalog", { query: { q: q || undefined, kelompok: kelompok || undefined, limit: 60 } });
 }
 
 export type Pratinjau = {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { Image } from "expo-image";
 import { Aurora } from "@/design/Aurora";
 import { useKurangiGerak } from "@/design/gerak";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,6 +16,8 @@ import { CentangBaris } from "@/design/Form";
 import { Button, Card, T } from "@/design/ui";
 import { C, F, TONE } from "@/design/tokens";
 import { ENV } from "@/lib/env";
+
+const PENDAR_LOGO = require("../assets/latar/pendar-bulat.png");
 
 // LOGIN — akun SANSS pribadi (email kantor + kata sandi). Akun non-produksi ditolak server (NOT_PRODUCTION_TEAM).
 // MASUK CEPAT: email + kata sandi tersimpan di Keystore HP, dibuka dengan sidik jari / wajah / PIN HP (src/auth/keamanan.ts).
@@ -118,7 +121,8 @@ export default function Login() {
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingTop: insets.top + 32, paddingBottom: insets.bottom + 28, paddingHorizontal: 22, gap: 22 }}>
         <View style={{ alignItems: "center", gap: 14 }}>
           <Animated.View style={gayaLogo}>
-            <View style={{ position: "absolute", top: -18, left: -18, right: -18, bottom: -18, borderRadius: 60, backgroundColor: "rgba(140,200,255,0.18)" }} />
+            {/* pendar halus di belakang logo (gambar blur) — bukan kotak membulat bertepi */}
+            <Image source={PENDAR_LOGO} tintColor="#8CC8FF" contentFit="fill" transition={0} accessible={false} style={{ position: "absolute", top: -78, left: -78, width: 260, height: 260, opacity: 0.55 }} />
             <AppIcon size={104} />
           </Animated.View>
           <Animated.View style={[{ alignItems: "center", gap: 4 }, gayaJudul]}>

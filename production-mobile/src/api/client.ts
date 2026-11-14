@@ -26,8 +26,37 @@ export type ClientDeps = {
   /** true di preview/production: menolak baseUrl bukan HTTPS. */
   wajibHttps?: boolean;
   fetchImpl?: typeof fetch;
+  /** Pengirim multipart (unggahan). Bawaan: XMLHttpRequest — lihat `xhrFetch`. Tes boleh mengganti. */
+  uploadImpl?: typeof fetch;
   timeoutMs?: number;
 };
+
+/**
+ * Kirim multipart lewat XMLHttpRequest bawaan React Native.
+ * MENGAPA bukan fetch: Expo SDK 57 mengganti `fetch` global dengan expo/fetch, yang TIDAK mendukung bagian FormData berbentuk
+ * `{ uri, name, type }` (berkas lokal) — unggahan langsung gagal "Tidak bisa terhubung" tanpa pernah sampai ke server
+ * (ditemukan 14 Nov 2026 saat menguji dokumentasi; ikut memengaruhi foto bukti tahap, Catatan Komponen, dan foto QC).
+ * XHR React Native membaca berkas dari `uri` secara native. Bentuk balikan cukup untuk `kirim()`: ok, status, text(), headers.get().
+ */
+export const xhrFetch = ((url: string, init: { method: string; headers: Record<string, string>; body: FormData; signal?: AbortSignal }) =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method, url);
+    for (const [k, v] of Object.entries(init.headers)) xhr.setRequestHeader(k, v);
+    xhr.onload = () => resolve({
+      ok: xhr.status >= 200 && xhr.status < 300,
+      status: xhr.status,
+      text: async () => String(xhr.responseText ?? ""),
+      headers: { get: (n: string) => xhr.getResponseHeader(n) },
+    });
+    xhr.onerror = () => reject(new TypeError("Network request failed"));
+    xhr.ontimeout = () => reject(new TypeError("Network request failed"));
+    if (init.signal) {
+      if (init.signal.aborted) { reject(Object.assign(new Error("Aborted"), { name: "AbortError" })); return; }
+      init.signal.addEventListener("abort", () => { xhr.abort(); reject(Object.assign(new Error("Aborted"), { name: "AbortError" })); });
+    }
+    xhr.send(init.body);
+  })) as unknown as typeof fetch;
 
 export type RequestOptions = {
   query?: Record<string, string | number | undefined | null>;
@@ -101,7 +130,8 @@ export class ApiClient {
 
     let res: Response;
     try {
-      res = await (this.deps.fetchImpl ?? fetch)(this.url(path, opts.query), { method: metode, headers, body, signal: ctl.signal });
+      const kirimKe = form ? (this.deps.uploadImpl ?? (this.deps.fetchImpl ? this.deps.fetchImpl : xhrFetch)) : (this.deps.fetchImpl ?? fetch);
+      res = await kirimKe(this.url(path, opts.query), { method: metode, headers, body, signal: ctl.signal });
     } catch (e) {
       const timeout = (e as { name?: string })?.name === "AbortError";
       throw new ApiError({

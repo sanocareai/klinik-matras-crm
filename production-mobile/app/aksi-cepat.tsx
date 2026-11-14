@@ -60,7 +60,7 @@ export default function AksiCepat() {
     { key: "tunda", label: "Tunda unit", Icon: Pause, ke: buka("/tunda/[runId]", { runId: aktif.runId }), warna: "abu" },
   ] : [];
   const umum: Aksi[] = [
-    ...(l.qc || l.docs ? [{ key: "bahan", label: "Catat bahan", Icon: Package, ke: buka("/(tabs)/bahan"), warna: "hijau" as const }] : []),
+    ...(l.qc || l.docs ? [{ key: "bahan", label: "Catat bahan", Icon: Package, ke: buka("/(tabs)/order", { filter: "bahan" }), warna: "hijau" as const }] : []),
     ...(l.admin ? [
       { key: "jadwal", label: "Jadwalkan unit", Icon: CalendarPlus, ke: buka("/jadwal"), warna: "biru" as const },
       { key: "pic", label: "PIC bawaan meja", Icon: UserCog, ke: buka("/pic-meja"), warna: "biru" as const },

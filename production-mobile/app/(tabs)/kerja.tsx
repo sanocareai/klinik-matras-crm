@@ -36,7 +36,7 @@ export default function Kerja() {
 
   return (
     <Screen refreshing={v2.isRefetching} onRefresh={muatUlang}>
-      <Kepala
+      <Kepala foto={user?.avatarUrl}
         inisial={inisial(user?.name)}
         keterangan={`${lane === "material" ? "PIC Bahan" : lane === "corner" ? "Meja Corner" : "Meja Bongkar"} · ${tanggalPanjangWib()}`}
         judul={`Semangat, ${(user?.name ?? "").split(" ")[0] || "Tim"}`}
