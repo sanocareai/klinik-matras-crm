@@ -35,7 +35,7 @@ export const conflictMessage = (fields) => `Data unit sudah diubah orang lain ($
 // Peran = cermin izin backend (diuji terhadap permissions.js): PRODUCTION_ASSIGNMENT_WRITE / QC_WRITE / UNIT_MATERIAL_WRITE.
 export const V1_ASSIGN_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
 export const V1_QC_ROLES = Object.freeze(["QC_LEAD", "ADMIN", "OWNER"]);
-export const V1_MATERIAL_ROLES = Object.freeze(["PRODUCTION_WORKER", "PRODUCTION_LEAD", "WAREHOUSE", "ADMIN", "OWNER"]);
+export const V1_MATERIAL_ROLES = Object.freeze(["PRODUCTION_WORKER", "PRODUCTION_LEAD", "WAREHOUSE", "QC_LEAD", "PRODUCTION_DOCUMENTER", "ADMIN", "OWNER"]);
 const has = (roles, list) => (roles || []).some((r) => list.includes(r));
 export const canAssignV1 = (roles) => has(roles, V1_ASSIGN_ROLES);
 export const canQcV1 = (roles) => has(roles, V1_QC_ROLES);

@@ -416,6 +416,9 @@ export const ROLE_PERMISSIONS = {
 
   QC_LEAD: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE, P.SCOPE_REVISION_PROPOSE, P.PRODUCTION_REPORT_SELF,
+    // Keputusan Owner 14 Nov 2026: pendataan/administrasi bahan dipegang tim QC & Dokumentasi (tab Bahan
+    // aplikasi Produksi). Non-ADMIN tetap menjadi PENGAJUAN yang diverifikasi ADMIN — tidak memotong stok langsung.
+    P.UNIT_MATERIAL_WRITE,
     P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan
     P.CUSTOMER_READ, P.ORDER_READ,
     P.DASHBOARD_READ,
@@ -540,8 +543,10 @@ export const ROLE_PERMISSIONS = {
 
   // PRODUCTION_DOCUMENTER (P10B) — petugas dokumentasi: lihat unit produksi + unggah dokumentasi foto. TANPA harga,
   // pembayaran, jurnal, nomor telepon, UNIT_STAGE_WRITE atau QC_WRITE.
+  // UNIT_MATERIAL_WRITE (keputusan Owner 14 Nov 2026): pendataan bahan dipegang tim QC & Dokumentasi; non-ADMIN = pengajuan
+  // diverifikasi ADMIN, harga tetap tersembunyi (izin harga terpisah).
   PRODUCTION_DOCUMENTER: [
-    P.UNIT_READ, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF,
+    P.UNIT_READ, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF, P.UNIT_MATERIAL_WRITE,
     P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan
   ],
 

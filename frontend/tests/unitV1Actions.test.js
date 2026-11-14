@@ -132,9 +132,11 @@ test("peran QC/bahan/penugasan = cermin izin backend (QC_WRITE / UNIT_MATERIAL_W
     const server = rolesWith(perm);
     for (const r of ui) assert.ok(server.includes(r), `${r} memegang ${perm}`);
     for (const r of server.filter((x) => ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "QC_LEAD", "ADMIN", "OWNER", "WAREHOUSE"].includes(x))) assert.ok(ui.includes(r), `${r} tidak tertinggal`);
-    for (const r of ["SALES", "FINANCE", "DRIVER", "PRODUCTION_DOCUMENTER"]) assert.equal(fn([r]), false, r);
+    // Dokumentasi memegang UNIT_MATERIAL_WRITE sejak keputusan Owner 14 Nov 2026 (pendataan bahan = tim QC & Dokumentasi).
+    for (const r of ["SALES", "FINANCE", "DRIVER", ...(perm === P.UNIT_MATERIAL_WRITE ? [] : ["PRODUCTION_DOCUMENTER"])]) assert.equal(fn([r]), false, r);
   }
-  assert.equal(canQcV1(["PRODUCTION_WORKER"]), false); assert.equal(canAssignV1(["QC_LEAD"]), false); assert.equal(canMaterialV1(["QC_LEAD"]), false);
+  assert.equal(canQcV1(["PRODUCTION_WORKER"]), false); assert.equal(canAssignV1(["QC_LEAD"]), false);
+  assert.equal(canMaterialV1(["QC_LEAD"]), true); assert.equal(canMaterialV1(["PRODUCTION_DOCUMENTER"]), true); // keputusan Owner 14 Nov 2026
 });
 
 test("keadaan tahap → tombol: stageStateOf menurunkan satu keadaan dari timeline; tanpa lewati/rute", () => {

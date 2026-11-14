@@ -3,7 +3,7 @@
 // (lib/menuVisibility.js). Server tetap penegak izin sebenarnya — di sini hanya menyembunyikan menu yang pasti buntu.
 export const PRODUCTION_SETTINGS_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
 export const PRODUCTION_KPI_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
-export const PRODUCTION_HPP_ORDER_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "WAREHOUSE", "FINANCE", "ACCOUNTANT", "APPROVER"]);
+export const PRODUCTION_HPP_ORDER_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "PRODUCTION_DOCUMENTER", "WAREHOUSE", "FINANCE", "ACCOUNTANT", "APPROVER"]);
 export const PRODUCTION_QC_APP_ROLES =Object.freeze(["ADMIN", "OWNER", "QC_LEAD"]);
 // Verifikasi pemakaian bahan: HANYA peran ADMIN (keputusan Owner Nov 2026; Finance bukan penyetuju operasional bahan). Server menegakkan ulang.
 export const PRODUCTION_VERIFIKASI_PEMAKAIAN_ROLES = Object.freeze(["ADMIN"]);
