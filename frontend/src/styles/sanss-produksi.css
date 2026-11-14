@@ -913,3 +913,30 @@
 :root .app-shell.crm-skin.prod-skin .prod-kel-bagian.ringkas ul.prod-kel-ringkas-baris li { padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.55); font-size: var(--prod-fs-ket); font-weight: var(--prod-fw-sedang); }
 :root[data-theme="dark"] .app-shell.crm-skin.prod-skin .prod-kel-bagian.ringkas ul.prod-kel-ringkas-baris li { background: rgba(255, 255, 255, 0.10); }
 :root .app-shell.crm-skin.prod-skin .prod-kel-bagian.ringkas ul.prod-kel-ringkas-baris li.hpp { box-shadow: inset 0 0 0 1px currentColor; background: transparent; }
+
+/* ── SATU TEMA kontrol formulir di workspace Produksi (permintaan Owner 14 Nov 2026) ─────────────────────────────────────────────
+   tokens.css membuang tampilan bawaan semua <select> (appearance:none) dan memberi SEMUA input `border:none !important` + isi abu rata,
+   tetapi tidak pernah mengembalikan panah — hasilnya kotak abu kosong ("blank dark grey") yang tidak terbaca sebagai pilihan.
+   Di Produksi, dropdown dan isian tanggal kini memakai gaya yang SAMA dengan FilterDropdown / profil unit: garis tipis (hairline),
+   permukaan, sudut 12px, panah (select). Isian teks/cari/angka ikut garis yang sama supaya satu bilah filter tidak bercampur gaya.
+   Lingkup sengaja hanya .prod-skin — workspace lain tidak berubah. */
+:root .app-shell.crm-skin.prod-skin :is(select:not([multiple]), input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"], input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea) {
+  /* garis lewat box-shadow inset: `border:none !important` global ada di @layer base dan !important berlapis SELALU menang atas !important tak berlapis */
+  /* !important + spesifisitas lebih tinggi supaya menang atas tema kaca gelap (.glass-division input/select … !important) di dalam Produksi saja */
+  box-shadow: inset 0 0 0 1px var(--hairline) !important; border-radius: 12px; background-color: var(--bg-surface) !important; color: var(--text-primary) !important;
+  min-height: 40px; transition: box-shadow .15s ease;
+}
+:root .app-shell.crm-skin.prod-skin select:not([multiple]) {
+  padding-right: 34px !important; background-repeat: no-repeat !important; background-position: right 12px center !important; background-size: 12px 12px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E") !important;
+}
+:root[data-theme="dark"] .app-shell.crm-skin.prod-skin select:not([multiple]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23a1a4c4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E") !important;
+}
+:root .app-shell.crm-skin.prod-skin :is(select:not([multiple]), input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"], input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea):hover:not(:disabled) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--hairline)) !important; }
+:root .app-shell.crm-skin.prod-skin :is(select, input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"]):disabled { opacity: .6; cursor: not-allowed; }
+:root .app-shell.crm-skin.prod-skin input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"])::-webkit-calendar-picker-indicator { opacity: .65; cursor: pointer; }
+:root .app-shell.crm-skin.prod-skin :is(select:not([multiple]), input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"], input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea):focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent) !important; }
+:root .app-shell.crm-skin.prod-skin textarea { min-height: 72px; }
+/* Pengecualian: select tak terlihat di atas pil PIC Meja (Rencana) yang menggambar panahnya sendiri. */
+:root .app-shell.crm-skin.prod-skin .rc-pic select { box-shadow: none !important; background: none !important; min-height: 0; padding: 0 !important; }

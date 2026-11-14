@@ -112,7 +112,8 @@ test("daftar: kolom Pelanggan & unit · Posisi unit · Pekerjaan · Target & PIC
 
 test("profil: Berikutnya di atas → Pekerjaan (status kerja · jadwal · target · PIC · status order · penerimaan) → Bahan & Foto → Order; tab Ringkasan · Bahan · Foto · Riwayat (+ Meja & QC); Rencana vs Aktual dibedakan tegas", () => {
   // Pekerjaan diubah langsung di Ringkasan (tanpa tab Pekerjaan). Tab Bahan: pemakaian aktual dulu, rencana (opsional, terlipat) di bawahnya.
-  const urut = ["<LangkahBerikutnya", "<BarisKerja", "<BarisTarget", "<BarisStatusOrder", "<BarisPenerimaan", 'testid="cuplikan-buka-bahan"', "<GrupOrder"].map((k) => RING.lastIndexOf(k));
+  // 14 Nov 2026: Bahan pindah ke grup "HPP bahan" (HPP + bahan yang dipakai), tampil sebelum grup Order
+  const urut = ["<LangkahBerikutnya", "<BarisKerja", "<BarisTarget", "<BarisStatusOrder", "<BarisPenerimaan", "<GrupHpp", "<GrupOrder"].map((k) => RING.lastIndexOf(k));
   assert.ok(urut.every((x) => x > 0) && urut.every((x, i) => i === 0 || x > urut[i - 1]), `urutan bagian: ${urut}`);
   const tabs = ['key: "ringkasan"', 'key: "bahan"', 'key: "dokumentasi", label: "Foto"', 'key: "riwayat"'].map((k) => MODEL.indexOf(k)); assert.ok(tabs.every((x) => x > 0) && tabs.every((x, i) => i === 0 || x > tabs[i - 1]), "tab: Ringkasan, Bahan, Foto, Riwayat");
   assert.ok(MODEL.includes('export const TAB_MEJA = Object.freeze({ key: "meja", label: "Meja & QC" });') && WS.includes("<Unit360Isi unitId={unitId} tertanam"), "data Meja/QC (Unit 360) tetap terjangkau di tab Meja & QC");

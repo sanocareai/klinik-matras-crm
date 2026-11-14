@@ -100,3 +100,29 @@ export function penjelasanTertahan(data) {
 export const tanggalWib = (iso) => (iso ? new Date(new Date(iso).getTime() + 7 * 3600000).toISOString().slice(0, 10) : "");
 /** Target selesai disimpan pukul 17:00 WIB pada tanggal yang dipilih (sama dengan formulir lama). */
 export const isoTarget = (tgl) => (tgl ? new Date(`${tgl}T17:00:00+07:00`).toISOString() : null);
+
+/** HPP bahan untuk profil: dari read-model server hppOperasionalUnit (harga berlaku yang DIBEKUKAN saat pemakaian; BUKAN nilai persediaan Finance).
+ *  Total = angka server (ringkasan.hppOperasionalDibekukan) — klien tidak menghitung ulang total. Per bahan hanya mengelompokkan baris server (qty pergerakan
+ *  negatif = dipakai). Pemakaian tanpa harga TIDAK dihitung Rp0: bahan itu ditandai "sebagian tanpa harga" dan total berstatus parsial. Susut (WASTE) terpisah. */
+export function ringkasHpp(h) {
+  if (!h) return null;
+  const r = h.ringkasan || {}; const baris = h.baris || [];
+  const nBeku = baris.filter((b) => b.status === "DIBEKUKAN" && b.tipe !== "WASTE").length;
+  const tanpaHarga = (r.pemakaianTanpaHargaOperasional ?? 0) + (r.pemakaianBelumDibekukan ?? 0) + (r.pemakaianGagalPembekuan ?? 0);
+  const per = new Map();
+  for (const b of baris) {
+    if (b.tipe === "WASTE") continue;
+    const o = per.get(b.kode) ?? { kode: b.kode, nama: b.nama, satuan: b.satuan, dipakai: 0, nilai: 0, adaNilai: false, tanpaHarga: false };
+    o.dipakai += -Number(b.qty || 0);
+    if (b.status === "DIBEKUKAN" && b.nilai != null) { o.nilai += Number(b.nilai); o.adaNilai = true; } else o.tanpaHarga = true;
+    per.set(b.kode, o);
+  }
+  const perBahan = [...per.values()].filter((o) => Math.abs(o.dipakai) > 1e-9 || o.adaNilai)
+    .map((o) => ({ ...o, dipakai: Math.round(o.dipakai * 10000) / 10000, nilai: o.adaNilai ? Math.round(o.nilai * 100) / 100 : null }))
+    .sort((a, b) => (b.nilai ?? -1) - (a.nilai ?? -1));
+  return {
+    total: nBeku > 0 ? r.hppOperasionalDibekukan ?? null : null, // null = "Belum ada" (bukan Rp0)
+    status: h.status, parsial: tanpaHarga > 0, tanpaHarga, susut: Number(r.susutOperasional || 0), perBahan,
+    belumMemakai: (h.belumMemakai || []).length, pratinjauBelumMemakai: (h.belumMemakai || []).length ? r.pratinjauBelumMemakai ?? null : null,
+  };
+}

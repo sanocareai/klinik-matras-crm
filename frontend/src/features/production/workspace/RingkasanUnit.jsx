@@ -11,8 +11,9 @@ import { Hasil } from "@/features/production/workspace/Hasil.jsx";
 import LangkahBerikutnya from "@/features/production/workspace/LangkahBerikutnya.jsx";
 import { badgeTarget } from "@/features/production/workspace/workListModel.js";
 import { ringkasPekerjaan } from "@/features/production/bahan/bahanModel.js";
-import { KERJA_PERLU_KONFIRMASI, konfirmasiKerja, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
-import { KERJA_WAJIB_CATATAN, barisBahan, barisFoto, isoTarget, penjelasanTertahan, segmenKerja, tanggalWib } from "@/features/production/workspace/profilModel.js";
+import { KERJA_PERLU_KONFIRMASI, formatJumlah, konfirmasiKerja, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { KERJA_WAJIB_CATATAN, barisBahan, barisFoto, isoTarget, penjelasanTertahan, ringkasHpp, segmenKerja, tanggalWib } from "@/features/production/workspace/profilModel.js";
+import { rpNilai } from "@/features/warehouse/stok/hargaBerlakuLogic.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import "@/features/production/bahan/bahan.css";
 
@@ -170,6 +171,38 @@ function BarisPenerimaan({ data, aktif, onDone, onPesan }) {
   );
 }
 
+// ── HPP & bahan dipakai — TERBUKA untuk semua yang membuka profil (keputusan Owner 14 Nov 2026: dievaluasi bersama tim di rapat untuk efisiensi bahan baku).
+// Sumber: read-model server hppOperasionalUnit (data.hppOperasional; harga berlaku dibekukan saat pemakaian) — BUKAN biaya perolehan Finance (PO/supplier, tetap Finance).
+// Pemakaian tanpa harga ≠ Rp0: ditandai "tanpa harga" dan total berstatus sebagian.
+function GrupHpp({ data, onBagian }) {
+  const ring = ringkasHpp(data.hppOperasional);
+  const lama = data.komponenLama?.total?.pemakaianKembali?.jumlahItem ?? 0; const sementara = data.adopsi?.pemakaianBahan?.sementaraPerluRekonsiliasi ?? 0;
+  const daftar = ring?.perBahan ?? [];
+  const kosong = daftar.length === 0 && !lama && !sementara;
+  return (
+    <Grup judul="HPP bahan" testid="ringkasan-hpp">
+      <div className="pf-blok" data-testid="hpp-total">
+        {!ring ? <p className="pf-kecil m-0">HPP belum tersedia. Rincian bahan ada di tab Bahan.</p> : (
+          <>
+            <p className="pf-hpp-total m-0" data-testid="hpp-nilai">{ring.total != null ? rpNilai(ring.total) : "Belum ada"}</p>
+            <p className="pf-kecil m-0 mt-0.5">{kosong ? "HPP muncul otomatis begitu bahan dicatat" : ring.total == null ? "Bahan sudah dicatat, tetapi harganya belum dibekukan" : ring.parsial ? `Sebagian: ${ring.tanpaHarga} pemakaian belum punya harga (tidak dihitung Rp0)` : "Lengkap menurut harga berlaku saat pemakaian"}</p>
+          </>
+        )}
+      </div>
+      {daftar.map((b) => (
+        <Baris key={b.kode} testid="hpp-bahan" label={b.nama} sub={`${formatJumlah(b.dipakai)} ${b.satuan}${b.kode ? ` · ${b.kode}` : ""}`} kuat
+          nilai={b.nilai != null ? <span className={b.tanpaHarga ? "text-orange" : ""}>{rpNilai(b.nilai)}{b.tanpaHarga ? " +" : ""}</span> : <span className="text-orange">tanpa harga</span>} />
+      ))}
+      {lama > 0 && <Baris label="Komponen lama dipakai kembali" sub="Dari kasur ini — bukan stok, tanpa biaya" nilai={`${lama} item`} />}
+      {sementara > 0 && <Baris label="Pemakaian sementara" sub="Bahan belum di katalog — perlu rekonsiliasi Gudang" nilai={`${sementara} catatan`} />}
+      {ring && ring.susut > 0 && <Baris label="Susut (sisa/rusak)" sub="Dicatat terpisah dari HPP" nilai={rpNilai(ring.susut)} />}
+      {ring && ring.belumMemakai > 0 && <Baris label="Akan dipakai (belum keluar)" sub="Pratinjau harga terbaru, belum dibekukan" nilai={ring.pratinjauBelumMemakai != null ? rpNilai(ring.pratinjauBelumMemakai) : `${ring.belumMemakai} bahan`} />}
+      <Baris label={kosong ? "Catat bahan" : "Rincian & catat bahan"} nilai={barisBahan(data)} onClick={() => onBagian("bahan")} testid="cuplikan-buka-bahan" />
+      <p className="pf-kecil m-0 px-4 pb-3 pt-1">Harga berlaku saat pemakaian · bukan nilai persediaan Finance.</p>
+    </Grup>
+  );
+}
+
 function GrupOrder({ data, ruang }) {
   const { unit: u } = data; const d = ruang?.order?.detail; const k = d?.kondisiPelanggan;
   const layanan = ruang?.order?.layanan?.join(" + ");
@@ -225,12 +258,12 @@ export default function RingkasanUnit({ data, ruang, aktif, onDone, onBagian, on
           <BarisPenerimaan data={data} aktif={aktif} onDone={onDone} onPesan={onPesan} />
         </Grup>
         <Grup testid="ringkasan-kiri-bawah">
-          <Baris label="Bahan" nilai={barisBahan(data)} onClick={() => onBagian("bahan")} testid="cuplikan-buka-bahan" />
           <Baris label="Foto" nilai={barisFoto(ruang)} onClick={() => onBagian("dokumentasi")} testid="cuplikan-buka-dokumentasi" />
           {adaMeja && <Baris label="Meja & QC" sub="Tahap, diagnosis, QC & serah ke Gudang" nilai={ruang?.alurMeja?.tahap || null} onClick={() => onBagian("meja")} testid="buka-meja" />}
         </Grup>
       </div>
       <div className="pf-kolom" data-testid="ringkasan-kanan">
+        <GrupHpp data={data} onBagian={onBagian} />
         <GrupOrder data={data} ruang={ruang} />
         {(tampilKelengkapan || adaCatatanHistoris) && (
           <Grup judul={tampilKelengkapan ? "Kelengkapan" : "Biaya bahan"} testid="ringkasan-kelengkapan">

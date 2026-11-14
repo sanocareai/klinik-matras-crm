@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import KartuUnit, { IK } from "@/features/production/rencana/KartuUnit.jsx";
 import { SORTS, TABS } from "@/features/production/rencana/rencanaModel.js";
+import PilihanUrutan from "@/features/production/PilihanUrutan.jsx";
 
 // Antrean kerja: SATU daftar "Belum dijadwalkan" untuk semua unit aktif yang layak (unit yang belum tiba berlabel "Belum tiba"), plus Terjadwal dan Butuh keputusan. Setiap kartu memuat alasan konkret;
 // pencarian, urutan, dan halaman di server. Kartu bisa dicentang (beberapa unit) dan diseret; "Pilih meja" pada kartu = alternatif seret untuk HP dan keyboard.
@@ -29,9 +30,7 @@ export default function RencanaAntrean({ antrean, loading, tab, onTab, q, onQ, s
           <Search {...IK} size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
           <input type="search" value={teks} onChange={(e) => setTeks(e.target.value)} placeholder="Cari pelanggan, resi, atau unit" data-testid="antrean-cari" className="prod-cari-bahan" />
         </label>
-        <label className="shrink-0"><span className="sr-only">Urutkan</span>
-          <select value={sort} onChange={(e) => onSort(e.target.value)} data-testid="antrean-urut" className="prod-pilih">{SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
-        </label>
+        <div className="shrink-0"><PilihanUrutan value={sort} onChange={onSort} opsi={SORTS} testid="antrean-urut" label="Urutkan antrean" /></div>
       </div>
       <div className="prod-rc-daftar" data-testid="antrean-daftar" aria-busy={loading || undefined}>
         {!antrean && <div className="h-24 animate-pulse rounded-card bg-inset" aria-busy="true" />}

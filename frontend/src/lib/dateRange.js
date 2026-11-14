@@ -275,3 +275,15 @@ export function toApiParams(range) {
   if (!range?.from || !range?.to) return {};
   return { from: range.from, to: range.to };
 }
+
+// "YYYY-MM-DD" ↔ "DD/MM/YYYY". Isian browser (type="date") dulu tampil "mm/dd/yyyy" mengikuti bahasa browser dan
+// berupa kotak abu polos; diganti isian teks berformat Indonesia yang disahkan saat Enter / keluar dari isian.
+export const keTampilTanggal = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || "") ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
+export function dariTampilTanggal(teks, maks = null) {
+  const m = String(teks || "").trim().match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (!m) return null;
+  const iso = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const d = dayjs(iso);
+  if (!d.isValid() || d.format("YYYY-MM-DD") !== iso) return null; // 31/02 dll ditolak, bukan digulirkan
+  return maks && iso > maks ? null : iso;
+}

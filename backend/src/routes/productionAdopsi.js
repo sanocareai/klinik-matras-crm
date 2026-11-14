@@ -35,6 +35,7 @@ import { ambilCatatanHistoris, riwayatCatatanUnit } from "../services/catatanPem
 import { riwayatKoreksiPemakaian, daftarKoreksiPemakaian } from "../services/koreksiPemakaian.js";
 import { koreksiSaldoUnit, riwayatKoreksiSaldo } from "../services/asalKoreksiSaldo.js";
 import { bacaJejakUnit } from "../services/finance/biayaBahan.js";
+import { hppOperasionalUnit } from "../services/finance/hargaBerlaku.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { displayStatusOfOrder } from "../lib/domain/productionDisplay.js";
@@ -87,14 +88,17 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     const [baris] = await perkayaBarisUnit(prisma, [unit]);
     const bukti = (await loadAppEvidence(prisma, [unit.id])).get(unit.id);
     const [riwayatKerja, rencana, aktual, run, penerimaan, sementara] = await Promise.all([
-      riwayatKerjaUnit(prisma, unit.id, bukti?.firstEvidenceAt ?? null), ambilRencanaBahan(prisma, unit.id), ambilPemakaianAktual(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.UNIT_MATERIAL_WRITE) }),
+      riwayatKerjaUnit(prisma, unit.id, bukti?.firstEvidenceAt ?? null), ambilRencanaBahan(prisma, unit.id), // HPP operasional (harga berlaku yang dibekukan saat pemakaian) TERBUKA untuk semua peran yang boleh membuka unit — keputusan Owner 14 Nov 2026:
+      // dievaluasi bersama seluruh tim di rapat supaya Produksi sadar efisiensi bahan baku. Biaya perolehan Finance (PO/supplier, hppBahan) TETAP finance:read.
+      ambilPemakaianAktual(prisma, unit.id, { izinHarga: true }),
       prisma.productionRun.findFirst({ where: { unitId: unit.id }, orderBy: { createdAt: "desc" }, select: { id: true } }),
       ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);
     // Catatan pemakaian historis (Excel Admin Sales): tampil walau belum/tidak menjadi pengeluaran stok; TIDAK dijumlahkan ke "Pemakaian aktual" dan tidak mengubah status kerja.
-    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, koreksiMenunggu, koreksiSaldo, jejakBiaya] = await Promise.all([
+    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, koreksiMenunggu, koreksiSaldo, jejakBiaya, hppOperasional] = await Promise.all([
       ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id), riwayatKoreksiPemakaian(prisma, unit.id), daftarKoreksiPemakaian(prisma, { status: "PENDING_APPROVAL", unitId: unit.id }), koreksiSaldoUnit(prisma, unit.id),
       bacaJejakUnit(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) }),
+      hppOperasionalUnit(prisma, unit.id), // read-model yang SAMA dengan Finance (jejak bahan); profil unit menampilkan total + per bahan
     ]);
     const riwayatHistoris = [...riwayatCatatan, ...riwayatKoreksi, ...riwayatKoreksiSaldo(koreksiSaldo)];
     // gap dikelompokkan per jenis (bukan satu baris per pergerakan) supaya terbaca
@@ -155,7 +159,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, koreksiSaldo, koreksiMenunggu: koreksiMenunggu.map((k) => ({ ...k, milikSaya: k.pemohon?.id === req.user.id })), hppBahan, komponenLama, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, koreksiSaldo, koreksiMenunggu: koreksiMenunggu.map((k) => ({ ...k, milikSaya: k.pemohon?.id === req.user.id })), hppBahan, hppOperasional, komponenLama, perbandingan, riwayat,
       izin: bolehUbah(req.user), pernyataanTanpaBahan: await ambilPernyataanUnit(prisma, unit.id),
     });
   } catch (err) { handleErr(err, res); }

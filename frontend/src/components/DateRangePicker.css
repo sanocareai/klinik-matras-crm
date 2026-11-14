@@ -1,0 +1,23 @@
+/* PEMILIH RENTANG TANGGAL (DateRangePicker) — panel dan isian tanggal, satu gaya untuk semua workspace.
+   Dulu panel memakai bg-surface + shadow-popover: di tema gelap warnanya sama dengan kartu di belakangnya dan bayangannya
+   (biru gelap) tidak terlihat, jadi panel tampak "kosong" menyatu dengan halaman. Sekarang permukaannya terangkat + garis tipis. */
+:root .drp-panel {
+  background: var(--bg-surface, #fff); color: var(--text-primary, #111827);
+  border: 1px solid var(--hairline, rgba(0, 0, 0, .08));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .06), 0 24px 60px -18px rgba(27, 27, 57, .35);
+}
+:root[data-theme="dark"] .drp-panel {
+  background: #1E2040; border-color: rgba(255, 255, 255, .10);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35), 0 28px 70px -18px rgba(0, 0, 0, .85);
+}
+/* Isian tanggal teks (dd/mm/yyyy) — garis tipis, sudut membulat, sama dengan kontrol lain. */
+:root .drp-isian {
+  width: 100%; height: 36px; padding: 0 10px; border-radius: 10px;
+  border: 0; box-shadow: inset 0 0 0 1px var(--hairline, rgba(0, 0, 0, .12)); background-color: var(--bg-surface, #fff);
+  color: var(--text-primary, #111827); font-size: 13px; font-variant-numeric: tabular-nums; transition: box-shadow .15s ease;
+}
+:root[data-theme="dark"] .drp-isian { background-color: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+:root .drp-isian:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #2563eb) 45%, var(--hairline, rgba(0, 0, 0, .12))); }
+:root .drp-isian:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent, #2563eb), 0 0 0 3px color-mix(in srgb, var(--accent, #2563eb) 22%, transparent); }
+:root .drp-isian.salah { box-shadow: inset 0 0 0 1.5px #ef4444, 0 0 0 3px rgba(239, 68, 68, .18); }
+:root .drp-isian::placeholder { color: var(--text-tertiary, #9ca3af); }

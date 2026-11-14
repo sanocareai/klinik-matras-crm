@@ -10,6 +10,7 @@ import { friendlyError } from "@/features/production/experience.js";
 import { sumberKerjaPendek } from "@/features/production/orderProduksiModel.js";
 import { EmpatStatus, Penanda } from "@/features/production/workspace/StatusMarkers.jsx";
 import { FILTERS, SORTS, badgeTarget, bagianUntukAksi, nadaPerhatian, ringkasanKerja, ringkasanPosisi } from "@/features/production/workspace/workListModel.js";
+import PilihanUrutan from "@/features/production/PilihanUrutan.jsx";
 
 // DAFTAR KERJA (tampilan awal Status Produksi): satu baris ringkas per ORDER; baris dibuka seperti dropdown card berisi unit + SATU tindakan berikutnya + pintasan.
 // Dropdown cukup untuk tindakan cepat; konten panjang dibuka di Ruang Kerja Unit. Pencarian/filter/urutan/order terbuka tersimpan di URL (tahan refresh & tombol kembali).
@@ -158,10 +159,7 @@ export default function StatusWorkList({ keadaan, onUbah, onBukaUnit, onMuat }) 
             className="h-11 w-full rounded-btn border border-line bg-surface pl-9 pr-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
         </label>
         {scope === "aktif" && (
-          <label className="flex items-center gap-2 text-[12.5px] text-ink3"><span>Urutkan</span>
-            <select value={sort} onChange={(e) => onUbah({ sort: e.target.value }, { ganti: true })} data-testid="daftar-urut" className="h-11 rounded-btn border border-line bg-surface px-3 text-[13.5px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30">
-              {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-            </select></label>
+          <PilihanUrutan value={sort} onChange={(v) => onUbah({ sort: v }, { ganti: true })} opsi={SORTS} testid="daftar-urut" label="Urutkan daftar" />
         )}
         <Button type="button" variant="neutral" size="sm" className="ml-auto min-h-[40px]" onClick={() => muat(1)} disabled={memuat}><RefreshCw size={14} className={memuat ? "animate-spin motion-reduce:animate-none" : ""} aria-hidden /> Muat ulang</Button>
       </div>

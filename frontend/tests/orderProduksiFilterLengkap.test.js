@@ -93,7 +93,7 @@ test("Pekerjaan: layanan dan ukuran dipisah; layanan lengkap tetap di rincian", 
 
 test("PilihanUrutan: pilihan tunggal tanpa baris kosong; tiap opsi satu kali (sumber duplikat 'Terbaru dulu' = placeholder FilterDropdown)", () => {
   const u = src("features", "production", "PilihanUrutan.jsx");
-  assert.ok(u.includes("URUTAN_DAFTAR.map") && !u.includes("filter-dropdown.jsx") && u.includes("aria-label="), "komponen sendiri, berlabel");
+  assert.ok(u.includes("opsi = URUTAN_DAFTAR") && u.includes("opsi.map((u) =>") && !u.includes("filter-dropdown.jsx") && u.includes("aria-label="), "komponen sendiri, berlabel; bawaan = URUTAN_DAFTAR");
   assert.equal(URUTAN_DAFTAR.length, 2); assert.deepEqual(URUTAN_DAFTAR.map((x) => x.key), ["terbaru", "terlama"], "definisi urutan lama dipertahankan");
   assert.equal(URUTAN_DAFTAR[1].label, "Paling lama belum ditangani");
   const f = src("components", "ui", "filter-dropdown.jsx");

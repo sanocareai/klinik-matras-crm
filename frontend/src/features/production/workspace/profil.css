@@ -129,3 +129,6 @@ button.pf-baris:focus-visible { outline: 2px solid var(--crm-primary, #2563eb); 
   :root .app-shell.crm-skin.prod-skin .pf [role="tablist"] > [role="tab"].pf-segmen-btn,
   :root .app-shell.crm-skin.prod-skin .pf [role="tablist"] > [role="tab"].pf-segmen-btn[aria-selected="true"] { padding: 0 8px; font-size: 13px; }
 }
+
+/* Angka HPP besar di grup HPP bahan */
+.pf-hpp-total { font-size: 26px; line-height: 1.15; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }

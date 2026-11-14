@@ -4,9 +4,10 @@ import { ChevronLeft, ChevronRight, ChevronDown, Calendar } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button } from "./ui/button.jsx";
 import CalendarMonth from "./ui/calendar-month.jsx";
+import "./DateRangePicker.css";
 import {
   SIMPLE_PRESETS, PARAM_PRESETS, makeRange, makeCustomRange,
-  previousPeriod, stepRange, canStep, formatRangeText, presetLabel, todayWIB,
+  previousPeriod, stepRange, canStep, formatRangeText, presetLabel, todayWIB, keTampilTanggal, dariTampilTanggal,
 } from "../lib/dateRange.js";
 
 // ─── DATE RANGE PICKER — pola Google Ads ─────────────────────────────────────
@@ -35,6 +36,24 @@ import {
 // untuk halaman CRM (growth % dari backend analytics); endpoint Finance tidak
 // punya periode pembanding, dan preset "Semua" (from/to null) akan dibuang
 // qsFinance jadi request TANPA rentang. Default true = CRM tidak berubah.
+function IsianTanggal({ nilai, maks, label, onSah }) {
+  const [teks, setTeks] = useState(keTampilTanggal(nilai));
+  const [salah, setSalah] = useState(false);
+  useEffect(() => { setTeks(keTampilTanggal(nilai)); setSalah(false); }, [nilai]);
+  const sahkan = () => {
+    if (!teks.trim()) { setTeks(keTampilTanggal(nilai)); setSalah(false); return; }
+    const iso = dariTampilTanggal(teks, maks);
+    if (!iso) { setSalah(true); return; }
+    setSalah(false); if (iso !== nilai) onSah(iso);
+  };
+  return (
+    <input inputMode="numeric" autoComplete="off" placeholder="dd/mm/yyyy" aria-label={label} aria-invalid={salah || undefined}
+      className={cn("drp-isian", salah && "salah")} value={teks}
+      onChange={(e) => { setTeks(e.target.value); setSalah(false); }} onBlur={sahkan}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sahkan(); } }} />
+  );
+}
+
 export default function DateRangePicker({ value, onChange, maxDate, showCompare = true, allowAll = true }) {
   const batasAtas = maxDate || todayWIB().format("YYYY-MM-DD");
   const [open, setOpen] = useState(false);
@@ -43,8 +62,8 @@ export default function DateRangePicker({ value, onChange, maxDate, showCompare 
   // Tanggal 1 sudah dipilih, menunggu tanggal ke-2.
   const [picking, setPicking] = useState(false);
   const [anchor, setAnchor] = useState(() => todayWIB().subtract(1, "month"));
-  // Panel rata KIRI atau KANAN terhadap pemicu — lihat catatan di efek bawah.
-  const [alignLeft, setAlignLeft] = useState(false);
+  // Geser horizontal panel (px) relatif ke tepi kiri pemicu — lihat catatan di efek bawah.
+  const [geserPanel, setGeserPanel] = useState(0);
   const rootRef = useRef(null);
 
   // Sinkron ulang draft tiap panel dibuka — kalau ditutup pakai Batal, draft
@@ -66,19 +85,24 @@ export default function DateRangePicker({ value, onChange, maxDate, showCompare 
   // viewport dan kalender bulan pertama terpotong (kolom hari "K J S", baris
   // "3 4" / "10 11" ikut hilang) sekaligus menutupi kartu ringkasan.
   //
-  // Sekarang arah rata dipilih dari ruang yang BENAR-BENAR tersedia: kalau
-  // panel muat kalau ditarik ke kanan dari tepi kiri pemicu, pakai rata kiri;
-  // kalau tidak, kembali ke rata kanan (perilaku lama). Dihitung saat dibuka
-  // DAN saat ukuran jendela berubah — bukan sekali di mount, karena header
-  // memakai flex-wrap sehingga posisi pemicu bergeser mengikuti lebar layar.
+  // Rata kiri/kanan saja TIDAK cukup (14 Nov 2026): bila pemicu di tengah layar
+  // (Order Produksi, lebar ~1000px) panel 620px tidak muat ke dua arah — rata
+  // kanan lalu menjorok ke luar tepi kiri dan daftar preset terpotong. Sekarang
+  // panel dimulai di tepi kiri pemicu lalu DIGESER secukupnya supaya selalu di
+  // dalam layar (jarak 8px). Dihitung saat dibuka DAN saat ukuran jendela
+  // berubah — header memakai flex-wrap sehingga posisi pemicu ikut bergeser.
   useEffect(() => {
     if (!open) return;
     function hitungArah() {
       const rect = rootRef.current?.getBoundingClientRect();
       if (!rect) return;
+      const lebarLayar = document.documentElement.clientWidth || window.innerWidth; // tanpa scrollbar
       const lebarPanel = Math.min(window.innerWidth * 0.92, 620);
       const PAD = 8;
-      setAlignLeft(rect.left + lebarPanel <= window.innerWidth - PAD);
+      let kiri = rect.left;
+      const PAD_KANAN = 24; // ruang untuk scrollbar area konten (bukan scrollbar halaman) supaya halaman tidak ikut tergeser ke samping
+      if (kiri + lebarPanel > lebarLayar - PAD_KANAN) kiri = lebarLayar - PAD_KANAN - lebarPanel;
+      setGeserPanel(Math.round(Math.max(PAD, kiri) - rect.left));
     }
     hitungArah();
     window.addEventListener("resize", hitungArah);
@@ -137,9 +161,6 @@ export default function DateRangePicker({ value, onChange, maxDate, showCompare 
     onChange(stepRange(value, dir));
   }
 
-  const inputCls = "h-8 w-full rounded px-2 text-[12px] tabular-nums text-ink " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30";
-
   return (
     <div ref={rootRef} className="relative flex items-center gap-1">
       {/* Pemicu — meniru Google Ads: label preset + teks rentang + caret */}
@@ -186,10 +207,10 @@ export default function DateRangePicker({ value, onChange, maxDate, showCompare 
         <div
           role="dialog"
           aria-label="Pilih rentang tanggal"
-          className={cn(
-            "absolute top-11 z-50 flex w-[min(92vw,620px)] flex-col overflow-hidden rounded-2xl bg-surface shadow-popover sm:flex-row",
-            alignLeft ? "left-0" : "right-0"
-          )}
+          // drp-panel (DateRangePicker.css): permukaan terangkat + garis tipis + bayangan yang terlihat di tema gelap
+          // (dulu warnanya sama dengan kartu di belakangnya dan bayangannya hilang → panel tampak "kosong").
+          className="drp-panel absolute top-11 z-50 flex w-[min(92vw,620px)] flex-col overflow-hidden rounded-2xl sm:flex-row"
+          style={{ left: geserPanel }}
         >
           {/* ── KIRI: preset ── */}
           <div className="flex max-h-[62vh] shrink-0 flex-col overflow-y-auto border-line sm:max-h-[440px] sm:w-[210px] sm:border-r">
@@ -266,22 +287,14 @@ export default function DateRangePicker({ value, onChange, maxDate, showCompare 
             <div className="flex items-end gap-2 border-b border-line px-3.5 py-3">
               <label className="min-w-0 flex-1">
                 <span className="mb-1 block text-[10px] font-medium text-ink3">Tanggal mulai*</span>
-                <input
-                  type="date" className={inputCls}
-                  value={draft?.from || ""}
-                  max={batasAtas}
-                  onChange={(e) => setDraft(makeCustomRange(e.target.value, draft?.to, { compare: draft?.compare }))}
-                />
+                <IsianTanggal nilai={draft?.from || ""} maks={batasAtas} label="Tanggal mulai"
+                  onSah={(iso) => setDraft(makeCustomRange(iso, draft?.to, { compare: draft?.compare }))} />
               </label>
               <span className="pb-2 text-ink3">–</span>
               <label className="min-w-0 flex-1">
                 <span className="mb-1 block text-[10px] font-medium text-ink3">Tanggal akhir*</span>
-                <input
-                  type="date" className={inputCls}
-                  value={draft?.to || ""}
-                  max={batasAtas}
-                  onChange={(e) => setDraft(makeCustomRange(draft?.from, e.target.value, { compare: draft?.compare }))}
-                />
+                <IsianTanggal nilai={draft?.to || ""} maks={batasAtas} label="Tanggal akhir"
+                  onSah={(iso) => setDraft(makeCustomRange(draft?.from, iso, { compare: draft?.compare }))} />
               </label>
             </div>
 
