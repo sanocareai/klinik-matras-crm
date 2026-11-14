@@ -25,6 +25,24 @@ export function ringkasAdopsi(row) {
   return { ada: true, statusOrder: a.statusOrder ?? null, posisi: a.posisi ?? null, kerja: a.kerja, tindakan: a.tindakan ?? null, target: a.targetSelesai ?? null, pic: a.pic ?? null, meja: a.meja ?? null };
 }
 
+// ───────────────────────────── harga jual & HPP di daftar (keputusan Owner 14 Nov 2026: dilihat semua tim) ─────────────────────────────
+const rpDaftar = (n) => "Rp" + Math.round(Number(n) || 0).toLocaleString("id-ID");
+/** Teks kolom "Harga & HPP". Harga = nilai order (bisa untuk beberapa unit); HPP = bahan terpakai menurut harga berlaku. Tidak pernah menampilkan Rp0 palsu. null = server lama (tanpa data). */
+export function ringkasHarga(row) {
+  const h = row?.adopsi?.nilai;
+  if (!h) return null;
+  let jual;
+  if (row.penjualanKaryawan) jual = { teks: "Penjualan karyawan", ket: "Harga dicatat di Finance", kosong: true };
+  else if (!(Number(h.jual) > 0)) jual = { teks: "Belum ada harga", ket: null, kosong: true };
+  else jual = { teks: rpDaftar(h.jual), ket: h.unitDalamOrder > 1 ? `untuk ${h.unitDalamOrder} unit` : null, kosong: false };
+  const p = h.hpp ?? { status: "BELUM_ADA_PEMAKAIAN", total: 0, tanpaHarga: 0 };
+  let hpp;
+  if (p.status === "BELUM_ADA_PEMAKAIAN") hpp = { teks: "HPP belum ada", ket: null, kosong: true };
+  else if (p.status === "PARSIAL" && !(p.total > 0)) hpp = { teks: "HPP belum berharga", ket: `${p.tanpaHarga} pemakaian tanpa harga`, kosong: true };
+  else hpp = { teks: `HPP ${rpDaftar(p.total)}`, ket: p.status === "PARSIAL" ? `sebagian · ${p.tanpaHarga} tanpa harga` : null, kosong: false };
+  return { jual, hpp };
+}
+
 // ───────────────────────────── penerimaan workshop & status order ─────────────────────────────
 /** Dampak tindakan "Catat unit diterima" — dicetak di formulir SEBELUM tombol ditekan (apa yang dicatat, apa yang TIDAK terjadi). */
 export const DAMPAK_PENERIMAAN = Object.freeze({

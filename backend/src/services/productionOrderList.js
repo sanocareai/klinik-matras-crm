@@ -15,6 +15,7 @@ import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./p
 import { WORK_STATUS, effectiveWorkStatus, posisiUnitOf, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { loadAppEvidence, loadLatestManual } from "./productionAdoptionService.js";
 import { kelengkapanBaris, muatFaktaKelengkapan } from "./productionKelengkapan.js";
+import { ringkasHppBanyak } from "./finance/hargaBerlaku.js";
 import { hitungDataOrder, hitungKelengkapan, parseKelengkapan } from "../lib/domain/kelengkapanOrderProduksi.js";
 import { endOfDayExclusiveWIB, startOfDayWIB } from "../utils/wib.js";
 import { denganUnitProduksi, whereUnitProduksi } from "../lib/domain/unitBukanProduksi.js";
@@ -67,7 +68,7 @@ export const UNIT_INCLUDE = {
   service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
   order: {
     select: {
-      id: true, orderNumber: true, status: true, ...PKR_ORDER_SELECT,
+      id: true, orderNumber: true, status: true, value: true, ...PKR_ORDER_SELECT,
       items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, // Layanan Sales (satu-satunya layanan yang ditampilkan)
       customer: { select: { id: true, name: true } },
     },
@@ -83,6 +84,11 @@ export async function perkayaBarisUnit(prisma, units, { kelengkapan = true } = {
   const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
   const faktaKelengkapan = kelengkapan ? await muatFaktaKelengkapan(prisma, unitIds) : null; // kelengkapan (Bahan/HPP/Data order): fakta bulk BACA-SAJA, klasifikasi murni di lib/domain/kelengkapanOrderProduksi.js
+  const orderIds = [...new Set(units.map((u) => u.orderId).filter(Boolean))];
+  // Harga & HPP di daftar (keputusan Owner 14 Nov 2026: dilihat semua tim). HPP = read-model yang sama dengan profil unit; harga jual = nilai order (satu order bisa beberapa unit).
+  const [hppByUnit, unitPerOrder] = await Promise.all([ringkasHppBanyak(prisma, unitIds),
+    orderIds.length ? prisma.unit.groupBy({ by: ["orderId"], where: denganUnitProduksi({ orderId: { in: orderIds } }), _count: { _all: true } }) : []]);
+  const jumlahUnitOrder = new Map(unitPerOrder.map((r) => [r.orderId, r._count._all]));
   const catatanHistorisByUnit = await ringkasCatatanUnits(prisma, unitIds); // catatan pemakaian historis (Excel): terpisah dari pemakaian aktual & status kerja
   const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows, komponenPakaiRows, sementaraRows] = await Promise.all([
     loadMilestoneEvidence(prisma, unitIds),
@@ -151,6 +157,8 @@ export async function perkayaBarisUnit(prisma, units, { kelengkapan = true } = {
         jadwal: plan?.productionDate ? { sumber: "V2", tanggal: plan.productionDate.toISOString().slice(0, 10), meja: plan.stationCode ?? null, revisi: null } : adminJadwalByUnit.has(u.id) ? { sumber: "ADMIN", tanggal: adminJadwalByUnit.get(u.id).productionDate.toISOString().slice(0, 10), meja: adminJadwalByUnit.get(u.id).stationCode ?? null, revisi: adminJadwalByUnit.get(u.id).revision } : null,
         rencanaBahanAda: rencanaUnit.has(u.id), aktualBahanAda: aktualUnit.has(u.id), buktiAplikasi: bukti.started,
         catatanHistoris: catatanHistorisByUnit.get(u.id) ?? { total: 0, perluDicek: 0, siapPosting: 0, tercatatDiStok: 0, diposting: 0 },
+        // Kunci SENGAJA bukan "harga": harga PKR khusus Finance (tes pkrItemTerpadu menjaga respons operasional bebas kolom harga). Order PKR: jual null (nilainya di Finance).
+        nilai: { jual: u.order?.value != null && !u.order?.penjualanKaryawanId ? Number(u.order.value) : null, unitDalamOrder: jumlahUnitOrder.get(u.orderId) ?? 1, hpp: hppByUnit.get(u.id) ?? { total: 0, status: "BELUM_ADA_PEMAKAIAN", tanpaHarga: 0 } },
         pemakaianBahan: { baruCatatan: pakai?.baru ?? 0, komponenLamaDipakaiKembali: pakai?.lama.size ?? 0, sementaraPerluRekonsiliasi: pakai?.sementaraPerlu ?? 0, sementaraSudahDirekonsiliasi: pakai?.sementaraSelesai ?? 0, pertamaAt: pakai?.pertamaAt ?? null, terakhirAt: pakai?.terakhirAt ?? null }, // dua sumber terpisah (tidak dijumlahkan)
       },
     };

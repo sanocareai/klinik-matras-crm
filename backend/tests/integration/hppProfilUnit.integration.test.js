@@ -51,3 +51,22 @@ test("H2. unit tanpa pemakaian: HPP 'belum ada pemakaian' (tidak ada angka Rp0 p
   const h = (await w.l.get(`/api/production/units/${w.unit.id}/adopsi`)).body.hppOperasional;
   assert.equal(h.status, "BELUM_ADA_PEMAKAIAN"); assert.equal(h.baris.length, 0);
 });
+
+test("H3. daftar Order Produksi: harga jual (nilai order) + HPP ringkas SAMA dengan profil unit, untuk Sales juga; order 2 unit diberi jumlah unit", async () => {
+  const w = await dunia();
+  await testPrisma.order.update({ where: { id: w.unit.orderId }, data: { value: 7500000 } });
+  await testPrisma.unit.create({ data: { unitCode: `HP2-${Date.now()}-${++seq}`, orderId: w.unit.orderId, seq: 2, status: "RECEIVED" } });
+  const pakai = await w.a.post(`/api/units/${w.unit.id}/materials`, { materialId: w.mat.id, qty: 3 }, { "Idempotency-Key": kunci() });
+  assert.equal(pakai.status, 201, JSON.stringify(pakai.body));
+  for (const [peran, klien] of [["SALES", w.s], ["PRODUCTION_LEAD", w.l]]) {
+    const r = await klien.get(`/api/production/work-orders?q=${encodeURIComponent(w.unit.unitCode)}`);
+    assert.equal(r.status, 200, peran);
+    const b = r.body.units.find((u) => u.id === w.unit.id);
+    assert.ok(b, `${peran}: unit ada di daftar`);
+    const profil = (await klien.get(`/api/production/units/${w.unit.id}/adopsi`)).body.hppOperasional;
+    assert.deepEqual(b.adopsi.nilai, { jual: 7500000, unitDalamOrder: 2, hpp: { total: profil.ringkasan.hppOperasionalDibekukan, status: profil.status, tanpaHarga: 0 } }, peran);
+    assert.equal(b.adopsi.nilai.hpp.total, 60000);
+  }
+  const lain = (await w.l.get(`/api/production/work-orders`)).body.units.find((u) => u.id !== w.unit.id && u.orderId === w.unit.orderId);
+  assert.deepEqual(lain.adopsi.nilai.hpp, { total: 0, status: "BELUM_ADA_PEMAKAIAN", tanpaHarga: 0 }, "unit tanpa pemakaian: belum ada (bukan Rp0)");
+});

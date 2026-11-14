@@ -779,8 +779,19 @@
 :root .app-shell.crm-skin.prod-skin .prod-pn-tab[role="tablist"] { gap: 28px; }
 :root .app-shell.crm-skin.prod-skin .prod-filter-pemicu { flex: 0 1 auto; min-width: 0; max-width: 220px; }
 :root .app-shell.crm-skin.prod-skin .prod-ol-kode > span:first-child { white-space: nowrap; }
-:root .app-shell.crm-skin.prod-skin .prod-ol-kepala, :root .app-shell.crm-skin.prod-skin .prod-ol-baris { grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.95fr) minmax(0, 1.45fr) minmax(0, 1.05fr) 28px; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-kepala, :root .app-shell.crm-skin.prod-skin .prod-ol-baris { grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.9fr) minmax(0, 1.35fr) minmax(0, 0.95fr) minmax(0, 1fr) 28px; }
 :root .app-shell.crm-skin.prod-skin .ada-panel .prod-ol-kepala, :root .app-shell.crm-skin.prod-skin .ada-panel .prod-ol-baris { grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1fr) 20px; }
+/* kolom Harga & HPP: keterangan menjorok di bawah ikon; angka rupiah tidak dipotong di tengah. Tabel SEMPIT (panel profil terbuka, atau layar kecil dengan sidebar terbuka)
+   → kolomnya disembunyikan dan isinya ditumpuk di bawah Target & PIC (container query atas lebar tabel itu sendiri, bukan lebar layar). */
+:root .app-shell.crm-skin.prod-skin .prod-ol-tabel { container-type: inline-size; container-name: prod-ol-tabel; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-harga-ket { padding-left: 24px; margin-top: -3px; }
+:root .app-shell.crm-skin.prod-skin [data-testid="harga-jual"], :root .app-shell.crm-skin.prod-skin [data-testid="hpp-daftar"] { overflow-wrap: normal; }
+:root .app-shell.crm-skin.prod-skin .prod-ol-harga-dok { display: none; }
+@container prod-ol-tabel (max-width: 860px) {
+  :root .app-shell.crm-skin.prod-skin .prod-ol-kepala, :root .app-shell.crm-skin.prod-skin .prod-ol-baris { grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1fr) 20px; }
+  :root .app-shell.crm-skin.prod-skin .prod-ol-kol-harga { display: none; }
+  :root .app-shell.crm-skin.prod-skin .prod-ol-harga-dok { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline); }
+}
 @media (max-width: 640px) {
   :root .app-shell.crm-skin.prod-skin .prod-ol-baris1 { flex-direction: column-reverse; align-items: stretch; }
   :root .app-shell.crm-skin.prod-skin .prod-ol-cari { max-width: none; margin-left: 0; flex-basis: auto; }

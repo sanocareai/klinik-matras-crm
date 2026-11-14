@@ -1,6 +1,6 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Download, Info, RefreshCw, Search, SlidersHorizontal, User } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Download, Info, Package, RefreshCw, Search, SlidersHorizontal, Tag, User } from "lucide-react";
 import { PanelSamping } from "@/components/ui/panel-samping.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
@@ -18,7 +18,7 @@ import UnitWorkspace from "@/features/production/workspace/UnitWorkspace.jsx";
 import PanelUnit from "@/features/production/rencana/PanelUnit.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
-import { KELENGKAPAN_BUKAN, KERJA_FILTER, bacaHitungKelengkapan, chipFilterAktif, jumlahFilterLainnya, parameterDaftar, ringkasAdopsi, sumberKerjaText, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu, PERIODE_BAWAAN } from "@/features/production/orderProduksiModel.js";
+import { KELENGKAPAN_BUKAN, KERJA_FILTER, bacaHitungKelengkapan, chipFilterAktif, jumlahFilterLainnya, parameterDaftar, ringkasAdopsi, ringkasHarga, sumberKerjaText, periodeDariUrl, periodeKeUrl, paramPeriode, periodeSemuaWaktu, PERIODE_BAWAAN } from "@/features/production/orderProduksiModel.js";
 import FilterLainnya from "@/features/production/FilterLainnya.jsx";
 import PilihanUrutan from "@/features/production/PilihanUrutan.jsx";
 import ChipFilterAktif from "@/features/production/ChipFilterAktif.jsx";
@@ -272,9 +272,9 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
             <>
               <div className={cn("prod-ol-tabel hidden lg:block", muatBaru && "memuat")} role="table" aria-label="Order produksi" aria-busy={muatBaru || undefined} aria-rowcount={rows ? rows.length + 1 : undefined}>
                 <div className="prod-ol-kepala" role="row">
-                  <span role="columnheader">Pelanggan &amp; unit</span><span role="columnheader">Posisi unit</span><span role="columnheader">Pekerjaan</span><span role="columnheader">Target &amp; PIC</span><span role="columnheader" className="prod-sr">Buka</span>
+                  <span role="columnheader">Pelanggan &amp; unit</span><span role="columnheader">Posisi unit</span><span role="columnheader">Pekerjaan</span><span role="columnheader" className="prod-ol-kol-harga">Harga &amp; HPP</span><span role="columnheader">Target &amp; PIC</span><span role="columnheader" className="prod-sr">Buka</span>
                 </div>
-                {loading && !rows && [0, 1, 2, 3, 4].map((i) => <div key={i} className="prod-ol-baris prod-ol-skel" role="row" aria-hidden><span /><span /><span /><span /><span /></div>)}
+                {loading && !rows && [0, 1, 2, 3, 4].map((i) => <div key={i} className="prod-ol-baris prod-ol-skel" role="row" aria-hidden><span /><span /><span /><span className="prod-ol-kol-harga" /><span /><span /></div>)}
                 {rows?.map((u) => <BarisUnit key={u.id} u={u} aktifId={openUnitId} onBuka={bukaBaris} />)}
               </div>
 
@@ -364,6 +364,18 @@ function PekerjaanSel({ u, a, onLengkapi }) {
     </span>
   );
 }
+function HargaSel({ u }) {
+  const h = ringkasHarga(u);
+  if (!h) return <span className="prod-ol-redup">—</span>;
+  return (
+    <span className="prod-ol-sel prod-ol-tp" data-testid="harga-hpp">
+      <span className={cn("prod-ol-tp-baris", h.jual.kosong && "kosong")} data-testid="harga-jual"><Tag size={16} aria-hidden />{h.jual.teks}</span>
+      {h.jual.ket && <span className="prod-ol-redup prod-ol-baris-kecil prod-ol-harga-ket">{h.jual.ket}</span>}
+      <span className={cn("prod-ol-tp-baris", h.hpp.kosong && "kosong")} data-testid="hpp-daftar"><Package size={16} aria-hidden />{h.hpp.teks}</span>
+      {h.hpp.ket && <span className="prod-ol-redup prod-ol-baris-kecil prod-ol-harga-ket">{h.hpp.ket}</span>}
+    </span>
+  );
+}
 function TargetPicSel({ a }) {
   return (
     <span className="prod-ol-sel prod-ol-tp">
@@ -381,7 +393,8 @@ function BarisUnit({ u, aktifId, onBuka }) {
       <span role="cell"><IdentitasSel u={u} pr={pr} a={a} /></span>
       <span role="cell"><PosisiSel a={a} /></span>
       <span role="cell"><PekerjaanSel u={u} a={a} onLengkapi={() => onBuka(u, null, "kelengkapan")} /></span>
-      <span role="cell"><TargetPicSel a={a} /></span>
+      <span role="cell" className="prod-ol-kol-harga"><HargaSel u={u} /></span>
+      <span role="cell"><TargetPicSel a={a} /><span className="prod-ol-harga-dok"><HargaSel u={u} /></span></span>
       <span role="cell" className="prod-ol-panah"><ChevronRight size={20} aria-hidden /></span>
     </div>
   );
@@ -398,6 +411,7 @@ function KartuUnitMobil({ u, aktifId, onBuka }) {
       <dl className="prod-ol-fakta">
         <div><dt>Posisi unit</dt><dd><PosisiSel a={a} /></dd></div>
         <div><dt>Pekerjaan</dt><dd><PekerjaanSel u={u} a={a} onLengkapi={() => onBuka(u, null, "kelengkapan")} /></dd></div>
+        <div><dt>Harga &amp; HPP</dt><dd><HargaSel u={u} /></dd></div>
         <div><dt>Target &amp; PIC</dt><dd><TargetPicSel a={a} /></dd></div>
       </dl>
     </li>

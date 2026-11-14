@@ -535,3 +535,23 @@ export async function hppOperasionalUnit(db, unitId) {
     ringkasan: { hppOperasionalDibekukan: Number(toMoney(nilai)), susutOperasional: Number(toMoney(susut)), pemakaianTanpaHargaOperasional: nTanpa, pemakaianBelumDibekukan: nBelum, pemakaianGagalPembekuan: nGagal, pratinjauPemakaianLama: Number(toMoney(pratinjauTambah)), pratinjauBelumMemakai: Number(toMoney(pratinjauAkan)) },
     status: nTanpa + nBelum + nGagal > 0 ? "PARSIAL" : mv.length ? "LENGKAP_MENURUT_HARGA_BERLAKU" : "BELUM_ADA_PEMAKAIAN", baris, belumMemakai };
 }
+
+/**
+ * Ringkasan HPP operasional BANYAK unit sekaligus (daftar Order Produksi) — satu query, tanpa pratinjau/baris.
+ * Angka & status SAMA dengan hppOperasionalUnit().ringkasan.hppOperasionalDibekukan / .status (dikunci tes paritas).
+ * Map unitId → { total, status, tanpaHarga } ; unit tanpa pemakaian tidak ada di Map (= BELUM_ADA_PEMAKAIAN).
+ */
+export async function ringkasHppBanyak(db, unitIds) {
+  const hasil = new Map();
+  if (!unitIds?.length) return hasil;
+  const mv = await db.stockMovement.findMany({ where: { unitId: { in: unitIds }, type: { in: TIPE_OP } },
+    select: { unitId: true, type: true, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { status: true, value: true } } } });
+  for (const m of mv) {
+    const r = hasil.get(m.unitId) ?? { nilai: D(0), tanpaHarga: 0 };
+    const o = m.biayaOperasional[0] ?? null;
+    if (o?.status === "DINILAI") { if (m.type !== "WASTE") r.nilai = r.nilai.plus(o.value); } else r.tanpaHarga++;
+    hasil.set(m.unitId, r);
+  }
+  for (const [id, r] of hasil) hasil.set(id, { total: Number(toMoney(r.nilai)), status: r.tanpaHarga > 0 ? "PARSIAL" : "LENGKAP_MENURUT_HARGA_BERLAKU", tanpaHarga: r.tanpaHarga });
+  return hasil;
+}
