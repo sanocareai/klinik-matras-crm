@@ -31,7 +31,7 @@ export function PemilihBahan({ label = "Bahan", value, onChange, opsional }: { l
       {opsional && mode ? <Pressable onPress={() => onChange(null)} style={{ alignSelf: "flex-start", paddingHorizontal: 4, minHeight: 32, justifyContent: "center" }}><T.Caption style={{ color: TONE.blue.text }}>Kosongkan bahan</T.Caption></Pressable> : null}
       {value?.kind === "MANUAL" ? (
         <TextInput accessibilityLabel={`${label}: ${LABEL_MANUAL}`} value={value.text} onChangeText={(text) => onChange({ kind: "MANUAL", text })} maxLength={120} placeholder="Nama bahan" placeholderTextColor={C.ink3}
-          style={{ backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 14, minHeight: 50, fontFamily: F.regular, fontSize: 16, color: C.ink }} />
+          style={{ backgroundColor: C.isian, borderRadius: 14, paddingHorizontal: 14, minHeight: 50, fontFamily: F.regular, fontSize: 16, color: C.ink }} />
       ) : null}
       {value?.kind === "UNKNOWN" ? <T.Caption style={{ marginHorizontal: 4 }}>Dicatat “{LABEL_TIDAK_TAHU}” — tidak ditebak.</T.Caption> : null}
       {value?.kind === "CATALOG" ? (

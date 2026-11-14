@@ -61,7 +61,7 @@ export default function KurangBahan() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul="Bahan Kurang" kembali="Batal" />} bottomPad={140}>
+      <Screen lembar header={<NavBar judul="Bahan Kurang" kembali="Batal" />} bottomPad={140}>
         {card.isLoading ? <StateView kind="loading" /> : null}
         {c ? (
           <>
@@ -98,7 +98,7 @@ export default function KurangBahan() {
                       {on ? (
                         <TextInput accessibilityLabel={`Jumlah ${m.name}`} value={v.qty} onChangeText={(t) => ubah((x) => ({ ...x, [m.id]: { qty: t } }))}
                           keyboardType="decimal-pad" placeholder="Qty" placeholderTextColor={C.ink3}
-                          style={{ width: 72, height: 46, borderRadius: 12, backgroundColor: C.card, textAlign: "center", fontFamily: F.semibold, fontSize: 16, color: C.ink }} />
+                          style={{ width: 72, height: 46, borderRadius: 12, backgroundColor: C.isian, textAlign: "center", fontFamily: F.semibold, fontSize: 16, color: C.ink }} />
                       ) : null}
                     </View>
                   );

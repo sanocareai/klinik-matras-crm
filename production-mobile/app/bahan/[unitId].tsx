@@ -33,6 +33,8 @@ export default function CatatBahanQc() {
   const [busy, setBusy] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<string | null>(null);
+  // Sesudah berhasil, katalog ditutup supaya pesan berhasil & "Sudah diajukan" langsung terlihat (temuan uji emulator 14 Nov 2026).
+  const [pilihTerbuka, setPilihTerbuka] = useState(true);
   const kunci = useRef(new Map<string, string>());
   const katalog = useQuery({ queryKey: ["katalog-bahan", cari.trim()], queryFn: () => cariKatalogBahan(cari.trim()), enabled: !isi.bahan, staleTime: 60_000 });
 
@@ -61,14 +63,14 @@ export default function CatatBahanQc() {
       const r = await catatBahanUnit(unitId!, body, kunciUntuk(s));
       haptic.sukses();
       setSelesai(r.menungguVerifikasi ? (r.pesan ?? "Tercatat sebagai PENGAJUAN — stok & HPP berubah sesudah diverifikasi Admin.") : "Pemakaian bahan tercatat.");
-      setIsi({ ...KOSONG, tanggal: isi.tanggal }); setPra(null); setSidikPra(null); setCari("");
+      setIsi({ ...KOSONG, tanggal: isi.tanggal }); setPra(null); setSidikPra(null); setCari(""); setPilihTerbuka(false);
       void qc.invalidateQueries({ queryKey: ["bahan-belum"] }); void qc.invalidateQueries({ queryKey: ["pengajuan-pemakaian"] }); void qc.invalidateQueries({ queryKey: ["adopsi", unitId] });
     } catch (e) { setGalat(pesanUntukPengguna(e)); } finally { setBusy(false); }
   }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Screen header={<NavBar judul={u ? u.unitCode : "Catat bahan"} />} refreshing={a.isRefetching} onRefresh={() => void a.refetch()} bottomPad={60}>
+      <Screen lembar header={<NavBar judul={u ? u.unitCode : "Catat bahan"} />} refreshing={a.isRefetching} onRefresh={() => void a.refetch()} bottomPad={60}>
         {a.isLoading ? <StateView kind="loading" title="Memuat unit…" /> : null}
         {a.error ? <StateView kind="error" title="Unit tidak bisa dimuat" text={pesanUntukPengguna(a.error)} onRetry={() => void a.refetch()} /> : null}
 
@@ -132,9 +134,11 @@ export default function CatatBahanQc() {
                       </View>
                       <Button kind="tinted" label="Ganti" onPress={() => { set({ bahan: null, satuan: null }); setPra(null); }} style={{ minHeight: 44 }} />
                     </Card>
-                  ) : (
+                  ) : pilihTerbuka ? (
                     <PemilihBahan cari={cari} setCari={setCari} rows={katalog.data?.rows ?? []} memuat={katalog.isLoading} galat={katalog.error ? pesanUntukPengguna(katalog.error) : null}
                       onPilih={(r) => { haptic.tick(); set({ bahan: { materialId: r.materialId, nama: r.nama, kode: r.kode, satuan: r.satuan, satuanPakai: r.satuanPakai }, satuan: r.satuanPakai?.satuanPakai ?? null }); }} />
+                  ) : (
+                    <Button kind="tinted" label="Tambah bahan lain" onPress={() => { setSelesai(null); setPilihTerbuka(true); }} />
                   )}
 
                   {isi.bahan ? (
@@ -190,7 +194,7 @@ export default function CatatBahanQc() {
 function PemilihBahan({ cari, setCari, rows, memuat, galat, onPilih }: { cari: string; setCari: (v: string) => void; rows: BahanKatalogQc[]; memuat: boolean; galat: string | null; onPilih: (r: BahanKatalogQc) => void }) {
   return (
     <View style={{ gap: 10 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 52, paddingHorizontal: 16, borderRadius: 26, backgroundColor: C.card, borderWidth: 1, borderColor: G.stroke }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 52, paddingHorizontal: 16, borderRadius: 26, backgroundColor: C.isian, borderWidth: 1, borderColor: G.stroke }}>
         <Search size={20} color={C.ink3} />
         <TextInput accessibilityLabel="Cari bahan" value={cari} onChangeText={setCari} placeholder="Cari bahan (nama atau kode)" placeholderTextColor={C.ink3} style={{ flex: 1, fontFamily: F.medium, fontSize: 16, color: C.ink }} />
       </View>
@@ -222,7 +226,7 @@ function Dampak({ pra, periksa, setPeriksa }: { pra: Pratinjau; periksa: boolean
       <T.Sub>{pra.tindakan?.judul}. {pra.waktu?.teks}</T.Sub>
       {pra.stok ? <T.Sub>Stok: {koma(pra.stok.saldoSebelum)} → {koma(pra.stok.saldoSesudah)} {pra.bahan?.satuan?.toLowerCase()}</T.Sub> : null}
       <T.Sub>Pemakaian di unit: {koma(pra.pemakaianBersih?.sebelum)} → {koma(pra.pemakaianBersih?.sesudah)} {pra.bahan?.satuan?.toLowerCase()}</T.Sub>
-      {pra.hppOperasional?.teks ? <T.Sub>HPP: {pra.hppOperasional.teks}</T.Sub> : null}
+      {/* HPP (nominal rupiah) sengaja TIDAK ditampilkan ke tim QC & Dokumentasi — server tetap memakainya untuk validasi (hppSidik). */}
       {(pra.peringatan ?? []).map((p) => <T.Sub key={p.kode} style={{ color: TONE.orange.text }}>{p.pesan}</T.Sub>)}
       {(pra.penghalang ?? []).map((p) => <T.Sub key={p.kode} style={{ color: TONE.red.text }}>{p.pesan}</T.Sub>)}
       {pra.pengecualianStok?.perlu ? <T.Sub style={{ color: TONE.red.text }}>Stok tidak cukup. Pengecualian hanya untuk Admin/Owner/Kepala Produksi — minta mereka mencatat lewat SANSS Web.</T.Sub> : null}

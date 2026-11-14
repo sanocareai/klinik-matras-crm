@@ -79,7 +79,7 @@ export default function Langkah() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Screen header={<NavBar judul={stepNo ? `Tahap ${stepNo} · ${judulTahap}` : "Tahap"} kembali="Batal" />} bottomPad={140}>
+      <Screen lembar header={<NavBar judul={stepNo ? `Tahap ${stepNo} · ${judulTahap}` : "Tahap"} kembali="Batal" />} bottomPad={140}>
         {card.isLoading ? <StateView kind="loading" title="Memuat…" /> : null}
         {card.error ? <StateView kind="error" title="Kartu tidak bisa dimuat" text={pesanUntukPengguna(card.error)} onRetry={() => void card.refetch()} /> : null}
         {dukung && !dukung.ok ? <StateView kind="empty" title="Isi lewat SANSS Web" text={dukung.alasan} /> : null}

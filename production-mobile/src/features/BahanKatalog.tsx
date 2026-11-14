@@ -30,7 +30,7 @@ export function DaftarBahanKatalog({ lines, onChange, qtyLabel, disabled, kosong
       {lines.length ? (
         <View style={{ gap: 8 }}>
           {lines.map((l) => (
-            <View key={l.materialId} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.card, borderRadius: 14, paddingLeft: 14, paddingRight: 6, paddingVertical: 8 }}>
+            <View key={l.materialId} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.isian, borderRadius: 14, paddingLeft: 14, paddingRight: 6, paddingVertical: 8 }}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <T.Headline numberOfLines={1}>{l.name || l.code}</T.Headline>
                 <T.Caption numberOfLines={1}>{[l.code, l.unit && `satuan ${String(l.unit).toLowerCase()}`].filter(Boolean).join(" · ")}</T.Caption>
@@ -66,7 +66,7 @@ export function DaftarBahanKatalog({ lines, onChange, qtyLabel, disabled, kosong
             const dipilih = ada.has(m.materialId);
             return (
               <Pressable key={m.materialId} accessibilityRole="button" disabled={dipilih} onPress={() => tambah(m)}
-                style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.card, borderRadius: 12, paddingHorizontal: 12, minHeight: 46, opacity: dipilih ? 0.45 : 1 }}>
+                style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.isian, borderRadius: 12, paddingHorizontal: 12, minHeight: 46, opacity: dipilih ? 0.45 : 1 }}>
                 <Text style={{ flex: 1, fontFamily: F.medium, fontSize: 14.5, color: C.ink }} numberOfLines={1}>{m.name}</Text>
                 <T.Caption>{m.code}</T.Caption>
                 <Plus color={TONE.blue.text} size={17} />

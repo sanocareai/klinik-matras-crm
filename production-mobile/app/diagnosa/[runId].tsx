@@ -101,7 +101,7 @@ export default function Diagnosa() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul={c ? `Diagnosa · ${kodePendek(c.unit.unitCode)}` : "Diagnosa"} kembali="Tutup" />} bottomPad={150}>
+      <Screen lembar header={<NavBar judul={c ? `Diagnosa · ${kodePendek(c.unit.unitCode)}` : "Diagnosa"} kembali="Tutup" />} bottomPad={150}>
         {card.isLoading || diag.isLoading ? <StateView kind="loading" title="Memuat diagnosis…" /> : null}
         {diag.error ? <StateView kind="error" title="Diagnosis tidak bisa dimuat" text={pesanUntukPengguna(diag.error)} onRetry={() => void diag.refetch()} /> : null}
 
@@ -301,7 +301,7 @@ function BagianBahan({ d, ubah }: { d: DraftDiagnosa; ubah: (fn: (x: DraftDiagno
         </Card>
       ) : null}
       {d.bom.map((l) => (
-        <View key={l.materialId} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 }}>
+        <View key={l.materialId} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.isian, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <T.Headline numberOfLines={1}>{l.name}</T.Headline>
             <T.Caption>{l.code}{l.onHandQty != null ? ` · stok ${l.onHandQty}` : ""} {l.unit ?? ""}</T.Caption>

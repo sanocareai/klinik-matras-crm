@@ -145,7 +145,7 @@ export function BarAksi({ card, onBerubah }: { card: RunCard; onBerubah: () => v
 
 function Wadah({ children }: { children: React.ReactNode }) {
   return (
-    <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 30, gap: 8, backgroundColor: C.barBg, borderTopWidth: 1, borderTopColor: C.barLine }}>
+    <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 30, gap: 8, backgroundColor: "rgba(255,255,255,0.97)", boxShadow: "0 -6px 24px rgba(20,60,140,0.08)" }}>
       {children}
     </View>
   );

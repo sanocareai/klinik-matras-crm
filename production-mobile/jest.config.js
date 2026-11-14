@@ -4,6 +4,6 @@ module.exports = {
   moduleNameMapper: { "^@/(.*)$": "<rootDir>/src/$1" },
   testPathIgnorePatterns: ["/node_modules/", "/.expo/"],
   transformIgnorePatterns: [
-    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|lucide-react-native)",
+    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|standard-navigation|lucide-react-native)",
   ],
 };

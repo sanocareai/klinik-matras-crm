@@ -8,13 +8,13 @@ import { useSession } from "@/auth/session";
 import { BarisAntrean, KartuAktif } from "@/features/KartuKerja";
 import { susunAntrean } from "@/features/model";
 import { Segmented } from "@/design/Segmented";
-import { Card, Chip, Divider, Screen, Section, StateView, T } from "@/design/ui";
-import { TONE } from "@/design/tokens";
+import { Kepala, KeteranganPanel, PilLive, Screen, Section, StatKaca, StateView, T } from "@/design/ui";
 import { tanggalPanjangWib } from "@/lib/waktu";
 
 // KERJA — "Antrean Saya" PIC Meja/Corner. Urutan & isi dari server (GET /production-v2/worker/:lane + antrean V1),
 // diperbarui tiap 20 detik. Nomor 1 = kerjakan duluan (urutan yang diatur Admin di Target).
 // Segmen "PIC Bahan" (GET /production-v2/worker/material) muncul hanya bila akun ini PIC Bahan dari pekerjaan aktif.
+// Susunan layar mengikuti mockup "Beranda PIC Meja": kepala · kartu kaca "Sedang dikerjakan" · tiga kotak angka · panel antrean.
 export default function Kerja() {
   const router = useRouter();
   const user = useSession((s) => s.user);
@@ -29,20 +29,19 @@ export default function Kerja() {
 
   const { aktif, antrean } = useMemo(() => susunAntrean(v2.data?.items ?? [], lane === "material" ? [] : v1.data?.items ?? []), [v2.data, v1.data, lane]);
   const buka = (runId: string | null) => (runId ? () => router.push({ pathname: "/unit/[runId]", params: { runId } }) : undefined);
+  const keUnit = (path: "/media/[runId]" | "/tunda/[runId]", runId: string | null) => (runId ? () => router.push({ pathname: path, params: { runId } }) : undefined);
   const muatUlang = () => { void v2.refetch(); void v1.refetch(); void bahan.refetch(); };
   const tanpaProfil = v2.data && v2.data.readerMode === "COHORT" && !v2.data.operator;
+  const lewat = antrean.filter((k) => k.terlambat).length + (aktif?.terlambat ? 1 : 0);
 
   return (
     <Screen refreshing={v2.isRefetching} onRefresh={muatUlang}>
-      <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 4 }}>
-        <View style={{ flex: 1 }}>
-          <T.Eyebrow>{tanggalPanjangWib()}</T.Eyebrow>
-          <T.LargeTitle accessibilityRole="header">Kerja</T.LargeTitle>
-        </View>
-        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: TONE.indigo.fill, alignItems: "center", justifyContent: "center" }}>
-          <T.Headline style={{ color: "#fff", fontSize: 15 }}>{inisial(user?.name)}</T.Headline>
-        </View>
-      </View>
+      <Kepala
+        inisial={inisial(user?.name)}
+        keterangan={`${lane === "material" ? "PIC Bahan" : lane === "corner" ? "Meja Corner" : "Meja Bongkar"} · ${tanggalPanjangWib()}`}
+        judul={`Semangat, ${(user?.name ?? "").split(" ")[0] || "Tim"}`}
+        kanan={<PilLive putus={!!v2.error} />}
+      />
 
       <Segmented value={lane} onChange={setLane} options={[{ key: "table", label: "Meja Bongkar" }, { key: "corner", label: "Meja Corner" }, ...(adaBahan ? [{ key: "material" as const, label: "PIC Bahan" }] : [])]} />
 
@@ -54,32 +53,18 @@ export default function Kerja() {
 
       {!v2.isLoading && !v2.error ? (
         <>
-          <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <T.Headline>{antrean.length + (aktif ? 1 : 0)} {lane === "material" ? "pekerjaan PIC Bahan" : "kasur di antreanmu"}</T.Headline>
-              <T.Sub>{lane === "material" ? "Catat racikan & bahan dipakai dari detail unit" : "Urutan dari Admin · diperbarui otomatis"}</T.Sub>
-            </View>
-            <Chip label="Live" tone="green" />
-          </Card>
+          {aktif ? <KartuAktif k={aktif} onPress={buka(aktif.runId)} onMedia={keUnit("/media/[runId]", aktif.runId)} onTunda={keUnit("/tunda/[runId]", aktif.runId)} /> : null}
 
-          {aktif ? (
-            <Section title="Sedang dikerjakan">
-              <KartuAktif k={aktif} onPress={buka(aktif.runId)} />
-            </Section>
-          ) : null}
+          {/* mockup: tiga kotak angka kaca. Angkanya dihitung dari antrean server milik akun ini (bukan contoh). */}
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <StatKaca n={aktif ? 1 : 0} label="Dikerjakan" />
+            <StatKaca n={antrean.length} label="Di antrean" />
+            <StatKaca n={lewat} label="Lewat target" />
+          </View>
 
-          <Section title={aktif ? "Antrean berikutnya" : "Antrean"}>
-            {antrean.length ? (
-              <Card padded={false}>
-                {antrean.map((k, i) => (
-                  <View key={k.key}>
-                    {i > 0 ? <Divider inset={70} /> : null}
-                    <BarisAntrean k={k} onPress={buka(k.runId)} />
-                  </View>
-                ))}
-              </Card>
-            ) : (
-              <StateView kind="empty" title="Belum ada kasur" text="Kasur akan muncul di sini begitu Admin Produksi menugaskannya ke kamu." />
+          <Section title={aktif ? "Antrean berikutnya" : "Antrean"} right={<KeteranganPanel>urutan dari Admin</KeteranganPanel>}>
+            {antrean.length ? antrean.map((k, i) => <BarisAntrean key={k.key} k={k} pertama={i === 0} onPress={buka(k.runId)} />) : (
+              <StateView kind="empty" title={aktif ? "Tidak ada antrean berikutnya" : "Belum ada kasur"} text="Kasur akan muncul di sini begitu Admin Produksi menugaskannya ke kamu." />
             )}
           </Section>
           {v1.error ? <T.Caption style={{ textAlign: "center" }}>Sebagian unit lama tidak termuat. Tarik untuk mencoba lagi.</T.Caption> : null}

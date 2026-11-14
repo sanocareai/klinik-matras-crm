@@ -25,7 +25,7 @@ export function BahanDipakai({ diserahkan, value, onChange, kosong }: { diserahk
   return (
     <View style={{ gap: 8 }}>
       {diserahkan.map((m) => (
-        <View key={m.materialId} style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 }}>
+        <View key={m.materialId} style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.isian, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <T.Headline numberOfLines={1}>{m.name}</T.Headline>
             <T.Caption numberOfLines={1}>

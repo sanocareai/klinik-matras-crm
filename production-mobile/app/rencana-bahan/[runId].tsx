@@ -63,7 +63,7 @@ export default function RencanaBahan() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Screen header={<NavBar judul="Rencana Bahan (BOM)" kembali="Batal" />} bottomPad={140}>
+      <Screen lembar header={<NavBar judul="Rencana Bahan (BOM)" kembali="Batal" />} bottomPad={140}>
         {card.isLoading ? <StateView kind="loading" title="Memuat…" /> : null}
         {card.error ? <StateView kind="error" title="Kartu tidak bisa dimuat" text={pesanUntukPengguna(card.error)} onRetry={() => void card.refetch()} /> : null}
 

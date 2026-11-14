@@ -67,7 +67,7 @@ export default function Komponen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Screen header={<NavBar judul={meta?.label ?? "Catatan Komponen"} kembali="Batal" />} bottomPad={140}>
+      <Screen lembar header={<NavBar judul={meta?.label ?? "Catatan Komponen"} kembali="Batal" />} bottomPad={140}>
         {!bagian ? <StateView kind="empty" title="Bagian catatan tidak dikenal" /> : null}
         {q.isLoading ? <StateView kind="loading" title="Memuat catatan…" /> : null}
         {q.error ? <StateView kind="error" title="Catatan tidak bisa dimuat" text={pesanUntukPengguna(q.error)} onRetry={() => void q.refetch()} /> : null}

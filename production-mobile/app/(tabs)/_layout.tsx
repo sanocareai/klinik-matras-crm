@@ -1,37 +1,35 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import { Image as ImageIcon, LayoutGrid, Layers, Package, ShieldCheck, Target, User } from "lucide-react-native";
+import { House, Image as ImageIcon, LayoutGrid, Layers, Package, ShieldCheck, Target, User } from "lucide-react-native";
 import { useLayout } from "@/api/production";
 import { useBahanBelumBulanIni } from "@/api/bahanQc";
 import { LiquidTabBar, type ItemTab } from "@/design/LiquidTabBar";
 
-// TAB BAR "Liquid Glass". Tab muncul sesuai capability server (bukan nama peran):
-//   Kerja  — pemegang antrean Meja/Corner (unit:stage:write)
-//   QC     — putusan Uji Berat Badan (qc:write)
-//   Bahan  — tim QC & Dokumentasi: pendataan bahan (keputusan Owner 14 Nov 2026); tombol catat tetap mengikuti izin server per unit
-//   Papan  — semua (live per meja); Target — Admin Produksi (production_assignment:write)
-//   Media  — semua; Akun — semua
+// TAB BAR "Liquid Glass" — paling banyak 4 tab + tombol "+" (kanvas v2). PERAN UTAMA menentukan tab; fitur lain dibuka dari menu ubin
+// di Beranda (super-app), jadi akun multi-peran (Ferdy, Natasha) tidak lagi mendapat 7 tab yang sesak:
+//   Admin/Kepala Produksi : Beranda · Papan · Target · Akun
+//   QC & Dokumentasi      : Beranda · QC (bila qc:write) · Bahan · Akun
+//   PIC Meja/Corner       : Kerja · Media · Akun        (beranda PIC = pekerjaannya sendiri)
+// Semua rute tab tetap terdaftar (bisa dibuka dari menu); hak akses tetap ditegakkan server.
 export default function TabsLayout() {
   const l = useLayout();
-  const timBahan = l.qc || l.docs;
-  const bahan = useBahanBelumBulanIni(timBahan);
-  const items: ItemTab[] = [
-    ...(l.lane ? [{ name: "kerja", label: "Kerja", Icon: Layers }] : []),
-    ...(l.qc ? [{ name: "qc", label: "QC", Icon: ShieldCheck }] : []),
-    ...(timBahan ? [{ name: "bahan", label: "Bahan", Icon: Package, badge: bahan.perlu }] : []),
-    { name: "papan", label: "Papan", Icon: LayoutGrid },
-    ...(l.admin ? [{ name: "target", label: "Target", Icon: Target }] : []),
-    { name: "media", label: "Media", Icon: ImageIcon },
-    { name: "akun", label: "Akun", Icon: User },
-  ];
+  const timQc = l.qc || l.docs;
+  const bahan = useBahanBelumBulanIni(timQc);
+  const items: ItemTab[] = l.admin
+    ? [{ name: "index", label: "Beranda", Icon: House }, { name: "papan", label: "Papan", Icon: LayoutGrid }, { name: "target", label: "Target", Icon: Target }, { name: "akun", label: "Akun", Icon: User }]
+    : timQc
+      ? [{ name: "index", label: "Beranda", Icon: House }, ...(l.qc ? [{ name: "qc", label: "QC", Icon: ShieldCheck }] : [{ name: "media", label: "Media", Icon: ImageIcon }]), { name: "bahan", label: "Bahan", Icon: Package, badge: bahan.perlu }, { name: "akun", label: "Akun", Icon: User }]
+      : l.lane
+        ? [{ name: "kerja", label: "Kerja", Icon: Layers }, { name: "media", label: "Media", Icon: ImageIcon }, { name: "akun", label: "Akun", Icon: User }]
+        : [{ name: "papan", label: "Papan", Icon: LayoutGrid }, { name: "media", label: "Media", Icon: ImageIcon }, { name: "akun", label: "Akun", Icon: User }];
   return (
     <Tabs
-      initialRouteName={l.admin ? "papan" : l.qc ? "qc" : l.lane ? "kerja" : timBahan ? "bahan" : "papan"}
+      initialRouteName={items[0]!.name}
       tabBar={(props) => <LiquidTabBar state={props.state} navigation={props.navigation} items={items} />}
-      // Pindah tab: memudar singkat (seperti iOS), bukan potong mendadak. lazy: layar tab baru dibuat saat pertama dibuka (hemat memori HP menengah).
+      // Pindah tab: memudar singkat (seperti iOS). lazy: layar tab dibuat saat pertama dibuka; freezeOnBlur: tab di belakang tidak digambar ulang.
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: "transparent" }, animation: "fade", lazy: true, freezeOnBlur: true }}
     >
-      <Tabs.Screen name="index" options={{ href: null }} />
+      <Tabs.Screen name="index" />
       <Tabs.Screen name="kerja" />
       <Tabs.Screen name="qc" />
       <Tabs.Screen name="bahan" />

@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronRight, PackageCheck } from "lucide-react-native";
 import { bulanWib, kelompokPengajuan, useBahanBelum, usePengajuanMenunggu, type BarisOrderProduksi, type PengajuanMenunggu } from "@/api/bahanQc";
 import { pesanUntukPengguna } from "@/api/errors";
 import { Segmented } from "@/design/Segmented";
-import { Card, Chip, Divider, GlassOnBlue, HeroCard, PressableScale, Screen, Section, StateView, T } from "@/design/ui";
-import { C, F } from "@/design/tokens";
+import { Baris, Card, Chip, GlassOnBlue, HeroCard, KepalaJudul, KeteranganPanel, Screen, Section, StateView, T } from "@/design/ui";
+import { C, F, TONE } from "@/design/tokens";
 
 // BAHAN — pendataan bahan oleh tim QC & Dokumentasi (keputusan Owner 14 Nov 2026).
 // Daftar = unit yang SUDAH dikerjakan/selesai tetapi BELUM punya catatan pemakaian bahan apa pun, per bulan order masuk (WIB).
@@ -22,22 +22,20 @@ export default function Bahan() {
   const rows = semua.filter((r) => !menunggu.has(r.id));
   const diajukan = semua.filter((r) => menunggu.has(r.id));
   const total = rows.length;
+  const buka = (id: string) => () => router.push({ pathname: "/bahan/[unitId]", params: { unitId: id } });
 
   return (
     <Screen refreshing={q.isRefetching} onRefresh={() => void q.refetch()}>
-      <View style={{ paddingHorizontal: 4 }}>
-        <T.Eyebrow>Pendataan bahan · QC &amp; Dokumentasi</T.Eyebrow>
-        <T.LargeTitle accessibilityRole="header">Bahan</T.LargeTitle>
-      </View>
+      <KepalaJudul keterangan="Pendataan bahan · QC & Dokumentasi" judul="Bahan" />
 
       <HeroCard>
-        <T.Headline style={{ color: C.white, fontFamily: F.bold, fontSize: 15 }}>Order yang belum ada bahannya</T.Headline>
+        <Text maxFontSizeMultiplier={1.3} style={{ fontFamily: F.bold, fontSize: 15, color: C.white }}>Order yang belum ada bahannya</Text>
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10 }}>
-          <T.LargeTitle style={{ color: C.white, fontSize: 56, lineHeight: 60 }}>{q.isLoading ? "…" : total}</T.LargeTitle>
-          <T.Sub style={{ color: "#DCEBFF", paddingBottom: 10, fontFamily: F.semibold }}>unit · {bulan.label}{diajukan.length ? ` · ${diajukan.length} menunggu verifikasi` : ""}</T.Sub>
+          <Text maxFontSizeMultiplier={1.1} style={{ fontFamily: F.heavy, fontSize: 56, lineHeight: 60, letterSpacing: -1.5, color: C.white, fontVariant: ["tabular-nums"] }}>{q.isLoading ? "…" : total}</Text>
+          <Text numberOfLines={2} maxFontSizeMultiplier={1.3} style={{ flex: 1, fontFamily: F.semibold, fontSize: 14, color: "#DCEBFF", paddingBottom: 9 }}>unit · {bulan.label}{diajukan.length ? ` · ${diajukan.length} menunggu verifikasi` : ""}</Text>
         </View>
-        <GlassOnBlue>
-          <T.Sub style={{ color: C.white }}>Unit yang sudah dikerjakan atau selesai, tetapi belum ada catatan pemakaian bahan. Catatanmu menjadi pengajuan yang diverifikasi Admin.</T.Sub>
+        <GlassOnBlue style={{ borderRadius: 18, paddingVertical: 10, paddingHorizontal: 12 }}>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontFamily: F.semibold, fontSize: 13, lineHeight: 18, color: C.white }}>Unit yang sudah dikerjakan atau selesai, tetapi belum ada catatan pemakaian bahan. Catatanmu menjadi pengajuan yang diverifikasi Admin.</Text>
         </GlassOnBlue>
       </HeroCard>
 
@@ -46,36 +44,22 @@ export default function Bahan() {
       {q.isLoading ? <StateView kind="loading" title="Memuat daftar…" /> : null}
       {q.error ? <StateView kind="error" title="Daftar tidak bisa dimuat" text={pesanUntukPengguna(q.error)} onRetry={() => void q.refetch()} /> : null}
       {!q.isLoading && !q.error && !rows.length && !diajukan.length ? (
-        <Card style={{ alignItems: "center", gap: 8, paddingVertical: 28 }}>
-          <PackageCheck size={34} color="#15803D" />
-          <T.Headline>Semua sudah tercatat</T.Headline>
-          <T.Sub style={{ textAlign: "center" }}>Tidak ada unit {bulan.label} yang belum punya catatan bahan.</T.Sub>
+        <Card style={{ alignItems: "center", gap: 6, paddingVertical: 24 }}>
+          <PackageCheck size={32} color={TONE.green.text} />
+          <T.Row style={{ fontSize: 15 }}>Semua sudah tercatat</T.Row>
+          <T.RowSub style={{ textAlign: "center", fontSize: 13 }}>Tidak ada unit {bulan.label} yang belum punya catatan bahan.</T.RowSub>
         </Card>
       ) : null}
 
       {rows.length ? (
-        <Section title="Perlu dicatat" right={<T.Caption>order terlama dulu</T.Caption>}>
-          <Card padded={false}>
-            {rows.map((r, i) => (
-              <View key={r.id}>
-                {i > 0 ? <Divider inset={16} /> : null}
-                <BarisUnit r={r} onPress={() => router.push({ pathname: "/bahan/[unitId]", params: { unitId: r.id } })} />
-              </View>
-            ))}
-          </Card>
+        <Section title="Perlu dicatat" right={<KeteranganPanel>order terlama dulu</KeteranganPanel>}>
+          {rows.map((r) => <BarisUnit key={r.id} r={r} onPress={buka(r.id)} />)}
         </Section>
       ) : null}
 
       {diajukan.length ? (
-        <Section title="Menunggu verifikasi Admin">
-          <Card padded={false}>
-            {diajukan.map((r, i) => (
-              <View key={r.id}>
-                {i > 0 ? <Divider inset={16} /> : null}
-                <BarisUnit r={r} aju={menunggu.get(r.id)} onPress={() => router.push({ pathname: "/bahan/[unitId]", params: { unitId: r.id } })} />
-              </View>
-            ))}
-          </Card>
+        <Section title="Menunggu verifikasi Admin" right={<KeteranganPanel>{diajukan.length} unit</KeteranganPanel>}>
+          {diajukan.map((r) => <BarisUnit key={r.id} r={r} aju={menunggu.get(r.id)} onPress={buka(r.id)} />)}
         </Section>
       ) : null}
     </Screen>
@@ -86,17 +70,17 @@ function BarisUnit({ r, aju, onPress }: { r: BarisOrderProduksi; aju?: Pengajuan
   const kasur = [r.merk, r.ukuran].filter(Boolean).join(" ");
   const selesai = r.status === "DELIVERED";
   return (
-    <PressableScale accessibilityRole="button" accessibilityLabel={`Catat bahan ${r.unitCode}`} onPress={onPress} style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14, minHeight: 68 }}>
+    <Baris accessibilityLabel={`Catat bahan ${r.unitCode}`} onPress={onPress}>
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <T.Headline numberOfLines={1}>{r.unitCode}</T.Headline>
-        <T.Sub numberOfLines={1}>{[r.order?.customer?.name, kasur].filter(Boolean).join(" · ") || "—"}</T.Sub>
-        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+        <T.Row numberOfLines={1}>{r.unitCode}</T.Row>
+        <T.RowSub numberOfLines={1}>{[r.order?.customer?.name, kasur].filter(Boolean).join(" · ") || "—"}</T.RowSub>
+        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
           {r.adopsi?.kerja?.label ? <Chip label={r.adopsi.kerja.label} tone="blue" /> : null}
           {selesai ? <Chip label="Terkirim · pembetulan" tone="orange" /> : null}
           {aju?.length ? <Chip label={`Diajukan${aju[0]?.pengaju ? ` oleh ${aju[0].pengaju}` : ""}`} tone="green" /> : null}
         </View>
       </View>
-      <ChevronRight color={C.ink3} size={20} />
-    </PressableScale>
+      <ChevronRight color={C.ink3} size={18} />
+    </Baris>
   );
 }

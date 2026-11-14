@@ -32,6 +32,12 @@ export function deretHari(jumlah = 6, mulai = -1, d: Date = new Date()) {
   });
 }
 
+/** Tujuh tanggal minggu berjalan (Senin → Minggu, WIB) dalam format server "YYYY-MM-DD". */
+export function mingguIniWib(d: Date = new Date()) {
+  const mundur = (wib(d).hari + 6) % 7; // Senin = 0
+  return Array.from({ length: 7 }, (_, i) => kunciTanggalWib(new Date(d.getTime() + (i - mundur) * 86400_000)));
+}
+
 /** "10:42" WIB */
 export function jamWib(iso: string | null | undefined) {
   if (!iso) return "—";

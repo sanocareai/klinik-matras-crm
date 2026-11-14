@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { api, useSession } from "@/auth/session";
+import { mingguIniWib } from "@/lib/waktu";
 import type { AndonBoard, ProductionReport, RunCard, RunView, V1Queue, WorkerQueue } from "./types";
 
 // BACAAN PRODUKSI — semua endpoint SUDAH ADA dan dipakai versi web (WorkerLane, ProductionAndon, laporan).
@@ -35,6 +36,26 @@ export function useAndon(date?: string | null) {
     queryFn: () => api.get<AndonBoard>("/production-v2/andon", { query: { date: date ?? undefined } }),
     refetchInterval: LIVE_MS,
   });
+}
+
+/**
+ * "Minggu ini" di kartu Beranda (mockup): jumlah selesai / terjadwal Senin–Minggu (WIB), dijumlah dari papan per tanggal
+ * (endpoint yang SAMA dengan Target & Andon). Bukan live: disegarkan tiap 10 menit — angka hari ini yang live ada di cincin.
+ */
+export function useMingguIni(enabled = true) {
+  const hari = mingguIniWib();
+  const q = useQueries({
+    queries: hari.map((date) => ({
+      queryKey: ["andon", "minggu", date],
+      queryFn: () => api.get<AndonBoard>("/production-v2/andon", { query: { date } }),
+      staleTime: 10 * 60_000,
+      enabled,
+    })),
+  });
+  const siap = enabled && q.every((x) => x.data);
+  const selesai = q.reduce((n, x) => n + (x.data?.kpi?.completed ?? 0), 0);
+  const terjadwal = q.reduce((n, x) => n + (x.data?.kpi?.planned ?? 0), 0);
+  return { siap, selesai, terjadwal };
 }
 
 export function useRunCard(runId: string | null | undefined) {

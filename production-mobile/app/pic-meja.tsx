@@ -47,7 +47,7 @@ export default function PicMeja() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul={`PIC ${labelMeja(kode ?? "")}`} kembali="Batal" />} bottomPad={40}>
+      <Screen lembar header={<NavBar judul={`PIC ${labelMeja(kode ?? "")}`} kembali="Batal" />} bottomPad={40}>
         <T.Sub style={{ marginHorizontal: 4 }}>Tanggal {tgl}. Unit baru di meja ini otomatis memakai PIC bawaan, kecuali Admin memilih PIC lain untuk unit tertentu.</T.Sub>
         {papan.isLoading || refs.isLoading ? <StateView kind="loading" /> : null}
         {refs.error ? <StateView kind="error" title="Daftar PIC tidak bisa dimuat" text={pesanUntukPengguna(refs.error)} onRetry={() => void refs.refetch()} /> : null}

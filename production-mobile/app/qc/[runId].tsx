@@ -89,7 +89,7 @@ export default function PutusanQc() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul={judul} kembali="Antrean" />} bottomPad={140}>
+      <Screen lembar header={<NavBar judul={judul} kembali="Antrean" />} bottomPad={140}>
         {run.isLoading ? <StateView kind="loading" title="Memuat…" /> : null}
         {run.error ? <StateView kind="error" title="Unit QC tidak bisa dimuat" text={pesanUntukPengguna(run.error)} onRetry={() => void run.refetch()} /> : null}
         {run.data && run.data.state !== "AWAITING_QC" ? <StateView kind="empty" title="Unit ini tidak sedang menunggu QC" text="Mungkin sudah diputuskan di perangkat lain." /> : null}

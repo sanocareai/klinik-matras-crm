@@ -44,7 +44,7 @@ export default function Tunda() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul="Tunda Pekerjaan" kembali="Batal" />} bottomPad={40}>
+      <Screen lembar header={<NavBar judul="Tunda Pekerjaan" kembali="Batal" />} bottomPad={40}>
         {card.isLoading ? <StateView kind="loading" /> : null}
         {c ? (
           <>

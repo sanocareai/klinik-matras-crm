@@ -72,7 +72,7 @@ export default function AturPengerjaan() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul="Rencana Pengerjaan" kembali="Tutup" />} bottomPad={40} refreshing={card.isRefetching} onRefresh={() => void card.refetch()}>
+      <Screen lembar header={<NavBar judul="Rencana Pengerjaan" kembali="Tutup" />} bottomPad={40} refreshing={card.isRefetching} onRefresh={() => void card.refetch()}>
         {card.isLoading ? <StateView kind="loading" title="Memuat…" /> : null}
         {card.error ? <StateView kind="error" title="Kartu tidak bisa dimuat" text={pesanUntukPengguna(card.error)} onRetry={() => void card.refetch()} /> : null}
         {c && c.track !== "BUILD" ? <StateView kind="empty" title="Hanya untuk pesanan baru/custom" text="Pengaturan ini berlaku untuk jalur Pengerjaan Pesanan." /> : null}

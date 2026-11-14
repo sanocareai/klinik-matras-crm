@@ -59,7 +59,7 @@ export default function Jadwal() {
   if (!s) {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
-        <Screen header={<NavBar judul="Jadwal" />}><StateView kind="empty" title="Pilih unit dari tab Target" /></Screen>
+        <Screen lembar header={<NavBar judul="Jadwal" />}><StateView kind="empty" title="Pilih unit dari tab Target" /></Screen>
       </View>
     );
   }
@@ -83,7 +83,7 @@ export default function Jadwal() {
   const siap = !!f && !!refs.data && !!papan.data;
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen header={<NavBar judul={s.plan?.stationCode ? "Ubah Jadwal" : "Rencanakan"} kembali="Batal" />} bottomPad={40}>
+      <Screen lembar header={<NavBar judul={s.plan?.stationCode ? "Ubah Jadwal" : "Rencanakan"} kembali="Batal" />} bottomPad={40}>
         <Card style={{ gap: 4 }}>
           <T.Title>{kodePendek(s.unitCode)}</T.Title>
           <T.Sub>{s.customer || "—"}{s.plan?.stationCode ? ` · sekarang ${labelMeja(s.plan.stationCode)}, ${s.plan.productionDate}` : " · belum dijadwalkan"}</T.Sub>
